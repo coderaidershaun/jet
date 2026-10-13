@@ -62,6 +62,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .wheel { width: 100%; max-width: 240px; height: auto; touch-action: none; cursor: grab; overflow: visible; }
 .dial { width: 100%; max-width: 260px; height: auto; touch-action: none; cursor: grab; overflow: visible; }
 .wheel:active, .dial:active { cursor: grabbing; }
+/* A drag on the wheel or the dial must not select the page's text. */
+.wheel, .dial { -webkit-user-select: none; user-select: none; }
 .wheel-ground { fill: currentColor; opacity: .05; }
 .tint { opacity: .13; }
 .tint-playful { fill: var(--warm); } .tint-candid { fill: var(--accent); } .tint-serious { fill: var(--cool); } .tint-deferential { fill: var(--teal); }

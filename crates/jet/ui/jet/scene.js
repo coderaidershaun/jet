@@ -58,7 +58,9 @@ function tufts() {
  * @param {SVGElement} parent
  */
 export function mountScene(parent) {
-  const root = el('g', { class: 'scene', opacity: 0 });
+  // The scenery spreads far outside the stage, over whatever is beside it, and
+  // it is still there when it is invisible. It must never take the mouse.
+  const root = el('g', { class: 'scene', opacity: 0, 'pointer-events': 'none' });
   const layers = LAYERS.map((layer) => {
     const group = el('g', { fill: 'currentColor', opacity: layer.opacity });
     for (const shift of [0, TILE]) {
