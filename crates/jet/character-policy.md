@@ -1,6 +1,6 @@
 # Character policy: how to animate Jet
 
-For anyone, human or agent, adding a pose, a clip or a state to Jet. Read this before touching `rig/jet.json`, `rig/poses.py` or `ui/jet/`. It records how the existing work was reasoned about, so the next piece feels like the same character.
+For anyone, human or agent, adding a pose, a clip or a status to Jet. Read this before touching `rig/jet.json`, `rig/poses.rs` or `ui/jet/`. It records how the existing work was reasoned about, so the next piece feels like the same character.
 
 ## 1. What Jet is
 
@@ -71,7 +71,7 @@ Exaggeration is allowed to pass 1: `lerp(soft, pose, 1.3)` is how candid raises 
 
 ## 6. Making a pose
 
-**Construct it; do not hand-place anchors.** Hand-placed points on a free-form outline come out lumpy, because sleepers that are not on a smooth curve put kinks in it. The generator in `rig/poses.py` builds every pose from a few decisions:
+**Construct it; do not hand-place anchors.** Hand-placed points on a free-form outline come out lumpy, because sleepers that are not on a smooth curve put kinks in it. The generator in `rig/poses.rs` builds every pose from a few decisions:
 
 - a body: head, two hand corners, the fixed foot, and four edge bows;
 - for an arm: the arm base (the right corner), an angle, a length, and the mitten width. The shoulder flows out of the top edge, the mitten is a semicircle, the armpit is a crease;
@@ -79,11 +79,11 @@ Exaggeration is allowed to pass 1: `lerp(soft, pose, 1.3)` is how candid raises 
 
 Then:
 
-1. Add the pose to `POSES` in `rig/poses.py` and run `python3 rig/poses.py > rig/jet.json`.
-2. If the pose can show a face, add its eye positions to `EYES`. Put them in the upper third of the body, following the head.
+1. Add the pose to `poses()` in `rig/poses.rs` and run `cargo run -p jet --example poses > rig/jet.json` from `crates/jet`.
+2. If the pose can show a face, add its eye positions to `eyes()`. Put them in the upper third of the body, following the head.
 3. **Render it and look.** Draw the pose sheet to a PNG (any browser or Playwright will do) at 150 px and again at 20, 36 and 56 px. A Bézier you have only imagined is wrong more often than not; the first ten-anchor attempt was a potato with a thumb until it was looked at.
 4. Check the tween: render the midpoints between the new pose and its neighbours in the clip. Linear blends can cut corners on long arcs; add an intermediate pose if the hand swings through the body.
-5. `cargo test -p jet` confirms sixty numbers and the foot.
+5. `cargo test -p jet` confirms sixty numbers and the foot, and that `rig/jet.json` is what the generator prints.
 
 ## 7. Making a clip
 
@@ -96,11 +96,11 @@ A clip is a function `buildX(rig, params)` beside `ui/jet/clips/hello.js` that r
 - Add tests mirroring `hello.test.mjs` and `zoom.test.mjs`: time runs forward in every track, the clip ends on the circle at rest, each dial at zero removes what it should, and a clip that interrupts another leaves nothing behind.
 - The player and the view need no changes for a new clip. Only a new kind of element would, and the rig has had one of those (the ring) in its whole life.
 
-## 8. The state vocabulary
+## 8. The status vocabulary
 
-Shapes already chosen for states, so new work stays consistent:
+Shapes already chosen for statuses, so new work stays consistent:
 
-| State | Shape | Eyes | Notes |
+| Status | Shape | Eyes | Notes |
 | --- | --- | --- | --- |
 | Idle | circle, breathing | none | |
 | You start typing | leans toward the input | none | |
@@ -122,7 +122,7 @@ Jobs under about 900 ms skip the loop entirely (a squash and settle only), so qu
 
 - `node --test` from `ui/`, `cargo test -p jet`.
 - Render frames offline and look at them. Do not describe motion you have not seen.
-- Watch it at avatar size. Eyes vanish at 20 px on every shape, which is why the silhouette must carry the state on its own.
+- Watch it at avatar size. Eyes vanish at 20 px on every shape, which is why the silhouette must carry the status on its own.
 - Ask two questions of any new motion: does it read as the same being as the circle it came from, and would it still be welcome the fiftieth time today? If the answer to the second is no, shorten it or make it rarer.
 
 ## 10. Why it is built this way

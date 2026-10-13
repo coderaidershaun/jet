@@ -1,4 +1,4 @@
-// Where the lab's state comes from and goes to. Inside Tauri the Rust side owns
+// Where the lab's rig and settings come from and go to. Inside Tauri the Rust side owns
 // the settings file and the rig; in a plain browser the page falls back to
 // localStorage and a relative fetch so the lab still runs for development.
 

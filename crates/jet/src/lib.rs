@@ -1,6 +1,6 @@
-//! Jet is the first-mate character. This crate is its desktop home: it ships the
-//! character definition inside the binary, opens the window that animates it, and
-//! remembers how the user dialled Jet in between launches.
+//! This crate is the desktop home of Jet, the first-mate character: it ships the character
+//! definition inside the binary, opens the window that animates it, and remembers how the
+//! user dialled Jet in between launches.
 
 mod rig;
 mod settings;
