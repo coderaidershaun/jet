@@ -1,8 +1,5 @@
-// Where the lab's state comes from and goes to. Inside Tauri the Rust side owns
-// the settings file and the rig; in a plain browser the page falls back to
-// localStorage and a relative fetch so the lab still runs for development.
-
-const STORAGE_KEY = 'jet.settings';
+// What the settings look like and what they default to. Loading and saving them
+// is a separate job, so this file does no input or output.
 
 /** @typedef {{ candid: number, playful: number }} Behaviour */
 /** @typedef {{ shape: number, eyes: number, colour: number, motion: number }} Channels */
@@ -24,12 +21,8 @@ export function defaultSettings() {
   };
 }
 
-function tauri() {
-  return /** @type {any} */ (window).__TAURI__?.core ?? null;
-}
-
 /** Fills gaps in a saved object from the defaults, one level at a time. */
-function merge(base, saved) {
+export function merge(base, saved) {
   if (saved === null || typeof saved !== 'object' || Array.isArray(saved)) return base;
   const out = { ...base };
   for (const key of Object.keys(base)) {
@@ -39,38 +32,4 @@ function merge(base, saved) {
     out[key] = b !== null && typeof b === 'object' ? merge(b, s) : s;
   }
   return out;
-}
-
-/** @returns {Promise<import('../jet/rig.js').Rig>} */
-export async function loadRig() {
-  const bridge = tauri();
-  if (bridge) return JSON.parse(await bridge.invoke('rig'));
-  const response = await fetch('../rig/jet.json');
-  if (!response.ok) throw new Error('could not load the rig (' + response.status + ')');
-  return response.json();
-}
-
-/** @returns {Promise<Settings>} */
-export async function loadSettings() {
-  const defaults = defaultSettings();
-  try {
-    const bridge = tauri();
-    if (bridge) return merge(defaults, await bridge.invoke('load_settings'));
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? merge(defaults, JSON.parse(raw)) : defaults;
-  } catch (error) {
-    console.warn('settings could not be loaded, using defaults:', error);
-    return defaults;
-  }
-}
-
-/** @param {Settings} settings */
-export async function saveSettings(settings) {
-  try {
-    const bridge = tauri();
-    if (bridge) await bridge.invoke('save_settings', { settings });
-    else localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch (error) {
-    console.warn('settings could not be saved:', error);
-  }
 }

@@ -47,7 +47,7 @@ export function createDial({ onChange }) {
   }).join('');
 
   /** @type {import('./settings.js').Expressiveness} */
-  let state = { master: 6, channels: { shape: 6, eyes: 4, colour: 6, motion: 6 }, follow: { shape: true, eyes: false, colour: true, motion: true } };
+  let state = { master: 0, channels: { shape: 0, eyes: 0, colour: 0, motion: 0 }, follow: { shape: false, eyes: false, colour: false, motion: false } };
 
   function paint() {
     const v = state.master;

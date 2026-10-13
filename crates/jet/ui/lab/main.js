@@ -4,13 +4,13 @@
 // change is visible at once.
 
 import { buildHello } from '../jet/clips/hello.js';
+import { buildZoom } from '../jet/clips/zoom.js';
 import { createPlayer } from '../jet/player.js';
 import { mountScene } from '../jet/scene.js';
 import { mountJet } from '../jet/view.js';
-import { buildZoom } from '../jet/clips/zoom.js';
+import { loadRig, loadSettings, saveSettings } from './bridge.js';
 import { createDial } from './dial.js';
 import { renderProgress, renderReadout } from './readout.js';
-import { loadRig, loadSettings, saveSettings } from './settings.js';
 import { createWheel } from './wheel.js';
 
 const REPLAY_AFTER_CHANGE_MS = 450;
