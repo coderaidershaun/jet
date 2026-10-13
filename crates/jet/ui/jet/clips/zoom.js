@@ -3,6 +3,7 @@
 // brakes and settles back into the circle. Like the hello, every keyframe is
 // written from the dials; the scenery only reads the speed track.
 
+import { createClip, onOff, readDials } from '../clip.js';
 import { cubicBezier } from '../easing.js';
 import { clamp, lerp } from '../maths.js';
 import { RING_HIDDEN } from '../state.js';
@@ -44,8 +45,12 @@ const GROOVE_OPACITY = 0.32;
 // Coral blended far toward blue turns mauve, so the zoom only cools a little.
 const COOL_SHIFT_MAX = 0.2;
 
-// The rolling poses as ellipses, so the grooves ring can follow them. Kept in
-// step with rig/poses.py by hand; the circle entry is what shape 0 blends to.
+// These are the rolling poses as ellipses, so that the grooves ring can follow
+// them. The circle entry is what shape 0 blends to.
+// SMELL: these numbers are a second copy, kept in step by hand, of the ellipses
+// that the rig's circle and rolling poses are generated from. If a pose changes
+// and this table does not, the grooves no longer follow the body, and no test
+// fails. This table should be read from the rig.
 const BALL = {
   circle: { cx: 50, cy: 56, rx: 32, ry: 32, tilt: 0 },
   zoom: { cx: 52, cy: 60, rx: 38, ry: 27, tilt: -18 },
@@ -59,15 +64,7 @@ const BALL = {
  * @returns {ZoomClip}
  */
 export function buildZoom(rig, p, { cruiseMs = 2400 } = {}) {
-  const ks = p.shape / 10;
-  const ke = p.eyes / 10;
-  const kc = p.colour / 10;
-  const km = p.motion / 10;
-  const x = p.candid;
-  const y = p.playful;
-  const reduced = p.reducedMotion;
-  const circle = rig.poses.circle;
-  const rest = rig.palette.rest;
+  const { ks, ke, kc, km, x, y, reduced, eyeSize, circle, rest, pose, eyes, hiddenEyes } = readDials(rig, p);
   const coolColour = rig.palette.cool;
 
   const cruiseSpeed = CRUISE_SPEED * (1 + 0.25 * x) * (0.6 + 0.4 * km);
@@ -75,15 +72,10 @@ export function buildZoom(rig, p, { cruiseMs = 2400 } = {}) {
   const launchStretch = 1 + 0.25 * x;
   const bobDepth = reduced ? 0 : clamp((0.4 + 0.6 * km) * (1 + 0.6 * y), 0, 1.3);
   const grooves = km > 0.3 && !reduced;
-  const eyeSize = ke < 0.15 ? 0 : 0.6 + 0.4 * ke;
   const squint = eyeSize > 0 && ke > 0.6; // eyes above 6 squint into the wind
   const cool = COOL_SHIFT_MAX * kc;
   const tempo = clamp(1 - 0.1 * y - 0.1 * x, 0.75, 1.2);
 
-  const pose = (name, k = 1) => lerp(circle, rig.poses[name], k * ks);
-  const eyeAt = (name) => lerp(rig.eyes.circle, rig.eyes[name], ks);
-  const eyes = (name, rx, ry) => [...eyeAt(name), rx * eyeSize, ry * eyeSize];
-  const hiddenEyes = (name) => [...eyeAt(name), 0, 0];
   const ball = (name) => {
     const a = BALL.circle;
     const b = BALL[name];
@@ -103,31 +95,23 @@ export function buildZoom(rig, p, { cruiseMs = 2400 } = {}) {
   // a negative offset moves the dashes the way a ball rolling to the right would turn
   const spinOffset = (sinceCruiseMs) => -SPIN_TURNS_PER_SECOND * grooveRing('zoom').length * (sinceCruiseMs / 1000);
 
-  /** @type {ZoomClip} */
-  const clip = { body: [], eyes: [], colour: [], scale: [], ring: [], speed: [], total: 0, phases: [], readout: [], info: /** @type {ZoomInfo} */ ({}) };
-  let t = 0;
-  const body = (dt, v, e) => { t += dt * tempo; clip.body.push({ t, v, e }); return t; };
-  const eye = (at, v, e) => clip.eyes.push({ t: at, v, e });
-  const colour = (at, v, e) => clip.colour.push({ t: at, v, e });
-  const scale = (at, v, e) => clip.scale.push({ t: at, v, e });
-  const ring = (at, v, e) => clip.ring.push({ t: at, v, e });
-  const speed = (at, v, e) => clip.speed.push({ t: at, v, e });
+  const { clip, body, eye, colour, scale, ring, speed, t } = createClip(tempo);
 
   // wind up: crouch back, then launch forward past the cruising shape
   body(150, pose('zoom_crouch'), ease.drop);
-  eye(t, hiddenEyes('circle'));
-  ring(t, RING_HIDDEN.slice());
-  speed(t, 0);
+  eye(t(), hiddenEyes('circle'));
+  ring(t(), RING_HIDDEN.slice());
+  speed(t(), 0);
   body(130, pose('zoom_launch', launchStretch), ease.pop);
-  speed(t + 120 * tempo, cruiseSpeed * launchOvershoot, ease.pop);
+  speed(t() + 120 * tempo, cruiseSpeed * launchOvershoot, ease.pop);
   body(220, pose('zoom'), ease.settle);
-  const cruiseStart = t;
-  speed(t + 200 * tempo, cruiseSpeed, ease.inOut);
-  ring(t - 60 * tempo, ringAt('zoom', 0, 0));
-  ring(t + 140 * tempo, ringAt('zoom', grooves ? GROOVE_OPACITY : 0, spinOffset(140 * tempo)), ease.pop);
-  colour(t, lerp(rest, coolColour, cool), ease.inOut);
-  eye(t, squint ? eyes('zoom', 5, 1.4) : hiddenEyes('zoom'), ease.pop);
-  clip.phases.push({ name: 'launch', end: t });
+  const cruiseStart = t();
+  speed(t() + 200 * tempo, cruiseSpeed, ease.inOut);
+  ring(t() - 60 * tempo, ringAt('zoom', 0, 0));
+  ring(t() + 140 * tempo, ringAt('zoom', grooves ? GROOVE_OPACITY : 0, spinOffset(140 * tempo)), ease.pop);
+  colour(t(), lerp(rest, coolColour, cool), ease.inOut);
+  eye(t(), squint ? eyes('zoom', 5, 1.4) : hiddenEyes('zoom'), ease.pop);
+  clip.phases.push({ name: 'launch', end: t() });
 
   // cruise: a gentle bob while the grooves turn
   const halves = Math.max(2, Math.round(cruiseMs / BOB_HALF_PERIOD_MS));
@@ -136,35 +120,34 @@ export function buildZoom(rig, p, { cruiseMs = 2400 } = {}) {
     const name = up ? 'zoom_bob' : 'zoom';
     body(BOB_HALF_PERIOD_MS, up ? lerp(pose('zoom'), pose('zoom_bob'), bobDepth) : pose('zoom'), ease.inOut);
     const bobbed = { cx: lerp(ball('zoom').cx, ball(name).cx, bobDepth), cy: lerp(ball('zoom').cy, ball(name).cy, bobDepth) };
-    const r = ringAt('zoom', grooves ? GROOVE_OPACITY : 0, spinOffset(t - cruiseStart));
+    const r = ringAt('zoom', grooves ? GROOVE_OPACITY : 0, spinOffset(t() - cruiseStart));
     r[0] = bobbed.cx;
     r[1] = bobbed.cy;
-    ring(t, r, ease.inOut);
-    eye(t, squint ? eyes(up ? 'zoom_bob' : 'zoom', 5, 1.4) : hiddenEyes('zoom'), ease.inOut);
+    ring(t(), r, ease.inOut);
+    eye(t(), squint ? eyes(up ? 'zoom_bob' : 'zoom', 5, 1.4) : hiddenEyes('zoom'), ease.inOut);
   }
-  clip.phases.push({ name: 'cruise', end: t });
+  clip.phases.push({ name: 'cruise', end: t() });
 
   // brake: pile forward, drop the ground to a stop, settle back into the circle
-  const brakeStart = t;
+  const brakeStart = t();
   speed(brakeStart, cruiseSpeed); // hold until here, otherwise the ground would slow across the whole cruise
   colour(brakeStart, lerp(rest, coolColour, cool));
   body(170, pose('zoom_brake'), ease.down);
   speed(brakeStart + 150 * tempo, 0, ease.settle);
-  ring(t, ringAt('zoom', 0, spinOffset(t - cruiseStart)), ease.drop);
-  eye(t, hiddenEyes('zoom'), ease.drop);
-  colour(t + 200 * tempo, rest, ease.inOut);
+  ring(t(), ringAt('zoom', 0, spinOffset(t() - cruiseStart)), ease.drop);
+  eye(t(), hiddenEyes('zoom'), ease.drop);
+  colour(t() + 200 * tempo, rest, ease.inOut);
   body(150, pose('squash', 0.9), ease.tuck);
   body(170, pose('rebound'), ease.pop);
-  scale(t, 1);
-  scale(t + 40 * tempo, 1 + 0.03 * km, ease.pop);
+  scale(t(), 1);
+  scale(t() + 40 * tempo, 1 + 0.03 * km, ease.pop);
   body(220, circle, ease.inOut);
-  scale(t, 1, ease.settle);
-  ring(t, RING_HIDDEN.slice());
-  clip.phases.push({ name: 'brake', end: t });
-  clip.total = t;
+  scale(t(), 1, ease.settle);
+  ring(t(), RING_HIDDEN.slice());
+  clip.phases.push({ name: 'brake', end: t() });
+  clip.total = t();
 
   clip.info = { cruiseSpeed, launchOvershoot, bobDepth, grooves, squint, cool, tempo, cruiseMs, shapeAmplitude: ks };
-  const onOff = (v) => ({ value: v ? 'on' : 'off', on: v });
   clip.readout = [
     { label: 'Cruise speed', value: Math.round(cruiseSpeed) + ' u/s' },
     { label: 'Launch overshoot', value: Math.round((launchOvershoot - 1) * 100) + '%' },

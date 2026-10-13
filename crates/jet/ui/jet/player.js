@@ -59,6 +59,10 @@ export function createPlayer(rig) {
      * @param {number} now   performance.now()
      */
     play(next, now) {
+      // SMELL: this changes the clip it is given. It adds a start key to every
+      // track and creates a missing track, so a clip object played twice has two
+      // start keys, and its second run jumps to where Jet was when the first
+      // run started.
       for (const name of TRACKS) {
         const keys = next[name] || (next[name] = []);
         keys.unshift({ t: 0, v: snapshot(name) });
