@@ -1,0 +1,22 @@
+[package]
+name = "jet"
+version.workspace = true
+edition.workspace = true
+description = "Jet, the first-mate character: desktop window, rig and settings"
+
+[lib]
+name = "jet"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jet"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { workspace = true }
+thiserror = { workspace = true }

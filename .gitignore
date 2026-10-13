@@ -1,0 +1,7 @@
+/target
+/crates/jet/gen/schemas
+.claude
+
+# rex:ignore claude
+.claude/skills/
+.claude/settings.local.json

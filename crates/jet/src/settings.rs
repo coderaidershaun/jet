@@ -1,0 +1,239 @@
+//! Remembers how the user dialled Jet in: where the behaviour handle sits, how
+//! expressive each channel is, and the motion switches. Saved as JSON in the app's
+//! config folder so the frontend finds Jet the way it left it.
+
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager};
+
+const FILE_NAME: &str = "settings.json";
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Settings {
+    pub behaviour: Behaviour,
+    pub expressiveness: Expressiveness,
+    pub reduced_motion: bool,
+    pub repeat: bool,
+}
+
+/// Position on the behaviour wheel. Both axes run -1 to 1 and the point stays
+/// inside the unit circle, so distance from the centre is the intensity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Behaviour {
+    pub candid: f64,
+    pub playful: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Expressiveness {
+    pub master: f64,
+    pub channels: Channels,
+    pub follow: Follow,
+}
+
+/// Each channel runs 0 to 10.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Channels {
+    pub shape: f64,
+    pub eyes: f64,
+    pub colour: f64,
+    pub motion: f64,
+}
+
+/// A channel that follows takes the master value whenever the master moves.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Follow {
+    pub shape: bool,
+    pub eyes: bool,
+    pub colour: bool,
+    pub motion: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            behaviour: Behaviour::default(),
+            expressiveness: Expressiveness::default(),
+            reduced_motion: false,
+            repeat: true,
+        }
+    }
+}
+
+impl Default for Behaviour {
+    fn default() -> Self {
+        Behaviour {
+            candid: 0.55,
+            playful: 0.35,
+        }
+    }
+}
+
+impl Default for Expressiveness {
+    fn default() -> Self {
+        Expressiveness {
+            master: 6.0,
+            channels: Channels::default(),
+            follow: Follow::default(),
+        }
+    }
+}
+
+impl Default for Channels {
+    fn default() -> Self {
+        Channels {
+            shape: 6.0,
+            eyes: 4.0,
+            colour: 6.0,
+            motion: 6.0,
+        }
+    }
+}
+
+impl Default for Follow {
+    fn default() -> Self {
+        Follow {
+            shape: true,
+            eyes: false,
+            colour: true,
+            motion: true,
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SettingsError {
+    #[error("could not find the app config folder: {0}")]
+    ConfigDir(#[from] tauri::Error),
+    #[error("could not read or write {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("{path} is not a valid settings file: {source}")]
+    Json {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
+/// Reads the saved settings, or the defaults when nothing has been saved yet.
+pub fn read_from(path: &Path) -> Result<Settings, SettingsError> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|source| SettingsError::Json {
+            path: path.to_path_buf(),
+            source,
+        }),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(Settings::default()),
+        Err(source) => Err(SettingsError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+pub fn write_to(path: &Path, settings: &Settings) -> Result<(), SettingsError> {
+    let io = |source| SettingsError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    if let Some(folder) = path.parent() {
+        std::fs::create_dir_all(folder).map_err(io)?;
+    }
+    let json = serde_json::to_vec_pretty(settings).map_err(|source| SettingsError::Json {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    std::fs::write(path, json).map_err(io)
+}
+
+fn settings_path(app: &AppHandle) -> Result<PathBuf, SettingsError> {
+    Ok(app.path().app_config_dir()?.join(FILE_NAME))
+}
+
+#[tauri::command]
+pub fn load_settings(app: AppHandle) -> Result<Settings, String> {
+    settings_path(&app)
+        .and_then(|path| read_from(&path))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
+    settings_path(&app)
+        .and_then(|path| write_to(&path, &settings))
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch_file(name: &str) -> PathBuf {
+        let unique = format!("jet-settings-{}-{name}", std::process::id());
+        std::env::temp_dir().join(unique).join(FILE_NAME)
+    }
+
+    #[test]
+    fn missing_file_means_defaults() {
+        let path = scratch_file("missing");
+        assert_eq!(read_from(&path).unwrap(), Settings::default());
+    }
+
+    #[test]
+    fn settings_survive_a_round_trip() {
+        let path = scratch_file("roundtrip");
+        let mut settings = Settings {
+            behaviour: Behaviour {
+                candid: -0.45,
+                playful: -0.5,
+            },
+            reduced_motion: true,
+            ..Settings::default()
+        };
+        settings.expressiveness.master = 2.5;
+        settings.expressiveness.follow.eyes = true;
+        write_to(&path, &settings).unwrap();
+        assert_eq!(read_from(&path).unwrap(), settings);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn old_files_with_missing_fields_still_load() {
+        let path = scratch_file("partial");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{"behaviour":{"candid":0.1}}"#).unwrap();
+        let settings = read_from(&path).unwrap();
+        assert_eq!(settings.behaviour.candid, 0.1);
+        assert_eq!(settings.behaviour.playful, Behaviour::default().playful);
+        assert_eq!(settings.expressiveness, Expressiveness::default());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn broken_file_names_the_path() {
+        let path = scratch_file("broken");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"not json").unwrap();
+        let error = read_from(&path).unwrap_err();
+        assert!(matches!(error, SettingsError::Json { .. }));
+        assert!(error.to_string().contains(FILE_NAME));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn json_uses_camel_case_for_the_frontend() {
+        let json = serde_json::to_string(&Settings::default()).unwrap();
+        assert!(json.contains("\"reducedMotion\""));
+        assert!(!json.contains("reduced_motion"));
+    }
+}
