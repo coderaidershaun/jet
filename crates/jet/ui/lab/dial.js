@@ -1,7 +1,7 @@
 // The expressiveness dial: one master value on a draggable arc, and four
 // channels that copy the master until the user takes one over.
 
-import { clamp } from '../jet/rig.js';
+import { clamp } from '../jet/maths.js';
 
 const CENTRE = [130, 124];
 const RADIUS = 96;

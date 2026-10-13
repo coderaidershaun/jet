@@ -3,10 +3,11 @@
 // brakes and settles back into the circle. Like the hello, every keyframe is
 // written from the dials; the scenery only reads the speed track.
 
-import { cubicBezier } from './easing.js';
-import { RING_HIDDEN, clamp, lerp } from './rig.js';
+import { cubicBezier } from '../easing.js';
+import { clamp, lerp } from '../maths.js';
+import { RING_HIDDEN } from '../state.js';
 
-/** @typedef {import('./player.js').Clip & { info: ZoomInfo }} ZoomClip */
+/** @typedef {import('../clip.js').Clip & { info: ZoomInfo }} ZoomClip */
 
 /**
  * @typedef {object} ZoomInfo
@@ -52,8 +53,8 @@ const BALL = {
 };
 
 /**
- * @param {import('./rig.js').Rig} rig
- * @param {import('./hello.js').Params} p
+ * @param {import('../rig.js').Rig} rig
+ * @param {import('../clip.js').Params} p
  * @param {{ cruiseMs?: number }} [options]   how long the job takes; the host decides
  * @returns {ZoomClip}
  */

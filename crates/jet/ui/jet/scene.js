@@ -3,7 +3,8 @@
 // Jet. The scenery is not part of the character: it reads the speed track and
 // nothing else, draws in the ink colour at low opacity, and fades away at rest.
 
-import { clamp, cssColour } from './rig.js';
+import { clamp } from './maths.js';
+import { cssColour } from './state.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const TILE = 320; // one repeat of each layer, in rig units
@@ -80,7 +81,7 @@ export function mountScene(parent) {
 
   /**
    * @param {number} dt   ms since the last frame
-   * @param {import('./player.js').JetState} state
+   * @param {import('./state.js').JetState} state
    */
   return function update(dt, state) {
     const speed = state.speed;

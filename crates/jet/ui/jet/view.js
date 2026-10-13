@@ -2,7 +2,8 @@
 // spin grooves, two ellipses for the eyes, a scale about the foot. This is the
 // only module that touches the DOM on Jet's behalf.
 
-import { RING, cssColour, pathFrom } from './rig.js';
+import { pathFrom } from './rig.js';
+import { RING, cssColour } from './state.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -36,7 +37,7 @@ export function mountJet(parent, rig) {
 
   const [footX, footY] = rig.foot;
 
-  /** @param {import('./player.js').JetState} state */
+  /** @param {import('./state.js').JetState} state */
   return function draw(state) {
     body.setAttribute('d', pathFrom(state.body));
     const colour = cssColour(state.colour);

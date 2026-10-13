@@ -3,11 +3,11 @@
 // A settings change saves after a short pause and replays the last clip so the
 // change is visible at once.
 
-import { buildHello } from '../jet/hello.js';
+import { buildHello } from '../jet/clips/hello.js';
 import { createPlayer } from '../jet/player.js';
 import { mountScene } from '../jet/scene.js';
 import { mountJet } from '../jet/view.js';
-import { buildZoom } from '../jet/zoom.js';
+import { buildZoom } from '../jet/clips/zoom.js';
 import { createDial } from './dial.js';
 import { renderProgress, renderReadout } from './readout.js';
 import { loadRig, loadSettings, saveSettings } from './settings.js';

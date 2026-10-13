@@ -37,11 +37,14 @@ crates/jet
 ├── ui
 │   ├── index.html     the lab page
 │   ├── styles.css
-│   ├── jet/           the engine: no DOM except view.js
+│   ├── jet/           the engine
+│   │   ├── rig.js     the rig as the page sees it; turns a pose into an SVG path
+│   │   ├── state.js   Jet at one moment: the six tracks, the ring's numbers, colour
+│   │   ├── track.js   keyframe tracks and how to sample one
 │   │   ├── easing.js  cubic-bezier, same numbers as CSS
-│   │   ├── rig.js     pose blending, SVG path, keyframe sampling
-│   │   ├── hello.js   builds the "hello" clip from the dials
-│   │   ├── zoom.js    builds the "zoom" clip: wind up, roll, brake
+│   │   ├── maths.js   lerp and clamp
+│   │   ├── clip.js    what a clip is
+│   │   ├── clips/     one file per clip: hello.js, zoom.js
 │   │   ├── player.js  owns Jet's state, plays clips from wherever Jet is
 │   │   ├── view.js    draws a state into an SVG: body, ring, eyes
 │   │   └── scene.js   scenery that scrolls by the speed track; not part of Jet
@@ -50,7 +53,8 @@ crates/jet
 │       ├── wheel.js   behaviour wheel, presets, axis sliders
 │       ├── dial.js    expressiveness dial and the four channels
 │       ├── readout.js what the dials turned into, progress bar
-│       └── settings.js Tauri bridge (rig, load/save settings) with browser fallbacks
+│       ├── settings.js the Settings shape and its defaults
+│       └── bridge.js  the way to the Rust side (rig, load/save settings), with browser fallbacks
 ├── capabilities/      what the window may ask of the Rust side
 ├── icons/             generated from the rig's standing pose
 └── tauri.conf.json
@@ -58,7 +62,7 @@ crates/jet
 
 Three ideas carry the design:
 
-1. **The rig is data, the clips are code.** `rig/jet.json` holds poses as 60 numbers each (ten anchors, each a point with two handles). Every pose shares the same anchors, so any two poses blend. `ui/jet/hello.js` writes keyframes from those poses using the dial values; nothing is a stored animation.
+1. **The rig is data, the clips are code.** `rig/jet.json` holds poses as 60 numbers each (ten anchors, each a point with two handles). Every pose shares the same anchors, so any two poses blend. `ui/jet/clips/hello.js` writes keyframes from those poses using the dial values; nothing is a stored animation.
 2. **The player blends from wherever Jet is.** `play()` puts the current state at the front of every track, so a new clip never cuts.
 3. **Rust owns what must be true on every platform.** The rig ships inside the binary and is checked at start-up (every pose has 60 numbers, the foot never moves). Settings are read and written by Rust so the file format has one definition, with `serde(default)` so older files still load.
 

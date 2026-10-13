@@ -1,7 +1,7 @@
 // The behaviour wheel: a draggable point inside a unit circle, plus presets and
 // two sliders that move the same point for keyboard and precision use.
 
-import { clamp } from '../jet/rig.js';
+import { clamp } from '../jet/maths.js';
 
 const WHEEL_RADIUS = 100; // viewBox units
 const KEY_STEP = 0.05;

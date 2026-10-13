@@ -2,21 +2,11 @@
 // animation: the keyframes are written fresh each time from the rig's poses,
 // so the wheel and the expressiveness channels change the clip, not an asset.
 
-import { cubicBezier } from './easing.js';
-import { RING_HIDDEN, clamp, lerp } from './rig.js';
+import { cubicBezier } from '../easing.js';
+import { clamp, lerp } from '../maths.js';
+import { RING_HIDDEN } from '../state.js';
 
-/**
- * @typedef {object} Params
- * @property {number} candid    -1 (deferential) .. 1 (candid)
- * @property {number} playful   -1 (serious) .. 1 (playful)
- * @property {number} shape     0..10
- * @property {number} eyes      0..10
- * @property {number} colour    0..10
- * @property {number} motion    0..10
- * @property {boolean} reducedMotion
- */
-
-/** @typedef {import('./player.js').Clip & { info: HelloInfo }} HelloClip */
+/** @typedef {import('../clip.js').Clip & { info: HelloInfo }} HelloClip */
 
 /**
  * @typedef {object} HelloInfo
@@ -56,8 +46,8 @@ const EYE_SQUINT = [5, 1.6];
 const EYE_BLINK = 0.4;
 
 /**
- * @param {import('./rig.js').Rig} rig
- * @param {Params} p
+ * @param {import('../rig.js').Rig} rig
+ * @param {import('../clip.js').Params} p
  * @returns {HelloClip}
  */
 export function buildHello(rig, p) {

@@ -2,30 +2,8 @@
 // scale, ring, speed) and plays clips from wherever Jet is at that moment, so
 // a new clip blends in instead of cutting. It knows nothing about the DOM.
 
-import { RING_HIDDEN, sample } from './rig.js';
-
-/**
- * @typedef {object} JetState
- * @property {number[]} body     one pose, 60 numbers
- * @property {number[]} eyes     left x,y · right x,y · rx · ry
- * @property {number[]} colour   r,g,b
- * @property {number} scale      about the foot
- * @property {number[]} ring     see RING in rig.js
- * @property {number} speed      ground speed for scenery, units per second
- */
-
-/**
- * @typedef {object} Clip
- * @property {import('./rig.js').Key[]} body
- * @property {import('./rig.js').Key[]} eyes
- * @property {import('./rig.js').Key[]} colour
- * @property {import('./rig.js').Key[]} scale
- * @property {import('./rig.js').Key[]} [ring]
- * @property {import('./rig.js').Key[]} [speed]
- * @property {number} total                          clip length in ms
- * @property {{ name: string, end: number }[]} phases  in order, ends in ms
- * @property {{ label: string, value: string, on?: boolean }[]} readout
- */
+import { RING_HIDDEN, TRACKS } from './state.js';
+import { sample } from './track.js';
 
 /**
  * @typedef {object} Progress
@@ -33,7 +11,6 @@ import { RING_HIDDEN, sample } from './rig.js';
  * @property {number[]} phases          0..1 per phase, same order as clip.phases
  */
 
-const TRACKS = /** @type {const} */ (['body', 'eyes', 'colour', 'scale', 'ring', 'speed']);
 const IDLE_BREATH_PERIOD_MS = 3400;
 const IDLE_BREATH_DEPTH = 0.012;
 
@@ -41,7 +18,7 @@ const IDLE_BREATH_DEPTH = 0.012;
  * @param {import('./rig.js').Rig} rig
  */
 export function createPlayer(rig) {
-  /** @type {JetState} */
+  /** @type {import('./state.js').JetState} */
   const state = {
     body: rig.poses.circle.slice(),
     eyes: [...rig.eyes.circle, 0, 0],
@@ -50,7 +27,7 @@ export function createPlayer(rig) {
     ring: RING_HIDDEN.slice(),
     speed: 0,
   };
-  /** @type {Clip | null} */
+  /** @type {import('./clip.js').Clip | null} */
   let clip = null;
   let clipStart = 0;
   let idleStart = 0;
@@ -78,7 +55,7 @@ export function createPlayer(rig) {
     /**
      * Starts a clip now. Every track gets the current state as its first key,
      * and a track the clip does not mention holds its current value.
-     * @param {Clip} next
+     * @param {import('./clip.js').Clip} next
      * @param {number} now   performance.now()
      */
     play(next, now) {

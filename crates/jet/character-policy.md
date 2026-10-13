@@ -87,7 +87,7 @@ Then:
 
 ## 7. Making a clip
 
-A clip is a function `buildX(rig, params)` beside `ui/jet/hello.js` that returns the same shape: `body`, `eyes`, `colour`, `scale`, `ring` and `speed` tracks, `total`, `phases` (named, with end times), `readout` rows for the lab, and an `info` object saying what the dials turned into. `hello.js` and `zoom.js` are the two references.
+A clip is a function `buildX(rig, params)` beside `ui/jet/clips/hello.js` that returns the same shape: `body`, `eyes`, `colour`, `scale`, `ring` and `speed` tracks, `total`, `phases` (named, with end times), `readout` rows for the lab, and an `info` object saying what the dials turned into. `hello.js` and `zoom.js` are the two references.
 
 - Write times as durations, scaled by tempo; keep the numbers in constants at the top so they can be tuned without reading the logic.
 - Put the easing on the key being arrived at. Do not put keys at time 0; the player supplies the live state there.

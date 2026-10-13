@@ -3,7 +3,7 @@
 
 /**
  * @param {string} name
- * @param {import('../jet/player.js').Clip} clip
+ * @param {import('../jet/clip.js').Clip} clip
  */
 export function renderReadout(name, clip) {
   document.getElementById('clip-name').textContent = name;
