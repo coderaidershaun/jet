@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { buildHello } from './hello.js';
 import { createPlayer } from './player.js';
 
-const rig = JSON.parse(readFileSync(fileURLToPath(new URL('../../src/jet.json', import.meta.url)), 'utf8'));
+const rig = JSON.parse(readFileSync(fileURLToPath(new URL('../../rig/jet.json', import.meta.url)), 'utf8'));
 
 const shipmate = { candid: 0.55, playful: 0.35, shape: 6, eyes: 4, colour: 6, motion: 6, reducedMotion: false };
 const tracks = ['body', 'eyes', 'colour', 'scale', 'ring', 'speed'];

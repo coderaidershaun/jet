@@ -45,7 +45,7 @@ function merge(base, saved) {
 export async function loadRig() {
   const bridge = tauri();
   if (bridge) return JSON.parse(await bridge.invoke('rig'));
-  const response = await fetch('../src/jet.json');
+  const response = await fetch('../rig/jet.json');
   if (!response.ok) throw new Error('could not load the rig (' + response.status + ')');
   return response.json();
 }

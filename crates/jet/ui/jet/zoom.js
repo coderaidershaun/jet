@@ -44,7 +44,7 @@ const GROOVE_OPACITY = 0.32;
 const COOL_SHIFT_MAX = 0.2;
 
 // The rolling poses as ellipses, so the grooves ring can follow them. Kept in
-// step with tools/poses.py by hand; the circle entry is what shape 0 blends to.
+// step with rig/poses.py by hand; the circle entry is what shape 0 blends to.
 const BALL = {
   circle: { cx: 50, cy: 56, rx: 32, ry: 32, tilt: 0 },
   zoom: { cx: 52, cy: 60, rx: 38, ry: 27, tilt: -18 },

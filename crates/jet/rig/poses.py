@@ -1,8 +1,8 @@
-"""Generates src/jet.json: every pose of the rig, constructed rather than drawn.
+"""Generates rig/jet.json: every pose of the rig, constructed rather than drawn.
 
 Run from crates/jet:
 
-    python3 tools/poses.py > src/jet.json
+    python3 rig/poses.py > rig/jet.json
 
 A pose is one closed path of ten anchors. Each anchor is stored as its point, its
 outgoing handle and its incoming handle, so every pose has the same sixty numbers

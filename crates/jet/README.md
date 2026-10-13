@@ -26,12 +26,13 @@ Before adding a pose, a clip or a state, read `character-policy.md`. It says how
 ```
 crates/jet
 ├── character-policy.md   how to animate Jet; read first
-├── tools/poses.py        generates src/jet.json; poses are constructed, not drawn
+├── rig
+│   ├── poses.py       generates rig/jet.json; poses are constructed, not drawn
+│   └── jet.json       the rig: 15 poses × 10 anchors, eye positions, palette
 ├── src
 │   ├── main.rs        desktop entry point
 │   ├── lib.rs         opens the window, registers the commands
 │   ├── rig.rs         the character definition, embedded and checked at start-up
-│   ├── jet.json       the rig: 15 poses × 10 anchors, eye positions, palette
 │   └── settings.rs    remembers the dials between launches (app config folder)
 ├── ui
 │   ├── index.html     the lab page
@@ -57,7 +58,7 @@ crates/jet
 
 Three ideas carry the design:
 
-1. **The rig is data, the clips are code.** `src/jet.json` holds poses as 60 numbers each (ten anchors, each a point with two handles). Every pose shares the same anchors, so any two poses blend. `ui/jet/hello.js` writes keyframes from those poses using the dial values; nothing is a stored animation.
+1. **The rig is data, the clips are code.** `rig/jet.json` holds poses as 60 numbers each (ten anchors, each a point with two handles). Every pose shares the same anchors, so any two poses blend. `ui/jet/hello.js` writes keyframes from those poses using the dial values; nothing is a stored animation.
 2. **The player blends from wherever Jet is.** `play()` puts the current state at the front of every track, so a new clip never cuts.
 3. **Rust owns what must be true on every platform.** The rig ships inside the binary and is checked at start-up (every pose has 60 numbers, the foot never moves). Settings are read and written by Rust so the file format has one definition, with `serde(default)` so older files still load.
 

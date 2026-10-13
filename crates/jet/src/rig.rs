@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-const RIG_JSON: &str = include_str!("jet.json");
+const RIG_JSON: &str = include_str!("../rig/jet.json");
 
 /// Every pose is the same closed path: ten anchors, each stored as
 /// point, outgoing handle, incoming handle.

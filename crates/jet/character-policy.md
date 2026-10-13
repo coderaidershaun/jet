@@ -1,6 +1,6 @@
 # Character policy: how to animate Jet
 
-For anyone, human or agent, adding a pose, a clip or a state to Jet. Read this before touching `src/jet.json`, `tools/poses.py` or `ui/jet/`. It records how the existing work was reasoned about, so the next piece feels like the same character.
+For anyone, human or agent, adding a pose, a clip or a state to Jet. Read this before touching `rig/jet.json`, `rig/poses.py` or `ui/jet/`. It records how the existing work was reasoned about, so the next piece feels like the same character.
 
 ## 1. What Jet is
 
@@ -71,7 +71,7 @@ Exaggeration is allowed to pass 1: `lerp(soft, pose, 1.3)` is how candid raises 
 
 ## 6. Making a pose
 
-**Construct it; do not hand-place anchors.** Hand-placed points on a free-form outline come out lumpy, because sleepers that are not on a smooth curve put kinks in it. The generator in `tools/poses.py` builds every pose from a few decisions:
+**Construct it; do not hand-place anchors.** Hand-placed points on a free-form outline come out lumpy, because sleepers that are not on a smooth curve put kinks in it. The generator in `rig/poses.py` builds every pose from a few decisions:
 
 - a body: head, two hand corners, the fixed foot, and four edge bows;
 - for an arm: the arm base (the right corner), an angle, a length, and the mitten width. The shoulder flows out of the top edge, the mitten is a semicircle, the armpit is a crease;
@@ -79,7 +79,7 @@ Exaggeration is allowed to pass 1: `lerp(soft, pose, 1.3)` is how candid raises 
 
 Then:
 
-1. Add the pose to `POSES` in `tools/poses.py` and run `python3 tools/poses.py > src/jet.json`.
+1. Add the pose to `POSES` in `rig/poses.py` and run `python3 rig/poses.py > rig/jet.json`.
 2. If the pose can show a face, add its eye positions to `EYES`. Put them in the upper third of the body, following the head.
 3. **Render it and look.** Draw the pose sheet to a PNG (any browser or Playwright will do) at 150 px and again at 20, 36 and 56 px. A Bézier you have only imagined is wrong more often than not; the first ten-anchor attempt was a potato with a thumb until it was looked at.
 4. Check the tween: render the midpoints between the new pose and its neighbours in the clip. Linear blends can cut corners on long arcs; add an intermediate pose if the hand swings through the body.
