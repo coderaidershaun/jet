@@ -12,6 +12,13 @@ path = "src/lib.rs"
 name = "jet"
 path = "src/main.rs"
 
+# The rig generator is an example, not a second binary, because Tauri treats a package
+# with several binaries specially. `test = true` makes `cargo test` run its test.
+[[example]]
+name = "poses"
+path = "rig/poses.rs"
+test = true
+
 [build-dependencies]
 tauri-build = { workspace = true }
 
