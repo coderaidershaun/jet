@@ -24,7 +24,9 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Clip** — one stretch of movement, written fresh from the dials each time: seven tracks, a total length, phases and a readout. _Avoid_: animation, asset (nothing is stored). (policy §7)
 - **Hello** — the reference clip: Jet stands up, waves and melts back to the circle. (policy §8)
 - **Zoom** — the clip for "jetting off": Jet winds up, rolls past the scenery and brakes. Its poses are the airborne ones. (policy §8)
-- **Hold** — a clip that ends away from the circle on purpose, such as the lean while the user types or the working loop. The director always follows one with a clip that ends at the circle. (policy §7)
+- **Hold** — a clip that ends away from the circle on purpose, such as the lean while the user types, the working loop or an antic. Jet always gets back to the circle from one through a clip that ends there. (policy §7)
+- **Antic** — a hold Jet plays to pass the time when the user stalls: bat and ball, or a doze. It loops until something else plays or the dials no longer allow it, and its own end clip takes Jet back to the circle. (policy §8)
+- **Stall** — the user has stopped typing for 6 s with text still in the field. The director answers with an antic. _Avoid_: pause, idle. (policy §8)
 - **Phase** — a named part of a clip with an end time (stand up, hello, melt). (policy §7)
 - **Beat** — one move inside a phase, named with a verb (dip, swing, peak, tuck). (policy §7)
 - **Tempo** — how quickly a clip plays through its beats; the behaviour sets it. _Avoid_: speed. (policy §7)
@@ -36,7 +38,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Settings** — the dials as saved between launches. Rust owns the file format.
 
 - **Catalogue** — the one list of every clip, each with its label, its builder and whether it is a hold. The lab and the director both read it. (policy §7)
-- **Director** — decides which clip plays for each chat event: typing, a send, a mood, done, a failure, a stop. It only orders clips; the player plays them. (policy §7)
+- **Director** — decides which clip plays for each chat event: typing, a stall, a send, a mood, done, a failure, a stop. It only orders clips; the player plays them. (policy §7)
 - **Mood** — the one word at the start of a reply that says how Jet should react: neutral, happy, excited, thinking, curious, sorry, alert, annoyed or hello. An unknown word is neutral. _Avoid_: emotion, status. (policy §8)
 - **Reaction** — the clip the director plays for a mood, or for done. _Avoid_: animation. (policy §8)
 

@@ -77,11 +77,13 @@ What they cover:
 | `ui/chat/thread/throttle.test.mjs` | markdown renders at most every 50 ms with a trailing call; the first reveal waits for the mood |
 | `ui/jet/clip.test.mjs` | a time writer refuses a bare `t`; a face is drawn in the ground colour (tint 0) and hidden eyes are faint (tint 1) |
 | `ui/jet/clips/annoyed.test.mjs` | a centred or deferential Jet never glares, tints or narrows its eyes |
+| `ui/jet/clips/antics.test.mjs` | the ball lands on the bat every 520 ms with the bat in the right hand, the body gives after each landing, and a continued loop carries on from the landing; a deferential Jet swings the bat less; the doze closes faint eyes to slits, sways 3% and holds still under reduced motion |
 | `ui/jet/clips/catalogue.test.mjs` | in every clip: tracks run forward, shape 0 and eyes 0 hold, any interruption comes to rest with both props hidden; no prop shows at shape 0, below motion 3 or under reduced motion, and every prop a clip names is a known kind |
 | `ui/jet/clips/hello.test.mjs` | tracks run forward, ends at the circle, each dial does its job, the brief hello |
+| `ui/jet/clips/lean.test.mjs` | the peer stands taller and narrower with faint narrowed eyes; the held creep stays wider and taller than the lean, with its foot planted |
 | `ui/jet/clips/working.test.mjs` | the loop opens top right, spins clockwise, slows after 8 s, continues, and closes after its turn |
 | `ui/jet/clips/zoom.test.mjs` | the ground moves only mid-cruise, the host sets the cruise, the dials and reduced motion, a hello after a zoom |
-| `ui/jet/director.test.mjs` | send, zoom and loop, with the zoom's own timing, the roll profile and the random the director was given; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion |
+| `ui/jet/director.test.mjs` | send, zoom and loop, with the zoom's own timing, the roll profile and the random the director was given; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion; typing picks a typing hold with the random; a stall plays an antic only when idle or leaning, and typing, an empty field, a send, a hello or reduced motion ends it |
 | `ui/jet/easing.test.mjs` | `cubicBezier` pins both ends |
 | `ui/jet/maths.test.mjs` | `lerp` blends and may run past 1 |
 | `ui/jet/player.test.mjs` | a clip starts from the live state and ends at rest; at rest the circle opens faint eyes, a hold keeps its own and eyes below 1.5 show none; the faint eyes blink on a random gap of 4 to 9 s and never under reduced motion; breathing of 1.8%; a clip's props play with it and a clip with no prop track fades them within 200 ms |
@@ -233,9 +235,12 @@ crates/jet
     │   │   ├── needs-you.js        leans toward the user and waits to be noticed
     │   │   ├── error.js            a bow, with an optional stretch; calm, never a shake
     │   │   ├── interrupted.js      the loop collapses to the pip, waits, grows back
-    │   │   └── lean.js             the lean while the user types, and the lean back (holds)
+    │   │   ├── lean.js             the lean, the peer and the creep while the user types, and the lean back (holds)
+    │   │   ├── lean.test.mjs       the peer is taller and narrower; the held creep stays bigger than the lean
+    │   │   ├── antics.js           bat and ball, and the doze, while the user stalls; and the clips that end them (holds)
+    │   │   └── antics.test.mjs     the ball lands on the bat on the beat; a deferential Jet swings less; the doze's slits and sway
     │   ├── director.js             chooses and orders clips for each chat event; the MOODS list
-    │   ├── director.test.mjs       send, zoom (its timing, profile and random) and loop; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion
+    │   ├── director.test.mjs       send, zoom (its timing, profile and random) and loop; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion; typing holds; stalls and antics
     │   ├── player.js               owns Jet's state, plays clips from wherever Jet is; breathes and blinks faint eyes at rest; no DOM
     │   ├── player.test.mjs         a clip starts from the live state and ends at rest; faint eyes and their blink; breathing; props fade with their clip
     │   ├── view.js                 draws a state into an SVG: props, body, ring, eyes with their tint; the only code that draws Jet

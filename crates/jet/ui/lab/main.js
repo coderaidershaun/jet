@@ -21,6 +21,7 @@ const FIRST_CLIP_MS = 700;
 
 const TYPING_HOLD_MS = 2000;
 const LOOP_BEFORE_STOP_MS = 1500;
+const ANTIC_SHOW_MS = 5600;
 const turnedNow = (state) => ({ rotate: state.ring[RING.ROTATE] });
 
 // Each button plays its steps in order. A step names a catalogue clip and may add the
@@ -42,6 +43,10 @@ const BUTTONS = {
   sorry: [{ clip: 'error', options: { exclaim: false }, label: 'Sorry' }],
   typing: [{ clip: 'lean', holdMs: TYPING_HOLD_MS }, { clip: 'leanBack' }],
   interrupted: [{ clip: 'working', options: { spinMs: 60000 }, runMs: LOOP_BEFORE_STOP_MS }, { clip: 'interrupted', options: turnedNow }],
+  peer: [{ clip: 'peer', holdMs: TYPING_HOLD_MS }, { clip: 'leanBack' }],
+  creep: [{ clip: 'creep', holdMs: TYPING_HOLD_MS }, { clip: 'leanBack' }],
+  batBall: [{ clip: 'batBall', options: { loopMs: ANTIC_SHOW_MS } }, { clip: 'batBallEnd' }],
+  doze: [{ clip: 'doze', options: { loopMs: ANTIC_SHOW_MS } }, { clip: 'dozeEnd' }],
 };
 
 async function start() {
