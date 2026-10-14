@@ -3,16 +3,11 @@
 
 import { note, section, textField } from './controls.js';
 
-const NOT_SET_UP = { bridgePath: null, polysimDir: null, strategyId: '', links: [], token: null };
-
 const orNull = (text) => text.trim() || null;
 const splitList = (text) => text.split(',').map((part) => part.trim()).filter(Boolean);
 
 /** @param {import('./sheet.js').SheetContext} ctx */
 export function buildWorkstation({ settings, changed }) {
-  // SMELL: once the defaults carry a workstation block this never runs; remove it then.
-  settings.workstation ??= { ...NOT_SET_UP, links: [] };
-
   const field = ({ key, label, value, placeholder, toSetting }) => textField({
     label,
     value,

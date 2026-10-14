@@ -258,8 +258,8 @@ crates/jet
     │   ├── dial.js                 expressiveness dial and the four channels
     │   └── readout.js              what the dials turned into, progress bar
     └── workstation/                the workstation page as the chat window shows it
-        ├── shell.js                its header, the setup card and the workstation itself, loaded the first time the page opens; its feed is paused while the chat shows
-        └── shell.css               the chat's header, thread and composer step aside; the page's header, link chip, setup card and notice
+        ├── shell.js                its header, the setup card and the workstation itself, built and its feed started the first time the page opens; the feed is paused while the chat shows
+        └── shell.css               the chat's header, thread and composer step aside; the page's header, link chip and setup card
 ```
 
 Three ideas carry the design:
@@ -294,7 +294,7 @@ The main area shows one of two pages: the chat or the workstation. The chat keep
 - **Esc.** An open settings sheet closes first. Then the workstation goes back to the chat. Then the composer's own rules apply: the narrow drawer closes, then Stop. A part of the workstation that uses Esc itself calls `event.preventDefault()`, and the page then leaves that Esc alone.
 - **Narrow windows** (759 px and less). The drawer is the overlay on both pages and the rail never shows. The workstation's header has its own menu button that opens it.
 - **Settings.** `page` is `chat` or `workstation`, and the window opens on it again. `workstation` holds `bridgePath`, `polysimDir`, `strategyId`, `links` and `token`, edited in Settings under Workstation; the workstation starts again a moment after an edit.
-- **The workstation** is loaded the first time its page opens. Its feed gets `pause` while the chat shows and `resume` when the workstation is back. When the bridge reports `missing`, a setup card with an Open Settings button takes the place of the workstation.
+- **The workstation** is built, and its feed started, the first time its page opens. The feed gets `pause` while the chat shows and `resume` when the workstation is back. When the bridge reports `missing`, a setup card with an Open Settings button takes the place of the workstation.
 
 ## Commands the window can call
 

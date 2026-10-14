@@ -25,5 +25,3 @@
 .workstation-setup { margin: auto; max-width: 420px; padding: 20px 24px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; }
 .workstation-setup-title { margin: 0 0 6px; font-size: 15px; line-height: 20px; font-weight: 600; }
 .workstation-setup-detail { margin: 0 0 14px; font-size: 13px; line-height: 18px; color: var(--muted); }
-
-.workstation-notice { margin: auto; font-size: 13px; color: var(--muted); }
