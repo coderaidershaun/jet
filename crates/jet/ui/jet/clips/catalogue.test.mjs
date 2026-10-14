@@ -28,6 +28,8 @@ const OPTIONS = {
   interrupted: [{ rotate: 120 }],
   batBall: [{ loopMs: 1040 }, { loopMs: 1040, continued: true }],
   doze: [{ loopMs: 2800 }, { loopMs: 2800, continued: true }],
+  drop: [{ cruiseMs: 0 }, { cruiseMs: 900 }],
+  abseil: [{ cruiseMs: 0 }, { cruiseMs: 900 }],
 };
 
 function everyClip(dials = DIALS) {

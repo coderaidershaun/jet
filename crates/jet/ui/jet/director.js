@@ -28,9 +28,12 @@ const LONG_JOB_MS = 8000;
  * Each clip Jet can travel to the reply with, and how the host flies Jet while it plays.
  * Every travel clip must have the zoom's three phases, launch, cruise and brake, because the
  * host flies Jet across the page during the cruise.
+ * The drop and the abseil are only for a move mostly straight down.
  */
-const TRAVELS = { zoom: 'roll' };
+const TRAVELS = { zoom: 'roll', drop: 'drop', abseil: 'abseil' };
 const isTravel = (clipName) => Object.hasOwn(TRAVELS, clipName);
+// A fall or a climb down only makes sense when the reply lies below Jet, so any other move rolls.
+const MAX_SIDEWAYS_PER_DOWN = 0.35;
 
 const STATUS_OF_CLIP = {
   working: 'working',
@@ -169,12 +172,15 @@ export function createDirector({ player, rig, params, random = Math.random }) {
   }
 
   /**
-   * The clip Jet travels to the reply with.
+   * The clip Jet travels to the reply with: the zoom, or for a move mostly straight down, any
+   * travel at random.
    * @param {{ cruiseMs: number, dx: number, dy: number }} job   `dx` and `dy` are the pixels from Jet to the reply, for a travel that suits only some directions
    * @returns {Step}
    */
-  function pickTravel({ cruiseMs }) {
-    return { clip: pick(Object.keys(TRAVELS), random), options: { cruiseMs } };
+  function pickTravel({ cruiseMs, dx, dy }) {
+    const straightDown = dy > 0 && Math.abs(dx) < MAX_SIDEWAYS_PER_DOWN * dy;
+    const names = straightDown ? Object.keys(TRAVELS) : ['zoom'];
+    return { clip: pick(names, random), options: { cruiseMs } };
   }
 
   return {

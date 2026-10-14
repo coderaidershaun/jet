@@ -6,7 +6,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Pose** — one shape of the body: ten anchors, sixty numbers. Any two poses blend. (policy §6)
 - **Anchor** — one of the ten points of the closed path, stored with its two handles. (policy §2)
 - **Foot** — the anchor Jet stands on. It does not move unless a pose is airborne. (policy §2)
-- **Airborne** — a pose whose name starts with `zoom`: Jet is rolling or flying, so the foot is off the ground. (policy §2)
+- **Airborne** — a pose whose name starts with `zoom`: Jet is rolling, flying, falling or dangling, so the foot is off the ground. (policy §2)
 - **Circle** — the rest pose, round, with only faint eyes. Calm is always a return to it, and shape 0 never leaves it. (policy §1)
 - **Ring** — the one stroked element beside the body: the working loop, and the spin grooves when Jet rolls. (policy §2)
 - **Pip** — a dot on the foot. The body shrinks to it under the working loop and when Jet is interrupted. (policy §2)
@@ -24,6 +24,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Clip** — one stretch of movement, written fresh from the dials each time: seven tracks, a total length, phases and a readout. _Avoid_: animation, asset (nothing is stored). (policy §7)
 - **Hello** — the reference clip: Jet stands up, waves and melts back to the circle. (policy §8)
 - **Zoom** — the clip for "jetting off": Jet winds up, rolls past the scenery and brakes. Its poses are the airborne ones. (policy §8)
+- **Travel** — the clip Jet plays while the host flies it to the reply: the zoom, the drop (an umbrella opens on the way down) or the abseil (down a rope in three kicks). Each has the zoom's three phases, launch, cruise and brake, and the same length, so the host's move fits any of them. The drop and the abseil are only for a move mostly straight down. (policy §8)
 - **Hold** — a clip that ends away from the circle on purpose, such as the lean while the user types, the working loop or an antic. Jet always gets back to the circle from one through a clip that ends there. (policy §7)
 - **Antic** — a hold Jet plays to pass the time when the user stalls: bat and ball, or a doze. It loops until something else plays or the dials no longer allow it, and its own end clip takes Jet back to the circle. (policy §8)
 - **Stall** — the user has stopped typing for 6 s with text still in the field. The director answers with an antic. _Avoid_: pause, idle. (policy §8)
@@ -65,4 +66,5 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 
 - **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.
 - **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.
-- **Flight** — the live Jet's move from where it stood to the slot's lane on a send. _Avoid_: zoom (that is the clip Jet plays during it).
+- **Flight** — the live Jet's move from where it stood to the slot's lane on a send. _Avoid_: zoom (that is one travel clip; see **Travel**).
+- **Profile** — how the host flies Jet during a travel's cruise: `roll` turns toward the way Jet goes and mirrors going left, `drop` falls faster and faster and then slows to land, `abseil` goes down in three steps. Each travel clip names one. _Avoid_: path.

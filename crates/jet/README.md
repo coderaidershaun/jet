@@ -47,7 +47,7 @@ What they cover:
 | --- | --- |
 | `src/rig.rs` `embedded_rig_is_complete` | the embedded rig has its version, a full pose set, the eye positions and the rest colour |
 | `src/rig.rs` `every_grounded_pose_shares_the_foot` | the foot stays planted in every pose that is not airborne |
-| `src/rig.rs` `airborne_poses_never_sink_below_the_ground` | a rolling or flying pose never goes below the ground |
+| `src/rig.rs` `airborne_poses_never_sink_below_the_ground` | a rolling, flying, falling or dangling pose never goes below the ground |
 | `src/rig.rs` `wrong_pose_size_is_reported` | a pose with the wrong number of values is refused, with the number found |
 | `src/settings.rs` `missing_file_means_defaults` | no settings file yet gives the defaults |
 | `src/settings.rs` `settings_survive_a_round_trip` | what is saved is what is loaded, including the page shown last, written as the word `workstation` |
@@ -71,19 +71,21 @@ What they cover:
 | `ui/chat/drawer/usage.test.mjs` | the recorded Sonnet turn read line by line (live counts, then the reported cost and timings, then the totals); a second reply at another thinking level gets its own row; a stopped reply keeps its tokens; stray lines change nothing |
 | `ui/chat/page-state.test.mjs` | the page switches between the chat and the workstation, and a page already shown or not known changes nothing; Esc closes the sheet first, then takes the workstation back to the chat, then is left to the composer; the page shown last is saved and opens again, and an unknown saved page opens the chat; a wide drawer becomes the rail beside the workstation and is docked as the user left it on the chat, and a narrow drawer is the overlay on both pages |
 | `ui/chat/settings/form.test.mjs` | hex and rgb both ways, code-point counts, the master moves only the channels that follow it |
-| `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; a flight profile it cannot fly fails; the cruise grows with distance |
+| `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; a flight profile it cannot fly fails, a clip name and an inherited name too; the cruise grows with distance; every profile closes the gap without turning back and lands, and the drop and the abseil never turn or mirror; the drop speeds up until 40% and then slows; the abseil hangs at three heights |
 | `ui/chat/thread/scroll.test.mjs` | the thread follows within 80 px of the bottom, and a send always follows |
 | `ui/chat/thread/store.test.mjs` | grouping and day pills, the slot's life from waiting to its end, the held message |
 | `ui/chat/thread/throttle.test.mjs` | markdown renders at most every 50 ms with a trailing call; the first reveal waits for the mood |
 | `ui/jet/clip.test.mjs` | a time writer refuses a bare `t`; a face is drawn in the ground colour (tint 0) and hidden eyes are faint (tint 1) |
+| `ui/jet/clips/abseil.test.mjs` | the rope comes down in the launch and stays through the cruise, Jet kicks off three times, the rope whips up and fades on landing; no ground speed or grooves |
 | `ui/jet/clips/annoyed.test.mjs` | a centred or deferential Jet never glares, tints or narrows its eyes |
 | `ui/jet/clips/antics.test.mjs` | the ball lands on the bat every 520 ms with the bat in the right hand, the body gives after each landing, and a continued loop carries on from the landing; a deferential Jet swings the bat less; the doze closes faint eyes to slits, sways 3% and holds still under reduced motion |
 | `ui/jet/clips/catalogue.test.mjs` | in every clip: tracks run forward, shape 0 and eyes 0 hold, any interruption comes to rest with both props hidden; no prop shows at shape 0, below motion 3 or under reduced motion, and every prop a clip names is a known kind |
+| `ui/jet/clips/drop.test.mjs` | the umbrella opens 40% into the cruise, pops past its size, stays above the head and folds in the brake; the face holds still while Jet falls, and only above eyes 6; no ground speed or grooves |
 | `ui/jet/clips/hello.test.mjs` | tracks run forward, ends at the circle, each dial does its job, the brief hello |
 | `ui/jet/clips/lean.test.mjs` | the peer stands taller and narrower with faint narrowed eyes; the held creep stays wider and taller than the lean, with its foot planted |
 | `ui/jet/clips/working.test.mjs` | the loop opens top right, spins clockwise, slows after 8 s, continues, and closes after its turn |
-| `ui/jet/clips/zoom.test.mjs` | the ground moves only mid-cruise, the host sets the cruise, the dials and reduced motion, a hello after a zoom |
-| `ui/jet/director.test.mjs` | send, zoom and loop, with the zoom's own timing, the roll profile and the random the director was given; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion; typing picks a typing hold with the random; a stall plays an antic only when idle or leaning, and typing, an empty field, a send, a hello or reduced motion ends it |
+| `ui/jet/clips/zoom.test.mjs` | the ground moves only mid-cruise, the host sets the cruise, the dials and reduced motion, a hello after a zoom; the drop and the abseil take the zoom's phases and time |
+| `ui/jet/director.test.mjs` | send, zoom and loop, with the zoom's own timing, the roll profile and the random the director was given; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion; typing picks a typing hold with the random; a stall plays an antic only when idle or leaning, and typing, an empty field, a send, a hello or reduced motion ends it; the drop and the abseil only for a move mostly straight down; a drop keeps its own timing and the loop follows it |
 | `ui/jet/easing.test.mjs` | `cubicBezier` pins both ends |
 | `ui/jet/maths.test.mjs` | `lerp` blends and may run past 1 |
 | `ui/jet/player.test.mjs` | a clip starts from the live state and ends at rest; at rest the circle opens faint eyes, a hold keeps its own and eyes below 1.5 show none; the faint eyes blink on a random gap of 4 to 9 s and never under reduced motion; breathing of 1.8%; a clip's props play with it and a clip with no prop track fades them within 200 ms |
@@ -160,8 +162,8 @@ crates/jet
     │   ├── page-state.test.mjs     the page switch, the Esc order, the saved page, the rail and the docked drawer
     │   ├── stage/                  the live Jet
     │   │   ├── live.js             the live Jet node, the director host, lane placement, the frame loop
-    │   │   ├── flight.js           the path of Jet from where it stood to the new lane (pure)
-    │   │   ├── flight.test.mjs     the flight holds, lands, turns (capped at 25°) and mirrors; an unknown profile fails; the cruise grows with distance
+    │   │   ├── flight.js           the path of Jet from where it stood to the new lane: a roll, a drop, or an abseil in three steps (pure)
+    │   │   ├── flight.test.mjs     the flight holds, lands, turns (capped at 25°) and mirrors; an unknown profile fails; the cruise grows with distance; every profile lands; the drop's speed-up and the abseil's three heights
     │   │   └── stage.css           the empty state, the hero spot and the live Jet's place in a lane
     │   ├── thread/                 the conversation
     │   │   ├── store.js            messages, notices, the running reply and the held message, as rows (pure)
@@ -223,8 +225,12 @@ crates/jet
     │   │   ├── beats.js            the beats the mood clips share: stand up, melt back, the dials they read
     │   │   ├── hello.js            stand up, wave, melt
     │   │   ├── hello.test.mjs      tracks run forward, ends at the circle, each dial does its job
-    │   │   ├── zoom.js             wind up, roll past the scenery, brake
-    │   │   ├── zoom.test.mjs       the ground moves only mid-cruise; a hello after a zoom stops it
+    │   │   ├── zoom.js             wind up, roll past the scenery, brake; the timing every travel shares
+    │   │   ├── zoom.test.mjs       the ground moves only mid-cruise; a hello after a zoom stops it; the drop and the abseil keep its time
+    │   │   ├── drop.js             crouch, fall, an umbrella pops open, land as it folds
+    │   │   ├── drop.test.mjs       the umbrella opens 40% into the cruise above the head and folds in the brake
+    │   │   ├── abseil.js           a rope comes down, three kicks on the way down, the rope whips away
+    │   │   ├── abseil.test.mjs     the rope down in the launch, three kicks, the whip on landing
     │   │   ├── working.js          the working loop and how it closes
     │   │   ├── working.test.mjs    the loop spins clockwise, slows after 8 s, continues, closes after its turn
     │   │   ├── thinking.js         head tilt, one slow blink
@@ -240,7 +246,7 @@ crates/jet
     │   │   ├── antics.js           bat and ball, and the doze, while the user stalls; and the clips that end them (holds)
     │   │   └── antics.test.mjs     the ball lands on the bat on the beat; a deferential Jet swings less; the doze's slits and sway
     │   ├── director.js             chooses and orders clips for each chat event; the MOODS list
-    │   ├── director.test.mjs       send, zoom (its timing, profile and random) and loop; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion; typing holds; stalls and antics
+    │   ├── director.test.mjs       send, zoom (its timing, profile and random) and loop; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion; typing holds; stalls and antics; the drop and the abseil only straight down
     │   ├── player.js               owns Jet's state, plays clips from wherever Jet is; breathes and blinks faint eyes at rest; no DOM
     │   ├── player.test.mjs         a clip starts from the live state and ends at rest; faint eyes and their blink; breathing; props fade with their clip
     │   ├── view.js                 draws a state into an SVG: props, body, ring, eyes with their tint; the only code that draws Jet

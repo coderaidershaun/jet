@@ -47,6 +47,8 @@ const BUTTONS = {
   creep: [{ clip: 'creep', holdMs: TYPING_HOLD_MS }, { clip: 'leanBack' }],
   batBall: [{ clip: 'batBall', options: { loopMs: ANTIC_SHOW_MS } }, { clip: 'batBallEnd' }],
   doze: [{ clip: 'doze', options: { loopMs: ANTIC_SHOW_MS } }, { clip: 'dozeEnd' }],
+  drop: [{ clip: 'drop' }],
+  abseil: [{ clip: 'abseil' }],
 };
 
 async function start() {

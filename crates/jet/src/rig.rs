@@ -105,8 +105,9 @@ pub fn rig() -> &'static str {
 mod tests {
     use super::*;
 
-    /// Poses with this prefix are airborne: Jet is rolling or flying, so the foot
-    /// anchor is not on the ground. Every other pose keeps its foot planted.
+    /// Poses with this prefix are airborne: Jet is rolling, flying, falling or
+    /// dangling, so the foot anchor is not on the ground. Every other pose keeps
+    /// its foot planted.
     const AIRBORNE_PREFIX: &str = "zoom";
 
     #[test]

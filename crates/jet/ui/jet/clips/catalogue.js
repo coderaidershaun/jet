@@ -1,9 +1,11 @@
 // The one list of every clip Jet can play. The lab and the director both read it, so a
 // new clip is added here and nowhere else.
 
+import { buildAbseil } from './abseil.js';
 import { buildAnnoyed } from './annoyed.js';
 import { buildBatBall, buildBatBallEnd, buildDoze, buildDozeEnd } from './antics.js';
 import { buildDone } from './done.js';
+import { buildDrop } from './drop.js';
 import { buildError } from './error.js';
 import { buildExcited } from './excited.js';
 import { buildHello } from './hello.js';
@@ -42,4 +44,6 @@ export const CLIPS = {
   batBallEnd: { label: 'Bat and ball ends', build: buildBatBallEnd, hold: false },
   doze: { label: 'Doze', build: buildDoze, hold: true },
   dozeEnd: { label: 'Doze ends', build: buildDozeEnd, hold: false },
+  drop: { label: 'Drop', build: buildDrop, hold: false },
+  abseil: { label: 'Abseil', build: buildAbseil, hold: false },
 };
