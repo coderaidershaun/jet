@@ -1,23 +1,12 @@
 // The workstation as the chat window shows it: its own header, the setup card,
-// and the workstation itself, loaded the first time its page opens. Its feed is
-// paused while the chat is up.
+// and the workstation itself, built and its feed started the first time its page
+// opens. The feed is paused while the chat is up.
 
-import { h } from '../chat/dom.js';
+import { connectWorkstation } from '../bridge/workstation.js';
+import { createWorkstation, mountAreas } from './page.js';
 
 const RESTART_AFTER_EDIT_MS = 800;
 const DEFAULT_TITLE = 'Workstation';
-
-/** Adds a stylesheet and settles when it has loaded. @param {string} href */
-function addStylesheet(href) {
-  return new Promise((resolve, reject) => {
-    document.head.append(h('link', {
-      rel: 'stylesheet',
-      href,
-      onLoad: resolve,
-      onError: () => reject(new Error('the stylesheet ' + href + ' could not be loaded')),
-    }));
-  });
-}
 
 /**
  * @param {{
@@ -29,7 +18,6 @@ function addStylesheet(href) {
  */
 export function createWorkstationShell({ body, title, link, setup, setupDetail, setupButton, settings, openSettings, onLeave }) {
   let store = null;
-  let loading = null;
   let shown = false;
   let restartTimer = 0;
   setupButton.addEventListener('click', openSettings);
@@ -61,23 +49,12 @@ export function createWorkstationShell({ body, title, link, setup, setupDetail, 
     if (missing) title.textContent = DEFAULT_TITLE;
   };
 
-  async function load() {
-    try {
-      // One after the other, so a build without the workstation asks for one missing file, not two.
-      const page = await import('./page.js');
-      const bridge = await import('../bridge/workstation.js');
-      await addStylesheet(new URL('./workstation.css', import.meta.url).href);
-      const next = page.createWorkstation({ root: body, feed: bridge.connectWorkstation(), onLeave });
-      next.onFrame('catalog', paintCatalog);
-      next.onFrame('link', paintLink);
-      next.onFrame('bridge', paintBridge);
-      await page.mountAreas(next);
-      store = next;
-    } catch (error) {
-      console.warn('the workstation could not be loaded:', error);
-      body.replaceChildren(h('p', { class: 'workstation-notice', text: 'Workstation not installed' }));
-      return;
-    }
+  async function mount() {
+    store = createWorkstation({ root: body, feed: connectWorkstation(), onLeave });
+    store.onFrame('catalog', paintCatalog);
+    store.onFrame('link', paintLink);
+    store.onFrame('bridge', paintBridge);
+    await mountAreas(store);
     await start();
   }
 
@@ -85,7 +62,7 @@ export function createWorkstationShell({ body, title, link, setup, setupDetail, 
     show() {
       shown = true;
       if (store) store.send({ cmd: 'resume' });
-      else loading ??= load();
+      else mount();
     },
 
     hide() {
