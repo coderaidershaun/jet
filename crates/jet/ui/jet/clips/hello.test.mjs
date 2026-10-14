@@ -55,3 +55,14 @@ test('candid holds the arm up and deferential bows instead', () => {
   assert.equal(neutral.info.bow, 0);
   assert.ok(deferential.info.bow > 0.5);
 });
+
+test('a brief hello waves once and never bows', () => {
+  const dials = { ...shipmate, candid: -0.8 };
+  const full = buildHello(rig, dials);
+  const brief = buildHello(rig, dials, { brief: true });
+  assert.ok(full.info.bow > 0.5, 'the full hello bows for a deferential Jet');
+  assert.equal(brief.info.cycles, 1);
+  assert.equal(brief.info.bow, 0);
+  assert.ok(brief.total < full.total * 0.65, 'the brief hello is well under the full one: ' + brief.total + ' against ' + full.total);
+  assert.equal(buildHello(rig, { ...dials, reducedMotion: true }, { brief: true }).info.cycles, 0);
+});

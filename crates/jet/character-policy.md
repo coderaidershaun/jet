@@ -18,10 +18,11 @@ Jet is a circle that borrows other shapes when it has something to say.
 - The four corners (head, two hands, foot) are the identity. The other six **sleep on the edges** in the circle and the diamond, and wake as a limb when needed. That is why a hand can be round: it is a smooth anchor with handles across the arm, never a corner.
 - **The foot is at (50, 88) in every pose.** A test enforces it. Jet stands on that point; it does not slide.
 - Stroke 12, round join, same colour as the fill. That is where the soft corners come from; do not round them in the geometry.
-- Eyes are two ellipses in the ground colour, placed per pose. Sizes carry expression: open 4, pop-in 4.6, squint 5 × 1.6, blink 0.4. Hidden is 0 × 0, never `display: none`, so they can tween.
-- **The ring** is the one stroked element beside the body, stored as eleven numbers so it tweens (centre, radii, rotation, width, dash on/off, dash offset, opacity, colour mix). It is the working loop (disc = radius 19, stroke 38; loop = radius 30, stroke 16; the gap is a dash) and, in the ground colour, the spin grooves when Jet rolls. A disc is just a stroked circle whose stroke is as wide as its radius.
+- Eyes are two ellipses in the ground colour, placed per pose. Sizes carry expression: open 4, pop-in 4.6, squint 5 × 1.6, narrowed 5 × 1.8, blink 0.4. Hidden is 0 × 0, never `display: none`, so they can tween. The circle and the pip have no eyes of their own.
+- **The ring** is the one stroked element beside the body, stored as eleven numbers so it tweens (centre, radii, rotation, width, dash on/off, dash offset, opacity, colour mix). It is the working loop and, in the ground colour, the spin grooves when Jet rolls. The disc is radius 19 with stroke 38, so it covers the circle exactly. The loop is radius 25 with stroke 14, and its centre is raised to y 48 so that its hole stays clear of the pip. The gap is a dash: 22% of the way round, starting at 3 o'clock and running clockwise, so at rotate 0 the gap lies between 12 and 3 o'clock. A disc is just a stroked circle whose stroke is as wide as its radius.
+- **The pip** is a dot on the foot. The body shrinks to it while the disc covers it, sits under the loop while Jet works, and shrinks to it when Jet is interrupted. It is a circle of radius 5 at y 83. It tucks under the lower edge of the loop, on purpose, so that the two read as one body. A smaller circle draws a ring inside its own stroke.
 - **Speed** is a track like any other: units per second that scenery may scroll by. Jet itself stays where it is; the world moves.
-- **Airborne poses** are named with the `zoom` prefix. They are rolling or flying, so the foot anchor is not on the ground, but their lowest point never sinks below it. Everything else keeps its foot planted. A test checks both.
+- **Airborne poses** are named with the `zoom` prefix. They are rolling or flying (`zoom_hop` is the lift of a hop), so the foot anchor is not on the ground, but their lowest point never sinks below it. Everything else keeps its foot planted. A test checks both.
 
 ## 3. Rules that do not bend
 
@@ -71,7 +72,7 @@ Exaggeration is allowed to pass 1: `lerp(soft, pose, 1.3)` is how candid raises 
 
 ## 6. Making a pose
 
-**Construct it; do not hand-place anchors.** Hand-placed points on a free-form outline come out lumpy, because sleepers that are not on a smooth curve put kinks in it. The generator in `rig/poses.rs` builds every pose from a few decisions:
+**Construct it; do not hand-place anchors.** Hand-placed points on a free-form outline come out lumpy, because sleepers that are not on a smooth curve put kinks in it. The generator builds every pose from a few decisions. The geometry that turns them into numbers lives in `rig/shape.rs`. The table of decisions is in `rig/poses.rs`. Each decision is:
 
 - a body: head, two hand corners, the fixed foot, and four edge bows;
 - for an arm: the arm base (the right corner), an angle, a length, and the mitten width. The shoulder flows out of the top edge, the mitten is a semicircle, the armpit is a crease;
@@ -79,7 +80,7 @@ Exaggeration is allowed to pass 1: `lerp(soft, pose, 1.3)` is how candid raises 
 
 Then:
 
-1. Add the pose to `poses()` in `rig/poses.rs` and run `cargo run -p jet --example poses > rig/jet.json` from `crates/jet`.
+1. Add the pose to the `poses()` table in `rig/poses.rs`, using the primitives from `rig/shape.rs`, and run `cargo run -p jet --example poses > rig/jet.json` from `crates/jet`.
 2. If the pose can show a face, add its eye positions to `eyes()`. Put them in the upper third of the body, following the head.
 3. **Render it and look.** Draw the pose sheet to a PNG (any browser or Playwright will do) at 150 px and again at 20, 36 and 56 px. A Bézier you have only imagined is wrong more often than not; the first ten-anchor attempt was a potato with a thumb until it was looked at.
 4. Check the tween: render the midpoints between the new pose and its neighbours in the clip. Linear blends can cut corners on long arcs; add an intermediate pose if the hand swings through the body.
@@ -87,13 +88,18 @@ Then:
 
 ## 7. Making a clip
 
-A clip is a function `buildX(rig, params)` beside `ui/jet/clips/hello.js` that returns the same shape: `body`, `eyes`, `colour`, `scale`, `ring` and `speed` tracks, `total`, `phases` (named, with end times), `readout` rows for the lab, and an `info` object saying what the dials turned into. `hello.js` and `zoom.js` are the two references.
+A clip is a function `buildX(rig, params, options)` beside `ui/jet/clips/hello.js` that returns the same shape: `body`, `eyes`, `colour`, `scale`, `ring` and `speed` tracks, `total`, `phases` (named, with end times), `readout` rows for the lab, and an `info` object saying what the dials turned into. `hello.js` and `zoom.js` are the two references. The mood clips share their stand-up and melt in `clips/beats.js`.
 
 - Write times as durations, scaled by tempo; keep the numbers in constants at the top so they can be tuned without reading the logic.
 - Put the easing on the key being arrived at. Do not put keys at time 0; the player supplies the live state there.
 - A track the clip does not mention holds its current value. A track it does mention should also say where it ends, so an interrupted zoom does not leave the ground moving under a hello.
 - Give every beat a name that is a verb (dip, swing, peak, tuck, melt, launch, cruise, brake). Names already used are the vocabulary; reuse them.
-- Add tests mirroring `hello.test.mjs` and `zoom.test.mjs`: time runs forward in every track, the clip ends on the circle at rest, each dial at zero removes what it should, and a clip that interrupts another leaves nothing behind.
+- Add the clip to `clips/catalogue.js`. `catalogue.test.mjs` holds every clip in it to the shared contract: time runs forward in every track, shape 0 never leaves the circle, eyes 0 never show a face, and any clip that interrupts any clip comes to rest with no ground speed and no grooves. So a clip's own test file covers only its own choices.
+- A clip may take options. Hello takes `brief`, zoom takes `cruiseMs`, working takes `spinMs` and `continueFrom`, workingEnd takes `rotate`, done takes `long`, error takes `exclaim` and interrupted takes `rotate`.
+- **A hold ends away from the circle on purpose.** `lean` and `working` are holds. Jet stays in them until something else plays, so the director always follows a hold with a clip that ends at the circle (`leanBack`, `workingEnd`, `interrupted` or a mood).
+- **Rotate stays below one turn.** End every whole turn of the ring with two keys at the same time, 360 and then 0. They look the same, and any clip that hides the ring turns it back by less than a turn.
+- The working loop turns clockwise, one turn in 1.1 s for its first 8 s, then one turn that slows to 1.8 s, then one turn in 1.8 s. `working` and `workingEnd` ignore the tempo: the loop is a status, not a mood.
+- The director (`ui/jet/director.js`) decides which clip plays for each chat status and mood. It never builds a clip by hand: it reads `clips/catalogue.js`.
 - The player and the view need no changes for a new clip. Only a new kind of element would, and the rig has had one of those (the ring) in its whole life.
 
 ## 8. The status vocabulary
@@ -103,18 +109,37 @@ Shapes already chosen for statuses, so new work stays consistent:
 | Status | Shape | Eyes | Notes |
 | --- | --- | --- | --- |
 | Idle | circle, breathing | none | |
-| You start typing | leans toward the input | none | |
-| Working | loop, spinning clockwise | none | the hole opens from the centre; the gap opens top-right; never cut a turn short |
+| You start typing | leans toward the input | none | built: `lean`, then `leanBack`; only when idle |
+| Working | loop, spinning clockwise | none | built: `working`, `workingEnd`; the hole opens from the centre; the gap opens top-right; never cut a turn short |
 | Progress known | loop whose gap closes in proportion | none | |
-| Done | ✓ for a beat, or the small jump | smile | |
-| Needs you | ? glyph, or lean in | open | |
-| Error | ! glyph, then a bow | none | calm |
+| Done | ✓ for a beat, or the small jump | smile | built: `done` (the quick squash, and the long small jump) |
+| Needs you | ? glyph, or lean in | open | built: the lean in, `needsYou` |
+| Error | ! glyph, then a bow | none | built: `error`; calm, a bow and never a shake |
 | Heads-up | pennant (raised flag) | none | |
+| Thinking | stands, holds the `ponder` pose with a slow blink, melts | high on the body | built: `thinking`; no colour |
+| Excited | squash, hop, arm up, melt | squint at the peak | built: `excited`; the one clip that uses all three channels |
+| Annoyed | stands, `glare`, a bow, melt | narrowed | built: `annoyed`; only as far as the wheel is candid, and a bow, never a shake |
 | Hello | stand, wave, melt | open, squint at peak, blink at end | the reference clip |
 | Jetting off | crouch back, launch, roll as a tilted oval with spin grooves, brake, settle | slits into the wind above eyes 6, else none | scenery scrolls by the speed track; the cruise lasts as long as the job |
 | Asleep | flat on a side | closed | long idle |
-| Interrupted | shrinks to a dot | none | |
+| Interrupted | shrinks to a dot | none | built: `interrupted` |
 | Offline | hollow ring, muted colour | none | |
+
+The reply starts with a mood word, and the director maps each word to one clip:
+
+| Mood word | Clip |
+| --- | --- |
+| neutral | none; the loop only closes |
+| happy | `done` with `long: true` |
+| excited | `excited` |
+| thinking | `thinking` |
+| curious | `needsYou` |
+| sorry | `error` with `exclaim: false` |
+| alert | `error` |
+| annoyed | `annoyed` |
+| hello | `hello` with `brief: true` |
+
+An unknown word is neutral.
 
 Jobs under about 900 ms skip the loop entirely (a squash and settle only), so quick work does not flicker. Past about 8 s the loop slows rather than speeds up.
 

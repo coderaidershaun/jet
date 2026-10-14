@@ -1,11 +1,11 @@
 // Wires the lab together: loads the rig and the saved settings, mounts the
 // scenery and Jet on one stage, binds the controls, and runs the frame loop.
-// A settings change saves after a short pause and replays the last clip so the
+// A settings change saves after a short pause and replays the last button so the
 // change is visible at once.
 
-import { buildHello } from '../jet/clips/hello.js';
-import { buildZoom } from '../jet/clips/zoom.js';
+import { CLIPS } from '../jet/clips/catalogue.js';
 import { createPlayer } from '../jet/player.js';
+import { RING } from '../jet/state.js';
 import { mountScene } from '../jet/scene.js';
 import { mountJet } from '../jet/view.js';
 import { loadRig, loadSettings, saveSettings } from './bridge.js';
@@ -18,9 +18,29 @@ const SAVE_AFTER_CHANGE_MS = 800;
 const REPEAT_GAP_MS = 1400;
 const FIRST_CLIP_MS = 700;
 
-const CLIPS = {
-  hello: { name: 'This hello', build: (rig, params) => buildHello(rig, params) },
-  zoom: { name: 'This zoom', build: (rig, params) => buildZoom(rig, params) },
+const TYPING_HOLD_MS = 2000;
+const LOOP_BEFORE_STOP_MS = 1500;
+const turnedNow = (state) => ({ rotate: state.ring[RING.ROTATE] });
+
+// Each button plays its steps in order. A step names a catalogue clip and may add the
+// options to build it with, or a function of Jet's state for a step that carries on
+// from the loop. It may also add a readout label, `holdMs` to wait after the clip
+// ends, or `runMs` to start the next step before the clip ends.
+const BUTTONS = {
+  hello: [{ clip: 'hello' }],
+  helloBrief: [{ clip: 'hello', options: { brief: true }, label: 'Brief hello' }],
+  zoom: [{ clip: 'zoom' }],
+  working: [{ clip: 'working', options: { spinMs: 5000 } }, { clip: 'workingEnd', options: turnedNow }],
+  thinking: [{ clip: 'thinking' }],
+  excited: [{ clip: 'excited' }],
+  annoyed: [{ clip: 'annoyed' }],
+  done: [{ clip: 'done' }],
+  doneLong: [{ clip: 'done', options: { long: true }, label: 'Done (long)' }],
+  needsYou: [{ clip: 'needsYou' }],
+  error: [{ clip: 'error' }],
+  sorry: [{ clip: 'error', options: { exclaim: false }, label: 'Sorry' }],
+  typing: [{ clip: 'lean', holdMs: TYPING_HOLD_MS }, { clip: 'leanBack' }],
+  interrupted: [{ clip: 'working', options: { spinMs: 60000 }, runMs: LOOP_BEFORE_STOP_MS }, { clip: 'interrupted', options: turnedNow }],
 };
 
 async function start() {
@@ -41,12 +61,34 @@ async function start() {
 
   let current = 'hello';
   let repeatTimer = 0;
-  function play(which = current) {
-    current = which;
+  let sequence = null;
+
+  function startStep(now) {
+    const step = BUTTONS[sequence.button][sequence.index];
+    const options = typeof step.options === 'function' ? step.options(player.state) : step.options;
+    const clip = CLIPS[step.clip].build(rig, params(), options);
+    renderReadout(step.label ?? CLIPS[step.clip].label, clip);
+    player.play(clip, now);
+    sequence.until = now + (step.runMs ?? clip.total + (step.holdMs ?? 0));
+  }
+
+  function play(button = current) {
+    current = button;
     clearTimeout(repeatTimer);
-    const clip = CLIPS[which].build(rig, params());
-    renderReadout(CLIPS[which].name, clip);
-    player.play(clip, performance.now());
+    sequence = { button, index: 0, until: 0 };
+    startStep(performance.now());
+  }
+
+  /** Moves to the next step when the current one is over. Returns true on the frame the last step ends. */
+  function advance(now) {
+    if (!sequence || now < sequence.until) return false;
+    sequence.index += 1;
+    if (sequence.index < BUTTONS[sequence.button].length) {
+      startStep(now);
+      return false;
+    }
+    sequence = null;
+    return true;
   }
 
   let replayTimer = 0;
@@ -70,14 +112,15 @@ async function start() {
   repeatBox.checked = settings.repeat;
   reducedBox.checked = settings.reducedMotion;
   player.breathing = settings.expressiveness.channels.motion;
-  renderReadout(CLIPS.hello.name, buildHello(rig, params()));
+  renderReadout(CLIPS.hello.label, CLIPS.hello.build(rig, params()));
 
-  document.getElementById('play-hello').addEventListener('click', () => play('hello'));
-  document.getElementById('play-zoom').addEventListener('click', () => play('zoom'));
+  for (const element of document.querySelectorAll('[data-button]')) {
+    element.addEventListener('click', () => play(element.dataset.button));
+  }
   repeatBox.addEventListener('change', () => {
     settings.repeat = repeatBox.checked;
     changed();
-    if (settings.repeat && !player.playing) replayWanted = true;
+    if (settings.repeat && !sequence) replayWanted = true;
   });
   reducedBox.addEventListener('change', () => {
     settings.reducedMotion = reducedBox.checked;
@@ -92,13 +135,13 @@ async function start() {
     draw(player.state);
     updateScene(dt, player.state);
     renderProgress(progress);
-    if (!player.playing) {
+    const finished = advance(now);
+    if (!sequence) {
       if (replayWanted) {
         replayWanted = false;
         play();
-      } else if (progress && settings.repeat) {
-        // the clip ended on this frame
-        repeatTimer = setTimeout(() => { if (!player.playing) play(); }, REPEAT_GAP_MS);
+      } else if (finished && settings.repeat) {
+        repeatTimer = setTimeout(() => { if (!sequence) play(); }, REPEAT_GAP_MS);
       }
     }
     requestAnimationFrame(frame);

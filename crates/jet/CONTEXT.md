@@ -9,6 +9,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Airborne** — a pose whose name starts with `zoom`: Jet is rolling or flying, so the foot is off the ground. (policy §2)
 - **Circle** — the rest pose, round and with no face. Calm is always a return to it, and shape 0 never leaves it. (policy §1)
 - **Ring** — the one stroked element beside the body: the working loop, and the spin grooves when Jet rolls. (policy §2)
+- **Pip** — a dot on the foot. The body shrinks to it under the working loop and when Jet is interrupted. (policy §2)
 
 - **State** — Jet at one moment: body, eyes, colour, scale, ring and speed. The only meaning of "state". _Avoid_: using it for idle, working or done.
 - **Speed** — how fast the scenery scrolls. Jet stays where it is; the world moves. _Avoid_: tempo. (policy §2)
@@ -20,6 +21,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Clip** — one stretch of movement, written fresh from the dials each time: six tracks, a total length, phases and a readout. _Avoid_: animation, asset (nothing is stored). (policy §7)
 - **Hello** — the reference clip: Jet stands up, waves and melts back to the circle. (policy §8)
 - **Zoom** — the clip for "jetting off": Jet winds up, rolls past the scenery and brakes. Its poses are the airborne ones. (policy §8)
+- **Hold** — a clip that ends away from the circle on purpose, such as the lean while the user types or the working loop. The director always follows one with a clip that ends at the circle. (policy §7)
 - **Phase** — a named part of a clip with an end time (stand up, hello, melt). (policy §7)
 - **Beat** — one move inside a phase, named with a verb (dip, swing, peak, tuck). (policy §7)
 - **Tempo** — how quickly a clip plays through its beats; the behaviour sets it. _Avoid_: speed. (policy §7)
@@ -29,6 +31,11 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Expressiveness** — the master dial and its four channels; a channel follows the master until the user takes it over. (policy §5)
 - **Channel** — shape, eyes, colour or motion, each 0 to 10. (policy §5)
 - **Settings** — the dials as saved between launches. Rust owns the file format.
+
+- **Catalogue** — the one list of every clip, each with its label, its builder and whether it is a hold. The lab and the director both read it. (policy §7)
+- **Director** — decides which clip plays for each chat event: typing, a send, a mood, done, a failure, a stop. It only orders clips; the player plays them. (policy §7)
+- **Mood** — the one word at the start of a reply that says how Jet should react: neutral, happy, excited, thinking, curious, sorry, alert, annoyed or hello. An unknown word is neutral. _Avoid_: emotion, status. (policy §8)
+- **Reaction** — the clip the director plays for a mood, or for done. _Avoid_: animation. (policy §8)
 
 - **Player** — owns the state and moves it through a clip, starting from wherever Jet is. (policy §3)
 - **View** — draws a state.

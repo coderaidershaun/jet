@@ -6,6 +6,7 @@ import { createClip, onOff, readDials } from '../clip.js';
 import { cubicBezier } from '../easing.js';
 import { clamp, lerp } from '../maths.js';
 import { RING_HIDDEN } from '../state.js';
+import { EYE_BLINK, EYE_OPEN, EYE_POP, EYE_SQUINT } from './beats.js';
 
 /** @typedef {import('../clip.js').Clip & { info: HelloInfo }} HelloClip */
 
@@ -23,6 +24,7 @@ import { RING_HIDDEN } from '../state.js';
  * @property {number} warm
  * @property {number} eyeSize
  * @property {number} shapeAmplitude
+ * @property {boolean} brief
  */
 
 const ease = {
@@ -41,30 +43,29 @@ const ease = {
   melt: cubicBezier(0.5, 0, 0.9, 0.6),
 };
 
-const EYE_OPEN = 4;
-const EYE_POP = 4.6;
-const EYE_SQUINT = [5, 1.6];
-const EYE_BLINK = 0.4;
+// Each beat of a brief hello takes this share of its time in the full hello.
+const BRIEF_PACE = 0.65;
 
 /**
  * @param {import('../rig.js').Rig} rig
  * @param {import('../clip.js').Params} p
+ * @param {{ brief?: boolean }} [options]   a brief hello is one wave with no bow, for relaunch
  * @returns {HelloClip}
  */
-export function buildHello(rig, p) {
+export function buildHello(rig, p, { brief = false } = {}) {
   const { ks, ke, kc, km, x, y, reduced, eyeSize, circle, rest, pose, eyes, hiddenEyes } = readDials(rig, p);
   const soft = rig.poses.soft;
   const warmColour = rig.palette.warm;
 
   const bounce = clamp(1 + 0.5 * y, 0.6, 1.3) * (0.45 + 0.55 * km);
   const reach = clamp(1 + 0.3 * x, 0.7, 1.3);
-  const cycles = reduced ? 0 : clamp(Math.round(2 + 1.2 * y), 1, 3);
-  const tempo = clamp(1 - 0.15 * y, 0.8, 1.25);
-  const dip = km > 0.35 && !reduced;
+  const cycles = reduced ? 0 : brief ? 1 : clamp(Math.round(2 + 1.2 * y), 1, 3);
+  const tempo = clamp(1 - 0.15 * y, 0.8, 1.25) * (brief ? BRIEF_PACE : 1);
+  const dip = km > 0.35 && !reduced && !brief;
   const lag = km > 0.3 && !reduced;
-  const tuck = km > 0.5 && !reduced;
-  const bow = Math.max(0, -x) * 0.8;
-  const hold = x > 0.3 ? 120 : 0;
+  const tuck = km > 0.5 && !reduced && !brief;
+  const bow = brief ? 0 : Math.max(0, -x) * 0.8;
+  const hold = x > 0.3 && !brief ? 120 : 0;
   const squint = eyeSize > 0 && ke > 0.35 && y > 0.1;
   const warm = 0.6 * kc * (0.5 + 0.5 * Math.max(0, y));
 
@@ -161,8 +162,9 @@ export function buildHello(rig, p) {
   clip.phases.push({ name: 'melt', end: t() });
   clip.total = t();
 
-  clip.info = { cycles, reach, tempo, bounce, dip, lag, tuck, squint, bow, warm, eyeSize, shapeAmplitude: ks };
+  clip.info = { cycles, reach, tempo, bounce, dip, lag, tuck, squint, bow, warm, eyeSize, shapeAmplitude: ks, brief };
   clip.readout = [
+    { label: 'Brief hello', ...onOff(brief) },
     { label: 'Wave cycles', value: String(cycles) },
     { label: 'Arm reach', value: Math.round(reach * 100) + '%' },
     { label: 'Tempo', value: (1 / tempo).toFixed(2) + '×' },
