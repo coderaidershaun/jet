@@ -5,7 +5,7 @@ import { h } from '../dom.js';
 import { button, note, section, textField } from './controls.js';
 
 /** @param {import('./sheet.js').SheetContext} ctx */
-export function buildClaude({ settings, agent, changed, onForget }) {
+export function buildClaude({ settings, agent, changed, onClaudeChecked, onForget }) {
   const status = h('p', { class: 'status', role: 'status' });
   const path = textField({
     label: 'Path to claude',
@@ -51,12 +51,13 @@ export function buildClaude({ settings, agent, changed, onForget }) {
       section('forget', 'Forget this conversation', note('Start again with an empty thread.'), ask, confirmBox, failure),
     ],
 
-    /** Asks whether Claude Code is there, each time the sheet opens. */
+    /** Asks where Claude Code is, and shows the answer here and in the page's banner. */
     async refresh() {
       try {
         const { claude } = await agent.status();
         status.textContent = claude.found ? 'Found at ' + claude.path : 'Not found. Looked in ' + claude.searched.join(', ');
         status.dataset.found = String(claude.found);
+        onClaudeChecked(claude);
       } catch (error) {
         status.textContent = 'Could not check: ' + (error && error.message ? error.message : error);
       }

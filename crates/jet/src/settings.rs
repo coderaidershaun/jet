@@ -292,6 +292,13 @@ mod tests {
     }
 
     #[test]
+    fn default_settings_match_the_ui_fixture() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../ui/bridge/default-settings.json")).unwrap();
+        assert_eq!(fixture, serde_json::to_value(Settings::default()).unwrap());
+    }
+
+    #[test]
     fn json_uses_camel_case_for_the_frontend() {
         let json = serde_json::to_string(&Settings::default()).unwrap();
         assert!(json.contains("\"reducedMotion\""));

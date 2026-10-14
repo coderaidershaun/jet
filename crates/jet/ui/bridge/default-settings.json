@@ -1,0 +1,17 @@
+{
+  "behaviour": { "candid": 0.55, "playful": 0.35 },
+  "expressiveness": {
+    "master": 6.0,
+    "channels": { "shape": 6.0, "eyes": 4.0, "colour": 6.0, "motion": 6.0 },
+    "follow": { "shape": true, "eyes": false, "colour": true, "motion": true }
+  },
+  "reducedMotion": false,
+  "repeat": true,
+  "persona": { "name": "Jet", "jobTitle": "First-mate", "notes": "" },
+  "bodyColour": null,
+  "model": "sonnet",
+  "effort": "medium",
+  "turnBudgetUsd": 1.0,
+  "drawerOpen": true,
+  "claudePath": null
+}

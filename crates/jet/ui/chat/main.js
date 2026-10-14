@@ -1,6 +1,6 @@
 // Starts the chat page: loads the rig, the saved settings and the history, builds
-// every part of the page and hands each the parts it needs. The agent is chosen
-// here and nowhere else, so swapping the fake for the real one is one line.
+// every part of the page and hands each the parts it needs. The agent is connected
+// here and nowhere else; every other part is handed it.
 
 import { connectAgent } from '../bridge/agent.js';
 import { loadRig } from '../bridge/rig.js';
@@ -191,6 +191,7 @@ async function start() {
       defaultColour,
       totals,
       systemReducesMotion: () => systemReduces.matches,
+      onClaudeChecked: showClaude,
       onForget: forget,
     },
     save: () => saveSettings(settings),

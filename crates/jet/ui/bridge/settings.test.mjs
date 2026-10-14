@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { PRESETS, defaultSettings, merge } from './settings.js';
 
 test('defaults mirror Rust and carry the chat fields, and merge fills gaps from them', () => {
@@ -28,4 +29,9 @@ test('defaults mirror Rust and carry the chat fields, and merge fills gaps from 
   assert.deepEqual(merge(defaults, { bodyColour: [10, 20, 30] }).bodyColour, [10, 20, 30]);
   assert.deepEqual(merge(defaults, 'garbage'), defaults);
   assert.equal(defaultSettings().behaviour !== defaults.behaviour, true, 'each call returns fresh objects');
+});
+
+test('defaults_match_the_rust_fixture', () => {
+  const fixture = JSON.parse(readFileSync(new URL('./default-settings.json', import.meta.url), 'utf8'));
+  assert.deepEqual(defaultSettings(), fixture);
 });

@@ -1,8 +1,10 @@
 // The page's one way to talk to Claude. Every other module is handed an Agent
-// and never asks which one it is. Outside Tauri it is the pretend agent, which
-// keeps everything in the browser.
+// and never asks which one it is. Inside Tauri it is the real agent, which calls
+// the Rust side; in a plain browser it is the pretend agent, which keeps
+// everything in the browser.
 
 import { createFakeAgent } from './fake-agent.js';
+import { createTauriAgent } from './tauri-agent.js';
 
 /** @typedef {{ found: boolean, path: string | null, searched: string[] }} ClaudeStatus */
 /** @typedef {{ lastRequestAt: number | null, ttlMinutes: number, contextTokens: number }} CacheStatus */
@@ -57,5 +59,6 @@ import { createFakeAgent } from './fake-agent.js';
 
 /** @returns {Agent} */
 export function connectAgent() {
-  return createFakeAgent();
+  const tauri = globalThis.window?.__TAURI__;
+  return tauri ? createTauriAgent(tauri) : createFakeAgent();
 }

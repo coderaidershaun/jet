@@ -19,19 +19,29 @@ const SAVE_AFTER_EDIT_MS = 600;
  * @property {number[]} defaultColour   the rig's own rest colour
  * @property {{ costUsd: number, tokens: number, cacheReadTokens: number }} totals
  * @property {() => boolean} systemReducesMotion   true when the system asks for less motion
+ * @property {(claude: import('../../bridge/agent.js').ClaudeStatus) => void} onClaudeChecked   the page's banner follows each check
  * @property {() => Promise<void>} onForget
  */
 
 /**
- * @param {{ dialog: HTMLDialogElement, context: Omit<SheetContext, 'changed'>, onChange: (kind: string) => void, save: () => void }} options
+ * @param {{ dialog: HTMLDialogElement, context: Omit<SheetContext, 'changed'>, onChange: (kind: string) => void, save: () => Promise<void> }} options
  */
 export function createSheet({ dialog, context, onChange, save }) {
   let saveTimer = 0;
+  let claudePathEdited = false;
   let opener = null;
+  // The Rust side looks for Claude Code at the saved path, so a new path is checked only after its save.
+  const saveEdits = async () => {
+    const recheckClaude = claudePathEdited;
+    claudePathEdited = false;
+    await save();
+    if (recheckClaude) claude.refresh();
+  };
   const changed = (kind) => {
     onChange(kind);
+    if (kind === 'claude') claudePathEdited = true;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(save, SAVE_AFTER_EDIT_MS);
+    saveTimer = setTimeout(saveEdits, SAVE_AFTER_EDIT_MS);
   };
   const ctx = { ...context, changed };
   // The stylesheet decides how long the sheet takes to leave: a slide, a longer slide on a phone, or a fade.
