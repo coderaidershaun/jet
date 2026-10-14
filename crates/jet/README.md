@@ -54,8 +54,8 @@ What they cover:
 | `src/settings.rs` `old_files_with_missing_fields_still_load` | an older file gets defaults for the fields it lacks |
 | `src/settings.rs` `broken_file_names_the_path` | a file that cannot be read fails with its path in the message |
 | `src/settings.rs` `json_uses_camel_case_for_the_frontend` | the page reads `reducedMotion`, not `reduced_motion` |
-| `src/chat.rs` `bridge_error_serialises_as_kind_and_message` | every command error reaches the page as `{ kind, message }` |
-| `src/chat.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
+| `src/chat/error.rs` `bridge_error_serialises_as_kind_and_message` | every command error reaches the page as `{ kind, message }` |
+| `src/chat/mod.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
 | `rig/poses.rs` `generator_prints_the_committed_rig` | the generator prints exactly `rig/jet.json` |
 | `ui/bridge/fake-agent.test.mjs` | a reply's events in order, a fresh session, the three failures, stop, and what the storage keeps |
 | `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; merge fills gaps from them |
@@ -114,8 +114,10 @@ crates/jet
 │   ├── lib.rs                      checks the rig, opens the window, registers the commands
 │   ├── rig.rs                      the character definition, embedded and checked at start-up
 │   ├── settings.rs                 remembers the dials and the chat settings between launches (app config folder)
-│   ├── chat.rs                     the commands the chat page calls, and the channel that streams a reply to it
-│   └── review_timer.rs             the timer that keeps Jet's notes current once the chat goes quiet
+│   └── chat/
+│       ├── mod.rs                  the commands the chat page calls, and the channel that streams a reply to it
+│       ├── error.rs                the error every chat command fails with, sent as `{ kind, message }`
+│       └── review_timer.rs         the timer that keeps Jet's notes current once the chat goes quiet
 └── ui/
     ├── index.html                  the chat page: header, drawer, thread, composer, settings dialog
     ├── chat.css                    the chat page's tokens, layout and header

@@ -3,7 +3,6 @@
 //! user dialled Jet in between launches, and connects the chat page to the agent crate.
 
 mod chat;
-mod review_timer;
 mod rig;
 mod settings;
 

@@ -1,22 +1,26 @@
 //! The bridge between the chat page and the agent crate: the commands the page calls, the
 //! channel that streams a reply to it, and the timer that keeps Jet's notes current.
 
+mod error;
+mod review_timer;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use agent::{
-    CacheStatus, ClaudeCli, Conversation, ConversationError, DataDir, Effort, Event, Failure,
-    Lines, MEMORY_LIMIT, MemoryError, Message, Model, Notes, Persona, RECENT_LIMIT, Request,
-    ShownEntry, Stopper, Tone, Transport, TransportError, TurnError, USER_LIMIT,
+    CacheStatus, ClaudeCli, Conversation, DataDir, Effort, Event, Lines, MEMORY_LIMIT, Message,
+    Model, Notes, Persona, RECENT_LIMIT, Request, ShownEntry, Stopper, Tone, Transport,
+    TransportError, USER_LIMIT,
 };
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::review_timer::{ReviewTarget, ReviewTimer, review_now};
 use crate::settings;
+use error::BridgeError;
+use review_timer::{ReviewTarget, ReviewTimer, review_now};
 
 /// Entries the page gets when it opens.
 const HISTORY_LIMIT: usize = 200;
@@ -77,71 +81,6 @@ impl ChatState {
 /// A lock that still opens after another thread panicked while holding it.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// Why a command failed. The page reads `kind` to decide what to show.
-#[derive(Debug, thiserror::Error)]
-pub enum BridgeError {
-    #[error("Jet is still answering")]
-    Busy,
-    #[error("{0}")]
-    ClaudeMissing(String),
-    #[error("{0}")]
-    Io(String),
-    #[error("{0}")]
-    BadLink(String),
-}
-
-impl BridgeError {
-    fn kind(&self) -> &'static str {
-        match self {
-            BridgeError::Busy => "busy",
-            BridgeError::ClaudeMissing(_) => "claudeMissing",
-            BridgeError::Io(_) => "io",
-            BridgeError::BadLink(_) => "badLink",
-        }
-    }
-}
-
-impl Serialize for BridgeError {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("BridgeError", 2)?;
-        state.serialize_field("kind", self.kind())?;
-        state.serialize_field("message", &self.to_string())?;
-        state.end()
-    }
-}
-
-impl From<ConversationError> for BridgeError {
-    fn from(error: ConversationError) -> BridgeError {
-        match error {
-            ConversationError::Busy => BridgeError::Busy,
-            ConversationError::Memory(error) => error.into(),
-        }
-    }
-}
-
-impl From<MemoryError> for BridgeError {
-    fn from(error: MemoryError) -> BridgeError {
-        BridgeError::Io(error.to_string())
-    }
-}
-
-impl From<settings::SettingsError> for BridgeError {
-    fn from(error: settings::SettingsError) -> BridgeError {
-        BridgeError::Io(error.to_string())
-    }
-}
-
-impl From<TransportError> for BridgeError {
-    fn from(error: TransportError) -> BridgeError {
-        let failure = Failure::from(&TurnError::from(error));
-        match failure {
-            Failure::ClaudeMissing { message } => BridgeError::ClaudeMissing(message),
-            other => BridgeError::Io(other.message().to_owned()),
-        }
-    }
 }
 
 /// Stands in for Claude Code when it cannot be found, so the failure reaches the page the
@@ -358,13 +297,10 @@ mod tests {
     use std::collections::BTreeSet;
 
     use agent::Mood;
-    use serde_json::json;
-
-    use super::*;
 
     #[test]
     fn every_mood_word_is_handled_by_the_director() {
-        let director = include_str!("../ui/jet/director.js");
+        let director = include_str!("../../ui/jet/director.js");
         let mood_lines: Vec<&str> = director
             .lines()
             .filter(|line| line.starts_with("export const MOODS = ["))
@@ -393,32 +329,5 @@ mod tests {
             "mood words differ. Missing from MOODS in director.js: {missing_from_director:?}. \
              Missing from agent::Mood: {missing_from_agent:?}"
         );
-    }
-
-    #[test]
-    fn bridge_error_serialises_as_kind_and_message() {
-        let cases = [
-            (
-                BridgeError::Busy,
-                json!({"kind": "busy", "message": "Jet is still answering"}),
-            ),
-            (
-                BridgeError::ClaudeMissing("not found".into()),
-                json!({"kind": "claudeMissing", "message": "not found"}),
-            ),
-            (
-                BridgeError::Io("disk full".into()),
-                json!({"kind": "io", "message": "disk full"}),
-            ),
-            (
-                BridgeError::BadLink("nope".into()),
-                json!({"kind": "badLink", "message": "nope"}),
-            ),
-        ];
-        for (error, expected) in cases {
-            assert_eq!(serde_json::to_value(&error).unwrap(), expected);
-        }
-        let from_agent = BridgeError::from(ConversationError::Busy);
-        assert_eq!(serde_json::to_value(&from_agent).unwrap()["kind"], "busy");
     }
 }
