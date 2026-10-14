@@ -15,7 +15,7 @@ function wordFor(value) {
 }
 
 /**
- * @param {{ onChange: (expressiveness: import('./settings.js').Expressiveness) => void }} options
+ * @param {{ onChange: (expressiveness: import('../bridge/settings.js').Expressiveness) => void }} options
  */
 export function createDial({ onChange }) {
   const svg = /** @type {SVGSVGElement} */ (document.getElementById('dial'));
@@ -46,7 +46,7 @@ export function createDial({ onChange }) {
     return '<text x="' + p[0].toFixed(1) + '" y="' + (p[1] + 4).toFixed(1) + '" text-anchor="middle">' + v + '</text>';
   }).join('');
 
-  /** @type {import('./settings.js').Expressiveness} */
+  /** @type {import('../bridge/settings.js').Expressiveness} */
   let state = { master: 0, channels: { shape: 0, eyes: 0, colour: 0, motion: 0 }, follow: { shape: false, eyes: false, colour: false, motion: false } };
 
   function paint() {
@@ -80,7 +80,7 @@ export function createDial({ onChange }) {
 
   function valueFromEvent(event) {
     const box = svg.getBoundingClientRect();
-    const scale = 260 / box.width;
+    const scale = svg.viewBox.baseVal.width / box.width;
     const x = (event.clientX - box.left) * scale - CENTRE[0];
     const y = (event.clientY - box.top) * scale - CENTRE[1];
     let deg = (Math.atan2(y, x) * 180) / Math.PI;
@@ -116,7 +116,7 @@ export function createDial({ onChange }) {
   }
 
   return {
-    /** @param {import('./settings.js').Expressiveness} expressiveness */
+    /** @param {import('../bridge/settings.js').Expressiveness} expressiveness */
     set(expressiveness) {
       state = { master: expressiveness.master, channels: { ...expressiveness.channels }, follow: { ...expressiveness.follow } };
       paint();

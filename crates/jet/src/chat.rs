@@ -355,9 +355,45 @@ pub fn open_link(app: AppHandle, url: &str) -> Result<(), BridgeError> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use agent::Mood;
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn every_mood_word_is_handled_by_the_director() {
+        let director = include_str!("../ui/jet/director.js");
+        let mood_lines: Vec<&str> = director
+            .lines()
+            .filter(|line| line.starts_with("export const MOODS = ["))
+            .collect();
+        assert_eq!(
+            mood_lines.len(),
+            1,
+            "director.js must have exactly one `export const MOODS = [` line, found {}",
+            mood_lines.len()
+        );
+        let inside_brackets = mood_lines[0]
+            .split_once('[')
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .map(|(words, _)| words)
+            .expect("the MOODS line has no closing bracket");
+        let director_words: BTreeSet<&str> =
+            inside_brackets.split('\'').skip(1).step_by(2).collect();
+        let agent_words: BTreeSet<&str> = Mood::ALL.iter().map(|mood| mood.word()).collect();
+
+        let missing_from_director: Vec<&str> =
+            agent_words.difference(&director_words).copied().collect();
+        let missing_from_agent: Vec<&str> =
+            director_words.difference(&agent_words).copied().collect();
+        assert!(
+            missing_from_director.is_empty() && missing_from_agent.is_empty(),
+            "mood words differ. Missing from MOODS in director.js: {missing_from_director:?}. \
+             Missing from agent::Mood: {missing_from_agent:?}"
+        );
+    }
 
     #[test]
     fn bridge_error_serialises_as_kind_and_message() {

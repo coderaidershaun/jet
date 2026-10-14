@@ -1,13 +1,24 @@
-// The behaviour wheel: a draggable point inside a unit circle, plus presets and
-// two sliders that move the same point for keyboard and precision use.
+// The behaviour wheel: a draggable point inside a unit circle, plus the preset
+// chips and two sliders that move the same point for keyboard and precision use.
 
 import { clamp } from '../jet/maths.js';
+import { PRESETS } from '../bridge/settings.js';
 
 const WHEEL_RADIUS = 100; // viewBox units
 const KEY_STEP = 0.05;
 
+function presetChip({ name, candid, playful }) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'chip';
+  chip.dataset.candid = String(candid);
+  chip.dataset.playful = String(playful);
+  chip.textContent = name;
+  return chip;
+}
+
 /**
- * @param {{ onChange: (behaviour: import('./settings.js').Behaviour) => void }} options
+ * @param {{ onChange: (behaviour: import('../bridge/settings.js').Behaviour) => void }} options
  */
 export function createWheel({ onChange }) {
   const svg = /** @type {SVGSVGElement} */ (document.getElementById('wheel'));
@@ -16,10 +27,11 @@ export function createWheel({ onChange }) {
   const readout = document.getElementById('wheel-read');
   const sliderX = /** @type {HTMLInputElement} */ (document.getElementById('candid'));
   const sliderY = /** @type {HTMLInputElement} */ (document.getElementById('playful'));
-  const presets = /** @type {HTMLButtonElement[]} */ ([...document.querySelectorAll('#presets .chip')]);
+  const chips = PRESETS.map(presetChip);
+  document.getElementById('presets').append(...chips);
 
-  document.getElementById('preset-dots').innerHTML = presets
-    .map((b) => '<circle cx="' + Number(b.dataset.candid) * WHEEL_RADIUS + '" cy="' + -Number(b.dataset.playful) * WHEEL_RADIUS + '" r="4.5"/>')
+  document.getElementById('preset-dots').innerHTML = chips
+    .map((chip) => '<circle cx="' + Number(chip.dataset.candid) * WHEEL_RADIUS + '" cy="' + -Number(chip.dataset.playful) * WHEEL_RADIUS + '" r="4.5"/>')
     .join('');
 
   let candid = 0;
@@ -46,17 +58,20 @@ export function createWheel({ onChange }) {
     }
     document.getElementById('candid-v').textContent = (x >= 0 ? '+' : '') + x.toFixed(2);
     document.getElementById('playful-v').textContent = (y >= 0 ? '+' : '') + y.toFixed(2);
-    for (const b of presets) {
-      const hit = Math.abs(Number(b.dataset.candid) - x) < 0.03 && Math.abs(Number(b.dataset.playful) - y) < 0.03;
-      b.setAttribute('aria-pressed', String(hit));
+    for (const chip of chips) {
+      const hit = Math.abs(Number(chip.dataset.candid) - x) < 0.03 && Math.abs(Number(chip.dataset.playful) - y) < 0.03;
+      chip.setAttribute('aria-pressed', String(hit));
     }
     if (!silent) onChange({ candid, playful });
   }
 
   function pointFromEvent(event) {
     const box = svg.getBoundingClientRect();
-    const scale = 260 / box.width;
-    return [((event.clientX - box.left) * scale - 130) / WHEEL_RADIUS, -(((event.clientY - box.top) * scale - 130) / WHEEL_RADIUS)];
+    const view = svg.viewBox.baseVal;
+    const scale = view.width / box.width;
+    const x = (event.clientX - box.left) * scale + view.x;
+    const y = (event.clientY - box.top) * scale + view.y;
+    return [x / WHEEL_RADIUS, -y / WHEEL_RADIUS];
   }
 
   let dragging = false;
@@ -83,10 +98,10 @@ export function createWheel({ onChange }) {
   });
   sliderX.addEventListener('input', () => apply(Number(sliderX.value) / 100, playful, { fromSlider: true }));
   sliderY.addEventListener('input', () => apply(candid, Number(sliderY.value) / 100, { fromSlider: true }));
-  for (const b of presets) b.addEventListener('click', () => apply(Number(b.dataset.candid), Number(b.dataset.playful)));
+  for (const chip of chips) chip.addEventListener('click', () => apply(Number(chip.dataset.candid), Number(chip.dataset.playful)));
 
   return {
-    /** @param {import('./settings.js').Behaviour} behaviour */
+    /** @param {import('../bridge/settings.js').Behaviour} behaviour */
     set(behaviour) {
       apply(behaviour.candid, behaviour.playful, { silent: true });
     },

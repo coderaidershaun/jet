@@ -42,6 +42,16 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Readout** — the rows a clip reports about what the dials turned into. (policy §7)
 
 - **Scenery** — what rushes past during a zoom. Not part of the character: it reads the speed and nothing else. (policy §3)
-- **Host** — the app that shows Jet and decides when a clip plays and how long a job lasts. Today the only host is the lab.
+- **Host** — the page that shows Jet and decides when a clip plays and how long a job lasts. The chat page and the lab are both hosts.
 - **Lab** — the page of controls around Jet.
-- **Bridge** — the lab's way to the Rust side (the rig, the settings), with browser fallbacks.
+- **Bridge** — `ui/bridge/`: the pages' way to the Rust side (the rig, the settings, the agent), with browser fallbacks.
+
+- **Turn** — one exchange: the user's message and Jet's reply, from the send to the finished, failed or stopped end.
+- **Session** — the Claude Code conversation the app resumes (`session.json`). A fresh one starts when the prompt inputs change, after a long idle with a big context, or when the old one vanished. _Avoid_: thread, history.
+- **Transcript** — the app's own record of the thread (`transcript.jsonl`). The chat page opens on its newest entries, which the code calls the history. _Avoid_: session.
+- **Notes** — MEMORY, USER and RECENT: the three short files in Jet's prompt that a background review keeps current. The memory commands and the memory section of the settings handle all three.
+
+- **Lane** — the column at the left of each Jet row, where the live Jet stands.
+- **Mark** — the small dot in the lane of an older Jet row.
+- **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.
+- **Flight** — the live Jet's move from where it stood to the slot's lane on a send. _Avoid_: zoom (that is the clip Jet plays during it).

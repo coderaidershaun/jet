@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Jet lab</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="./styles.css">
 <script type="module" src="./lab/main.js"></script>
 </head>
@@ -68,13 +69,7 @@
               <line id="wheel-line" x1="0" y1="0" x2="0" y2="0" class="wheel-line"/>
               <circle id="wheel-handle" class="handle" cx="0" cy="0" r="10" tabindex="0" role="img" aria-label="Behaviour handle. Arrow keys move it."/>
             </svg>
-            <div class="chips" id="presets">
-              <button class="chip" type="button" data-candid="0" data-playful="0">Neutral</button>
-              <button class="chip" type="button" data-candid="-0.45" data-playful="-0.5">Butler</button>
-              <button class="chip" type="button" data-candid="-0.5" data-playful="0.45">Deckhand</button>
-              <button class="chip" type="button" data-candid="0.55" data-playful="0.35">Shipmate</button>
-              <button class="chip" type="button" data-candid="0.6" data-playful="-0.55">Quartermaster</button>
-            </div>
+            <div class="chips" id="presets"></div>
             <div class="sl sl-full"><div class="top"><label for="candid">Deferential ↔ Candid</label><span class="v" id="candid-v"></span></div><input type="range" id="candid" min="-100" max="100" value="0"></div>
             <div class="sl sl-full"><div class="top"><label for="playful">Serious ↔ Playful</label><span class="v" id="playful-v"></span></div><input type="range" id="playful" min="-100" max="100" value="0"></div>
           </div>

@@ -1,12 +1,12 @@
 // The live Jet and the host that runs it: one node that stands in the empty
 // state's hero spot or in the lane of the newest Jet message, the director that
 // decides its clips, the flight that carries it down the thread on a send, and
-// the frame loop that draws it. The director is imported here and nowhere else,
-// so the real one replaces the stand-in with a one-line change.
+// the frame loop that draws it. The director advances the player itself, so this
+// file never ticks the player, and it hands the director the time on every call.
 
+import { createDirector } from '../../jet/director.js';
 import { createPlayer } from '../../jet/player.js';
 import { mountJet } from '../../jet/view.js';
-import { createDirector } from './fake-director.js';
 import { createFlight, cruiseMsFor } from './flight.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
