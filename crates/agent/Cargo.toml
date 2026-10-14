@@ -1,0 +1,20 @@
+[package]
+name = "agent"
+version.workspace = true
+edition.workspace = true
+description = "Runs Jet's chat turns through Claude Code and keeps the thread and notes"
+
+[lib]
+name = "agent"
+path = "src/lib.rs"
+
+# A stand-in for the Claude Code program: the contract tests spawn it instead of the real one.
+[[bin]]
+name = "fake-claude"
+path = "src/bin/fake-claude.rs"
+
+[dependencies]
+pulldown-cmark = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

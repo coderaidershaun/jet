@@ -23,7 +23,9 @@ test = true
 tauri-build = { workspace = true }
 
 [dependencies]
+agent = { path = "../agent" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { workspace = true }
+tauri-plugin-opener = { workspace = true }
 thiserror = { workspace = true }

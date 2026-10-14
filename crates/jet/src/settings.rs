@@ -1,10 +1,11 @@
-//! Remembers how the user dialled Jet in: where the behaviour handle sits, how
-//! expressive each channel is, and the motion switches. Saved as JSON in the app's
-//! config folder so the frontend finds Jet the way it left it.
+//! Remembers how the user set Jet up: who Jet is, which model answers, where the behaviour
+//! handle sits, how expressive each channel is, and the motion switches. Saved as JSON in
+//! the app's config folder so the frontend finds Jet the way it left it.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+use agent::{Effort, Model, Persona};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
@@ -17,6 +18,16 @@ pub struct Settings {
     pub expressiveness: Expressiveness,
     pub reduced_motion: bool,
     pub repeat: bool,
+    pub persona: Persona,
+    /// The body colour as red, green, blue; `None` keeps the rig's own colour.
+    pub body_colour: Option<[u8; 3]>,
+    pub model: Model,
+    pub effort: Effort,
+    /// The most one answer may cost, in US dollars.
+    pub turn_budget_usd: f64,
+    pub drawer_open: bool,
+    /// Where Claude Code lives; `None` means look in the usual places.
+    pub claude_path: Option<PathBuf>,
 }
 
 /// Position on the behaviour wheel. Both axes run -1 to 1 and the point stays
@@ -63,6 +74,13 @@ impl Default for Settings {
             expressiveness: Expressiveness::default(),
             reduced_motion: false,
             repeat: true,
+            persona: Persona::default(),
+            body_colour: None,
+            model: Model::default(),
+            effort: Effort::default(),
+            turn_budget_usd: 1.0,
+            drawer_open: true,
+            claude_path: None,
         }
     }
 }
@@ -156,7 +174,7 @@ pub fn write_to(path: &Path, settings: &Settings) -> Result<(), SettingsError> {
     std::fs::write(path, json).map_err(io)
 }
 
-fn settings_path(app: &AppHandle) -> Result<PathBuf, SettingsError> {
+pub fn settings_path(app: &AppHandle) -> Result<PathBuf, SettingsError> {
     Ok(app.path().app_config_dir()?.join(FILE_NAME))
 }
 
@@ -216,6 +234,49 @@ mod tests {
         assert_eq!(settings.behaviour.candid, 0.1);
         assert_eq!(settings.behaviour.playful, Behaviour::default().playful);
         assert_eq!(settings.expressiveness, Expressiveness::default());
+        assert_eq!(settings.persona, Persona::default());
+        assert_eq!(settings.body_colour, None);
+        assert_eq!(settings.model, Model::Sonnet);
+        assert_eq!(settings.effort, Effort::Medium);
+        assert_eq!(settings.turn_budget_usd, 1.0);
+        assert!(settings.drawer_open);
+        assert_eq!(settings.claude_path, None);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn new_fields_round_trip() {
+        let path = scratch_file("new-fields");
+        let settings = Settings {
+            persona: Persona {
+                name: "Ada".into(),
+                job_title: "Co-pilot".into(),
+                notes: "Short answers.".into(),
+            },
+            body_colour: Some([12, 200, 99]),
+            model: Model::Opus,
+            effort: Effort::High,
+            turn_budget_usd: 2.5,
+            drawer_open: false,
+            claude_path: Some(PathBuf::from("/opt/tools/claude")),
+            ..Settings::default()
+        };
+        write_to(&path, &settings).unwrap();
+        assert_eq!(read_from(&path).unwrap(), settings);
+
+        let json = std::fs::read_to_string(&path).unwrap();
+        for key in [
+            "jobTitle",
+            "bodyColour",
+            "turnBudgetUsd",
+            "drawerOpen",
+            "claudePath",
+        ] {
+            assert!(
+                json.contains(&format!("\"{key}\"")),
+                "missing {key} in {json}"
+            );
+        }
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

@@ -1,0 +1,388 @@
+//! The bridge between the chat page and the agent crate: the commands the page calls, the
+//! channel that streams a reply to it, and the timer that keeps Jet's notes current.
+
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
+
+use agent::{
+    CacheStatus, ClaudeCli, Conversation, ConversationError, DataDir, Effort, Event, Failure,
+    Lines, MEMORY_LIMIT, MemoryError, Message, Model, Notes, Persona, RECENT_LIMIT, Request,
+    ShownEntry, Stopper, Tone, Transport, TransportError, TurnError, USER_LIMIT,
+};
+use serde::{Deserialize, Serialize};
+use tauri::ipc::Channel;
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_opener::OpenerExt;
+
+use crate::review_timer::{ReviewTarget, ReviewTimer, review_now};
+use crate::settings;
+
+/// Entries the page gets when it opens.
+const HISTORY_LIMIT: usize = 200;
+
+/// How long closing the app waits for a stopped reply to be saved.
+const EXIT_WAIT: Duration = Duration::from_secs(2);
+
+/// Links the page may ask to open.
+const OPENABLE_SCHEMES: [&str; 3] = ["http://", "https://", "mailto:"];
+
+/// What the commands share: the conversation, the reply that is running, and the review timer.
+pub struct ChatState {
+    conversation: Conversation,
+    data_dir: PathBuf,
+    active: Mutex<Option<Stopper>>,
+    review: ReviewTimer,
+}
+
+impl ChatState {
+    pub fn new(data_dir: PathBuf) -> ChatState {
+        ChatState {
+            conversation: Conversation::new(DataDir::new(data_dir.clone())),
+            data_dir,
+            active: Mutex::new(None),
+            review: ReviewTimer::new(),
+        }
+    }
+
+    /// Called when the app closes: ends the running reply, then reads what was said since
+    /// the last review so the notes are up to date next time.
+    // SMELL: closing waits for that review, so a slow Claude keeps the app from quitting
+    // until the review ends.
+    pub fn shutdown(&self, app: &AppHandle) {
+        if let Some(stopper) = lock(&self.active).as_ref() {
+            stopper.stop();
+        }
+        let deadline = Instant::now() + EXIT_WAIT;
+        while self.conversation.is_busy() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        match self.exit_review_target(app) {
+            Ok(target) => review_now(&self.conversation, &target),
+            Err(error) => eprintln!("jet: the notes review at exit could not start: {error}"),
+        }
+    }
+
+    /// The review at exit follows the saved settings, because no reply may have run since
+    /// the app started.
+    fn exit_review_target(&self, app: &AppHandle) -> Result<ReviewTarget, BridgeError> {
+        let settings = settings::read_from(&settings::settings_path(app)?)?;
+        Ok(ReviewTarget {
+            transport: transport_for(settings.claude_path.as_deref(), &self.data_dir)?,
+            name: settings.persona.name,
+        })
+    }
+}
+
+/// A lock that still opens after another thread panicked while holding it.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Why a command failed. The page reads `kind` to decide what to show.
+#[derive(Debug, thiserror::Error)]
+pub enum BridgeError {
+    #[error("Jet is still answering")]
+    Busy,
+    #[error("{0}")]
+    ClaudeMissing(String),
+    #[error("{0}")]
+    Io(String),
+    #[error("{0}")]
+    BadLink(String),
+}
+
+impl BridgeError {
+    fn kind(&self) -> &'static str {
+        match self {
+            BridgeError::Busy => "busy",
+            BridgeError::ClaudeMissing(_) => "claudeMissing",
+            BridgeError::Io(_) => "io",
+            BridgeError::BadLink(_) => "badLink",
+        }
+    }
+}
+
+impl Serialize for BridgeError {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("BridgeError", 2)?;
+        state.serialize_field("kind", self.kind())?;
+        state.serialize_field("message", &self.to_string())?;
+        state.end()
+    }
+}
+
+impl From<ConversationError> for BridgeError {
+    fn from(error: ConversationError) -> BridgeError {
+        match error {
+            ConversationError::Busy => BridgeError::Busy,
+            ConversationError::Memory(error) => error.into(),
+        }
+    }
+}
+
+impl From<MemoryError> for BridgeError {
+    fn from(error: MemoryError) -> BridgeError {
+        BridgeError::Io(error.to_string())
+    }
+}
+
+impl From<settings::SettingsError> for BridgeError {
+    fn from(error: settings::SettingsError) -> BridgeError {
+        BridgeError::Io(error.to_string())
+    }
+}
+
+impl From<TransportError> for BridgeError {
+    fn from(error: TransportError) -> BridgeError {
+        let failure = Failure::from(&TurnError::from(error));
+        match failure {
+            Failure::ClaudeMissing { message } => BridgeError::ClaudeMissing(message),
+            other => BridgeError::Io(other.message().to_owned()),
+        }
+    }
+}
+
+/// Stands in for Claude Code when it cannot be found, so the failure reaches the page the
+/// same way as every other one.
+struct MissingClaude {
+    searched: Vec<String>,
+}
+
+impl Transport for MissingClaude {
+    fn start(&self, _request: &Request) -> Result<Lines, TransportError> {
+        Err(TransportError::ClaudeMissing {
+            searched: self.searched.clone(),
+        })
+    }
+}
+
+fn transport_for(
+    configured: Option<&Path>,
+    data_dir: &Path,
+) -> Result<Arc<dyn Transport>, BridgeError> {
+    match ClaudeCli::locate(configured, data_dir) {
+        Ok(claude) => Ok(Arc::new(claude)),
+        Err(TransportError::ClaudeMissing { searched }) => Ok(Arc::new(MissingClaude { searched })),
+        Err(other) => Err(other.into()),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentStatus {
+    claude: ClaudeStatus,
+    data_dir: String,
+    busy: bool,
+    cache: CacheStatus,
+}
+
+#[derive(Serialize)]
+struct ClaudeStatus {
+    found: bool,
+    path: Option<String>,
+    searched: Vec<String>,
+}
+
+/// Where Claude Code is, whether a reply is running, and whether the prompt cache is warm.
+#[tauri::command]
+pub async fn agent_status(
+    app: AppHandle,
+    state: State<'_, ChatState>,
+) -> Result<AgentStatus, BridgeError> {
+    let configured = settings::read_from(&settings::settings_path(&app)?)?.claude_path;
+    let claude = match ClaudeCli::locate(configured.as_deref(), &state.data_dir) {
+        Ok(claude) => ClaudeStatus {
+            found: true,
+            path: Some(claude.program().display().to_string()),
+            searched: Vec::new(),
+        },
+        Err(TransportError::ClaudeMissing { searched }) => ClaudeStatus {
+            found: false,
+            path: None,
+            searched,
+        },
+        Err(other) => return Err(other.into()),
+    };
+    Ok(AgentStatus {
+        claude,
+        data_dir: state.data_dir.display().to_string(),
+        busy: state.conversation.is_busy(),
+        cache: state.conversation.cache_status()?,
+    })
+}
+
+#[tauri::command]
+pub fn load_history(state: State<'_, ChatState>) -> Result<Vec<ShownEntry>, BridgeError> {
+    Ok(state.conversation.history(HISTORY_LIMIT)?)
+}
+
+/// What the page sends with each message.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendRequest {
+    text: String,
+    #[serde(default)]
+    model: Model,
+    #[serde(default)]
+    effort: Effort,
+    budget_usd: f64,
+    persona: Persona,
+    behaviour: Tone,
+    local_time: String,
+    #[serde(default)]
+    claude_path: Option<PathBuf>,
+}
+
+/// Saves the user's message, starts the answer on its own thread and returns the saved
+/// message at once. The answer streams over `events`.
+#[tauri::command]
+pub async fn send_message(
+    app: AppHandle,
+    state: State<'_, ChatState>,
+    request: SendRequest,
+    events: Channel<Event>,
+) -> Result<ShownEntry, BridgeError> {
+    let transport = transport_for(request.claude_path.as_deref(), &state.data_dir)?;
+    let target = ReviewTarget {
+        transport: Arc::clone(&transport),
+        name: request.persona.name.clone(),
+    };
+    let message = Message {
+        text: request.text,
+        persona: request.persona,
+        tone: request.behaviour,
+        model: request.model,
+        effort: request.effort,
+        budget_usd: request.budget_usd,
+        local_time: request.local_time,
+    };
+    let (user_entry, mut reply) = state.conversation.send(transport, message)?;
+    state.review.note_activity();
+    *lock(&state.active) = Some(reply.stopper());
+
+    std::thread::spawn(move || {
+        // The page may be gone while the answer is still coming in; keep going so that the
+        // answer is still saved.
+        for event in reply.by_ref() {
+            events.send(event).ok();
+        }
+        let state = app.state::<ChatState>();
+        *lock(&state.active) = None;
+        drop(reply);
+        state
+            .review
+            .schedule(app.clone(), state.conversation.clone(), target);
+    });
+    Ok(user_entry)
+}
+
+/// Ends the running reply. The text so far is kept.
+#[tauri::command]
+pub fn stop_reply(state: State<'_, ChatState>) {
+    if let Some(stopper) = lock(&state.active).as_ref() {
+        stopper.stop();
+    }
+}
+
+#[tauri::command]
+pub fn forget_conversation(state: State<'_, ChatState>) -> Result<(), BridgeError> {
+    Ok(state.conversation.forget()?)
+}
+
+#[derive(Serialize)]
+pub struct MemoryView {
+    memory: String,
+    user: String,
+    recent: String,
+    limits: MemoryLimits,
+}
+
+#[derive(Serialize)]
+struct MemoryLimits {
+    memory: usize,
+    user: usize,
+    recent: usize,
+}
+
+#[tauri::command]
+pub fn load_memory(state: State<'_, ChatState>) -> Result<MemoryView, BridgeError> {
+    let Notes {
+        memory,
+        user,
+        recent,
+    } = state.conversation.notes()?;
+    Ok(MemoryView {
+        memory,
+        user,
+        recent,
+        limits: MemoryLimits {
+            memory: MEMORY_LIMIT,
+            user: USER_LIMIT,
+            recent: RECENT_LIMIT,
+        },
+    })
+}
+
+/// Saves notes the user edited and returns them as saved (cut to their limits).
+#[tauri::command]
+pub fn save_memory(state: State<'_, ChatState>, notes: Notes) -> Result<Notes, BridgeError> {
+    Ok(state.conversation.save_notes(notes)?)
+}
+
+#[tauri::command]
+pub fn render_markdown(text: &str) -> String {
+    agent::render_markdown(text)
+}
+
+/// Opens a web or mail link in the user's own browser or mail app.
+#[tauri::command]
+pub fn open_link(app: AppHandle, url: &str) -> Result<(), BridgeError> {
+    let lowered = url.trim().to_ascii_lowercase();
+    if !OPENABLE_SCHEMES
+        .iter()
+        .any(|scheme| lowered.starts_with(scheme))
+    {
+        return Err(BridgeError::BadLink(format!(
+            "only web and mail links can be opened, not {url}"
+        )));
+    }
+    app.opener()
+        .open_url(url.trim(), None::<&str>)
+        .map_err(|error| BridgeError::Io(error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn bridge_error_serialises_as_kind_and_message() {
+        let cases = [
+            (
+                BridgeError::Busy,
+                json!({"kind": "busy", "message": "Jet is still answering"}),
+            ),
+            (
+                BridgeError::ClaudeMissing("not found".into()),
+                json!({"kind": "claudeMissing", "message": "not found"}),
+            ),
+            (
+                BridgeError::Io("disk full".into()),
+                json!({"kind": "io", "message": "disk full"}),
+            ),
+            (
+                BridgeError::BadLink("nope".into()),
+                json!({"kind": "badLink", "message": "nope"}),
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(serde_json::to_value(&error).unwrap(), expected);
+        }
+        let from_agent = BridgeError::from(ConversationError::Busy);
+        assert_eq!(serde_json::to_value(&from_agent).unwrap()["kind"], "busy");
+    }
+}
