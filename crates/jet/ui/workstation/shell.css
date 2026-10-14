@@ -1,0 +1,29 @@
+/* The workstation page inside the chat window. While it shows, the chat's header,
+   thread and composer step aside, and the page carries its own header. */
+.page[data-page="workstation"] .main > .header,
+.page[data-page="workstation"] .stage,
+.page[data-page="workstation"] .composer { display: none; }
+
+/* It spans every row of the main area; the hidden chat parts leave their rows at zero height. */
+.workstation-page { grid-row: 1 / -1; grid-column: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--ground); }
+
+.workstation-header { flex: none; padding-left: 16px; }
+.workstation-header .workstation-menu { display: none; }
+@media (max-width: 759.98px) {
+  .workstation-header { padding-left: 4px; }
+  .workstation-header .workstation-menu { display: grid; }
+}
+
+.link-chip { margin-left: auto; font: 12px/16px var(--mono); color: var(--muted); }
+.link-chip::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--muted); vertical-align: 1px; }
+.link-chip[data-connection="live"]::before { background: var(--ok); }
+.link-chip[data-connection="stale"]::before { background: #dda542; }
+
+/* A grid, so the workstation's own root fills it. */
+.workstation-body { flex: 1; min-height: 0; display: grid; }
+
+.workstation-setup { margin: auto; max-width: 420px; padding: 20px 24px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; }
+.workstation-setup-title { margin: 0 0 6px; font-size: 15px; line-height: 20px; font-weight: 600; }
+.workstation-setup-detail { margin: 0 0 14px; font-size: 13px; line-height: 18px; color: var(--muted); }
+
+.workstation-notice { margin: auto; font-size: 13px; color: var(--muted); }

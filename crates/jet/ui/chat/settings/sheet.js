@@ -1,5 +1,5 @@
 // The settings sheet: a dialog that slides in from the right (or up from the
-// bottom on a phone), holds the nine sections, and saves a short while after
+// bottom on a phone), holds the ten sections, and saves a short while after
 // the last edit.
 
 import { displayName } from '../../bridge/settings.js';
@@ -10,6 +10,7 @@ import { buildMemory } from './memory.js';
 import { buildModel } from './model.js';
 import { paintNames } from './names.js';
 import { buildPersona } from './persona.js';
+import { buildWorkstation } from './workstation.js';
 
 const SAVE_AFTER_EDIT_MS = 600;
 
@@ -53,7 +54,7 @@ export function createSheet({ dialog, context, onChange, save }) {
   const model = buildModel(ctx);
   const memory = buildMemory(ctx);
   const claude = buildClaude(ctx);
-  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), ...buildLook(ctx), model.el, memory.el, ...claude.el);
+  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), ...buildLook(ctx), model.el, memory.el, buildWorkstation(ctx), ...claude.el);
 
   const closeButton = h('button', { class: 'icon-button', type: 'button', 'aria-label': 'Close settings', onClick: () => sheet.close() }, icon('close'));
   dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), closeButton), body);

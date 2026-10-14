@@ -58,6 +58,9 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Library** — quanty or polysim, an MCP server Jet's Claude reaches through tools (settings key `mcp`). _Avoid_: plugin.
 - **Tool call** — one use of a library tool during a reply: started, then finished with its result and a one-line summary; kept with the reply in the transcript.
 
+- **Page** — what the main area shows: the chat or the workstation. _Avoid_: mode, tab, view.
+- **Rail** — the drawer narrowed to its icons beside the workstation: Jet at the top to go back to the chat, the workstation button, the gear. _Avoid_: collapsed drawer, mini drawer.
+
 - **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.
 - **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.
 - **Flight** — the live Jet's move from where it stood to the slot's lane on a send. _Avoid_: zoom (that is the clip Jet plays during it).

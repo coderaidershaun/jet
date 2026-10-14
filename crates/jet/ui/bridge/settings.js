@@ -20,8 +20,10 @@
  * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max'} effort
  * @property {number} turnBudgetUsd
  * @property {boolean} drawerOpen
+ * @property {'chat' | 'workstation'} page   the page shown last, opened again at start-up
  * @property {string | null} claudePath   null = find Claude Code on its own
  * @property {{ quanty: McpServer, polysim: McpServer }} mcp   the libraries Jet's Claude may use
+ * @property {import('./workstation.js').WorkstationSettings} workstation
  */
 
 const STORAGE_KEY = 'jet.settings';
@@ -52,6 +54,7 @@ export function defaultSettings() {
     effort: 'medium',
     turnBudgetUsd: 10,
     drawerOpen: true,
+    page: 'chat',
     claudePath: null,
     mcp: {
       quanty: {
@@ -64,6 +67,13 @@ export function defaultSettings() {
         command: '/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-mcp',
         cwd: '/Users/shaun/Code/DEVELOPMENT/polysim',
       },
+    },
+    workstation: {
+      bridgePath: '/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-bridge',
+      polysimDir: '/Users/shaun/Code/DEVELOPMENT/polysim',
+      strategyId: 'strat-micro-recorder',
+      links: ['127.0.0.1:9310'],
+      token: null,
     },
   };
 }

@@ -6,7 +6,7 @@
  * Every failure reaches the page as { kind, message }. The Rust side already sends that
  * shape; a bare string or an Error from the bridge itself becomes kind "io".
  */
-function asBridgeError(error) {
+export function asBridgeError(error) {
   if (error && typeof error.kind === 'string' && typeof error.message === 'string') return error;
   if (error instanceof Error) return { kind: 'io', message: error.message };
   return { kind: 'io', message: String(error) };

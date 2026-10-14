@@ -1,6 +1,6 @@
-//! Serves the pages in `ui/` to a plain browser, so the chat (on its pretend agent) and the lab
-//! can be tried and checked without the desktop window. Run it with
-//! `cargo run -p jet --example serve`, or pass a port after `--`.
+//! Serves the pages in `ui/` to a plain browser, so the chat (on its pretend agent), the workstation
+//! (on its pretend feed) and the lab can be tried and checked without the desktop window. Run it
+//! with `cargo run -p jet --example serve`, or pass a port after `--`.
 
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
@@ -103,6 +103,7 @@ fn main() -> io::Result<()> {
     let port = listener.local_addr()?.port();
     println!("chat (on the pretend agent): http://{HOST}:{port}/");
     println!("lab:                         http://{HOST}:{port}/lab.html");
+    println!("workstation (on the pretend feed): http://{HOST}:{port}/workstation.html");
 
     // A browser opens several connections at once, so each one gets its own thread.
     thread::scope(|scope| {
