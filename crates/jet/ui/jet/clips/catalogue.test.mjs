@@ -26,6 +26,8 @@ const OPTIONS = {
   done: [{}, { long: true }],
   error: [{}, { exclaim: false }],
   interrupted: [{ rotate: 120 }],
+  drop: [{ cruiseMs: 0 }, { cruiseMs: 900 }],
+  abseil: [{ cruiseMs: 0 }, { cruiseMs: 900 }],
 };
 
 function everyClip(dials = DIALS) {

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { buildDrop } from './clips/drop.js';
 import { buildZoom } from './clips/zoom.js';
 import { createDirector, MOODS } from './director.js';
 import { createPlayer } from './player.js';
@@ -171,4 +172,38 @@ test('reduced motion moves nowhere and skips the zoom', () => {
   run(0, 3000);
   assert.deepEqual(seen, ['working']);
   assert.equal(director.status, 'working');
+});
+
+test('the drop and the abseil are picked only for a move mostly straight down', () => {
+  const profileFor = (move, chance) => {
+    let draws = 0;
+    const random = () => {
+      draws += 1;
+      return chance;
+    };
+    const { director } = setup(shipmate, random);
+    const { profile } = director.send({ cruiseMs: 1400, ...move }, 0);
+    assert.ok(draws > 0, 'the director chooses with the random it was given');
+    return profile;
+  };
+  const chances = [0.1, 0.5, 0.9];
+  assert.deepEqual(chances.map((chance) => profileFor({ dx: 0, dy: 400 }, chance)), ['roll', 'drop', 'abseil']);
+  for (const move of [{ dx: 200, dy: 400 }, { dx: 0, dy: -400 }, { dx: 0, dy: 0 }]) {
+    assert.deepEqual(chances.map((chance) => profileFor(move, chance)), ['roll', 'roll', 'roll'], JSON.stringify(move) + ' only rolls');
+  }
+});
+
+test('a drop keeps its own timing, then the loop runs until the reply arrives', () => {
+  const { director, seen, run } = setup(shipmate, () => 0.5);
+  const drop = buildDrop(rig, shipmate, { cruiseMs: 1400 });
+  const [launch, cruise] = drop.phases;
+  assert.deepEqual(
+    director.send({ cruiseMs: 1400, dx: 0, dy: 400 }, 0),
+    { moveAt: launch.end, moveMs: cruise.end - launch.end, profile: 'drop' },
+    'the host moves the thread during the drop\'s cruise and drops Jet',
+  );
+  assert.equal(director.status, 'travelling');
+  run(0, drop.total + FRAME_MS);
+  assert.equal(director.status, 'working');
+  assert.deepEqual(seen, ['drop', 'working']);
 });

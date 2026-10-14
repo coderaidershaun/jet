@@ -24,7 +24,7 @@ Jet is a circle that borrows other shapes when it has something to say.
 - **The pip** is a dot on the foot. The body shrinks to it while the disc covers it, sits under the loop while Jet works, and shrinks to it when Jet is interrupted. It is a circle of radius 5 at y 83. It tucks under the lower edge of the loop, on purpose, so that the two read as one body. A smaller circle draws a ring inside its own stroke.
 - **Props** are things Jet holds or uses: an umbrella, a bat, a ball, a rope. There are two slots, each stored as five numbers (x, y, rotate, scale, opacity) so they tween, and the clip names the kind for each slot. Hidden is opacity 0, and the element stays in the page. Props are drawn in ink behind the body, as faint as the spin grooves, so Jet stays the only saturated thing. A prop never outlives its clip: a clip with no prop track fades both slots to hidden within 200 ms, and a clip that is not a hold ends with both hidden.
 - **Speed** is a track like any other: units per second that scenery may scroll by. Jet itself stays where it is; the world moves.
-- **Airborne poses** are named with the `zoom` prefix. They are rolling or flying (`zoom_hop` is the lift of a hop), so the foot anchor is not on the ground, but their lowest point never sinks below it. Everything else keeps its foot planted. A test checks both.
+- **Airborne poses** are named with the `zoom` prefix. They are rolling, flying, falling or dangling (`zoom_hop` is the lift of a hop; `zoom_fall` and `zoom_dangle` are the drop and the abseil), so the foot anchor is not on the ground, but their lowest point never sinks below it. Everything else keeps its foot planted. A test checks both.
 
 ## 3. Rules that do not bend
 
@@ -54,6 +54,7 @@ This is what separates alive from robotic. The first wave was robotic because it
 - **Idle is never still.** Breathing of about 2% and a blink of the faint eyes every 4–9 s at random, never a loop you can count. Both are built.
 - **Easings are CSS cubic-beziers**, named in the clip file, so a curve tuned in a browser can be copied over unchanged.
 - **Travel is stretch along the direction of motion.** Rolling, Jet is an oval with its long axis along the way it is going, nose up a little, bobbing gently; it crouches back before it goes, launches past its cruising shape, piles forward when it brakes, and wobbles back to round. The camera follows Jet, so the ground moves and Jet does not.
+- **A fall is the host's move.** In the drop and the abseil the host moves Jet down the page, falling faster until 40% of the way and then slowing, or in three steps; the clip supplies only the prop, the body's answer to it and the landing.
 - **A hold needs a key.** The sampler eases between neighbouring keys, so a value that should stay put during a long phase needs a key at the start of the next phase too, or it will drift across the whole phase. This bit the zoom's speed and colour tracks on the first pass.
 
 ## 5. How the dials reach a clip
@@ -97,7 +98,7 @@ A clip is a function `buildX(rig, params, options)` beside `ui/jet/clips/hello.j
 - A track the clip does not mention holds its current value. A track it does mention should also say where it ends, so an interrupted zoom does not leave the ground moving under a hello.
 - Give every beat a name that is a verb (dip, swing, peak, tuck, melt, launch, cruise, brake). Names already used are the vocabulary; reuse them.
 - Add the clip to `clips/catalogue.js`. `catalogue.test.mjs` holds every clip in it to the shared contract: time runs forward in every track, shape 0 never leaves the circle, eyes 0 never show a face, any clip that interrupts any clip comes to rest with no ground speed and no grooves (and with both props hidden, unless it is a hold), shape 0, motion below 3 and reduced motion never show a prop, and every prop a clip names is a known kind. So a clip's own test file covers only its own choices.
-- A clip may take options. Hello takes `brief`, zoom takes `cruiseMs`, working takes `spinMs` and `continueFrom`, workingEnd takes `rotate`, done takes `long`, error takes `exclaim` and interrupted takes `rotate`.
+- A clip may take options. Hello takes `brief`, zoom, drop and abseil take `cruiseMs`, working takes `spinMs` and `continueFrom`, workingEnd takes `rotate`, done takes `long`, error takes `exclaim` and interrupted takes `rotate`.
 - **A hold ends away from the circle on purpose.** `lean` and `working` are holds. Jet stays in them until something else plays, so the director always follows a hold with a clip that ends at the circle (`leanBack`, `workingEnd`, `interrupted` or a mood).
 - **Rotate stays below one turn.** End every whole turn of the ring with two keys at the same time, 360 and then 0. They look the same, and any clip that hides the ring turns it back by less than a turn.
 - The working loop turns clockwise, one turn in 1.1 s for its first 8 s, then one turn that slows to 1.8 s, then one turn in 1.8 s. `working` and `workingEnd` ignore the tempo: the loop is a status, not a mood.
@@ -122,7 +123,7 @@ Shapes already chosen for statuses, so new work stays consistent:
 | Excited | squash, hop, arm up, melt | squint at the peak | built: `excited`; the one clip that uses all three channels |
 | Annoyed | stands, `glare`, a bow, melt | narrowed | built: `annoyed`; only as far as the wheel is candid, and a bow, never a shake |
 | Hello | stand, wave, melt | open, squint at peak, blink at end | the reference clip |
-| Jetting off | crouch back, launch, roll as a tilted oval with spin grooves, brake, settle | slits into the wind above eyes 6, else none | scenery scrolls by the speed track; the cruise lasts as long as the job |
+| Jetting off | crouch back, launch, roll as a tilted oval with spin grooves, brake, settle; for a move mostly straight down, at random, the zoom or one of two falls: the drop (crouch, lift into a tall fall, an umbrella pops open 40% of the way down, Jet relaxes and bobs beneath it, lands with a squash as it folds) or the abseil (a rope fades in from above, Jet dangles and kicks off three times on the way down, lands, the rope whips away) | slits into the wind above eyes 6, else none; wide in the drop and open in the abseil above eyes 6 | built: `zoom`, `drop`, `abseil`; scenery scrolls by the speed track, only in the zoom; the cruise lasts as long as the job |
 | Asleep | flat on a side | closed | long idle |
 | Interrupted | shrinks to a dot | none | built: `interrupted` |
 | Offline | hollow ring, muted colour | none | |

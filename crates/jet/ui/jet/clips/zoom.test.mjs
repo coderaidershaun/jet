@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { RING } from '../state.js';
 import { sample } from '../track.js';
 import { buildZoom } from './zoom.js';
+import { buildAbseil } from './abseil.js';
+import { buildDrop } from './drop.js';
 import { buildHello } from './hello.js';
 import { createPlayer } from '../player.js';
 
@@ -67,4 +69,27 @@ test('a hello that interrupts a zoom stops the ground and hides the grooves', ()
   player.tick(midCruise + 600);
   assert.equal(player.state.speed, 0, 'the ground has stopped');
   assert.equal(player.state.ring[RING.OPACITY], 0, 'the grooves are gone');
+});
+
+test("the drop and the abseil take the zoom's phases and time", () => {
+  const dials = {
+    shipmate,
+    'playful and candid': { ...shipmate, candid: 1, playful: 1 },
+    'serious and deferential': { ...shipmate, candid: -1, playful: -1 },
+    'reduced motion': { ...shipmate, reducedMotion: true },
+  };
+  for (const [dialName, dial] of Object.entries(dials)) {
+    for (const cruiseMs of [0, 520, 900, 1400, 2400]) {
+      const zoom = buildZoom(rig, dial, { cruiseMs });
+      for (const [name, build] of [['drop', buildDrop], ['abseil', buildAbseil]]) {
+        const clip = build(rig, dial, { cruiseMs });
+        const title = name + ' at ' + dialName + ' with a cruise of ' + cruiseMs + ' ms';
+        assert.deepEqual(clip.phases.map((phase) => phase.name), ['launch', 'cruise', 'brake'], title);
+        for (const [i, phase] of clip.phases.entries()) {
+          assert.ok(Math.abs(phase.end - zoom.phases[i].end) < 1e-6, title + ': the ' + phase.name + ' ends at ' + phase.end + ', not ' + zoom.phases[i].end);
+        }
+        assert.ok(Math.abs(clip.total - zoom.total) < 1e-6, title + ': lasts ' + clip.total + ', not ' + zoom.total);
+      }
+    }
+  }
 });

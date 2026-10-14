@@ -65,6 +65,9 @@ fn poses() -> Vec<(&'static str, Vec<f64>)> {
         ("zoom_bob", tilted_ellipse(52.0, 58.0, 39.0, 26.0, -20.0)),
         ("zoom_brake", tilted_ellipse(55.0, 52.5, 27.0, 36.0, 12.0)),
         ("zoom_hop", ellipse(50.0, 46.0, 26.0, 34.0)),
+        // Falling and dangling: Jet drops under an umbrella or hangs from a rope while the host moves it down.
+        ("zoom_fall", tilted_ellipse(50.0, 52.0, 24.0, 35.0, -6.0)),
+        ("zoom_dangle", tilted_ellipse(50.0, 53.0, 25.0, 35.0, 10.0)),
     ]
 }
 
@@ -89,6 +92,8 @@ fn eyes() -> Vec<(&'static str, Vec<f64>)> {
         ("zoom_hop", vec![42.0, 36.0, 58.0, 36.0]),
         ("zoom", [on_body(52.0, 60.0, -18.0, 9.0, -9.0), on_body(52.0, 60.0, -18.0, 21.0, -7.0)].concat()),
         ("zoom_bob", [on_body(52.0, 58.0, -20.0, 9.0, -9.0), on_body(52.0, 58.0, -20.0, 21.0, -7.0)].concat()),
+        ("zoom_fall", [on_body(50.0, 52.0, -6.0, -8.0, -14.0), on_body(50.0, 52.0, -6.0, 8.0, -14.0)].concat()),
+        ("zoom_dangle", [on_body(50.0, 53.0, 10.0, -8.0, -14.0), on_body(50.0, 53.0, 10.0, 8.0, -14.0)].concat()),
     ]
 }
 

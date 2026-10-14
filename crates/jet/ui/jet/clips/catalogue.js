@@ -1,8 +1,10 @@
 // The one list of every clip Jet can play. The lab and the director both read it, so a
 // new clip is added here and nowhere else.
 
+import { buildAbseil } from './abseil.js';
 import { buildAnnoyed } from './annoyed.js';
 import { buildDone } from './done.js';
+import { buildDrop } from './drop.js';
 import { buildError } from './error.js';
 import { buildExcited } from './excited.js';
 import { buildHello } from './hello.js';
@@ -35,4 +37,6 @@ export const CLIPS = {
   lean: { label: 'Lean', build: buildLean, hold: true },
   leanBack: { label: 'Lean back', build: buildLeanBack, hold: false },
   interrupted: { label: 'Interrupted', build: buildInterrupted, hold: false },
+  drop: { label: 'Drop', build: buildDrop, hold: false },
+  abseil: { label: 'Abseil', build: buildAbseil, hold: false },
 };

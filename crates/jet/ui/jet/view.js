@@ -31,7 +31,8 @@ const PROP_SHAPES = {
   bat: () => [svgElement('path', { d: 'M-1.4 0 L-3 -30 A3 3 0 0 1 3 -30 L1.4 0 A1.4 1.4 0 0 1 -1.4 0 Z', fill: 'currentColor' })],
   ball: () => [svgElement('circle', { r: 4, fill: 'currentColor' })],
   // The rope reaches far above Jet's box. It shows only because the drawing may spill outside the box.
-  rope: () => [svgElement('line', { x1: 0, y1: -600, x2: 0, y2: 0, 'stroke-width': 1.6, ...STROKED })],
+  // It is long enough that its top stays out of sight above the window even when Jet is small and low on the page.
+  rope: () => [svgElement('line', { x1: 0, y1: -4000, x2: 0, y2: 0, 'stroke-width': 1.6, ...STROKED })],
 };
 
 /**

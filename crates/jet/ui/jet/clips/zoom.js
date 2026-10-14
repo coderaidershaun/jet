@@ -58,6 +58,20 @@ const BALL = {
 };
 
 /**
+ * The timing every travel clip shares with the zoom, so the host's move fits whichever travel plays.
+ * `tempo` scales every beat. `cruise` is the cruise length before the tempo: a whole number of bob half
+ * periods (`halves`), at least two, as close to `cruiseMs` as that allows. Every travel's launch must
+ * last 500 ms and its brake 710 ms, both before the tempo.
+ * @param {{ x: number, y: number }} dials   candid and playful, as readDials gives them
+ * @param {number} cruiseMs
+ * @returns {{ tempo: number, halves: number, cruise: number }}
+ */
+export function travelTiming({ x, y }, cruiseMs) {
+  const halves = Math.max(2, Math.round(cruiseMs / BOB_HALF_PERIOD_MS));
+  return { tempo: clamp(1 - 0.1 * y - 0.1 * x, 0.75, 1.2), halves, cruise: halves * BOB_HALF_PERIOD_MS };
+}
+
+/**
  * @param {import('../rig.js').Rig} rig
  * @param {import('../clip.js').Params} p
  * @param {{ cruiseMs?: number }} [options]   how long the job takes; the host decides
@@ -74,7 +88,7 @@ export function buildZoom(rig, p, { cruiseMs = 2400 } = {}) {
   const grooves = km > 0.3 && !reduced;
   const squint = eyeSize > 0 && ke > 0.6; // eyes above 6 squint into the wind
   const cool = COOL_SHIFT_MAX * kc;
-  const tempo = clamp(1 - 0.1 * y - 0.1 * x, 0.75, 1.2);
+  const { tempo, halves } = travelTiming({ x, y }, cruiseMs);
 
   const ball = (name) => {
     const a = BALL.circle;
@@ -114,7 +128,6 @@ export function buildZoom(rig, p, { cruiseMs = 2400 } = {}) {
   clip.phases.push({ name: 'launch', end: t() });
 
   // cruise: a gentle bob while the grooves turn
-  const halves = Math.max(2, Math.round(cruiseMs / BOB_HALF_PERIOD_MS));
   for (let i = 0; i < halves; i++) {
     const up = i % 2 === 0;
     const name = up ? 'zoom_bob' : 'zoom';
