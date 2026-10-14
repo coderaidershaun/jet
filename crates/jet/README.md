@@ -64,6 +64,7 @@ What they cover:
 | `ui/chat/composer/state.test.mjs` | centred until the first send, Send becomes Stop, Enter and Escape |
 | `ui/chat/drawer/cache.test.mjs` | the cache chip is warm until the TTL ends, then cold with the tokens to re-read |
 | `ui/chat/drawer/caption.test.mjs` | the gear caption reads the model word and the thinking level |
+| `ui/chat/drawer/format.test.mjs` | counts group thousands with commas and shorten from 10 000 up, a dash for a time or a turn count not known yet; spend reads reported, est., no rate or a dash; the model line is the short name and the thinking level |
 | `ui/chat/drawer/log.test.mjs` | the log keeps the last 500 lines, tags each by type and pretty-prints JSON |
 | `ui/chat/drawer/rates.test.mjs` | the recorded Sonnet turn costs 0.007334 at list price; Haiku 5.5 moves to its long-prompt prices at 100 000 prompt tokens; a model with no price has no estimate |
 | `ui/chat/drawer/usage.test.mjs` | the recorded Sonnet turn read line by line (live counts, then the reported cost and timings, then the totals); a second reply at another thinking level gets its own row; a stopped reply keeps its tokens; stray lines change nothing |
@@ -176,6 +177,8 @@ crates/jet
     │   │   ├── rates.test.mjs      the recorded turn costs 0.007334; Haiku 5.5's tier edge; an unknown model has no estimate
     │   │   ├── caption.js          the words under the gear, such as "Sonnet · medium" (pure)
     │   │   ├── caption.test.mjs    the model word and the thinking level
+    │   │   ├── format.js           how the usage panel writes its numbers and words, with a dash for a value not known yet (pure)
+    │   │   ├── format.test.mjs     counts, dollars, seconds and turns; the four spend wordings; the model line
     │   │   ├── log.js              the last 500 raw stream lines, tagged, ready to pretty-print (pure)
     │   │   ├── log.test.mjs        the 500 cap, the tags, the pretty-print
     │   │   ├── cache.js            warm or cold wording for the cache chip (pure)
@@ -245,20 +248,21 @@ Three ideas carry the design:
 
 ## The usage panel
 
-The drawer's Usage panel sits between the cache chip and the raw stream log. It shows:
+The drawer's Usage panel sits between the cache chip and the raw stream log. It has three groups:
 
-- **Session**: the first 8 characters of the Claude Code session id, and a Copy button for the whole id.
-- **Model · thinking**: the model and thinking level of the current or last reply. The caption under the gear shows what the next reply will use.
-- **This reply**: its status (idle, streaming, done, stopped or failed), the tokens by kind (in, cache read, cache write as 5 minute and 1 hour, out, thinking), its spend, and its timings (first token, API time, total, turns, stop reason).
-- **Session totals**: replies, tokens and spend since the app started, and a table of the same by model and thinking level. "Session" here means since the app started, not one Claude Code session. Nothing is saved between launches.
+- **This reply**: its status (idle, streaming, done, stopped or failed) beside the heading, then a label and a value on each row: the tokens by kind (in, cache read, cache write as 5 minute and 1 hour, out, thinking), its spend, and its timings (first token, API time, total, turns, stop reason).
+- **Session**: replies, tokens and spend since the app started, as three tiles, and under them a table of the same by model and thinking level, hidden until a reply has used tokens. "Session" here means since the app started, not one Claude Code session. Nothing is saved between launches.
+- **Model**: the model and thinking level of the current or last reply, the first 8 characters of the Claude Code session id with a Copy button for the whole id, and the date of the list prices. The caption under the gear shows what the next reply will use.
+
+A value not known yet shows a dash. The tokens tile shortens counts from 10 000 up (for example 41.6K); the table under it keeps full counts.
 
 The numbers come from the stream lines while a reply runs: the init line names the session and model, `message_start` gives the prompt tokens, and `message_delta` gives the output tokens so far. While there is no reported cost the spend reads "est." and is worked out from the list prices of 2026-10-14 in `ui/chat/drawer/rates.js`. A model with no price there reads "no rate". The `result` line carries the cost Claude Code reports, the timings and the final counts; from then on the spend reads "reported", and that cost is what the totals add. A reply that is stopped has no reported cost, so the totals add its estimate. The thinking tokens are part of the output tokens and are never added twice.
 
 The `finished` event's `usage` may also carry `outputTokens`, `thinkingTokens` and `model`. The Rust side (`Usage` in `crates/agent/src/chat/usage.rs`) fills them from the result line. When they are there the tracker prefers them to what it read from the stream.
 
-The five thinking levels are `low`, `medium`, `high`, `xhigh` and `max`. The pretend agent writes `message_start` and `message_delta` lines like the real CLI, so in a browser the counts and the timing line fill in during a reply too.
+The five thinking levels are `low`, `medium`, `high`, `xhigh` and `max`. The pretend agent writes `message_start` and `message_delta` lines like the real CLI, so in a browser the counts and the timings fill in during a reply too.
 
-The settings sheet's "This session" block reads the same totals, so the two places show the same tokens and the same cost.
+The settings sheet's "This session" block reads the same totals, so the two places show the same tokens and the same cost. The sheet writes the tokens in full, and the tile shortens them from 10 000 up.
 
 ## Commands the window can call
 

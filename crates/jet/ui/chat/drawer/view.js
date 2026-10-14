@@ -6,43 +6,14 @@ import { RING_HIDDEN } from '../../jet/state.js';
 import { mountJet } from '../../jet/view.js';
 import { h } from '../dom.js';
 import { captionFor } from './caption.js';
-import { RATES_DATE, modelLabel } from './rates.js';
+import { NOTHING, compactCount, count, dollars, modelAndThinking, seconds, spendText, turnsText } from './format.js';
+import { RATES_DATE } from './rates.js';
 import { tokenCount } from './usage.js';
 
 const NARROW = '(max-width: 759.98px)';
 const FOLLOW_SLACK_PX = 24;
 const COPIED_SHOWN_MS = 1200;
-const NOTHING = '—';
 const SESSION_ID_CHARS = 8;
-// The no-break space keeps each dot with the words before it, so a wrapped line never starts with a dot.
-const DOT = '\u00A0· ';
-
-const count = (tokens) => tokens.toLocaleString('en-GB');
-const dollars = (usd) => '$' + usd.toFixed(4);
-const seconds = (ms) => (ms === null ? NOTHING : (ms / 1000).toFixed(2) + ' s');
-
-/** Each pair stays on one line; a long line breaks between pairs. */
-function setPairs(element, pairs) {
-  element.replaceChildren(...pairs.flatMap((text, index) => {
-    const pair = h('span', { class: 'usage-pair', text });
-    return index === 0 ? [pair] : [DOT, pair];
-  }));
-}
-
-function spendText({ model, reportedUsd, estimateUsd }) {
-  if (reportedUsd !== null) return dollars(reportedUsd) + ' reported';
-  if (estimateUsd !== null) return 'est. ' + dollars(estimateUsd);
-  return model === null ? NOTHING : 'no rate';
-}
-
-function modelAndThinking({ model, effort }) {
-  return modelLabel(model) + DOT + effort;
-}
-
-function turnsText(numTurns) {
-  if (numTurns === null) return 'turns ' + NOTHING;
-  return numTurns + (numTurns === 1 ? ' turn' : ' turns');
-}
 
 /**
  * @param {{
@@ -62,6 +33,11 @@ export function createDrawerView({
   const logEl = logToggle.closest('.log');
   const usagePart = (id) => usageEl.querySelector('#usage-' + id);
   const sessionCopyButton = usagePart('copy');
+  const setValue = (id, text) => {
+    const element = usagePart(id);
+    element.textContent = text;
+    element.toggleAttribute('data-empty', text === NOTHING);
+  };
   let pending = [];
   let flushQueued = false;
   let latestUsage = null;
@@ -126,35 +102,25 @@ export function createDrawerView({
   function drawUsage() {
     usageQueued = false;
     const { current, total, byModelEffort } = latestUsage;
-    const writes = count(current.cacheWrite5mTokens) + '/' + count(current.cacheWrite1hTokens);
-    const idle = current.status === 'idle';
 
-    usagePart('session').textContent = current.sessionId === null ? NOTHING : current.sessionId.slice(0, SESSION_ID_CHARS);
-    sessionCopyButton.disabled = current.sessionId === null;
-    usagePart('model').textContent = current.model === null ? NOTHING : modelAndThinking(current);
     usagePart('dot').dataset.status = current.status;
     usagePart('status').textContent = current.status;
-    setPairs(usagePart('tokens'), [
-      'in ' + count(current.inputTokens),
-      'cache read ' + count(current.cacheReadTokens),
-      'cache write (5m/1h) ' + writes,
-      'out ' + count(current.outputTokens),
-      'thinking ' + count(current.thinkingTokens),
-    ]);
-    setPairs(usagePart('spend'), [idle ? NOTHING : spendText(current)]);
-    setPairs(usagePart('timing'), [
-      'first token ' + seconds(current.ttftMs),
-      'api ' + seconds(current.apiMs),
-      'total ' + seconds(current.durationMs),
-      turnsText(current.numTurns),
-      current.stopReason ?? 'stop ' + NOTHING,
-    ]);
-    setPairs(usagePart('totals'), [
-      total.replies + (total.replies === 1 ? ' reply' : ' replies'),
-      count(tokenCount(total)) + ' tokens',
-      dollars(total.usd),
-    ]);
+    setValue('in', count(current.inputTokens));
+    setValue('cache-read', count(current.cacheReadTokens));
+    // The zero-width space lets a long pair wrap after the slash, never inside a number.
+    setValue('cache-write', count(current.cacheWrite5mTokens) + '/\u200B' + count(current.cacheWrite1hTokens));
+    setValue('out', count(current.outputTokens));
+    setValue('thinking', count(current.thinkingTokens));
+    setValue('spend', spendText(current));
+    setValue('first-token', seconds(current.ttftMs));
+    setValue('api', seconds(current.apiMs));
+    setValue('duration', seconds(current.durationMs));
+    setValue('turns', turnsText(current.numTurns));
+    setValue('stop', current.stopReason ?? NOTHING);
 
+    setValue('all-replies', count(total.replies));
+    setValue('all-tokens', compactCount(tokenCount(total)));
+    setValue('all-spend', dollars(total.usd));
     usagePart('table').hidden = byModelEffort.length === 0;
     usagePart('table-body').replaceChildren(...byModelEffort.map((row) => h('tr', {},
       h('td', { text: modelAndThinking(row) }),
@@ -162,6 +128,10 @@ export function createDrawerView({
       h('td', { class: 'usage-number', text: count(tokenCount(row)) }),
       h('td', { class: 'usage-number', text: row.usd.toFixed(4) }),
     )));
+
+    setValue('model', modelAndThinking(current));
+    setValue('session', current.sessionId === null ? NOTHING : current.sessionId.slice(0, SESSION_ID_CHARS));
+    sessionCopyButton.disabled = current.sessionId === null;
   }
 
   function copyText(button, text, what) {

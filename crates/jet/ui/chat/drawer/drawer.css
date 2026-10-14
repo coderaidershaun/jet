@@ -20,30 +20,49 @@
 
 .section-title { margin: 0; font-size: 12px; line-height: 16px; font-weight: 600; color: var(--muted); }
 
-.usage { container-type: inline-size; flex: 0 1 auto; min-height: 0; overflow: auto; padding: 6px 16px 8px; border-top: 1px solid var(--line); font: 11px/16px var(--mono); scrollbar-width: thin; }
-.usage .section-title { font-family: var(--font); }
-.usage-row { margin-top: 4px; }
-.usage-head { display: flex; align-items: center; justify-content: space-between; min-height: 14px; }
-.usage-label, .usage-status { margin: 0; font-size: 11px; line-height: 14px; }
-.usage-label { color: var(--muted); }
-.usage-value { margin: 0; overflow-wrap: anywhere; }
-.usage-inline { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
-.usage-inline .text-button { min-height: 28px; margin: -7px -4px -7px auto; padding: 0 4px; font-size: 11px; }
-.usage-inline .text-button:disabled { color: var(--muted); cursor: default; }
-.usage-pair { white-space: nowrap; }
+.usage { container-type: inline-size; flex: 0 1 auto; min-height: 0; overflow: auto; padding: 6px 16px 8px; border-top: 1px solid var(--line); font-size: 11px; line-height: 16px; scrollbar-width: thin; }
+.usage-group { margin-top: 8px; }
+.usage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.usage-group-title { margin: 0; font-size: 12px; line-height: 16px; font-weight: 600; }
+.usage-status { margin: 0; white-space: nowrap; }
+.usage-aside { margin: 0; color: var(--muted); }
 .usage-dot { display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--muted); vertical-align: 1px; }
 .usage-dot[data-status="streaming"] { background: var(--accent); }
 .usage-dot[data-status="done"] { background: var(--ok); }
 .usage-dot[data-status="failed"] { background: var(--danger); }
+
+.usage-grid dt, .usage-tile dt, .usage-label { color: var(--muted); }
+.usage-grid dd, .usage-tile dd, .usage-chip, .usage-table .usage-number { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.usage [data-empty] { color: var(--muted); }
+
+.usage-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 12px; margin: 2px 0 0; }
+.usage-grid + .usage-grid { margin-top: 3px; padding-top: 3px; border-top: 1px solid var(--line); }
+.usage-grid dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+
+.usage-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 4px 0 0; }
+.usage-tile { display: flex; flex-direction: column-reverse; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); }
+.usage-tile dd { margin: 0; font-size: 16px; line-height: 20px; font-weight: 600; white-space: nowrap; }
+
 .usage-table { width: 100%; margin-top: 6px; border-collapse: collapse; }
-.usage-table th { padding: 0 0 2px; font-weight: 400; text-align: left; color: var(--muted); }
+.usage-table th { padding: 0 0 2px; font-weight: 400; text-align: left; vertical-align: bottom; color: var(--muted); }
 .usage-table td { padding: 2px 0; vertical-align: top; }
-.usage-table th:not(:first-child), .usage-table .usage-number { padding-left: 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.usage-table th:first-child, .usage-table td:first-child { overflow-wrap: anywhere; }
+.usage-table th:not(:first-child), .usage-table .usage-number { padding-left: 12px; text-align: right; white-space: nowrap; }
 .usage-table th:nth-child(2), .usage-table td:nth-child(2) { text-align: left; }
-@container (max-width: 230px) {
-  .usage-table th:not(:first-child), .usage-table .usage-number { padding-left: 6px; }
-}
+
+.usage-model { margin: 2px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.usage-id { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.usage-chip { padding: 0 6px; border-radius: 6px; background: var(--surface-2); }
+.usage-id .text-button { min-height: 28px; margin: -6px -4px -6px auto; padding: 0 4px; font-size: 11px; }
+.usage-id .text-button:disabled { color: var(--muted); cursor: default; }
 .usage-note { margin: 4px 0 0; color: var(--muted); }
+
+@container (max-width: 230px) {
+  /* The last column keeps its full gap, so the dollars never run into the tokens beside them. */
+  .usage-table th:not(:first-child, :last-child), .usage-table .usage-number:not(:last-child) { padding-left: 6px; }
+  .usage-tile { padding: 6px; }
+  .usage-tile dd { font-size: 14px; }
+}
 
 .log { display: flex; flex-direction: column; flex: 1; min-height: 0; border-top: 1px solid var(--line); }
 .log[data-open="true"] { min-height: 112px; }
