@@ -13,5 +13,12 @@
   "effort": "medium",
   "turnBudgetUsd": 10.0,
   "drawerOpen": true,
-  "claudePath": null
+  "claudePath": null,
+  "workstation": {
+    "bridgePath": "/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-bridge",
+    "polysimDir": "/Users/shaun/Code/DEVELOPMENT/polysim",
+    "strategyId": "strat-micro-recorder",
+    "links": ["127.0.0.1:9310"],
+    "token": null
+  }
 }
