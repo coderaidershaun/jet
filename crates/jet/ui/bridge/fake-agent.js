@@ -3,6 +3,7 @@
 // made from them, and fails on demand when the user's words ask for it. It
 // stays the agent whenever the page runs outside Tauri.
 
+import { QUANTY_SEARCH } from './fixtures/quanty-search.js';
 import { renderMarkdown } from './markdown.js';
 import { BASE_CONTEXT_TOKENS, MESSAGES, MODEL_IDS, bodyFor, chunksOf, costFor, lines, moodFor, tokensIn, usageFor, wants, wireModelUsage, wireUsage } from './fake-script.js';
 
@@ -21,7 +22,7 @@ const bridgeError = (kind, message) => ({ kind, message });
  *   storage?: { getItem: (key: string) => string | null, setItem: (key: string, value: string) => void, removeItem: (key: string) => void },
  *   now?: () => number,
  *   wait?: (ms: number) => Promise<void>,
- *   chunkMs?: number, chunkChars?: number, firstTokenMs?: number, slowMs?: number,
+ *   chunkMs?: number, chunkChars?: number, firstTokenMs?: number, slowMs?: number, toolMs?: number,
  *   claudeFound?: boolean,
  * }} [options]
  * @returns {import('./agent.js').Agent}
@@ -34,6 +35,7 @@ export function createFakeAgent({
   chunkChars = 6,
   firstTokenMs = 2600,
   slowMs = 12000,
+  toolMs = 800,
   claudeFound = true,
 } = {}) {
   const read = (name, fallback) => {
@@ -107,8 +109,9 @@ export function createFakeAgent({
     write('lastRequestAt', startedAt);
 
     const model = MODEL_IDS[request.model] ?? MODEL_IDS.sonnet;
-    emit({ kind: 'rawLine', line: lines.init(sessionId, model) });
-    emit({ kind: 'started', sessionId, model, fresh });
+    const mcp = ['polysim', 'quanty'].filter((name) => request.mcp?.[name]?.enabled).map((name) => ({ name, status: 'connected' }));
+    emit({ kind: 'rawLine', line: lines.init(sessionId, model, mcp) });
+    emit({ kind: 'started', sessionId, model, fresh, mcp });
     if (asks.fresh) emit({ kind: 'notice', message: MESSAGES.fresh });
 
     if (asks.timeout) return failWith('timeout', MESSAGES.timeout);
@@ -121,20 +124,39 @@ export function createFakeAgent({
 
     const replyNumber = read('history', []).filter((entry) => entry.role === 'jet' && entry.status === 'complete').length + 1;
     const mood = moodFor(text, replyNumber);
-    const body = bodyFor(text, replyNumber);
+    const body = asks.quanty ? QUANTY_SEARCH.reply : bodyFor(text, replyNumber);
     let received = '';
+    const calls = [];
+    const withCalls = (entry) => (calls.length ? { ...entry, tools: calls } : entry);
     // Known before streaming, so the first line of the stream can already carry the input and cache counts.
     const { usage, outputTokens, contextAfter } = usageFor({ contextBefore, userText: text, replyText: body, warm });
 
     const stopped = () => {
-      const entry = saveEntry({ role: 'jet', text: received, html: renderMarkdown(received), status: 'stopped', at: now() });
+      const entry = saveEntry(withCalls({ role: 'jet', text: received, html: renderMarkdown(received), status: 'stopped', at: now() }));
       end({ kind: 'stopped', entry });
     };
+
+    async function searchLibrary() {
+      const { use, result } = QUANTY_SEARCH;
+      const [, server, tool] = use.name.split('__');
+      emit({ kind: 'rawLine', line: lines.toolUse(sessionId, use) });
+      emit({ kind: 'toolStarted', id: use.id, server, tool, input: use.input });
+      const calledAt = now();
+      await pause(toolMs);
+      if (control.stopped) return false;
+      const summary = server + ' · ' + tool + ' · ' + result.results.length + ' results';
+      const durationMs = now() - calledAt;
+      emit({ kind: 'rawLine', line: lines.toolResult(sessionId, { id: use.id, result }) });
+      emit({ kind: 'toolFinished', id: use.id, server, tool, ok: true, result, summary, durationMs });
+      calls.push({ id: use.id, server, tool, input: use.input, ok: true, result, summary, durationMs });
+      return true;
+    }
 
     await pause(asks.slow ? slowMs : firstTokenMs);
     if (control.stopped) return stopped();
 
     const ttftMs = now() - startedAt;
+    if (asks.quanty && !(await searchLibrary())) return stopped();
     emit({ kind: 'rawLine', line: lines.messageStart(sessionId, { model, usage, ttftMs }) });
     if (mood) {
       emit({ kind: 'rawLine', line: lines.delta(sessionId, 'mood: ' + mood + '\n') });
@@ -163,7 +185,7 @@ export function createFakeAgent({
     const result = { text: received, isError: false, durationMs, ttftMs, costUsd, usage: wireUsage(usage, outputTokens), modelUsage };
     emit({ kind: 'rawLine', line: lines.result(sessionId, result) });
     const html = renderMarkdown(received);
-    const entry = saveEntry({ role: 'jet', text: received, html, ...(mood ? { mood } : {}), status: 'complete', at: now() });
+    const entry = saveEntry(withCalls({ role: 'jet', text: received, html, ...(mood ? { mood } : {}), status: 'complete', at: now() }));
     end({ kind: 'finished', entry, durationMs, costUsd, usage: { ...usage, outputTokens, thinkingTokens: 0, model } });
   }
 

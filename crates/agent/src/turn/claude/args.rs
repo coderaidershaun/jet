@@ -1,10 +1,59 @@
-//! The exact command line and cache setting for a request. The flags and their order stay fixed
-//! so that Claude's prompt cache keeps hitting.
+//! The exact command line, environment and MCP server config for a request. The flags and
+//! their order stay fixed so that Claude's prompt cache keeps hitting.
 
+use serde_json::{Map, Value, json};
+
+use crate::chat::{McpServer, McpServers};
 use crate::turn::transport::{Request, SessionMode};
 
 /// Keeps Claude's prompt cache alive for an hour instead of five minutes.
 pub(super) const CACHE_TTL_ENV: (&str, &str) = ("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h");
+
+/// Turns off CLAUDE.md files and Claude Code's own memory, as safe mode would; safe mode
+/// itself drops the MCP servers. Jet keeps its own notes.
+pub(super) const ISOLATION_ENV: [(&str, &str); 2] = [
+    ("CLAUDE_CODE_DISABLE_CLAUDE_MDS", "1"),
+    ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
+];
+
+/// The tools Claude may run without asking. The names are exact, so the engine mode switch,
+/// and any tool a server adds later, stay off.
+const ALLOWED_TOOLS: &str = "mcp__quanty__search,mcp__quanty__answer,mcp__quanty__list_documents,\
+    mcp__quanty__read_page,mcp__quanty__health,mcp__quanty__ingest_pdf,\
+    mcp__quanty__ingest_status,mcp__polysim__list_strategies,mcp__polysim__start_strategy,\
+    mcp__polysim__stop_strategy";
+
+/// How long Claude Code waits for a server to answer before it gives up, in milliseconds.
+const SERVER_TIMEOUT_MS: u64 = 300_000;
+
+/// Runs a server in its own folder. Claude Code ignores a folder in the config, so the
+/// folder and the program travel as arguments, and no path ever needs quoting here.
+const LAUNCH_IN_FOLDER: &str = r#"cd "$1" && exec "$2""#;
+
+/// The MCP servers as Claude Code's config JSON, or `None` when none is enabled. The text
+/// depends on the settings alone, so it is the same bytes on every turn.
+pub(crate) fn mcp_config(servers: &McpServers) -> Option<String> {
+    let launches: Map<String, Value> = servers
+        .enabled()
+        .map(|(name, server)| (name.to_owned(), launch(name, server)))
+        .collect();
+    if launches.is_empty() {
+        return None;
+    }
+    Some(json!({ "mcpServers": launches }).to_string())
+}
+
+fn launch(name: &str, server: &McpServer) -> Value {
+    let command = server.command.to_string_lossy();
+    match &server.cwd {
+        Some(cwd) => json!({
+            "args": ["-c", LAUNCH_IN_FOLDER, name, cwd.to_string_lossy(), command],
+            "command": "/bin/sh",
+            "timeout": SERVER_TIMEOUT_MS,
+        }),
+        None => json!({"command": command, "timeout": SERVER_TIMEOUT_MS}),
+    }
+}
 
 /// The command line for a request. One function builds both the chat and the review
 /// call, so the order of the flags cannot drift between them.
@@ -27,18 +76,32 @@ pub(super) fn args(request: &Request) -> Vec<String> {
     if let Some(schema) = &request.schema {
         args.extend(["--json-schema".into(), schema.to_string()]);
     }
+    // Safe mode would drop the MCP servers, so the parts of it that matter are set one by one.
+    let tools = if request.mcp_config.is_some() {
+        "ToolSearch"
+    } else {
+        ""
+    };
     args.extend(
         [
             "--tools",
+            tools,
+            "--setting-sources",
             "",
-            "--safe-mode",
+            "--disable-slash-commands",
             "--strict-mcp-config",
-            "--no-chrome",
-            "--permission-prompts",
-            "none",
         ]
         .map(String::from),
     );
+    if let Some(config) = &request.mcp_config {
+        args.extend([
+            "--mcp-config".into(),
+            config.clone(),
+            "--allowedTools".into(),
+            ALLOWED_TOOLS.into(),
+        ]);
+    }
+    args.extend(["--no-chrome", "--permission-prompts", "none"].map(String::from));
     if ephemeral {
         args.push("--no-session-persistence".into());
     } else {
@@ -59,7 +122,22 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::chat::{Effort, Model, SessionId};
+    use crate::chat::{Effort, McpServer, Model, SessionId};
+
+    const BOTH_SERVERS: &str = r#"{"mcpServers":{"polysim":{"args":["-c","cd \"$1\" && exec \"$2\"","polysim","/p","/p/polysim-mcp"],"command":"/bin/sh","timeout":300000},"quanty":{"args":["-c","cd \"$1\" && exec \"$2\"","quanty","/q","/q/quanty-mcp"],"command":"/bin/sh","timeout":300000}}}"#;
+
+    const ALLOWED: &str = "mcp__quanty__search,mcp__quanty__answer,mcp__quanty__list_documents,\
+        mcp__quanty__read_page,mcp__quanty__health,mcp__quanty__ingest_pdf,\
+        mcp__quanty__ingest_status,mcp__polysim__list_strategies,mcp__polysim__start_strategy,\
+        mcp__polysim__stop_strategy";
+
+    fn server(command: &str, cwd: Option<&str>) -> McpServer {
+        McpServer {
+            enabled: true,
+            command: command.into(),
+            cwd: cwd.map(Into::into),
+        }
+    }
 
     fn chat_request(session: SessionMode) -> Request {
         Request {
@@ -70,6 +148,7 @@ mod tests {
             budget_usd: 10.0,
             session,
             schema: None,
+            mcp_config: Some(BOTH_SERVERS.to_owned()),
         }
     }
 
@@ -80,14 +159,52 @@ mod tests {
     }
 
     #[test]
-    fn chat_and_review_args_are_exact() {
-        let new_chat = words(
-            "-p --output-format stream-json --verbose --include-partial-messages \
-             --model sonnet --effort medium --system-prompt You-are-Jet. \
-             --tools '' --safe-mode --strict-mcp-config --no-chrome --permission-prompts none \
-             --autocompact 100k --max-budget-usd 10.00",
+    fn chat_and_review_args_are_exact_without_safe_mode_which_drops_mcp_servers() {
+        let both = McpServers {
+            quanty: server("/q/quanty-mcp", Some("/q")),
+            polysim: server("/p/polysim-mcp", Some("/p")),
+        };
+        assert_eq!(mcp_config(&both).as_deref(), Some(BOTH_SERVERS));
+        assert_eq!(mcp_config(&McpServers::default()), None);
+        let no_folder = McpServers {
+            quanty: server("/q/quanty-mcp", None),
+            ..McpServers::default()
+        };
+        assert_eq!(
+            mcp_config(&no_folder).as_deref(),
+            Some(r#"{"mcpServers":{"quanty":{"command":"/q/quanty-mcp","timeout":300000}}}"#)
         );
+
+        let new_chat = [
+            words(
+                "-p --output-format stream-json --verbose --include-partial-messages \
+                 --model sonnet --effort medium --system-prompt You-are-Jet. \
+                 --tools ToolSearch --setting-sources '' --disable-slash-commands \
+                 --strict-mcp-config --mcp-config",
+            ),
+            vec![BOTH_SERVERS.to_owned()],
+            words("--allowedTools"),
+            vec![ALLOWED.to_owned()],
+            words(
+                "--no-chrome --permission-prompts none --autocompact 100k --max-budget-usd 10.00",
+            ),
+        ]
+        .concat();
         assert_eq!(args(&chat_request(SessionMode::New)), new_chat);
+
+        let no_servers = Request {
+            mcp_config: None,
+            ..chat_request(SessionMode::New)
+        };
+        assert_eq!(
+            args(&no_servers),
+            words(
+                "-p --output-format stream-json --verbose --include-partial-messages \
+                 --model sonnet --effort medium --system-prompt You-are-Jet. \
+                 --tools '' --setting-sources '' --disable-slash-commands --strict-mcp-config \
+                 --no-chrome --permission-prompts none --autocompact 100k --max-budget-usd 10.00"
+            )
+        );
 
         for (effort, word) in [(Effort::XHigh, "xhigh"), (Effort::Max, "max")] {
             let mut request = chat_request(SessionMode::New);
@@ -110,16 +227,25 @@ mod tests {
             budget_usd: 0.2,
             session: SessionMode::Ephemeral,
             schema: Some(json!({"type": "object"})),
+            mcp_config: None,
         };
         assert_eq!(
             args(&review),
             words(
                 "-p --output-format stream-json --verbose --model haiku --effort low \
                  --system-prompt Keep-notes. --json-schema {\"type\":\"object\"} \
-                 --tools '' --safe-mode --strict-mcp-config --no-chrome --permission-prompts none \
-                 --no-session-persistence --max-budget-usd 0.20"
+                 --tools '' --setting-sources '' --disable-slash-commands --strict-mcp-config \
+                 --no-chrome --permission-prompts none --no-session-persistence \
+                 --max-budget-usd 0.20"
             )
         );
         assert_eq!(CACHE_TTL_ENV, ("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h"));
+        assert_eq!(
+            ISOLATION_ENV,
+            [
+                ("CLAUDE_CODE_DISABLE_CLAUDE_MDS", "1"),
+                ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
+            ]
+        );
     }
 }

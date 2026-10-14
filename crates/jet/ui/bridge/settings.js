@@ -7,6 +7,7 @@
 /** @typedef {{ shape: boolean, eyes: boolean, colour: boolean, motion: boolean }} Follow */
 /** @typedef {{ master: number, channels: Channels, follow: Follow }} Expressiveness */
 /** @typedef {{ name: string, jobTitle: string, notes: string }} Persona */
+/** @typedef {{ enabled: boolean, command: string, cwd: string | null }} McpServer */
 /**
  * @typedef {object} Settings
  * @property {Behaviour} behaviour
@@ -20,6 +21,7 @@
  * @property {number} turnBudgetUsd
  * @property {boolean} drawerOpen
  * @property {string | null} claudePath   null = find Claude Code on its own
+ * @property {{ quanty: McpServer, polysim: McpServer }} mcp   the libraries Jet's Claude may use
  */
 
 const STORAGE_KEY = 'jet.settings';
@@ -51,6 +53,18 @@ export function defaultSettings() {
     turnBudgetUsd: 10,
     drawerOpen: true,
     claudePath: null,
+    mcp: {
+      quanty: {
+        enabled: true,
+        command: '/Users/shaun/Code/DEVELOPMENT/quanty/target/release/quanty-mcp',
+        cwd: '/Users/shaun/Code/DEVELOPMENT/quanty',
+      },
+      polysim: {
+        enabled: true,
+        command: '/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-mcp',
+        cwd: '/Users/shaun/Code/DEVELOPMENT/polysim',
+      },
+    },
   };
 }
 

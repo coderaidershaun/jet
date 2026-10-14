@@ -47,8 +47,11 @@ impl From<&TurnError> for Failure {
             TurnError::Transport(other) => Failure::Io {
                 message: other.to_string(),
             },
-            TurnError::Timeout { .. } => Failure::Timeout {
-                message: "Claude stopped responding after 2 minutes.".to_owned(),
+            TurnError::Timeout { idle } => Failure::Timeout {
+                message: format!(
+                    "Claude stopped responding after {} minutes.",
+                    idle.as_secs() / 60
+                ),
             },
             TurnError::Reported { message, .. } => Failure::ClaudeFailed {
                 message: message.clone(),

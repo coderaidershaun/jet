@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use agent::{
-    CacheStatus, ClaudeCli, Conversation, DataDir, Effort, Event, Lines, MEMORY_LIMIT, Message,
-    Model, Notes, Persona, RECENT_LIMIT, Request, ShownEntry, Stopper, Tone, Transport,
+    CacheStatus, ClaudeCli, Conversation, DataDir, Effort, Event, Lines, MEMORY_LIMIT, McpServers,
+    Message, Model, Notes, Persona, RECENT_LIMIT, Request, ShownEntry, Stopper, Tone, Transport,
     TransportError, USER_LIMIT,
 };
 use serde::{Deserialize, Serialize};
@@ -172,6 +172,8 @@ pub struct SendRequest {
     local_time: String,
     #[serde(default)]
     claude_path: Option<PathBuf>,
+    #[serde(default)]
+    mcp: McpServers,
 }
 
 /// Saves the user's message, starts the answer on its own thread and returns the saved
@@ -196,6 +198,7 @@ pub async fn send_message(
         effort: request.effort,
         budget_usd: request.budget_usd,
         local_time: request.local_time,
+        mcp: request.mcp,
     };
     let (user_entry, mut reply) = state.conversation.send(transport, message)?;
     state.review.note_activity();

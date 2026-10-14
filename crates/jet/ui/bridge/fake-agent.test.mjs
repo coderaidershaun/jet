@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createFakeAgent } from './fake-agent.js';
+import { defaultSettings } from './settings.js';
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped']);
 const START = new Date(2026, 9, 14, 9, 0).getTime();
@@ -16,7 +18,7 @@ function fastAgent(options = {}) {
   return { agent, clock };
 }
 
-const request = (text) => ({ text, model: 'sonnet', effort: 'medium', budgetUsd: 1, persona: { name: 'Jet', jobTitle: 'First-mate', notes: '' }, behaviour: { candid: 0.55, playful: 0.35 }, localTime: 'Wed 14 Oct 2026, 09:00', claudePath: null });
+const request = (text) => ({ text, model: 'sonnet', effort: 'medium', budgetUsd: 1, persona: { name: 'Jet', jobTitle: 'First-mate', notes: '' }, behaviour: { candid: 0.55, playful: 0.35 }, localTime: 'Wed 14 Oct 2026, 09:00', claudePath: null, mcp: defaultSettings().mcp });
 
 async function ask(agent, text, onEach = () => {}) {
   const events = [];
@@ -112,6 +114,41 @@ test('a reply emits raw lines, started, mood, text and finished with usage, in o
   assert.ok(usage.cacheReadTokens > 30000, 'a warm session reads the cache');
   assert.equal(usage.cacheCreation1hTokens, usage.cacheCreationTokens);
   assert.ok(usage.cacheCreationTokens < usage.cacheReadTokens);
+});
+
+test('"quanty" replays a library search as tool events before the answer', async () => {
+  const recorded = readFileSync(new URL('../../../agent/tests/fixtures/quanty-search-reply.jsonl', import.meta.url), 'utf8')
+    .split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  const call = recorded.flatMap((line) => (line.type === 'assistant' ? line.message.content : [])).find((block) => block.name === 'mcp__quanty__search');
+  const returned = recorded.find((line) => line.type === 'user' && line.message.content[0].tool_use_id === call.id);
+  const answer = recorded.at(-1).result.split('\n').slice(1).join('\n');
+
+  const { agent } = fastAgent();
+  const { events } = await ask(agent, 'what does quanty say about vega?');
+
+  assert.deepEqual(events.find((event) => event.kind === 'started').mcp, [{ name: 'polysim', status: 'connected' }, { name: 'quanty', status: 'connected' }]);
+  const order = ['started', 'toolStarted', 'toolFinished', 'text', 'finished'].map((kind) => kinds(events).indexOf(kind));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), 'the search runs before the answer starts');
+  assert.ok(!order.includes(-1));
+
+  const started = events.find((event) => event.kind === 'toolStarted');
+  assert.deepEqual(started, { kind: 'toolStarted', id: call.id, server: 'quanty', tool: 'search', input: call.input });
+  const finished = events.find((event) => event.kind === 'toolFinished');
+  assert.equal(finished.id, call.id);
+  assert.equal(finished.ok, true);
+  assert.deepEqual(finished.result, returned.tool_use_result.structuredContent);
+  assert.equal(finished.summary, 'quanty · search · 5 results');
+  assert.equal(typeof finished.durationMs, 'number');
+
+  const raw = events.filter((event) => event.kind === 'rawLine').map((event) => JSON.parse(event.line));
+  assert.equal(raw.filter((line) => line.type === 'assistant' && line.message.content.some((block) => block.type === 'tool_use')).length, 1);
+  assert.equal(raw.filter((line) => line.type === 'user' && line.message.content.some((block) => block.type === 'tool_result')).length, 1);
+
+  const text = events.filter((event) => event.kind === 'text').map((event) => event.delta).join('');
+  assert.equal(text, answer);
+  const saved = events.at(-1).entry.tools;
+  assert.deepEqual(saved, [{ id: call.id, server: 'quanty', tool: 'search', input: call.input, ok: true, result: finished.result, summary: finished.summary, durationMs: finished.durationMs }]);
+  assert.deepEqual((await agent.history()).at(-1).tools, saved);
 });
 
 test('"fresh" starts a fresh session with a notice', async () => {

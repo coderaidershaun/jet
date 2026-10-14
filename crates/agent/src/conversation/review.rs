@@ -100,6 +100,7 @@ impl Conversation {
             budget_usd: BUDGET_USD,
             session: SessionMode::Ephemeral,
             schema: Some(schema()),
+            mcp_config: None,
         };
         let summary = run(Turn::start_with_idle(transport, &request, IDLE_LIMIT)?)?;
         let verdict = read_verdict(summary)?;
@@ -144,7 +145,12 @@ fn run(turn: Turn) -> Result<Summary, ReviewError> {
             Step::Finished(summary) => return Ok(summary),
             Step::Failed(error) => return Err(error.into()),
             Step::Stopped => return Err(TurnError::NoResult.into()),
-            Step::Raw(_) | Step::Init { .. } | Step::Mood(_) | Step::Text(_) => {}
+            Step::Raw(_)
+            | Step::Init { .. }
+            | Step::Mood(_)
+            | Step::Text(_)
+            | Step::ToolStarted { .. }
+            | Step::ToolFinished(_) => {}
         }
     }
     Err(TurnError::NoResult.into())

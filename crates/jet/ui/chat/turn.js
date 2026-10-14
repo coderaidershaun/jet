@@ -81,6 +81,10 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       case 'notice':
         thread.addNotice(event.message);
         break;
+      case 'toolStarted':
+      case 'toolFinished':
+        // The page shows no tool calls, so there is nothing to repaint; their raw lines already reached the log.
+        return;
       case 'mood':
         thread.setMood(event.mood);
         reveal.mood();
@@ -130,6 +134,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       behaviour: { ...settings.behaviour },
       localTime: localTimeLabel(Date.now()),
       claudePath: settings.claudePath,
+      mcp: settings.mcp,
     };
   }
 

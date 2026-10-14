@@ -26,6 +26,9 @@ pub struct Request {
     pub session: SessionMode,
     /// A JSON schema the answer must follow, for requests that want structured output.
     pub schema: Option<serde_json::Value>,
+    /// The MCP servers as Claude Code's config JSON; `None` for a run with no servers, such
+    /// as the notes review.
+    pub mcp_config: Option<String>,
 }
 
 /// How a request relates to Claude Code's saved conversations.

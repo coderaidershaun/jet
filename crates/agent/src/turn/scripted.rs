@@ -6,7 +6,8 @@ use std::sync::{Mutex, mpsc};
 
 use serde_json::{Value, json};
 
-use super::transport::{Lines, Request, Stopper, Transport, TransportError};
+use super::transport::{Lines, Request, SessionMode, Stopper, Transport, TransportError};
+use crate::chat::{Effort, Model};
 
 /// What one `start` call does.
 pub(crate) struct Script {
@@ -118,6 +119,20 @@ impl Transport for Scripted {
     }
 }
 
+/// A request with nothing special about it.
+pub(crate) fn request() -> Request {
+    Request {
+        prompt: "hi".into(),
+        system_prompt: String::new(),
+        model: Model::Sonnet,
+        effort: Effort::Low,
+        budget_usd: 1.0,
+        session: SessionMode::New,
+        schema: None,
+        mcp_config: None,
+    }
+}
+
 pub(crate) fn init_line(session_id: &str) -> String {
     json!({"type": "system", "subtype": "init", "session_id": session_id, "model": "claude-fake"})
         .to_string()
@@ -127,6 +142,39 @@ pub(crate) fn delta_line(text: &str) -> String {
     json!({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
         "delta": {"type": "text_delta", "text": text}}})
     .to_string()
+}
+
+pub(crate) fn message_start_line() -> String {
+    json!({"type": "stream_event", "event": {"type": "message_start",
+        "message": {"role": "assistant"}}})
+    .to_string()
+}
+
+/// One assistant line holding finished tool calls, each as `(id, name, input)`.
+pub(crate) fn tool_use_line(calls: &[(&str, &str, Value)]) -> String {
+    let blocks: Vec<Value> = calls
+        .iter()
+        .map(
+            |(id, name, input)| json!({"type": "tool_use", "id": id, "name": name, "input": input}),
+        )
+        .collect();
+    json!({"type": "assistant", "message": {"role": "assistant", "content": blocks}}).to_string()
+}
+
+/// One user line holding what a tool gave back, as text.
+pub(crate) fn tool_result_line(id: &str, content: &str) -> String {
+    user_line(json!({"type": "tool_result", "tool_use_id": id, "content": content}))
+}
+
+/// One user line saying that a tool failed, and why.
+pub(crate) fn tool_error_line(id: &str, message: &str) -> String {
+    let block = json!({"type": "tool_result", "tool_use_id": id, "content": message,
+        "is_error": true});
+    user_line(block)
+}
+
+fn user_line(block: Value) -> String {
+    json!({"type": "user", "message": {"role": "user", "content": [block]}}).to_string()
 }
 
 fn result_value(subtype: &str, is_error: bool, result: &str) -> Value {

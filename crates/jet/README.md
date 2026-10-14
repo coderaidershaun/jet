@@ -32,6 +32,7 @@ The pretend agent answers from the words in your message. A word counts when a w
 | `error` | the reply fails the way Claude Code does when it is not logged in |
 | `missing` | the reply fails as if Claude Code was not installed |
 | `timeout` | the reply fails with "Claude stopped responding after 2 minutes." |
+| `quanty` | a recorded library search comes first: the call and what the library gave back reach the page as `toolStarted` and `toolFinished` events, and as the stream lines behind them, then the answer streams; the `started` event lists the servers of the `mcp` setting |
 
 Tests:
 
@@ -50,15 +51,15 @@ What they cover:
 | `src/rig.rs` `wrong_pose_size_is_reported` | a pose with the wrong number of values is refused, with the number found |
 | `src/settings.rs` `missing_file_means_defaults` | no settings file yet gives the defaults |
 | `src/settings.rs` `settings_survive_a_round_trip` | what is saved is what is loaded |
-| `src/settings.rs` `new_fields_round_trip` | the persona, body colour, model, the five thinking levels (xhigh and max included) and the other chat fields are saved and loaded |
-| `src/settings.rs` `old_files_with_missing_fields_still_load` | an older file gets defaults for the fields it lacks, and keeps what it saved: a 1.00 budget stays 1.00 although the default is now 10.00 |
+| `src/settings.rs` `new_fields_round_trip` | the persona, body colour, model, the five thinking levels (xhigh and max included), the MCP servers and the other chat fields are saved and loaded |
+| `src/settings.rs` `old_files_with_missing_fields_still_load` | an older file gets defaults for the fields it lacks, and keeps what it saved: a 1.00 budget stays 1.00 although the default is now 10.00; the MCP servers come back as the defaults |
 | `src/settings.rs` `broken_file_names_the_path` | a file that cannot be read fails with its path in the message |
 | `src/settings.rs` `default_settings_match_the_ui_fixture` | `ui/bridge/default-settings.json` is exactly the defaults Rust writes |
 | `src/settings.rs` `json_uses_camel_case_for_the_frontend` | the page reads `reducedMotion`, not `reduced_motion` |
 | `src/chat/error.rs` `bridge_error_serialises_as_kind_and_message` | every command error reaches the page as `{ kind, message }` |
 | `src/chat/mod.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
 | `rig/poses.rs` `generator_prints_the_committed_rig` | the generator prints exactly `rig/jet.json` |
-| `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps |
+| `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps; the `quanty` word replays the recorded library search as tool events before the answer |
 | `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; merge fills gaps from them; `defaults_match_the_rust_fixture`: the page's defaults are exactly `ui/bridge/default-settings.json` |
 | `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method calls its command with the right argument keys and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
 | `ui/chat/composer/state.test.mjs` | centred until the first send, Send becomes Stop, Enter and Escape |
@@ -143,7 +144,9 @@ crates/jet
     │   ├── tauri-agent.test.mjs    each method calls its command with the right keys; failures arrive as { kind, message }
     │   ├── fake-agent.js           the pretend Claude the chat runs on in a browser
     │   ├── fake-agent.test.mjs     a reply's events in order incl. the live stream lines and usage, a fresh session, the three failures, stop, storage
-    │   ├── fake-script.js          what the pretend Claude says and the stream lines it writes: message_start, message_delta, a result with timing fields, real model ids
+    │   ├── fake-script.js          what the pretend Claude says and the stream lines it writes: message_start, message_delta, tool use and tool result, a result with timing fields, real model ids
+    │   ├── fixtures/
+    │   │   └── quanty-search.js    a real quanty search recorded from Claude Code: the call, what the library gave back and the answer, which the pretend agent replays
     │   └── markdown.js             a small, safe Markdown renderer for the browser fallback
     ├── chat/                       the chat page
     │   ├── main.js                 boot: loads the rig, settings and history, builds every part, hands each its parts
@@ -282,6 +285,28 @@ The settings commands reject with a message string. The chat commands, from `age
 | `save_memory` | `{ notes }` | the notes as saved, cut to their limits | the next message starts a fresh session so Claude sees them |
 | `render_markdown` | `{ text }` | the text as HTML | the page asks while a reply streams |
 | `open_link` | `{ url }` | nothing | opens `http`, `https` and `mailto` links in the user's own apps; any other scheme fails with `badLink` |
+
+## Libraries over MCP
+
+Jet's Claude reaches two libraries through MCP servers: quanty, the user's library of quantitative finance books, and polysim, which runs the trading engines. The `mcp` settings key holds one entry for each, `{ enabled, command, cwd }`. The defaults point at this machine's quanty and polysim checkouts, which suits a single-user desktop app for now. The page sends the key with every message.
+
+How a reply reaches them:
+
+- The enabled servers go inline as `--mcp-config` JSON. It is built from the settings alone, so it is the same bytes every turn and Claude's prompt cache keeps hitting. Each server starts through `/bin/sh` in its own folder, because Claude Code ignores a `cwd` in the config, and has a 300 second timeout.
+- `--tools ToolSearch` keeps the tool descriptions out of the prompt: Claude loads one when it needs it.
+- `--allowedTools` names every tool exactly, so a tool a server adds later stays off, and so does polysim's `set_execution_mode`: an engine's mode changes only from the UI.
+- `--safe-mode` is gone because it drops MCP servers. `--setting-sources '' --disable-slash-commands` and the variables `CLAUDE_CODE_DISABLE_CLAUDE_MDS` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY` do the rest of its job: no CLAUDE.md, no Claude Code memory, no user settings or commands. The notes review keeps the same isolation and gets no servers.
+- Claude Code starts the servers for each reply and closes them when it ends. An engine polysim started, or a quanty ingest, stops with the reply, and the persona tells Jet so.
+
+What the page gets:
+
+- `started` carries `mcp`: each server and its state. Only `failed` means offline; `pending` is still starting.
+- `toolStarted` when Claude has written a call (`id`, `server`, `tool`, `input`) and `toolFinished` when it comes back (`ok`, `result`, a one-line `summary` such as `quanty · search · 5 results`, and `durationMs`). Only MCP tools make events; Claude Code's own ToolSearch stays in the raw log. A call still running when the reply ends gets no `toolFinished`.
+- The saved entry keeps its finished calls in `tools`. Entries without calls look as they did before.
+- While a call runs, Claude may stay silent three times as long as usual, so a reply times out after 6 minutes of silence then.
+- The text of separate calls to the model is joined with a blank line.
+
+The recording `crates/agent/tests/fixtures/quanty-search-reply.jsonl` is a real reply to "what is vega?". These tests of the agent crate cover the feature: `turn::stream::tests::parses_the_recorded_quanty_search`, `turn::tools::tests::calls_are_paired_summed_up_and_set_apart_from_text`, `turn::claude::args::tests::chat_and_review_args_are_exact_without_safe_mode_which_drops_mcp_servers`, `chat::tests::event_json_matches_the_ui_contract`, the two persona tests `the_prompt_teaches_the_libraries` and `the_fingerprint_of_the_defaults_is_pinned`, and the contract test `a_recorded_quanty_search_reaches_the_page_and_the_thread`, which runs the recording through `fake-claude`, `Conversation` and the saved thread.
 
 ## Adding a clip
 

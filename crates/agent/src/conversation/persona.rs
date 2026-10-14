@@ -2,7 +2,7 @@
 //! shape it. The prompt holds no clock, so the same inputs always give the same bytes and
 //! Claude's prompt cache keeps hitting.
 
-use crate::chat::{Effort, Model, Notes, Persona, Tone};
+use crate::chat::{Effort, McpServers, Model, Notes, Persona, Tone};
 
 const TEMPLATE: &str = include_str!("persona.md");
 
@@ -52,21 +52,23 @@ pub(super) fn compose(persona: &Persona, tone: &Tone, notes: &Notes) -> String {
     prompt
 }
 
-/// A fingerprint of everything the user can change that is baked into a session's prompt.
-/// The notes are left out on purpose: the review updates them all the time, and that must
-/// never end a session.
-pub(super) fn prompt_hash(persona: &Persona, tone: &Tone, model: Model, effort: Effort) -> String {
+/// A fingerprint of everything baked into a session's prompt: every fixed word of the prompt,
+/// the model, the thinking level and which servers are enabled. A change to any of them
+/// starts a fresh conversation. The notes are left out on purpose: the review updates them
+/// all the time, and that must never end a session.
+pub(super) fn prompt_hash(
+    persona: &Persona,
+    tone: &Tone,
+    model: Model,
+    effort: Effort,
+    mcp: &McpServers,
+) -> String {
     let mut hash = Fnv1a::new();
-    let own_notes = persona_notes(persona);
-    let tone_lines = tone_lines(tone);
-    let parts = [
-        persona.name.as_str(),
-        persona.job_title.as_str(),
-        own_notes.as_str(),
-    ]
-    .into_iter()
-    .chain(tone_lines)
-    .chain([model.alias(), effort.alias()]);
+    let prompt = compose(persona, tone, &Notes::default());
+    let servers = mcp.enabled().map(|(name, _)| name);
+    let parts = [prompt.as_str(), model.alias(), effort.alias()]
+        .into_iter()
+        .chain(servers);
     for part in parts {
         hash.write(part.as_bytes());
         hash.write(&[0xff]);
@@ -176,7 +178,7 @@ impl Fnv1a {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chat::Mood;
+    use crate::chat::{McpServer, Mood};
 
     fn prompt_for(candid: f64) -> String {
         compose(
@@ -226,6 +228,49 @@ mod tests {
         assert!(prompt.contains("call me {annoyed_line} and {memory}"));
         assert!(prompt.contains("<memory>\n- likes {name}\n</memory>"));
         assert!(prompt.contains("<user>\n(empty)\n</user>"));
+    }
+
+    #[test]
+    fn the_prompt_teaches_the_libraries() {
+        let prompt = prompt_for(0.55);
+        for rule in [
+            "mcp__quanty__search",
+            "mcp__quanty__read_page",
+            "[n]",
+            r"\(",
+            r"\[",
+            "never with $",
+            "ingest_pdf",
+            "mcp__polysim__",
+            "listed mode is live",
+            "stops when your reply ends",
+        ] {
+            assert!(prompt.contains(rule), "the prompt lost: {rule}");
+        }
+        assert!(!prompt.contains("You have no tools"));
+    }
+
+    #[test]
+    fn the_fingerprint_of_the_defaults_is_pinned() {
+        let hash = |mcp: &McpServers| {
+            prompt_hash(
+                &Persona::default(),
+                &Tone::default(),
+                Model::Sonnet,
+                Effort::Medium,
+                mcp,
+            )
+        };
+        let none = McpServers::default();
+        assert_eq!(hash(&none), "709cf46646a7b14e");
+        let quanty = McpServers {
+            quanty: McpServer {
+                enabled: true,
+                ..McpServer::default()
+            },
+            ..McpServers::default()
+        };
+        assert_ne!(hash(&quanty), hash(&none));
     }
 
     #[test]
