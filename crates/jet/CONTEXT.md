@@ -49,6 +49,8 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Turn** — one exchange: the user's message and Jet's reply, from the send to the finished, failed or stopped end.
 - **Session** — the Claude Code conversation the app resumes (`session.json`). A fresh one starts when the prompt inputs change, after a long idle with a big context, or when the old one vanished. _Avoid_: thread, history.
 - **Transcript** — the app's own record of the thread (`transcript.jsonl`). The chat page opens on its newest entries, which the code calls the history. _Avoid_: session.
+- **Usage** — the tokens and spend of the replies since the app started. It is counted from the stream while a reply runs and closed by the cost Claude Code reports; it is not saved. "Session totals" in the drawer means since the app started, not one Claude Code session. _Avoid_: session (that is the Claude Code conversation), cost alone (it leaves out tokens).
+- **Rate** — the published list price per million tokens for one model and one kind of token, with its date. It gives the live estimate while a reply runs. _Avoid_: price list, tariff.
 - **Notes** — MEMORY, USER and RECENT: the three short files in Jet's prompt that a background review keeps current. The memory commands and the memory section of the settings handle all three.
 
 - **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.

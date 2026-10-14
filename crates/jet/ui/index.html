@@ -24,9 +24,40 @@
         <p class="drawer-title" id="drawer-title">First-mate</p>
         <p class="cache-chip" id="cache-chip" data-warm="false" role="status">cold · nothing cached yet</p>
       </div>
-      <section class="log" aria-labelledby="log-title">
+      <section class="usage" id="usage" aria-labelledby="usage-title">
+        <h2 class="section-title" id="usage-title">Usage</h2>
+        <div class="usage-row usage-inline">
+          <p class="usage-label">Session</p>
+          <p class="usage-value" id="usage-session">—</p>
+          <button class="text-button" id="usage-copy" type="button" disabled>Copy</button>
+        </div>
+        <div class="usage-row usage-inline">
+          <p class="usage-label">Model · thinking</p>
+          <p class="usage-value" id="usage-model">—</p>
+        </div>
+        <div class="usage-row">
+          <div class="usage-head">
+            <p class="usage-label">This reply</p>
+            <p class="usage-status"><span class="usage-dot" id="usage-dot" data-status="idle"></span><span id="usage-status">idle</span></p>
+          </div>
+          <p class="usage-value" id="usage-tokens"></p>
+          <p class="usage-value" id="usage-spend"></p>
+          <p class="usage-value" id="usage-timing"></p>
+        </div>
+        <div class="usage-row">
+          <p class="usage-label">Session totals</p>
+          <p class="usage-value" id="usage-totals"></p>
+        </div>
+        <table class="usage-table" id="usage-table" hidden>
+          <caption class="sr-only">Replies by model and thinking level</caption>
+          <thead><tr><th scope="col">Model · thinking</th><th scope="col">Replies</th><th scope="col">Tokens</th><th scope="col">$</th></tr></thead>
+          <tbody id="usage-table-body"></tbody>
+        </table>
+        <p class="usage-note" id="usage-note"></p>
+      </section>
+      <section class="log" data-open="true" aria-labelledby="log-title">
         <div class="log-head">
-          <h2 id="log-title">Claude Code stream</h2>
+          <h2 class="section-title" id="log-title"><button class="log-toggle" id="log-toggle" type="button" aria-expanded="true" aria-controls="log-list">Raw stream (0)</button></h2>
           <button class="text-button" id="log-copy" type="button">Copy</button>
           <button class="text-button" id="log-clear" type="button">Clear</button>
         </div>
@@ -34,7 +65,7 @@
       </section>
       <div class="drawer-foot">
         <button class="gear" id="gear" type="button" aria-label="Settings"></button>
-        <span class="model-caption" id="model-caption">sonnet</span>
+        <span class="model-caption" id="model-caption">Sonnet · medium</span>
       </div>
     </div>
   </aside>

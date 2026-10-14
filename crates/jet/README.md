@@ -63,7 +63,10 @@ What they cover:
 | `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method calls its command with the right argument keys and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
 | `ui/chat/composer/state.test.mjs` | centred until the first send, Send becomes Stop, Enter and Escape |
 | `ui/chat/drawer/cache.test.mjs` | the cache chip is warm until the TTL ends, then cold with the tokens to re-read |
+| `ui/chat/drawer/caption.test.mjs` | the gear caption reads the model word and the thinking level |
 | `ui/chat/drawer/log.test.mjs` | the log keeps the last 500 lines, tags each by type and pretty-prints JSON |
+| `ui/chat/drawer/rates.test.mjs` | the recorded Sonnet turn costs 0.007334 at list price; Haiku 5.5 moves to its long-prompt prices at 100 000 prompt tokens; a model with no price has no estimate |
+| `ui/chat/drawer/usage.test.mjs` | the recorded Sonnet turn read line by line (live counts, then the reported cost and timings, then the totals); a second reply at another thinking level gets its own row; a stopped reply keeps its tokens; stray lines change nothing |
 | `ui/chat/settings/form.test.mjs` | hex and rgb both ways, code-point counts, the master moves only the channels that follow it |
 | `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; the cruise grows with distance |
 | `ui/chat/thread/scroll.test.mjs` | the thread follows within 80 px of the bottom, and a send always follows |
@@ -165,7 +168,13 @@ crates/jet
     │   │   ├── view.js             the field, the button, the held chip, and the hop to the bottom
     │   │   └── composer.css        the composer's look
     │   ├── drawer/                 the side panel
-    │   │   ├── view.js             the static Jet and name, the cache chip, the stream log, the gear
+    │   │   ├── view.js             the static Jet and name, the cache chip, the usage panel, the stream log (it folds away), the gear
+    │   │   ├── usage.js            tokens, time and spend of the replies since the app started, read from the stream lines and the finished event (pure)
+    │   │   ├── usage.test.mjs      the recorded Sonnet turn line by line; a second row per thinking level; a stop keeps its tokens; stray lines change nothing
+    │   │   ├── rates.js            the list prices and their date, the estimate they give, and the model names (pure)
+    │   │   ├── rates.test.mjs      the recorded turn costs 0.007334; Haiku 5.5's tier edge; an unknown model has no estimate
+    │   │   ├── caption.js          the words under the gear, such as "Sonnet · medium" (pure)
+    │   │   ├── caption.test.mjs    the model word and the thinking level
     │   │   ├── log.js              the last 500 raw stream lines, tagged, ready to pretty-print (pure)
     │   │   ├── log.test.mjs        the 500 cap, the tags, the pretty-print
     │   │   ├── cache.js            warm or cold wording for the cache chip (pure)
@@ -176,7 +185,7 @@ crates/jet
     │       ├── controls.js         the few form controls the sections are made of
     │       ├── persona.js          who Jet is: name, job title, how to talk
     │       ├── look.js             body colour, behaviour presets, expressiveness, reduced motion
-    │       ├── model.js            model, effort, the budget for one turn, usage so far
+    │       ├── model.js            model, five thinking levels, the budget for one turn, usage since the app started
     │       ├── memory.js           the three notes as editors
     │       ├── claude.js           where Claude Code is, and Forget this conversation
     │       ├── form.js             colour and counter arithmetic, the master's rules (pure)
@@ -232,6 +241,23 @@ Three ideas carry the design:
 2. **The player blends from wherever Jet is.** `play()` puts the current state at the front of every track, so a new clip never cuts.
 3. **Rust owns what must be true on every platform.** The rig ships inside the binary and is checked at start-up (it has the `circle` and `soft` poses and a rest colour, every pose has 60 numbers, every eye position belongs to a pose). A test, not start-up, holds the foot in place. Settings are read and written by Rust so the file format has one definition, with `serde(default)` so older files still load.
 
+## The usage panel
+
+The drawer's Usage panel sits between the cache chip and the raw stream log. It shows:
+
+- **Session**: the first 8 characters of the Claude Code session id, and a Copy button for the whole id.
+- **Model · thinking**: the model and thinking level of the current or last reply. The caption under the gear shows what the next reply will use.
+- **This reply**: its status (idle, streaming, done, stopped or failed), the tokens by kind (in, cache read, cache write as 5 minute and 1 hour, out, thinking), its spend, and its timings (first token, API time, total, turns, stop reason).
+- **Session totals**: replies, tokens and spend since the app started, and a table of the same by model and thinking level. "Session" here means since the app started, not one Claude Code session. Nothing is saved between launches.
+
+The numbers come from the stream lines while a reply runs: the init line names the session and model, `message_start` gives the prompt tokens, and `message_delta` gives the output tokens so far. While there is no reported cost the spend reads "est." and is worked out from the list prices of 2026-10-14 in `ui/chat/drawer/rates.js`. A model with no price there reads "no rate". The `result` line carries the cost Claude Code reports, the timings and the final counts; from then on the spend reads "reported", and that cost is what the totals add. A reply that is stopped has no reported cost, so the totals add its estimate. The thinking tokens are part of the output tokens and are never added twice.
+
+The `finished` event's `usage` may also carry `outputTokens`, `thinkingTokens` and `model`. The Rust side fills them from the result line. When they are there the tracker prefers them to what it read from the stream.
+
+The five thinking levels are `low`, `medium`, `high`, `xhigh` and `max`. The pretend agent writes `message_start` and `message_delta` lines like the real CLI, so in a browser the counts climb during a reply too.
+
+The settings sheet's "This session" block reads the same totals, so the two places show the same tokens and the same cost.
+
 ## Commands the window can call
 
 The settings commands reject with a message string. The chat commands, from `agent_status` down, reject with `{ kind, message }`, where `kind` is `busy`, `claudeMissing`, `io` or `badLink`.
@@ -257,4 +283,4 @@ Write a `buildX(rig, params)` in `ui/jet/clips/`, next to `hello.js`. It makes t
 
 Then list the clip in `ui/jet/clips/catalogue.js`. Every clip is listed there, with its label, its builder and whether it is a hold. The lab and the director both read that list. Give the clip a button in `ui/lab.html` and a step list in `BUTTONS` in `ui/lab/main.js` so it can be tried.
 
-The director (`ui/jet/director.js`) decides which catalogue clip plays for each chat event, and which one plays for each mood word. To play the new clip for a mood, add it to the director's mood table. A new mood word must be added on both sides: `agent::Mood` in `crates/agent/src/chat.rs` and `MOODS` in `director.js`. The Rust test `every_mood_word_is_handled_by_the_director` fails until both agree.
+The director (`ui/jet/director.js`) decides which catalogue clip plays for each chat event, and which one plays for each mood word. To play the new clip for a mood, add it to the director's mood table. A new mood word must be added on both sides: `agent::Mood` in `crates/agent/src/chat/mod.rs` and `MOODS` in `director.js`. The Rust test `every_mood_word_is_handled_by_the_director` fails until both agree.

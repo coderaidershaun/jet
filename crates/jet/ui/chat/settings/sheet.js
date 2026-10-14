@@ -19,7 +19,7 @@ const SAVE_AFTER_EDIT_MS = 600;
  * @property {*} agent   what the page talks to Claude through
  * @property {(kind: string) => void} changed   tell the page what changed; saving follows
  * @property {number[]} defaultColour   the rig's own rest colour
- * @property {{ costUsd: number, tokens: number, cacheReadTokens: number }} totals
+ * @property {() => import('../drawer/usage.js').UsageTotals} totals   what the replies since the app started have used, read on each refresh
  * @property {() => boolean} systemReducesMotion   true when the system asks for less motion
  * @property {(claude: import('../../bridge/agent.js').ClaudeStatus) => void} onClaudeChecked   the page's banner follows each check
  * @property {() => Promise<void>} onForget

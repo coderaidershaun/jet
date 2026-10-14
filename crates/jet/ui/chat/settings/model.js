@@ -1,7 +1,8 @@
 // The settings about how Claude is asked: which model, how hard it thinks, the
-// budget for one turn, and what this page session has used so far.
+// budget for one turn, and what the replies since the app started have used.
 
 import { h } from '../dom.js';
+import { tokenCount } from '../drawer/usage.js';
 import { note, section, segmented } from './controls.js';
 
 const MODELS = [
@@ -14,6 +15,8 @@ const EFFORTS = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'XHigh' },
+  { value: 'max', label: 'Max' },
 ];
 
 /** @param {import('./sheet.js').SheetContext} ctx */
@@ -41,10 +44,11 @@ export function buildModel({ settings, changed, totals }) {
 
   const used = h('dl', { class: 'totals' });
   const paintTotals = () => {
+    const usedSoFar = totals();
     const rows = [
-      ['Cost', '$' + totals.costUsd.toFixed(4)],
-      ['Tokens', totals.tokens.toLocaleString('en-GB')],
-      ['Cache reads', totals.cacheReadTokens.toLocaleString('en-GB')],
+      ['Cost', '$' + usedSoFar.usd.toFixed(4)],
+      ['Tokens', tokenCount(usedSoFar).toLocaleString('en-GB')],
+      ['Cache reads', usedSoFar.cacheReadTokens.toLocaleString('en-GB')],
     ];
     used.replaceChildren(...rows.flatMap(([term, value]) => [h('dt', { text: term }), h('dd', { text: value })]));
   };

@@ -10,6 +10,14 @@ import { createReveal } from './thread/throttle.js';
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped']);
 
+function parsedOrNull(line) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * @param {{
  *   agent: {
@@ -25,12 +33,12 @@ const TERMINAL = new Set(['finished', 'failed', 'stopped']);
  *   composerView: ReturnType<typeof import('./composer/view.js').createComposerView>,
  *   live: ReturnType<typeof import('./stage/live.js').createLive>,
  *   drawer: ReturnType<typeof import('./drawer/view.js').createDrawerView>,
- *   totals: { costUsd: number, tokens: number, cacheReadTokens: number },
+ *   tracker: ReturnType<typeof import('./drawer/usage.js').createUsageTracker>,
  *   page: { headerStatus: HTMLElement, announce: HTMLElement },
  *   afterReply: () => void,
  * }} parts
  */
-export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, totals, page, afterReply }) {
+export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, tracker, page, afterReply }) {
   /** @type {ReturnType<typeof createReveal> | null} */
   let reveal = null;
   let sentAt = 0;
@@ -56,12 +64,20 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     }
   }
 
+  const showUsage = () => drawer.setUsage(tracker.snapshot());
+
   function onEvent(event) {
     const now = performance.now();
     switch (event.kind) {
       case 'rawLine':
+        tracker.raw(parsedOrNull(event.line));
         drawer.addLine(event.line);
+        showUsage();
         return;
+      case 'started':
+        tracker.started(event);
+        showUsage();
+        break;
       case 'notice':
         thread.addNotice(event.message);
         break;
@@ -76,20 +92,23 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         reveal.text(thread.slot.text);
         break;
       case 'finished':
+        tracker.finished(event);
+        showUsage();
         reveal.end();
         thread.finish(event.entry);
         live.done({ elapsedMs: now - sentAt }, now);
-        totals.costUsd += event.costUsd;
-        totals.tokens += event.usage.inputTokens + event.usage.cacheReadTokens + event.usage.cacheCreationTokens;
-        totals.cacheReadTokens += event.usage.cacheReadTokens;
         page.announce.textContent = event.entry.text;
         break;
       case 'failed':
+        tracker.failed();
+        showUsage();
         reveal.end();
         thread.fail(event.failure, event.entry);
         live.failed(now);
         break;
       case 'stopped':
+        tracker.stopped();
+        showUsage();
         reveal.end();
         thread.stop(event.entry);
         live.stopped(now);
@@ -122,6 +141,8 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       const now = performance.now();
       sentAt = now;
       const takeoff = live.measure();
+      tracker.sent({ effort: settings.effort, at: Date.now() });
+      showUsage();
       follow.onSend();
       thread.addUser(text);
       thread.openSlot();

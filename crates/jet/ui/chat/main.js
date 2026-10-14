@@ -10,6 +10,7 @@ import { createComposerView } from './composer/view.js';
 import { icon } from './dom.js';
 import { describeCache } from './drawer/cache.js';
 import { createLog } from './drawer/log.js';
+import { createUsageTracker } from './drawer/usage.js';
 import { createDrawerView } from './drawer/view.js';
 import { createSheet } from './settings/sheet.js';
 import { createLive } from './stage/live.js';
@@ -49,7 +50,7 @@ async function start() {
   thread.load(history);
   const follow = createFollow();
   const composer = createComposer({ empty: history.length === 0 });
-  const totals = { costUsd: 0, tokens: 0, cacheReadTokens: 0 };
+  const tracker = createUsageTracker();
   let cache = status.cache;
   let leanTimer = 0;
 
@@ -102,6 +103,8 @@ async function start() {
     titleEl: $('drawer-title'),
     chipEl: $('cache-chip'),
     modelEl: $('model-caption'),
+    usageEl: $('usage'),
+    logToggle: $('log-toggle'),
     logList: $('log-list'),
     copyButton: $('log-copy'),
     clearButton: $('log-clear'),
@@ -155,7 +158,7 @@ async function start() {
     composerView,
     live,
     drawer,
-    totals,
+    tracker,
     page: { headerStatus: $('header-status'), announce: $('announce') },
     afterReply: refreshStatus,
   });
@@ -189,7 +192,7 @@ async function start() {
       settings,
       agent,
       defaultColour,
-      totals,
+      totals: () => tracker.snapshot().total,
       systemReducesMotion: () => systemReduces.matches,
       onClaudeChecked: showClaude,
       onForget: forget,
@@ -201,7 +204,7 @@ async function start() {
         applyColour();
         drawer.recolour();
         live.recolour();
-      } else if (kind === 'model') drawer.setModel(settings.model);
+      } else if (kind === 'model') drawer.setModel({ model: settings.model, effort: settings.effort });
       else if (kind === 'motion') {
         applyReduced();
         live.refresh();
@@ -224,7 +227,8 @@ async function start() {
   });
 
   drawer.init(settings.drawerOpen);
-  drawer.setModel(settings.model);
+  drawer.setModel({ model: settings.model, effort: settings.effort });
+  drawer.setUsage(tracker.snapshot());
   paintPersona();
   showClaude(status.claude);
   page.dataset.layout = composer.layout;
