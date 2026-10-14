@@ -5,6 +5,7 @@
 import { connectAgent } from '../bridge/agent.js';
 import { loadRig } from '../bridge/rig.js';
 import { displayName, loadSettings, saveSettings } from '../bridge/settings.js';
+import { createWorkstationShell } from '../workstation/shell.js';
 import { createComposer } from './composer/state.js';
 import { createComposerView } from './composer/view.js';
 import { icon } from './dom.js';
@@ -12,6 +13,7 @@ import { describeCache } from './drawer/cache.js';
 import { createLog } from './drawer/log.js';
 import { createUsageTracker } from './drawer/usage.js';
 import { createDrawerView } from './drawer/view.js';
+import { PAGE_NAMES, createPageState } from './page-state.js';
 import { createSheet } from './settings/sheet.js';
 import { createLive } from './stage/live.js';
 import { createFollow } from './thread/scroll.js';
@@ -56,6 +58,8 @@ async function start() {
 
   $('gear').append(icon('gear'));
   $('drawer-toggle').append(icon('menu'));
+  $('workstation-menu').append(icon('menu'));
+  $('workstation-button').prepend(icon('candles'));
   $('held-cancel').append(icon('close'));
   $('jump').prepend(icon('down'));
 
@@ -96,8 +100,10 @@ async function start() {
 
   const drawer = createDrawerView({
     page,
-    toggle: $('drawer-toggle'),
+    toggles: [$('drawer-toggle'), $('workstation-menu')],
     scrim: $('scrim'),
+    jetButton: $('rail-jet'),
+    workstationButton: $('workstation-button'),
     jetSvg: $('drawer-jet'),
     nameEl: $('drawer-name'),
     titleEl: $('drawer-title'),
@@ -113,6 +119,7 @@ async function start() {
     log: createLog(),
     handlers: {
       openSettings: () => sheet.open(),
+      showPage: (next) => pages.show(next),
       dockedChanged: (open) => {
         settings.drawerOpen = open;
         saveSettings(settings);
@@ -209,15 +216,55 @@ async function start() {
         applyReduced();
         live.refresh();
       } else if (kind === 'expressiveness') live.refresh();
+      else if (kind === 'workstation') workstation.settingsChanged();
     },
   });
 
+  const workstation = createWorkstationShell({
+    body: $('workstation-body'),
+    title: $('workstation-title'),
+    link: $('workstation-link'),
+    setup: $('workstation-setup'),
+    setupDetail: $('workstation-setup-detail'),
+    setupButton: $('workstation-setup-open'),
+    settings,
+    openSettings: () => sheet.open('workstation'),
+    onLeave: () => pages.show('chat'),
+  });
+  const pages = createPageState({
+    saved: settings.page,
+    save: (next) => {
+      settings.page = next;
+      saveSettings(settings);
+    },
+    onShow: paintPage,
+  });
+  let chatScrollTop = 0;
+  function paintPage(next) {
+    if (next !== 'chat') chatScrollTop = $('thread').scrollTop;
+    page.dataset.page = next;
+    $('workstation-page').hidden = next !== 'workstation';
+    drawer.setPage(next);
+    $('announce').textContent = PAGE_NAMES[next];
+    if (next === 'workstation') {
+      workstation.show();
+      return;
+    }
+    workstation.hide();
+    // A hidden thread forgets where it was scrolled; one that follows the newest text finds its own way back.
+    if (!follow.following) $('thread').scrollTop = chatScrollTop;
+    $('field').focus();
+  }
+
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    const action = composer.escape({ sheetOpen: sheet.isOpen, overlayDrawerOpen: drawer.overlayOpen });
+    // A part of the workstation that uses Esc itself marks the key as handled.
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    const first = pages.escape({ sheetOpen: sheet.isOpen });
+    const action = first === 'composer' ? composer.escape({ sheetOpen: false, overlayDrawerOpen: drawer.overlayOpen }) : first;
     if (action === 'none') return;
     event.preventDefault();
     if (action === 'closeSheet') sheet.close();
+    else if (action === 'showChat') pages.show('chat');
     else if (action === 'closeDrawer') drawer.setOpen(false);
     else turn.stop();
   });
@@ -227,6 +274,7 @@ async function start() {
   });
 
   drawer.init(settings.drawerOpen);
+  if (pages.current === 'workstation') paintPage('workstation');
   drawer.setModel({ model: settings.model, effort: settings.effort });
   drawer.setUsage(tracker.snapshot());
   paintPersona();

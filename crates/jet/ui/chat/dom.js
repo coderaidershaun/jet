@@ -34,6 +34,7 @@ const ICONS = {
   stop: 'M7 7h10v10H7z',
   close: 'M6 6l12 12M18 6L6 18',
   down: 'M12 5v14M5 12l7 7 7-7',
+  candles: 'M8 3v3M8 14v4M6 6h4v8H6zM16 7v3M16 17v4M14 10h4v7h-4z',
 };
 const FILLED = new Set(['stop']);
 

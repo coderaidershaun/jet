@@ -1,10 +1,12 @@
 // The drawer: the static Jet and name, the cache chip, the usage panel, the raw
 // stream log, and the gear that opens settings. It also opens and closes
-// itself, docked beside the thread on wide screens and over it on narrow ones.
+// itself, docked beside the thread on wide screens and over it on narrow ones;
+// beside the workstation page it narrows to the rail.
 
 import { RING_HIDDEN } from '../../jet/state.js';
 import { mountJet } from '../../jet/view.js';
 import { h } from '../dom.js';
+import { drawerLayout, drawerOpens } from '../page-state.js';
 import { captionFor } from './caption.js';
 import { NOTHING, compactCount, count, dollars, modelAndThinking, seconds, spendText, turnsText } from './format.js';
 import { RATES_DATE } from './rates.js';
@@ -17,16 +19,16 @@ const SESSION_ID_CHARS = 8;
 
 /**
  * @param {{
- *   page: HTMLElement, toggle: HTMLElement, scrim: HTMLElement,
- *   jetSvg: SVGSVGElement, nameEl: HTMLElement, titleEl: HTMLElement, chipEl: HTMLElement, modelEl: HTMLElement,
+ *   page: HTMLElement, toggles: HTMLElement[], scrim: HTMLElement,
+ *   jetButton: HTMLElement, workstationButton: HTMLElement, jetSvg: SVGSVGElement, nameEl: HTMLElement, titleEl: HTMLElement, chipEl: HTMLElement, modelEl: HTMLElement,
  *   usageEl: HTMLElement, logToggle: HTMLElement, logList: HTMLElement, copyButton: HTMLElement, clearButton: HTMLElement, gearButton: HTMLElement,
  *   rig: import('../../jet/rig.js').Rig,
  *   log: ReturnType<typeof import('./log.js').createLog>,
- *   handlers: { openSettings: () => void, dockedChanged: (open: boolean) => void },
+ *   handlers: { openSettings: () => void, dockedChanged: (open: boolean) => void, showPage: (page: import('../page-state.js').Page) => void },
  * }} options
  */
 export function createDrawerView({
-  page, toggle, scrim, jetSvg, nameEl, titleEl, chipEl, modelEl, usageEl, logToggle, logList, copyButton, clearButton, gearButton, rig, log, handlers,
+  page, toggles, scrim, jetButton, workstationButton, jetSvg, nameEl, titleEl, chipEl, modelEl, usageEl, logToggle, logList, copyButton, clearButton, gearButton, rig, log, handlers,
 }) {
   const narrow = window.matchMedia(NARROW);
   const draw = mountJet(jetSvg, rig);
@@ -42,6 +44,7 @@ export function createDrawerView({
   let flushQueued = false;
   let latestUsage = null;
   let usageQueued = false;
+  let shownPage = 'chat';
 
   const staticJet = () => ({
     body: rig.poses.soft,
@@ -142,8 +145,8 @@ export function createDrawerView({
   }
 
   function applyOpen(open) {
-    page.dataset.drawer = open ? 'open' : 'closed';
-    toggle.setAttribute('aria-expanded', String(open));
+    page.dataset.drawer = drawerLayout({ page: shownPage, open, narrow: narrow.matches });
+    for (const toggle of toggles) toggle.setAttribute('aria-expanded', String(open));
     scrim.hidden = !(open && narrow.matches);
   }
 
@@ -158,9 +161,12 @@ export function createDrawerView({
   logToggle.addEventListener('click', () => setLogOpen(logToggle.getAttribute('aria-expanded') !== 'true'));
   usagePart('note').textContent = 'List prices of ' + RATES_DATE;
   gearButton.addEventListener('click', handlers.openSettings);
-  toggle.addEventListener('click', () => view.setOpen(page.dataset.drawer !== 'open'));
+  for (const toggle of toggles) toggle.addEventListener('click', () => view.setOpen(page.dataset.drawer !== 'open'));
   scrim.addEventListener('click', () => view.setOpen(false));
-  narrow.addEventListener('change', () => view.setOpen(!narrow.matches && view.dockedPreference));
+  // A change of width is not the user's choice, so it saves nothing.
+  narrow.addEventListener('change', () => applyOpen(drawerOpens({ page: shownPage, dockedPreference: view.dockedPreference, narrow: narrow.matches })));
+  jetButton.addEventListener('click', () => handlers.showPage('chat'));
+  workstationButton.addEventListener('click', () => handlers.showPage(shownPage === 'workstation' ? 'chat' : 'workstation'));
 
   const view = {
     /** What the user last chose for the docked drawer. */
@@ -177,7 +183,7 @@ export function createDrawerView({
 
     setOpen(open) {
       applyOpen(open);
-      if (narrow.matches) return;
+      if (narrow.matches || shownPage !== 'chat') return;
       view.dockedPreference = open;
       handlers.dockedChanged(open);
     },
@@ -193,9 +199,18 @@ export function createDrawerView({
       draw(staticJet());
     },
 
+    /** Follows the page: the rail beside the workstation, the docked choice again on the chat page. */
+    setPage(next) {
+      shownPage = next;
+      workstationButton.setAttribute('aria-pressed', String(next === 'workstation'));
+      jetButton.inert = next === 'chat';
+      applyOpen(drawerOpens({ page: next, dockedPreference: view.dockedPreference, narrow: narrow.matches }));
+    },
+
     setPersona({ name, jobTitle }) {
       nameEl.textContent = name;
       titleEl.textContent = jobTitle;
+      jetButton.setAttribute('aria-label', 'Back to ' + name);
     },
 
     setCache({ warm, text }) {

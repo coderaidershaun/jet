@@ -12,6 +12,7 @@
   "model": "sonnet",
   "effort": "medium",
   "turnBudgetUsd": 10.0,
+  "page": "chat",
   "drawerOpen": true,
   "claudePath": null,
   "workstation": {

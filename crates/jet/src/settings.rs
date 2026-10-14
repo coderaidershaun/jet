@@ -26,6 +26,8 @@ pub struct Settings {
     /// The most one answer may cost, in US dollars.
     pub turn_budget_usd: f64,
     pub drawer_open: bool,
+    /// The page shown last; the window opens on it again.
+    pub page: Page,
     /// Where Claude Code lives; `None` means look in the usual places.
     pub claude_path: Option<PathBuf>,
     pub workstation: Workstation,
@@ -58,6 +60,15 @@ impl std::fmt::Debug for Workstation {
             .field("token", &self.token.as_ref().map(|_| "<hidden>"))
             .finish()
     }
+}
+
+/// What the main area of the window shows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Page {
+    #[default]
+    Chat,
+    Workstation,
 }
 
 /// Position on the behaviour wheel. Both axes run -1 to 1 and the point stays
@@ -110,6 +121,7 @@ impl Default for Settings {
             effort: Effort::default(),
             turn_budget_usd: 10.0,
             drawer_open: true,
+            page: Page::default(),
             claude_path: None,
             workstation: Workstation::default(),
         }
@@ -261,12 +273,17 @@ mod tests {
                 playful: -0.5,
             },
             reduced_motion: true,
+            page: Page::Workstation,
             ..Settings::default()
         };
         settings.expressiveness.master = 2.5;
         settings.expressiveness.follow.eyes = true;
         write_to(&path, &settings).unwrap();
         assert_eq!(read_from(&path).unwrap(), settings);
+
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved["page"], "workstation");
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

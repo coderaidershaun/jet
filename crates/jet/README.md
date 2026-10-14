@@ -49,7 +49,7 @@ What they cover:
 | `src/rig.rs` `airborne_poses_never_sink_below_the_ground` | a rolling or flying pose never goes below the ground |
 | `src/rig.rs` `wrong_pose_size_is_reported` | a pose with the wrong number of values is refused, with the number found |
 | `src/settings.rs` `missing_file_means_defaults` | no settings file yet gives the defaults |
-| `src/settings.rs` `settings_survive_a_round_trip` | what is saved is what is loaded |
+| `src/settings.rs` `settings_survive_a_round_trip` | what is saved is what is loaded, including the page shown last, written as the word `workstation` |
 | `src/settings.rs` `new_fields_round_trip` | the persona, body colour, model, the five thinking levels (xhigh and max included) and the other chat fields are saved and loaded |
 | `src/settings.rs` `old_files_with_missing_fields_still_load` | an older file gets defaults for the fields it lacks, and keeps what it saved: a 1.00 budget stays 1.00 although the default is now 10.00 |
 | `src/settings.rs` `broken_file_names_the_path` | a file that cannot be read fails with its path in the message |
@@ -68,6 +68,7 @@ What they cover:
 | `ui/chat/drawer/log.test.mjs` | the log keeps the last 500 lines, tags each by type and pretty-prints JSON |
 | `ui/chat/drawer/rates.test.mjs` | the recorded Sonnet turn costs 0.007334 at list price; Haiku 5.5 moves to its long-prompt prices at 100 000 prompt tokens; a model with no price has no estimate |
 | `ui/chat/drawer/usage.test.mjs` | the recorded Sonnet turn read line by line (live counts, then the reported cost and timings, then the totals); a second reply at another thinking level gets its own row; a stopped reply keeps its tokens; stray lines change nothing |
+| `ui/chat/page-state.test.mjs` | the page switches between the chat and the workstation, and a page already shown or not known changes nothing; Esc closes the sheet first, then takes the workstation back to the chat, then is left to the composer; the page shown last is saved and opens again, and an unknown saved page opens the chat; a wide drawer becomes the rail beside the workstation and is docked as the user left it on the chat, and a narrow drawer is the overlay on both pages |
 | `ui/chat/settings/form.test.mjs` | hex and rgb both ways, code-point counts, the master moves only the channels that follow it |
 | `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; a flight profile it cannot fly fails; the cruise grows with distance |
 | `ui/chat/thread/scroll.test.mjs` | the thread follows within 80 px of the bottom, and a send always follows |
@@ -126,7 +127,7 @@ crates/jet
 │       ├── error.rs                the error every chat command fails with, sent as `{ kind, message }`
 │       └── review_timer.rs         the timer that keeps Jet's notes current once the chat goes quiet
 └── ui/
-    ├── index.html                  the chat page: header, drawer, thread, composer, settings dialog
+    ├── index.html                  the chat page: header, drawer, thread, composer, the workstation page, settings dialog
     ├── chat.css                    the chat page's tokens, layout and header
     ├── lab.html                    the lab page: Jet, a button for every clip, and the dials
     ├── styles.css                  the lab's look, and the ground colour of Jet's eyes and ring
@@ -150,6 +151,8 @@ crates/jet
     │   ├── turn.js                 one turn: a send, each event of the reply, the end of the reply
     │   ├── clock.js                how the page writes times and days
     │   ├── dom.js                  helpers that build elements without markup strings
+    │   ├── page-state.js           which page shows, what Esc does first, and how the drawer looks beside each page (pure)
+    │   ├── page-state.test.mjs     the page switch, the Esc order, the saved page, the rail and the docked drawer
     │   ├── stage/                  the live Jet
     │   │   ├── live.js             the live Jet node, the director host, lane placement, the frame loop
     │   │   ├── flight.js           the path of Jet from where it stood to the new lane (pure)
@@ -183,14 +186,16 @@ crates/jet
     │   │   ├── log.test.mjs        the 500 cap, the tags, the pretty-print
     │   │   ├── cache.js            warm or cold wording for the cache chip (pure)
     │   │   ├── cache.test.mjs      warm until the TTL ends, then cold with the tokens to re-read
-    │   │   └── drawer.css          docked beside the thread on wide screens, over it on narrow ones
+    │   │   ├── drawer.css          docked beside the thread on wide screens, over it on narrow ones
+    │   │   └── rail.css            the rail beside the workstation, and the Jet and workstation buttons
     │   └── settings/               the settings sheet
-    │       ├── sheet.js            the dialog and its nine sections; saves after the last edit
+    │       ├── sheet.js            the dialog and its ten sections; saves after the last edit
     │       ├── controls.js         the few form controls the sections are made of
     │       ├── persona.js          who Jet is: name, job title, how to talk
     │       ├── look.js             body colour, behaviour presets, expressiveness, reduced motion
     │       ├── model.js            model, five thinking levels, the budget for one turn, usage since the app started
     │       ├── memory.js           the three notes as editors
+    │       ├── workstation.js      where polysim-bridge and the polysim folder are, the strategy, the engine links and their token
     │       ├── claude.js           where Claude Code is, and Forget this conversation
     │       ├── form.js             colour and counter arithmetic, the master's rules (pure)
     │       ├── form.test.mjs       hex and rgb both ways; code-point counts; the master moves its followers
@@ -233,11 +238,14 @@ crates/jet
     │   ├── view.js                 draws a state into an SVG: props, body, ring, eyes with their tint; the only code that draws Jet
     │   ├── view.test.mjs           the eye tint in two layers and six numbers as before; each prop kind draws and hides
     │   └── scene.js                scenery in its own SVG layers, scrolled by the speed track; not part of Jet
-    └── lab/                        the controls around Jet
-        ├── main.js                 boot, frame loop, a step list for each button, replay-on-change, save-on-change
-        ├── wheel.js                behaviour wheel, presets, axis sliders
-        ├── dial.js                 expressiveness dial and the four channels
-        └── readout.js              what the dials turned into, progress bar
+    ├── lab/                        the controls around Jet
+    │   ├── main.js                 boot, frame loop, a step list for each button, replay-on-change, save-on-change
+    │   ├── wheel.js                behaviour wheel, presets, axis sliders
+    │   ├── dial.js                 expressiveness dial and the four channels
+    │   └── readout.js              what the dials turned into, progress bar
+    └── workstation/                the workstation page as the chat window shows it
+        ├── shell.js                its header, the setup card and the workstation itself, loaded the first time the page opens; its feed is paused while the chat shows
+        └── shell.css               the chat's header, thread and composer step aside; the page's header, link chip, setup card and notice
 ```
 
 Three ideas carry the design:
@@ -263,6 +271,16 @@ The `finished` event's `usage` may also carry `outputTokens`, `thinkingTokens` a
 The five thinking levels are `low`, `medium`, `high`, `xhigh` and `max`. The pretend agent writes `message_start` and `message_delta` lines like the real CLI, so in a browser the counts and the timings fill in during a reply too.
 
 The settings sheet's "This session" block reads the same totals, so the two places show the same tokens and the same cost. The sheet writes the tokens in full, and the tile shortens them from 10 000 up.
+
+## Pages and the rail
+
+The main area shows one of two pages: the chat or the workstation. The chat keeps its state and keeps streaming while the workstation shows.
+
+- **There and back.** The Workstation button in the drawer, in the full drawer and in the rail, opens the workstation, and pressing it again goes back. Beside the workstation a wide drawer narrows to the rail, 64 px wide: Jet at the top, the workstation button, and the gear at the bottom. Jet, labelled "Back to" and the persona's name, takes the user back to the chat with the drawer as they left it, docked open or docked closed.
+- **Esc.** An open settings sheet closes first. Then the workstation goes back to the chat. Then the composer's own rules apply: the narrow drawer closes, then Stop. A part of the workstation that uses Esc itself calls `event.preventDefault()`, and the page then leaves that Esc alone.
+- **Narrow windows** (759 px and less). The drawer is the overlay on both pages and the rail never shows. The workstation's header has its own menu button that opens it.
+- **Settings.** `page` is `chat` or `workstation`, and the window opens on it again. `workstation` holds `bridgePath`, `polysimDir`, `strategyId`, `links` and `token`, edited in Settings under Workstation; the workstation starts again a moment after an edit.
+- **The workstation** is loaded the first time its page opens. Its feed gets `pause` while the chat shows and `resume` when the workstation is back. When the bridge reports `missing`, a setup card with an Open Settings button takes the place of the workstation.
 
 ## Commands the window can call
 

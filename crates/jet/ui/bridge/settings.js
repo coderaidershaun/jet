@@ -19,6 +19,7 @@
  * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max'} effort
  * @property {number} turnBudgetUsd
  * @property {boolean} drawerOpen
+ * @property {'chat' | 'workstation'} page   the page shown last, opened again at start-up
  * @property {string | null} claudePath   null = find Claude Code on its own
  * @property {import('./workstation.js').WorkstationSettings} workstation
  */
@@ -51,6 +52,7 @@ export function defaultSettings() {
     effort: 'medium',
     turnBudgetUsd: 10,
     drawerOpen: true,
+    page: 'chat',
     claudePath: null,
     workstation: {
       bridgePath: '/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-bridge',
