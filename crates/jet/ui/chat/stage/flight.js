@@ -6,6 +6,7 @@
 const MIN_CRUISE_MS = 520;
 const MAX_CRUISE_MS = 1400;
 const TURN_SHARE = 0.18;
+const MAX_TILT_DEG = 25;
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const smooth = (t) => t * t * (3 - 2 * t);
@@ -26,7 +27,7 @@ export function cruiseMsFor(distancePx) {
 export function createFlight({ from, to, fromScale, toScale, startAt, durationMs }) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  const turn = (Math.atan2(dy, Math.abs(dx)) * 180) / Math.PI;
+  const turn = clamp((Math.atan2(dy, Math.abs(dx)) * 180) / Math.PI, -MAX_TILT_DEG, MAX_TILT_DEG);
   const mirror = dx < 0;
 
   return {

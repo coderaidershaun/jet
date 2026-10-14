@@ -4,7 +4,6 @@
 
 import { icon } from '../dom.js';
 
-const MAX_FIELD_PX = 198;
 const HOP_MS = 420;
 
 /**
@@ -20,9 +19,11 @@ export function createComposerView({ page, composer, field, button, heldChip, he
   const sendIcon = icon('send');
   const stopIcon = icon('stop');
 
+  // The height must add the border, which scrollHeight leaves out, or even a one-line field shows a scrollbar.
+  // The style sheet's max-height stops the growth at eight lines.
   function grow() {
     field.style.height = 'auto';
-    field.style.height = Math.min(field.scrollHeight, MAX_FIELD_PX) + 'px';
+    field.style.height = field.scrollHeight + field.offsetHeight - field.clientHeight + 'px';
   }
 
   function refresh() {

@@ -14,19 +14,30 @@ use crate::turn::transport::TransportError;
 const SHELL_PROBE_LIMIT: Duration = Duration::from_secs(3);
 
 impl ClaudeCli {
-    /// Looks for Claude Code in the configured path, then the usual install places, then
-    /// asks the user's login shell. Fails with every place that was searched.
+    /// Uses the configured path when there is one, and nothing else: a path that is not a
+    /// file fails with that one path, so a wrong setting never runs some other Claude Code.
+    /// With no configured path it looks in the usual install places, then asks the user's
+    /// login shell, and fails with every place that was searched.
     pub fn locate(configured: Option<&Path>, cwd: &Path) -> Result<ClaudeCli, TransportError> {
+        if let Some(path) = configured {
+            return if path.is_file() {
+                Ok(ClaudeCli::at(path.to_path_buf(), cwd.to_path_buf()))
+            } else {
+                Err(TransportError::ClaudeMissing {
+                    searched: vec![path.display().to_string()],
+                })
+            };
+        }
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let shell = std::env::var_os("SHELL").map(PathBuf::from);
-        let candidates = candidate_paths(configured, home.as_deref());
+        let candidates = candidate_paths(home.as_deref());
         let program = find_program(&candidates, shell.as_deref())?;
         Ok(ClaudeCli::at(program, cwd.to_path_buf()))
     }
 }
 
-fn candidate_paths(configured: Option<&Path>, home: Option<&Path>) -> Vec<PathBuf> {
-    let mut paths: Vec<PathBuf> = configured.map(Path::to_path_buf).into_iter().collect();
+fn candidate_paths(home: Option<&Path>) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
     if let Some(home) = home {
         paths.push(home.join(".local/bin/claude"));
         paths.push(home.join(".claude/local/claude"));
@@ -107,11 +118,9 @@ mod tests {
     #[test]
     fn locate_lists_every_place_searched() {
         let home = Path::new("/home/someone");
-        let configured = Path::new("/opt/custom/claude");
         assert_eq!(
-            candidate_paths(Some(configured), Some(home)),
+            candidate_paths(Some(home)),
             [
-                configured.to_path_buf(),
                 home.join(".local/bin/claude"),
                 home.join(".claude/local/claude"),
                 PathBuf::from("/opt/homebrew/bin/claude"),
@@ -127,5 +136,14 @@ mod tests {
         };
         let in_order = missing.map(|path| path.display().to_string());
         assert_eq!(searched, in_order);
+
+        // A path the user typed is the only place to look; no other Claude Code may stand in for it.
+        let typed = nowhere.join("typed-claude");
+        let Err(TransportError::ClaudeMissing { searched }) =
+            ClaudeCli::locate(Some(&typed), &nowhere)
+        else {
+            panic!("a configured path that is not a file cannot be found");
+        };
+        assert_eq!(searched, [typed.display().to_string()]);
     }
 }

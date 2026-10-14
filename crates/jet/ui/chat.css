@@ -3,7 +3,7 @@
    Dark only. System fonts only, because the app ships offline. */
 :root {
   --ground: #0b141b;
-  --veil: rgba(11, 20, 27, .5);
+  --veil: rgba(11, 20, 27, .72);
   --surface: #111b23;
   --surface-2: #17232d;
   --line: rgba(255, 255, 255, .08);
@@ -18,14 +18,13 @@
   --danger: #ff7b72;
   --ok: #3ddc97;
   --focus: #8cc4ff;
-  --jet: #ff6a3d;
   --font: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --drawer-w: clamp(240px, 22vw, 320px);
-  --lane: 120px;
-  --lane-scale: .6;
-  --empty-scale: 1;
+  --lane: 80px;
+  --lane-scale: .32;
+  --empty-scale: .8;
   /* The empty state centres Jet, the two greeting lines, the composer and the gaps between them as one block. */
   --empty-block: calc(200px * var(--empty-scale) + 135px);
   --gutter: 16px;
@@ -34,10 +33,10 @@
   color-scheme: dark;
 }
 @media (max-width: 759.98px) {
-  :root { --lane: 88px; --lane-scale: .44; --empty-scale: .88; --text-size: 16px; --text-line: 22px; }
+  :root { --lane: 64px; --lane-scale: .28; --empty-scale: .72; --text-size: 16px; --text-line: 22px; }
 }
 @media (max-width: 419.98px) {
-  :root { --lane: 64px; --lane-scale: .32; --empty-scale: .8; --gutter: 12px; }
+  :root { --empty-scale: .64; --gutter: 12px; }
 }
 
 * { box-sizing: border-box; }

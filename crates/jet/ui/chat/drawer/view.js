@@ -36,6 +36,8 @@ export function createDrawerView({
     speed: 0,
   });
 
+  // SMELL: each row is its own Tab stop, so up to 500 rows stand between Clear and the gear. One Tab stop for
+  // the whole list, with the arrow keys moving between rows, would fix it.
   function logRow(line) {
     const row = h('div', {
       class: 'log-row',

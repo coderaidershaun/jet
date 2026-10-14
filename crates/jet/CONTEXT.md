@@ -51,7 +51,6 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Transcript** — the app's own record of the thread (`transcript.jsonl`). The chat page opens on its newest entries, which the code calls the history. _Avoid_: session.
 - **Notes** — MEMORY, USER and RECENT: the three short files in Jet's prompt that a background review keeps current. The memory commands and the memory section of the settings handle all three.
 
-- **Lane** — the column at the left of each Jet row, where the live Jet stands.
-- **Mark** — the small dot in the lane of an older Jet row.
+- **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.
 - **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.
 - **Flight** — the live Jet's move from where it stood to the slot's lane on a send. _Avoid_: zoom (that is the clip Jet plays during it).

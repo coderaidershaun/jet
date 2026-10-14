@@ -5,7 +5,6 @@
 import { connectAgent } from '../bridge/agent.js';
 import { loadRig } from '../bridge/rig.js';
 import { loadSettings, saveSettings } from '../bridge/settings.js';
-import { cssColour } from '../jet/state.js';
 import { createComposer } from './composer/state.js';
 import { createComposerView } from './composer/view.js';
 import { icon } from './dom.js';
@@ -42,7 +41,6 @@ async function start() {
   const applyReduced = () => document.documentElement.classList.toggle('reduced', reducedMotion());
   const applyColour = () => {
     rig.palette.rest.splice(0, 3, ...(settings.bodyColour ?? defaultColour));
-    document.documentElement.style.setProperty('--jet', cssColour(rig.palette.rest));
   };
   applyReduced();
   applyColour();

@@ -42,9 +42,6 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
 
   /** @type {ReturnType<typeof createFlight> | null} */
   let flight = null;
-  /** @type {HTMLElement | null} */
-  let leftLane = null;
-  let leftAt = 0;
   let helloTimer = 0;
   let lastLabel = 'idle';
   let lastDrawAt = -Infinity;
@@ -61,15 +58,9 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
     node.style.transform = translate + ' ' + scale + ' rotate(' + s.rotate.toFixed(2) + 'deg)';
   }
 
-  function showLeftMark() {
-    if (leftLane) leftLane.classList.remove('jet-leaving');
-    leftLane = null;
-  }
-
   function endFlight() {
     flight = null;
     node.style.transform = '';
-    showLeftMark();
   }
 
   function frame(now) {
@@ -79,7 +70,6 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
       lastLabel = label;
       node.setAttribute('aria-label', label);
     }
-    if (leftLane && now >= leftAt) showLeftMark();
     if (flight) {
       applyFlight(now);
       // Jet brakes after it lands, still facing the way it flew, so the mirror stays until the travel is over.
@@ -142,18 +132,10 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
     /** The send: Jet leaves where it stood and flies to the new lane. */
     send(lane, now, { first, fromScale }) {
       clearTimeout(helloTimer);
-      // The row Jet leaves shows its mark only once Jet has gone, never under Jet while it winds up.
-      const from = node.parentElement;
-      if (from && from !== heroSlot) {
-        from.classList.add('jet-leaving');
-        leftLane = from;
-      }
       if (reduced()) {
         director.send({ cruiseMs: 0 }, now);
-        leftAt = Infinity;
         const moveToLane = () => {
           lane.append(node);
-          showLeftMark();
           scrollToBottom();
         };
         fadeOver(moveToLane).catch((error) => console.warn('the fade to the new lane failed:', error));
@@ -165,7 +147,6 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
       const toScale = scaleOf();
       const cruiseMs = cruiseMsFor(Math.hypot(last.x - first.x, last.y - first.y));
       const { moveAt, moveMs } = director.send({ cruiseMs }, now);
-      leftAt = now + moveAt;
       flight = createFlight({ from: first, to: last, fromScale, toScale, startAt: now + moveAt, durationMs: moveMs });
       applyFlight(now);
       needsDraw = true;

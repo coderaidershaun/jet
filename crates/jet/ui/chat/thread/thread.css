@@ -14,8 +14,6 @@
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 
 .lane { position: relative; flex: 0 0 var(--lane); align-self: stretch; pointer-events: none; }
-.mark { position: absolute; left: 50%; bottom: 3px; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; background: var(--jet); }
-.row[data-live="true"] .mark, .row-lane .mark { display: none; }
 
 .bubble {
   position: relative; min-width: 0;
@@ -54,8 +52,9 @@
 .dots i:nth-child(2) { animation-delay: 160ms; }
 .dots i:nth-child(3) { animation-delay: 320ms; }
 @keyframes dot { 0%, 60%, 100% { opacity: .35; transform: none; } 30% { opacity: 1; transform: translateY(-3px); } }
-.still { margin-left: 8px; font-size: 12px; color: var(--muted); opacity: 0; animation: reveal 300ms 20s forwards; }
-@keyframes reveal { to { opacity: 1; } }
+/* Hidden as well as transparent, so a screen reader does not read the line out before it shows. */
+.still { margin-left: 8px; font-size: 12px; color: var(--muted); opacity: 0; visibility: hidden; animation: reveal 300ms 20s forwards; }
+@keyframes reveal { to { opacity: 1; visibility: visible; } }
 .reduced .dots i { animation: none; opacity: .7; }
 .reduced .row { animation: fade 120ms ease-out; }
 @keyframes fade { from { opacity: 0; } }

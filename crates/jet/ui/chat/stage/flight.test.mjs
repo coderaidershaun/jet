@@ -17,15 +17,22 @@ test('the flight holds before its start, lands on the slot, turns toward travel 
   assert.equal(left.endsAt, 1800, 'the host ends the flight by this time, not by a clip name');
 
   const middle = left.sample(1400);
-  near(middle.rotate, 45);
+  near(middle.rotate, 25);
   near(middle.x, 200);
   near(middle.y, -200);
   const early = left.sample(1000 + 800 * 0.09);
-  assert.ok(early.rotate > 0 && early.rotate < 45, 'the turn eases in over the first part');
+  assert.ok(early.rotate > 0 && early.rotate < 25, 'the turn eases in over the first part');
 
   const right = createFlight({ from: { x: 200, y: 700 }, to: { x: 600, y: 300 }, fromScale: 0.6, toScale: 0.6, startAt: 0, durationMs: 800 });
   assert.equal(right.sample(400).mirror, false);
-  near(right.sample(400).rotate, -45, 1e-6);
+  near(right.sample(400).rotate, -25, 1e-6);
+});
+
+test('flight tilt is capped', () => {
+  const straightDown = createFlight({ from: { x: 400, y: 100 }, to: { x: 400, y: 700 }, fromScale: 1, toScale: 0.6, startAt: 0, durationMs: 1000 });
+  const rotations = Array.from({ length: 41 }, (_, i) => straightDown.sample(i * 25).rotate);
+  assert.ok(rotations.every((rotate) => Math.abs(rotate) <= 25 + 1e-6), 'a flight straight down never turns past 25 degrees');
+  near(Math.max(...rotations), 25);
 });
 
 test('the cruise grows with distance within 520 to 1400 ms and the scale never passes 1', () => {

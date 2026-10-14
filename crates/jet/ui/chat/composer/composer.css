@@ -14,8 +14,10 @@
   background: none; border: 0;
 }
 
+/* Ten pixels of padding and the one-pixel border make a 44 px field, as tall as the Send button.
+   The field grows with its text up to 198 px, which holds eight lines, and then scrolls. */
 textarea#field {
-  flex: 1; min-width: 0; min-height: 44px; max-height: 198px; padding: 11px 16px;
+  flex: 1; min-width: 0; min-height: 44px; max-height: 198px; padding: 10px 16px;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 22px;
   font-size: 16px; line-height: 22px; resize: none; display: block;
 }
@@ -25,9 +27,10 @@ textarea#field:focus-visible { outline-offset: 0; }
 .send {
   display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0;
   background: var(--accent); border: 0; border-radius: 50%; color: #fff;
-  transition: opacity 120ms;
+  transition: background 120ms, color 120ms;
 }
-.send:disabled { opacity: .4; }
+/* Solid rather than faded, so the tile does not show through the button in the empty state. */
+.send:disabled { background: #23487b; color: rgba(255, 255, 255, .6); }
 
 .held {
   justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px 0 16px;

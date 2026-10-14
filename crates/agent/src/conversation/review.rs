@@ -289,6 +289,12 @@ mod tests {
         assert_eq!(request.model, Model::Haiku);
         assert_eq!(request.schema, Some(schema()));
         assert!(request.system_prompt.contains("called Jet"));
+        assert!(
+            request
+                .system_prompt
+                .contains("Never infer anything from file paths, folder names or other metadata"),
+            "a name read from a home folder path must not reach the notes"
+        );
         assert!(request.prompt.contains("<memory>- old fact</memory>"));
         assert!(request.prompt.contains("<recent>(empty)</recent>"));
         assert!(

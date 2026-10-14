@@ -21,10 +21,6 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
   const nodes = new Map();
   let liveKey = null;
 
-  function laneElement() {
-    return h('div', { class: 'lane' }, h('span', { class: 'mark', 'aria-hidden': 'true' }));
-  }
-
   function sealCode(body) {
     for (const pre of body.querySelectorAll('pre')) {
       const wrapper = h('div', { class: 'code' });
@@ -89,7 +85,6 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
   function fillRow(record, row, isFinal) {
     const { el } = record;
     el.className = 'row row-' + row.type + (row.first ? ' first' : '') + (row.last ? ' last' : '');
-    if (row.type === 'jet') el.dataset.live = String(Boolean(row.live));
     if (row.type === 'lane') return;
     fillBubble(el.querySelector('.bubble'), row, isFinal);
   }
@@ -97,7 +92,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
   function create(row) {
     if (row.type === 'day') return { el: h('div', { class: 'pill pill-day', text: row.label }), lane: null, signature: '' };
     if (row.type === 'notice') return { el: h('div', { class: 'pill pill-notice', role: 'status', text: row.message }), lane: null, signature: '' };
-    const lane = row.type === 'user' ? null : laneElement();
+    const lane = row.type === 'user' ? null : h('div', { class: 'lane' });
     const el = h('div', {}, lane, row.type === 'lane' ? null : h('div', { class: 'bubble' }));
     return { el, lane, signature: '' };
   }
@@ -105,7 +100,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
   const signatureOf = (row, isFinal) => {
     const { entry, failure } = row;
     const shown = entry && [entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at];
-    return JSON.stringify([row.type, row.label, row.message, row.first, row.last, row.live, isFinal, shown, failure && failure.kind]);
+    return JSON.stringify([row.type, row.label, row.message, row.first, row.last, isFinal, shown, failure && failure.kind]);
   };
 
   scroller.addEventListener('scroll', () => {

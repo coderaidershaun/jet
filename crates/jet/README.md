@@ -53,17 +53,19 @@ What they cover:
 | `src/settings.rs` `new_fields_round_trip` | the persona, body colour, model and the other chat fields are saved and loaded |
 | `src/settings.rs` `old_files_with_missing_fields_still_load` | an older file gets defaults for the fields it lacks |
 | `src/settings.rs` `broken_file_names_the_path` | a file that cannot be read fails with its path in the message |
+| `src/settings.rs` `default_settings_match_the_ui_fixture` | `ui/bridge/default-settings.json` is exactly the defaults Rust writes |
 | `src/settings.rs` `json_uses_camel_case_for_the_frontend` | the page reads `reducedMotion`, not `reduced_motion` |
 | `src/chat/error.rs` `bridge_error_serialises_as_kind_and_message` | every command error reaches the page as `{ kind, message }` |
 | `src/chat/mod.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
 | `rig/poses.rs` `generator_prints_the_committed_rig` | the generator prints exactly `rig/jet.json` |
 | `ui/bridge/fake-agent.test.mjs` | a reply's events in order, a fresh session, the three failures, stop, and what the storage keeps |
-| `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; merge fills gaps from them |
+| `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; merge fills gaps from them; `defaults_match_the_rust_fixture`: the page's defaults are exactly `ui/bridge/default-settings.json` |
+| `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method calls its command with the right argument keys and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
 | `ui/chat/composer/state.test.mjs` | centred until the first send, Send becomes Stop, Enter and Escape |
 | `ui/chat/drawer/cache.test.mjs` | the cache chip is warm until the TTL ends, then cold with the tokens to re-read |
 | `ui/chat/drawer/log.test.mjs` | the log keeps the last 500 lines, tags each by type and pretty-prints JSON |
 | `ui/chat/settings/form.test.mjs` | hex and rgb both ways, code-point counts, the master moves only the channels that follow it |
-| `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel and mirrors going left; the cruise grows with distance |
+| `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; the cruise grows with distance |
 | `ui/chat/thread/scroll.test.mjs` | the thread follows within 80 px of the bottom, and a send always follows |
 | `ui/chat/thread/store.test.mjs` | grouping and day pills, the slot's life from waiting to its end, the held message |
 | `ui/chat/thread/throttle.test.mjs` | markdown renders at most every 50 ms with a trailing call; the first reveal waits for the mood |
@@ -129,8 +131,11 @@ crates/jet
     ├── bridge/                     the pages' way to the Rust side, with browser fallbacks
     │   ├── rig.js                  loadRig: the rig from Rust, or rig/jet.json in a browser
     │   ├── settings.js             the Settings shape, defaults, behaviour presets, merge, load and save
-    │   ├── settings.test.mjs       the defaults carry the chat fields; merge fills gaps from them
+    │   ├── settings.test.mjs       the defaults carry the chat fields; merge fills gaps from them; the defaults equal the Rust fixture
+    │   ├── default-settings.json   the defaults as Rust writes them, read by a test on each side so the two cannot drift
     │   ├── agent.js                connectAgent: the one way to talk to Claude, and the types of its events
+    │   ├── tauri-agent.js          the real agent: each method calls a Rust command, and a reply streams back over a channel
+    │   ├── tauri-agent.test.mjs    each method calls its command with the right keys; failures arrive as { kind, message }
     │   ├── fake-agent.js           the pretend Claude the chat runs on in a browser
     │   ├── fake-agent.test.mjs     a reply's events in order, a fresh session, the three failures, stop, storage
     │   ├── fake-script.js          what the pretend Claude says and the stream lines it writes
@@ -143,17 +148,17 @@ crates/jet
     │   ├── stage/                  the live Jet
     │   │   ├── live.js             the live Jet node, the director host, lane placement, the frame loop
     │   │   ├── flight.js           the path of Jet from where it stood to the new lane (pure)
-    │   │   ├── flight.test.mjs     the flight holds, lands, turns and mirrors; the cruise grows with distance
+    │   │   ├── flight.test.mjs     the flight holds, lands, turns (capped at 25°) and mirrors; the cruise grows with distance
     │   │   └── stage.css           the empty state, the hero spot and the live Jet's place in a lane
     │   ├── thread/                 the conversation
     │   │   ├── store.js            messages, notices, the running reply and the held message, as rows (pure)
     │   │   ├── store.test.mjs      grouping and pills; the slot's life; the held message
-    │   │   ├── view.js             draws the rows: bubbles, lanes, marks, dots, code blocks, links
+    │   │   ├── view.js             draws the rows: bubbles, lanes, dots, code blocks, links
     │   │   ├── scroll.js           when the thread follows new text (pure)
     │   │   ├── scroll.test.mjs     follows within 80 px of the bottom; a send always follows
     │   │   ├── throttle.js         when streamed text becomes HTML: at most every 50 ms, stale answers dropped
     │   │   ├── throttle.test.mjs   the 50 ms rule with a trailing call; the first reveal waits for the mood
-    │   │   └── thread.css          rows, bubbles, lanes, marks, pills and the Markdown inside bubbles
+    │   │   └── thread.css          rows, bubbles, lanes, pills and the Markdown inside bubbles
     │   ├── composer/               the field and the Send/Stop button
     │   │   ├── state.js            the composer's rules: where it sits, the button, Enter, Escape (pure)
     │   │   ├── state.test.mjs      centred until the first send; Send becomes Stop; Enter and Escape
