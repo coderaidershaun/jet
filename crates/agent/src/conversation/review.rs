@@ -14,7 +14,7 @@ use crate::turn::{Request, SessionMode, Step, Summary, Transport, Turn, TurnErro
 
 const PROMPT: &str = include_str!("review.md");
 
-/// The review waits for this much quiet after the last message.
+// SMELL: the app's review timer has its own copy of this wait; change both together.
 const QUIET_BEFORE_REVIEW_MS: u64 = 90_000;
 
 /// Two reviews are at least this far apart.

@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+// SMELL: the review prompt and the chat page repeat these three numbers; change them together.
 /// The longest MEMORY note, in characters.
 pub const MEMORY_LIMIT: usize = 2200;
 /// The longest USER note, in characters.

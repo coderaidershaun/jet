@@ -97,8 +97,6 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
   }
 
   return {
-    node,
-
     start() {
       player.breathing = motion();
       requestAnimationFrame(loop);
