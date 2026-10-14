@@ -50,15 +50,15 @@ What they cover:
 | `src/rig.rs` `wrong_pose_size_is_reported` | a pose with the wrong number of values is refused, with the number found |
 | `src/settings.rs` `missing_file_means_defaults` | no settings file yet gives the defaults |
 | `src/settings.rs` `settings_survive_a_round_trip` | what is saved is what is loaded |
-| `src/settings.rs` `new_fields_round_trip` | the persona, body colour, model and the other chat fields are saved and loaded |
-| `src/settings.rs` `old_files_with_missing_fields_still_load` | an older file gets defaults for the fields it lacks |
+| `src/settings.rs` `new_fields_round_trip` | the persona, body colour, model, the five thinking levels (xhigh and max included) and the other chat fields are saved and loaded |
+| `src/settings.rs` `old_files_with_missing_fields_still_load` | an older file gets defaults for the fields it lacks, and keeps what it saved: a 1.00 budget stays 1.00 although the default is now 10.00 |
 | `src/settings.rs` `broken_file_names_the_path` | a file that cannot be read fails with its path in the message |
 | `src/settings.rs` `default_settings_match_the_ui_fixture` | `ui/bridge/default-settings.json` is exactly the defaults Rust writes |
 | `src/settings.rs` `json_uses_camel_case_for_the_frontend` | the page reads `reducedMotion`, not `reduced_motion` |
 | `src/chat/error.rs` `bridge_error_serialises_as_kind_and_message` | every command error reaches the page as `{ kind, message }` |
 | `src/chat/mod.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
 | `rig/poses.rs` `generator_prints_the_committed_rig` | the generator prints exactly `rig/jet.json` |
-| `ui/bridge/fake-agent.test.mjs` | a reply's events in order, a fresh session, the three failures, stop, and what the storage keeps |
+| `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps |
 | `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; merge fills gaps from them; `defaults_match_the_rust_fixture`: the page's defaults are exactly `ui/bridge/default-settings.json` |
 | `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method calls its command with the right argument keys and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
 | `ui/chat/composer/state.test.mjs` | centred until the first send, Send becomes Stop, Enter and Escape |
@@ -140,8 +140,8 @@ crates/jet
     │   ├── tauri-agent.js          the real agent: each method calls a Rust command, and a reply streams back over a channel
     │   ├── tauri-agent.test.mjs    each method calls its command with the right keys; failures arrive as { kind, message }
     │   ├── fake-agent.js           the pretend Claude the chat runs on in a browser
-    │   ├── fake-agent.test.mjs     a reply's events in order, a fresh session, the three failures, stop, storage
-    │   ├── fake-script.js          what the pretend Claude says and the stream lines it writes
+    │   ├── fake-agent.test.mjs     a reply's events in order incl. the live stream lines and usage, a fresh session, the three failures, stop, storage
+    │   ├── fake-script.js          what the pretend Claude says and the stream lines it writes: message_start, message_delta, a result with timing fields, real model ids
     │   └── markdown.js             a small, safe Markdown renderer for the browser fallback
     ├── chat/                       the chat page
     │   ├── main.js                 boot: loads the rig, settings and history, builds every part, hands each its parts
@@ -252,9 +252,9 @@ The drawer's Usage panel sits between the cache chip and the raw stream log. It 
 
 The numbers come from the stream lines while a reply runs: the init line names the session and model, `message_start` gives the prompt tokens, and `message_delta` gives the output tokens so far. While there is no reported cost the spend reads "est." and is worked out from the list prices of 2026-10-14 in `ui/chat/drawer/rates.js`. A model with no price there reads "no rate". The `result` line carries the cost Claude Code reports, the timings and the final counts; from then on the spend reads "reported", and that cost is what the totals add. A reply that is stopped has no reported cost, so the totals add its estimate. The thinking tokens are part of the output tokens and are never added twice.
 
-The `finished` event's `usage` may also carry `outputTokens`, `thinkingTokens` and `model`. The Rust side fills them from the result line. When they are there the tracker prefers them to what it read from the stream.
+The `finished` event's `usage` may also carry `outputTokens`, `thinkingTokens` and `model`. The Rust side (`Usage` in `crates/agent/src/chat/usage.rs`) fills them from the result line. When they are there the tracker prefers them to what it read from the stream.
 
-The five thinking levels are `low`, `medium`, `high`, `xhigh` and `max`. The pretend agent writes `message_start` and `message_delta` lines like the real CLI, so in a browser the counts climb during a reply too.
+The five thinking levels are `low`, `medium`, `high`, `xhigh` and `max`. The pretend agent writes `message_start` and `message_delta` lines like the real CLI, so in a browser the counts and the timing line fill in during a reply too.
 
 The settings sheet's "This session" block reads the same totals, so the two places show the same tokens and the same cost.
 
