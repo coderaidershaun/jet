@@ -15,10 +15,10 @@ pub use reply::Reply;
 pub use review::{ReviewError, ReviewOutcome};
 use session_policy::decide;
 
-use crate::chat::{Effort, Entry, Model, Notes, Persona, Role, ShownEntry, Tone};
+use crate::chat::{Effort, Entry, McpServers, Model, Notes, Persona, Role, ShownEntry, Tone};
 use crate::markdown::render_markdown;
 use crate::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
-use crate::turn::{Request, SessionMode, Transport, Turn};
+use crate::turn::{Request, SessionMode, Transport, Turn, mcp_config};
 
 /// How long Claude's prompt cache stays warm, in minutes.
 const CACHE_TTL_MINUTES: u64 = 60;
@@ -35,6 +35,8 @@ pub struct Message {
     pub budget_usd: f64,
     /// The user's clock, for example `Tue 14 Oct 2026, 09:16`.
     pub local_time: String,
+    /// The MCP servers Claude may use for this answer.
+    pub mcp: McpServers,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -109,6 +111,7 @@ impl Conversation {
             &message.tone,
             message.model,
             message.effort,
+            &message.mcp,
         );
         let saved = Session::load(&self.dir)?;
         let decision = decide(saved.as_ref(), &prompt_hash, now);
@@ -126,6 +129,7 @@ impl Conversation {
             budget_usd: message.budget_usd,
             session: decision.mode,
             schema: None,
+            mcp_config: mcp_config(&message.mcp),
         };
         let started = Turn::start(&*transport, &request);
         let context = reply::Context {
@@ -207,6 +211,7 @@ mod test_support {
             effort: Effort::Medium,
             budget_usd: 1.0,
             local_time: "Tue 14 Oct 2026, 11:20".to_owned(),
+            mcp: McpServers::default(),
         }
     }
 

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use super::session_policy::FreshReason;
 use super::{Claim, shown};
-use crate::chat::{Entry, EntryId, EntryStatus, Event, Failure, Role, SessionId};
+use crate::chat::{Entry, EntryId, EntryStatus, Event, Failure, McpStatus, Role, SessionId};
 use crate::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
 use crate::turn::{
     Request, SessionMode, Step, Stopper, Summary, Transport, TransportError, Turn, TurnError,
@@ -90,9 +90,33 @@ impl Reply {
         let step = self.turn.as_mut().and_then(Iterator::next);
         match step {
             Some(Step::Raw(line)) => self.queue.push_back(Event::RawLine { line }),
-            Some(Step::Init { session_id, model }) => self.handle_init(session_id, model),
+            Some(Step::Init {
+                session_id,
+                model,
+                mcp,
+            }) => self.handle_init(session_id, model, mcp),
             Some(Step::Mood(mood)) => self.queue.push_back(Event::Mood { mood }),
             Some(Step::Text(delta)) => self.queue.push_back(Event::Text { delta }),
+            Some(Step::ToolStarted {
+                id,
+                server,
+                tool,
+                input,
+            }) => self.queue.push_back(Event::ToolStarted {
+                id,
+                server,
+                tool,
+                input,
+            }),
+            Some(Step::ToolFinished(call)) => self.queue.push_back(Event::ToolFinished {
+                id: call.id,
+                server: call.server,
+                tool: call.tool,
+                ok: call.ok,
+                result: call.result,
+                summary: call.summary,
+                duration_ms: call.duration_ms,
+            }),
             Some(Step::Finished(summary)) => self.conclude(Ending::Finished(summary)),
             Some(Step::Stopped) => self.conclude(Ending::Stopped),
             Some(Step::Failed(error)) => self.handle_failure(error),
@@ -100,7 +124,7 @@ impl Reply {
         }
     }
 
-    fn handle_init(&mut self, session_id: SessionId, model: String) {
+    fn handle_init(&mut self, session_id: SessionId, model: String, mcp: Vec<McpStatus>) {
         self.seen_init = true;
         let fresh = self.context.request.session == SessionMode::New;
         if let Err(error) = self.save_new_session(&session_id) {
@@ -113,6 +137,7 @@ impl Reply {
             session_id,
             model,
             fresh,
+            mcp,
         });
         if let Some(message) = self.context.notice.take() {
             self.queue.push_back(Event::Notice { message });
@@ -245,6 +270,11 @@ impl Reply {
             mood: self.turn.as_ref().and_then(Turn::mood),
             status,
             error,
+            tools: self
+                .turn
+                .as_ref()
+                .map(|turn| turn.tools().to_vec())
+                .unwrap_or_default(),
         }
     }
 

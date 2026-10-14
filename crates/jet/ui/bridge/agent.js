@@ -7,12 +7,14 @@ import { createFakeAgent } from './fake-agent.js';
 import { createTauriAgent } from './tauri-agent.js';
 
 /** @typedef {{ found: boolean, path: string | null, searched: string[] }} ClaudeStatus */
+/** The state of one MCP server when a reply started. Only `failed` means offline; `pending` is still starting. @typedef {{ name: string, status: string }} McpStatus */
+/** One finished call of an MCP tool. @typedef {{ id: string, server: string, tool: string, input: any, ok: boolean, result: any, summary: string, durationMs: number }} ToolCall */
 /** @typedef {{ lastRequestAt: number | null, ttlMinutes: number, contextTokens: number }} CacheStatus */
 /**
  * `id` is null only for an entry that was never saved, such as a send that failed before a reply began.
  * @typedef {{
  *   id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string,
- *   status: 'complete' | 'stopped' | 'failed', error?: string, at: number,
+ *   status: 'complete' | 'stopped' | 'failed', error?: string, tools?: ToolCall[], at: number,
  * }} ShownEntry
  */
 /** @typedef {{ memory: string, user: string, recent: string, limits?: { memory: number, user: number, recent: number } }} Notes */
@@ -21,10 +23,12 @@ import { createTauriAgent } from './tauri-agent.js';
 
 /**
  * @typedef {{ kind: 'rawLine', line: string }
- *   | { kind: 'started', sessionId: string, model: string, fresh: boolean }
+ *   | { kind: 'started', sessionId: string, model: string, fresh: boolean, mcp: McpStatus[] }
  *   | { kind: 'notice', message: string }
  *   | { kind: 'mood', mood: string }
  *   | { kind: 'text', delta: string }
+ *   | { kind: 'toolStarted', id: string, server: string, tool: string, input: any }
+ *   | { kind: 'toolFinished', id: string, server: string, tool: string, ok: boolean, result: any, summary: string, durationMs: number }
  *   | { kind: 'finished', entry: ShownEntry, durationMs: number, costUsd: number, usage: Usage }
  *   | { kind: 'failed', failure: Failure, entry: ShownEntry }
  *   | { kind: 'stopped', entry: ShownEntry }} AgentEvent
@@ -40,6 +44,7 @@ import { createTauriAgent } from './tauri-agent.js';
  * @property {{ candid: number, playful: number }} behaviour
  * @property {string} localTime
  * @property {string | null} claudePath
+ * @property {import('./settings.js').Settings['mcp']} mcp
  */
 
 /**

@@ -13,7 +13,8 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use super::transport::{Lines, Request, Stopper, Transport, TransportError};
-use args::{CACHE_TTL_ENV, args};
+pub(crate) use args::mcp_config;
+use args::{CACHE_TTL_ENV, ISOLATION_ENV, args};
 
 /// Whether a variable is one that a running Claude Code session sets for its own tools.
 fn is_session_variable(name: &OsStr) -> bool {
@@ -59,11 +60,12 @@ impl Transport for ClaudeCli {
         for (name, _) in std::env::vars_os().filter(|(name, _)| is_session_variable(name)) {
             command.env_remove(name);
         }
-        // SMELL: the cache setting's name also starts with CLAUDE_CODE_, so it must be set
-        // after the session variables are removed, or the removal can drop it.
+        // SMELL: these settings' names also start with CLAUDE_CODE_, so they must be set
+        // after the session variables are removed, or the removal can drop them.
         let mut child = command
             .args(args(request).into_iter().map(OsString::from))
             .env(CACHE_TTL_ENV.0, CACHE_TTL_ENV.1)
+            .envs(ISOLATION_ENV)
             .current_dir(&self.cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

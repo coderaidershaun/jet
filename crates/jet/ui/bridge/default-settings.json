@@ -13,5 +13,17 @@
   "effort": "medium",
   "turnBudgetUsd": 10.0,
   "drawerOpen": true,
-  "claudePath": null
+  "claudePath": null,
+  "mcp": {
+    "quanty": {
+      "enabled": true,
+      "command": "/Users/shaun/Code/DEVELOPMENT/quanty/target/release/quanty-mcp",
+      "cwd": "/Users/shaun/Code/DEVELOPMENT/quanty"
+    },
+    "polysim": {
+      "enabled": true,
+      "command": "/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-mcp",
+      "cwd": "/Users/shaun/Code/DEVELOPMENT/polysim"
+    }
+  }
 }

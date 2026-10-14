@@ -1,10 +1,15 @@
 //! Contract tests for the door to Claude Code: the real `ClaudeCli` and the real `Turn`,
-//! with the `fake-claude` program standing in for Claude Code itself.
+//! with the `fake-claude` program standing in for Claude Code itself. One test also runs
+//! a whole reply through `Conversation`, to the events and the saved thread.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use agent::{ClaudeCli, Effort, Model, Mood, Request, SessionId, SessionMode, Step, Turn};
+use agent::{
+    ClaudeCli, Conversation, DataDir, Effort, Event, McpServer, McpServers, McpStatus, Message,
+    Model, Mood, Persona, Request, SessionId, SessionMode, Step, Tone, Turn,
+};
 use serde_json::json;
 
 const SONNET_RECORDING: &str = include_str!("fixtures/sonnet-mood-reply.jsonl");
@@ -25,6 +30,7 @@ fn chat_request(prompt: &str, session: SessionMode) -> Request {
         budget_usd: 1.0,
         session,
         schema: None,
+        mcp_config: None,
     }
 }
 
@@ -106,8 +112,12 @@ fn fake_claude_streams_a_turn() {
     let env = std::fs::read_to_string(cwd.join("fake-claude-env.json")).unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&env).unwrap(),
-        json!({"CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"}),
-        "of the Claude variables, only the cache lifetime reaches the program"
+        json!({
+            "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h",
+            "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
+            "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+        }),
+        "of the Claude variables, only Jet's own settings reach the program"
     );
 
     let review = Request {
@@ -127,6 +137,125 @@ fn fake_claude_streams_a_turn() {
     let args = recorded_args(&cwd);
     assert!(args.contains(&"--no-session-persistence".to_owned()));
     assert!(args.contains(&"{\"type\":\"object\"}".to_owned()));
+}
+
+#[test]
+fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
+    let (claude, cwd) = fake_claude("quanty");
+    let conversation = Conversation::new(DataDir::new(cwd.join("data")));
+    let enabled = |command: &str| McpServer {
+        enabled: true,
+        command: command.into(),
+        cwd: None,
+    };
+    let message = Message {
+        text: "fixture:quanty-search-reply".to_owned(),
+        persona: Persona::default(),
+        tone: Tone::default(),
+        model: Model::Sonnet,
+        effort: Effort::Medium,
+        budget_usd: 1.0,
+        local_time: "Tue 14 Oct 2026, 11:20".to_owned(),
+        mcp: McpServers {
+            quanty: enabled("/q/quanty-mcp"),
+            polysim: enabled("/p/polysim-mcp"),
+        },
+    };
+    let (_, reply) = conversation.send(Arc::new(claude), message).unwrap();
+    let events: Vec<Event> = reply.collect();
+
+    let Some(Event::Started { mcp, .. }) =
+        events.iter().find(|e| matches!(e, Event::Started { .. }))
+    else {
+        panic!("the reply starts with Started: {events:?}");
+    };
+    let status = |name: &str, status: &str| McpStatus {
+        name: name.to_owned(),
+        status: status.to_owned(),
+    };
+    assert_eq!(
+        mcp,
+        &[status("polysim", "failed"), status("quanty", "connected")]
+    );
+
+    let tool_started: Vec<&Event> = events
+        .iter()
+        .filter(|e| matches!(e, Event::ToolStarted { .. }))
+        .collect();
+    let [
+        Event::ToolStarted {
+            id,
+            server,
+            tool,
+            input,
+        },
+    ] = tool_started[..]
+    else {
+        panic!("one tool call starts, ToolSearch is left out: {tool_started:?}");
+    };
+    assert_eq!(id, "toolu_01K3EDj1tq5Co9obfZ2yX4Nx");
+    assert_eq!((server.as_str(), tool.as_str()), ("quanty", "search"));
+    assert_eq!(
+        input["question"],
+        "What is vega, the sensitivity of an option price to volatility?"
+    );
+    let Some(Event::ToolFinished {
+        id: finished_id,
+        ok,
+        result,
+        summary,
+        ..
+    }) = events
+        .iter()
+        .find(|e| matches!(e, Event::ToolFinished { .. }))
+    else {
+        panic!("the call finishes: {events:?}");
+    };
+    assert_eq!(finished_id, id);
+    assert!(ok);
+    assert_eq!(result["results"].as_array().unwrap().len(), 5);
+    assert_eq!(summary, "quanty · search · 5 results");
+
+    let position = |wanted: fn(&Event) -> bool| events.iter().position(wanted).unwrap();
+    let order = [
+        position(|e| matches!(e, Event::Started { .. })),
+        position(|e| matches!(e, Event::ToolStarted { .. })),
+        position(|e| matches!(e, Event::ToolFinished { .. })),
+        position(|e| matches!(e, Event::Text { .. })),
+        events.len() - 1,
+    ];
+    assert!(
+        order.is_sorted_by(|a, b| a < b),
+        "events out of order: {order:?}"
+    );
+    let text: String = events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Text { delta } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(text.starts_with("Vega is how much"), "{text}");
+
+    let Some(Event::Finished { entry, .. }) = events.last() else {
+        panic!("the reply ends with Finished: {:?}", events.last());
+    };
+    let [saved] = &entry.entry.tools[..] else {
+        panic!("the saved entry keeps the call: {:?}", entry.entry.tools);
+    };
+    assert_eq!(
+        (&saved.id, &saved.input, &saved.result, &saved.summary),
+        (id, input, result, summary)
+    );
+    let history = conversation.history(10).unwrap();
+    assert_eq!(history.last().unwrap().entry.tools, entry.entry.tools);
+
+    let args = recorded_args(&cwd);
+    let at = |flag: &str| args.iter().position(|arg| arg == flag).unwrap();
+    assert_eq!(args[at("--tools") + 1], "ToolSearch");
+    assert!(args[at("--mcp-config") + 1].contains("/q/quanty-mcp"));
+    assert!(args.contains(&"--allowedTools".to_owned()));
+    assert!(!args.contains(&"--safe-mode".to_owned()));
 }
 
 fn is_alive(pid: &str) -> bool {

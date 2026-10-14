@@ -29,6 +29,7 @@ export function wants(text) {
     missing: mentions(text, 'missing'),
     timeout: mentions(text, 'timeout'),
     fresh: mentions(text, 'fresh'),
+    quanty: mentions(text, 'quanty'),
   };
 }
 
@@ -111,7 +112,7 @@ export function wireModelUsage({ model, usage, outputTokens, costUsd }) {
 }
 
 export const lines = {
-  init: (sessionId, model) => JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, model, tools: [], mcp_servers: [] }),
+  init: (sessionId, model, mcpServers = []) => JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, model, tools: [], mcp_servers: mcpServers }),
   delta: (sessionId, text) => JSON.stringify({
     type: 'stream_event',
     event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
@@ -159,6 +160,21 @@ export const lines = {
     message: { role: 'assistant', content: [{ type: 'text', text }] },
     session_id: sessionId,
   }),
+  toolUse: (sessionId, { id, name, input }) => JSON.stringify({
+    type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] },
+    session_id: sessionId,
+  }),
+  // What the tool gave back: its text in the message, and the same data structured beside it.
+  toolResult: (sessionId, { id, result }) => {
+    const content = JSON.stringify(result);
+    return JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] },
+      session_id: sessionId,
+      tool_use_result: { content, structuredContent: result },
+    });
+  },
   result: (sessionId, { text, isError, durationMs, ttftMs, costUsd, usage, modelUsage }) => JSON.stringify({
     type: 'result',
     subtype: isError ? 'error_during_execution' : 'success',

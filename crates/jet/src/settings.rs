@@ -5,7 +5,7 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use agent::{Effort, Model, Persona};
+use agent::{Effort, McpServer, McpServers, Model, Persona};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
@@ -28,6 +28,8 @@ pub struct Settings {
     pub drawer_open: bool,
     /// Where Claude Code lives; `None` means look in the usual places.
     pub claude_path: Option<PathBuf>,
+    /// The MCP servers Jet's Claude may use: the quanty library and the polysim engines.
+    pub mcp: McpServers,
 }
 
 /// Position on the behaviour wheel. Both axes run -1 to 1 and the point stays
@@ -81,7 +83,22 @@ impl Default for Settings {
             turn_budget_usd: 10.0,
             drawer_open: true,
             claude_path: None,
+            mcp: default_mcp(),
         }
+    }
+}
+
+// SMELL: these point at this machine's quanty and polysim checkouts, which only suits a
+// single-user desktop app.
+fn default_mcp() -> McpServers {
+    let server = |checkout: &str, program: &str| McpServer {
+        enabled: true,
+        command: Path::new(checkout).join("target/release").join(program),
+        cwd: Some(PathBuf::from(checkout)),
+    };
+    McpServers {
+        quanty: server("/Users/shaun/Code/DEVELOPMENT/quanty", "quanty-mcp"),
+        polysim: server("/Users/shaun/Code/DEVELOPMENT/polysim", "polysim-mcp"),
     }
 }
 
@@ -245,12 +262,16 @@ mod tests {
         assert_eq!(settings.turn_budget_usd, 1.0);
         assert!(settings.drawer_open);
         assert_eq!(settings.claude_path, None);
+        assert_eq!(settings.mcp, Settings::default().mcp);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
     fn new_fields_round_trip() {
         let path = scratch_file("new-fields");
+        let mut mcp = Settings::default().mcp;
+        mcp.quanty.enabled = false;
+        mcp.polysim.cwd = None;
         let settings = Settings {
             persona: Persona {
                 name: "Ada".into(),
@@ -263,6 +284,7 @@ mod tests {
             turn_budget_usd: 2.5,
             drawer_open: false,
             claude_path: Some(PathBuf::from("/opt/tools/claude")),
+            mcp,
             ..Settings::default()
         };
         write_to(&path, &settings).unwrap();
@@ -275,6 +297,7 @@ mod tests {
             "turnBudgetUsd",
             "drawerOpen",
             "claudePath",
+            "mcp",
         ] {
             assert!(
                 json.contains(&format!("\"{key}\"")),

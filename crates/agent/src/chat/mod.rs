@@ -2,10 +2,12 @@
 //! thread entries, and the settings that shape the persona. The names and the JSON shapes
 //! here are what the chat page reads, so change them with the page.
 
+mod tools;
 mod usage;
 
 use serde::{Deserialize, Serialize};
 
+pub use tools::{McpServer, McpServers, McpStatus, ToolCall};
 pub use usage::Usage;
 
 // SMELL: the review prompt and the chat page repeat these three numbers; change them together.
@@ -198,6 +200,9 @@ pub struct Entry {
     pub status: EntryStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The MCP tool calls that came back during the reply. Older lines have none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<ToolCall>,
     pub at: u64,
 }
 
@@ -250,6 +255,8 @@ pub enum Event {
         session_id: SessionId,
         model: String,
         fresh: bool,
+        /// Each MCP server and its state when the reply started.
+        mcp: Vec<McpStatus>,
     },
     /// At most once, before the first `Text`.
     Mood {
@@ -258,6 +265,24 @@ pub enum Event {
     /// Reply text with the mood line already removed.
     Text {
         delta: String,
+    },
+    /// Claude called an MCP tool; it is running now. A call still running when the reply
+    /// ends gets no `ToolFinished`, and the saved entry keeps only finished calls.
+    ToolStarted {
+        id: String,
+        server: String,
+        tool: String,
+        input: serde_json::Value,
+    },
+    /// The call with this `id` came back.
+    ToolFinished {
+        id: String,
+        server: String,
+        tool: String,
+        ok: bool,
+        result: serde_json::Value,
+        summary: String,
+        duration_ms: u64,
     },
     /// A fresh conversation began for a reason the user should hear about.
     Notice {
@@ -292,10 +317,24 @@ mod tests {
             mood: None,
             status,
             error: None,
+            tools: Vec::new(),
             at: 1_760_433_360_000,
         };
         let html = "<p>Friday looks fine</p>".into();
         ShownEntry { entry, html }
+    }
+
+    fn quanty_search() -> ToolCall {
+        ToolCall {
+            id: "toolu_1".into(),
+            server: "quanty".into(),
+            tool: "search".into(),
+            input: json!({"question": "What is vega?"}),
+            ok: true,
+            result: json!({"results": [1, 2]}),
+            summary: "quanty · search · 2 results".into(),
+            duration_ms: 950,
+        }
     }
 
     #[test]
@@ -304,6 +343,8 @@ mod tests {
         let excited = Mood::Excited;
         let mut complete = jet_entry(42, EntryStatus::Complete);
         complete.entry.mood = Some(excited);
+        complete.entry.tools = vec![quanty_search()];
+        let call = quanty_search();
         let stopped = jet_entry(44, EntryStatus::Stopped);
         let mut cases = vec![
             (
@@ -315,9 +356,37 @@ mod tests {
                     session_id: SessionId("5b0c".into()),
                     model: "claude-sonnet-5-5".into(),
                     fresh: true,
+                    mcp: vec![McpStatus {
+                        name: "quanty".into(),
+                        status: "connected".into(),
+                    }],
                 },
                 json!({"kind": "started", "sessionId": "5b0c", "model": "claude-sonnet-5-5",
-                       "fresh": true}),
+                       "fresh": true, "mcp": [{"name": "quanty", "status": "connected"}]}),
+            ),
+            (
+                Event::ToolStarted {
+                    id: call.id.clone(),
+                    server: call.server.clone(),
+                    tool: call.tool.clone(),
+                    input: call.input.clone(),
+                },
+                json!({"kind": "toolStarted", "id": "toolu_1", "server": "quanty",
+                       "tool": "search", "input": {"question": "What is vega?"}}),
+            ),
+            (
+                Event::ToolFinished {
+                    id: call.id.clone(),
+                    server: call.server.clone(),
+                    tool: call.tool.clone(),
+                    ok: call.ok,
+                    result: call.result.clone(),
+                    summary: call.summary.clone(),
+                    duration_ms: call.duration_ms,
+                },
+                json!({"kind": "toolFinished", "id": "toolu_1", "server": "quanty",
+                       "tool": "search", "ok": true, "result": {"results": [1, 2]},
+                       "summary": "quanty · search · 2 results", "durationMs": 950}),
             ),
             (
                 Event::Notice { message: text() },
@@ -350,7 +419,12 @@ mod tests {
                     "kind": "finished",
                     "entry": {"id": 42, "role": "jet", "text": "Friday looks fine",
                               "html": "<p>Friday looks fine</p>", "mood": "excited",
-                              "status": "complete", "at": 1_760_433_360_000_u64},
+                              "status": "complete", "at": 1_760_433_360_000_u64,
+                              "tools": [{"id": "toolu_1", "server": "quanty", "tool": "search",
+                                         "input": {"question": "What is vega?"}, "ok": true,
+                                         "result": {"results": [1, 2]},
+                                         "summary": "quanty · search · 2 results",
+                                         "durationMs": 950}]},
                     "durationMs": 4210,
                     "costUsd": 0.0123,
                     "usage": {"inputTokens": 812, "cacheReadTokens": 40210,

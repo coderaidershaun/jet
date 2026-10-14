@@ -7,6 +7,7 @@ mod mood;
 #[cfg(test)]
 pub(crate) mod scripted;
 mod stream;
+mod tools;
 mod transport;
 
 use std::collections::VecDeque;
@@ -15,15 +16,21 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::chat::{Mood, SessionId, Usage};
+use crate::chat::{McpStatus, Mood, SessionId, ToolCall, Usage};
 pub use claude::ClaudeCli;
+pub(crate) use claude::mcp_config;
 pub use error::TurnError;
 use mood::{MoodSplitter, Split};
 use stream::{Line, ResultLine};
+use tools::ToolCalls;
 pub use transport::{Lines, Request, SessionMode, Stopper, Transport, TransportError};
 
 /// How long Claude may stay silent before the turn gives up.
 const IDLE_LIMIT: Duration = Duration::from_secs(120);
+
+/// While a tool runs, Claude may stay silent this many times as long, because a library
+/// answer can take minutes.
+const TOOL_IDLE_FACTOR: u32 = 3;
 
 /// One thing that happened during a turn. The last step is always `Finished`, `Stopped`
 /// or `Failed`, and there is never more than one of them.
@@ -34,9 +41,19 @@ pub enum Step {
     Init {
         session_id: SessionId,
         model: String,
+        mcp: Vec<McpStatus>,
     },
     Mood(Mood),
     Text(String),
+    /// An MCP tool call has started.
+    ToolStarted {
+        id: String,
+        server: String,
+        tool: String,
+        input: Value,
+    },
+    /// An MCP tool call came back.
+    ToolFinished(ToolCall),
     Finished(Summary),
     Stopped,
     Failed(TurnError),
@@ -78,10 +95,14 @@ pub struct Turn {
     idle: Duration,
     splitter: MoodSplitter,
     queued: VecDeque<Step>,
+    tools: ToolCalls,
     text: String,
     mood: Option<Mood>,
     init_model: String,
     saw_delta: bool,
+    /// Text came before a new call to the model began, so the next text starts a new
+    /// paragraph.
+    needs_paragraph_break: bool,
     ended: bool,
 }
 
@@ -103,10 +124,12 @@ impl Turn {
             idle,
             splitter: MoodSplitter::new(),
             queued: VecDeque::new(),
+            tools: ToolCalls::new(),
             text: String::new(),
             mood: None,
             init_model: String::new(),
             saw_delta: false,
+            needs_paragraph_break: false,
             ended: false,
         })
     }
@@ -124,6 +147,11 @@ impl Turn {
         self.mood
     }
 
+    /// The MCP tool calls that have come back so far, in the order they did.
+    pub fn tools(&self) -> &[ToolCall] {
+        self.tools.done()
+    }
+
     fn advance(&mut self) {
         match self.next_arrival() {
             Arrival::Line(line) => self.take_line(line),
@@ -131,7 +159,9 @@ impl Turn {
             Arrival::Stopped => self.end(Step::Stopped),
             Arrival::Silent => {
                 self.stopper.stop();
-                self.end(Step::Failed(TurnError::Timeout { idle: self.idle }));
+                self.end(Step::Failed(TurnError::Timeout {
+                    idle: self.silence_limit(),
+                }));
             }
             Arrival::Closed => self.end(Step::Failed(TurnError::NoResult)),
         }
@@ -146,10 +176,18 @@ impl Turn {
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => return self.closed(),
         }
-        match self.receiver.recv_timeout(self.idle) {
+        match self.receiver.recv_timeout(self.silence_limit()) {
             Ok(item) => Arrival::from(item),
             Err(RecvTimeoutError::Timeout) => Arrival::Silent,
             Err(RecvTimeoutError::Disconnected) => self.closed(),
+        }
+    }
+
+    fn silence_limit(&self) -> Duration {
+        if self.tools.running() {
+            self.idle * TOOL_IDLE_FACTOR
+        } else {
+            self.idle
         }
     }
 
@@ -165,15 +203,31 @@ impl Turn {
         let parsed = stream::parse(&line);
         self.queued.push_back(Step::Raw(line));
         match parsed {
-            Line::Init { session_id, model } => {
+            Line::Init {
+                session_id,
+                model,
+                mcp,
+            } => {
                 self.init_model.clone_from(&model);
-                self.queued.push_back(Step::Init { session_id, model });
+                self.queued.push_back(Step::Init {
+                    session_id,
+                    model,
+                    mcp,
+                });
             }
+            Line::MessageStart => self.needs_paragraph_break |= self.saw_delta,
             Line::TextDelta(delta) => {
                 self.saw_delta = true;
+                let delta = if std::mem::take(&mut self.needs_paragraph_break) {
+                    format!("\n\n{delta}")
+                } else {
+                    delta
+                };
                 let split = self.splitter.push(&delta);
                 self.release(split);
             }
+            Line::ToolUses(uses) => self.queued.extend(self.tools.start(uses)),
+            Line::ToolResults(results) => self.queued.extend(self.tools.finish(results)),
             Line::Result(result) => self.take_result(result),
             Line::Other => {}
         }
@@ -244,23 +298,14 @@ impl Drop for Turn {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::scripted::{
-        Script, Scripted, delta_line, error_result_line, init_line, reply_lines, result_line,
+        Script, Scripted, delta_line, error_result_line, init_line, reply_lines, request,
+        result_line, tool_use_line,
     };
     use super::*;
-    use crate::chat::{Effort, Model};
-
-    fn request() -> Request {
-        Request {
-            prompt: "hi".into(),
-            system_prompt: String::new(),
-            model: Model::Sonnet,
-            effort: Effort::Low,
-            budget_usd: 1.0,
-            session: SessionMode::New,
-            schema: None,
-        }
-    }
+    use crate::chat::Failure;
 
     fn is_terminal(step: &Step) -> bool {
         matches!(step, Step::Finished(_) | Step::Stopped | Step::Failed(_))
@@ -323,6 +368,18 @@ mod tests {
                 "gone quiet",
                 drain(Script::lines(vec![init_line("s1")]).hanging(), quick, false),
             ),
+            (
+                "gone quiet during a tool",
+                drain(
+                    Script::lines(vec![
+                        init_line("s1"),
+                        tool_use_line(&[("a", "mcp__quanty__search", json!({}))]),
+                    ])
+                    .hanging(),
+                    quick,
+                    false,
+                ),
+            ),
         ];
         for (name, steps) in &cases {
             let terminal = steps.iter().filter(|step| is_terminal(step)).count();
@@ -333,6 +390,21 @@ mod tests {
             cases[5].1.last(),
             Some(Step::Failed(TurnError::Timeout { .. }))
         ));
+        assert!(
+            matches!(
+                cases[6].1.last(),
+                Some(Step::Failed(TurnError::Timeout { idle })) if *idle == quick * 3
+            ),
+            "a running tool gets three times the silence: {:?}",
+            cases[6].1
+        );
+        for (idle, minutes) in [(IDLE_LIMIT, 2), (IDLE_LIMIT * TOOL_IDLE_FACTOR, 6)] {
+            let failure = Failure::from(&TurnError::Timeout { idle });
+            assert_eq!(
+                failure.message(),
+                format!("Claude stopped responding after {minutes} minutes.")
+            );
+        }
 
         let Some(Step::Finished(summary)) = cases[0].1.last() else {
             panic!("the success case finishes");

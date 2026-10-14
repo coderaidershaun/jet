@@ -8,8 +8,9 @@ mod memory;
 mod turn;
 
 pub use chat::{
-    Effort, Entry, EntryId, EntryStatus, Event, Failure, MEMORY_LIMIT, Model, Mood, Notes, Persona,
-    RECENT_LIMIT, Role, SessionId, ShownEntry, Tone, USER_LIMIT, Usage,
+    Effort, Entry, EntryId, EntryStatus, Event, Failure, MEMORY_LIMIT, McpServer, McpServers,
+    McpStatus, Model, Mood, Notes, Persona, RECENT_LIMIT, Role, SessionId, ShownEntry, Tone,
+    ToolCall, USER_LIMIT, Usage,
 };
 pub use conversation::{
     CacheStatus, Conversation, ConversationError, Message, Reply, ReviewError, ReviewOutcome,

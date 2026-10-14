@@ -4,7 +4,7 @@
 use std::io::{Seek, SeekFrom, Write};
 
 use super::{DataDir, MemoryError};
-use crate::chat::{Entry, EntryId, EntryStatus, Mood, Role};
+use crate::chat::{Entry, EntryId, EntryStatus, Mood, Role, ToolCall};
 
 const FILE_NAME: &str = "transcript.jsonl";
 
@@ -15,6 +15,7 @@ pub(crate) struct NewEntry {
     pub mood: Option<Mood>,
     pub status: EntryStatus,
     pub error: Option<String>,
+    pub tools: Vec<ToolCall>,
 }
 
 impl NewEntry {
@@ -25,6 +26,7 @@ impl NewEntry {
             mood: None,
             status: EntryStatus::Complete,
             error: None,
+            tools: Vec::new(),
         }
     }
 
@@ -37,6 +39,7 @@ impl NewEntry {
             mood: self.mood,
             status: self.status,
             error: self.error,
+            tools: self.tools,
             at,
         }
     }
@@ -188,6 +191,7 @@ mod tests {
             mood: Some(Mood::Happy),
             status: EntryStatus::Complete,
             error: None,
+            tools: Vec::new(),
         }
     }
 
