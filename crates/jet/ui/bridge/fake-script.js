@@ -58,7 +58,7 @@ export function chunksOf(text, size) {
   return chunks;
 }
 
-const tokensIn = (text) => Math.max(1, Math.ceil(text.length / 4));
+export const tokensIn = (text) => Math.max(1, Math.ceil(text.length / 4));
 
 /**
  * Token counts for one turn. A warm cache is read and only the new part is
@@ -89,9 +89,24 @@ export function wireUsage(usage, outputTokens) {
   return {
     input_tokens: usage.inputTokens,
     output_tokens: outputTokens,
+    output_tokens_details: { thinking_tokens: 0 },
     cache_read_input_tokens: usage.cacheReadTokens,
     cache_creation_input_tokens: usage.cacheCreationTokens,
     cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: usage.cacheCreation1hTokens },
+  };
+}
+
+/** The per-model block of a stream-json result line, keyed by the model id. */
+export function wireModelUsage({ model, usage, outputTokens, costUsd }) {
+  return {
+    [model]: {
+      inputTokens: usage.inputTokens,
+      outputTokens,
+      cacheReadInputTokens: usage.cacheReadTokens,
+      cacheCreationInputTokens: usage.cacheCreationTokens,
+      thinkingTokens: 0,
+      costUSD: costUsd,
+    },
   };
 }
 
@@ -102,18 +117,58 @@ export const lines = {
     event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
     session_id: sessionId,
   }),
+  messageStart: (sessionId, { model, usage, ttftMs }) => JSON.stringify({
+    type: 'stream_event',
+    event: {
+      type: 'message_start',
+      message: {
+        model,
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        usage: {
+          input_tokens: usage.inputTokens,
+          cache_creation_input_tokens: usage.cacheCreationTokens,
+          cache_read_input_tokens: usage.cacheReadTokens,
+          cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: usage.cacheCreation1hTokens },
+          output_tokens: 1,
+        },
+      },
+    },
+    session_id: sessionId,
+    ttft_ms: ttftMs,
+  }),
+  // Carries the output tokens so far; only the last one of a reply has a stop reason.
+  messageDelta: (sessionId, { usage, outputTokens, stopReason }) => JSON.stringify({
+    type: 'stream_event',
+    event: {
+      type: 'message_delta',
+      delta: { stop_reason: stopReason },
+      usage: {
+        input_tokens: usage.inputTokens,
+        cache_creation_input_tokens: usage.cacheCreationTokens,
+        cache_read_input_tokens: usage.cacheReadTokens,
+        output_tokens: outputTokens,
+        output_tokens_details: { thinking_tokens: 0 },
+      },
+    },
+    session_id: sessionId,
+  }),
   assistant: (sessionId, text) => JSON.stringify({
     type: 'assistant',
     message: { role: 'assistant', content: [{ type: 'text', text }] },
     session_id: sessionId,
   }),
-  result: (sessionId, { text, isError, durationMs, costUsd, usage }) => JSON.stringify({
+  result: (sessionId, { text, isError, durationMs, ttftMs, costUsd, usage, modelUsage }) => JSON.stringify({
     type: 'result',
     subtype: isError ? 'error_during_execution' : 'success',
     is_error: isError,
     duration_ms: durationMs,
+    // The fake spends all its time in the pretend API, so the two durations match.
+    ...(isError ? {} : { duration_api_ms: durationMs, ttft_ms: ttftMs, num_turns: 1, stop_reason: 'end_turn' }),
     total_cost_usd: costUsd,
     usage,
+    modelUsage,
     result: text,
     session_id: sessionId,
   }),
@@ -127,4 +182,4 @@ export const MESSAGES = {
   busy: 'Jet is still replying; wait for the reply or press Stop.',
 };
 
-export const MODEL_IDS = { fable: 'claude-fable-1', opus: 'claude-opus-4-1', sonnet: 'claude-sonnet-5-5', haiku: 'claude-haiku-4-5' };
+export const MODEL_IDS = { fable: 'claude-fable-5-1', opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5', haiku: 'claude-haiku-5-5' };

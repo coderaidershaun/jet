@@ -11,7 +11,7 @@
   "bodyColour": null,
   "model": "sonnet",
   "effort": "medium",
-  "turnBudgetUsd": 1.0,
+  "turnBudgetUsd": 10.0,
   "drawerOpen": true,
   "claudePath": null
 }

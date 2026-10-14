@@ -2,7 +2,11 @@
 //! thread entries, and the settings that shape the persona. The names and the JSON shapes
 //! here are what the chat page reads, so change them with the page.
 
+mod usage;
+
 use serde::{Deserialize, Serialize};
+
+pub use usage::Usage;
 
 // SMELL: the review prompt and the chat page repeat these three numbers; change them together.
 /// The longest MEMORY note, in characters.
@@ -43,6 +47,8 @@ pub enum Effort {
     #[default]
     Medium,
     High,
+    XHigh,
+    Max,
 }
 
 impl Effort {
@@ -52,6 +58,8 @@ impl Effort {
             Effort::Low => "low",
             Effort::Medium => "medium",
             Effort::High => "high",
+            Effort::XHigh => "xhigh",
+            Effort::Max => "max",
         }
     }
 }
@@ -201,17 +209,6 @@ pub struct ShownEntry {
     pub html: String,
 }
 
-/// Token counts of one request, as Claude Code reports them. They show whether the
-/// prompt cache was warm.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Usage {
-    pub input_tokens: u64,
-    pub cache_read_tokens: u64,
-    pub cache_creation_tokens: u64,
-    pub cache_creation_1h_tokens: u64,
-}
-
 /// Why a reply failed. The message is written for the user and shown as it stands.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(
@@ -286,7 +283,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{Conversation, DataDir};
 
     fn jet_entry(id: u64, status: EntryStatus) -> ShownEntry {
         let entry = Entry {
@@ -345,6 +341,9 @@ mod tests {
                         cache_read_tokens: 40210,
                         cache_creation_tokens: 0,
                         cache_creation_1h_tokens: 7,
+                        output_tokens: 391,
+                        thinking_tokens: 120,
+                        model: "claude-sonnet-5-5".into(),
                     },
                 },
                 json!({
@@ -355,7 +354,9 @@ mod tests {
                     "durationMs": 4210,
                     "costUsd": 0.0123,
                     "usage": {"inputTokens": 812, "cacheReadTokens": 40210,
-                              "cacheCreationTokens": 0, "cacheCreation1hTokens": 7}
+                              "cacheCreationTokens": 0, "cacheCreation1hTokens": 7,
+                              "outputTokens": 391, "thinkingTokens": 120,
+                              "model": "claude-sonnet-5-5"}
                 }),
             ),
             (
@@ -391,10 +392,5 @@ mod tests {
         for (event, expected) in cases {
             assert_eq!(serde_json::to_value(&event).unwrap(), expected);
         }
-
-        let conversation = Conversation::new(DataDir::scratch("cache-never"));
-        let never = serde_json::to_value(conversation.cache_status().unwrap()).unwrap();
-        let expected = json!({"lastRequestAt": null, "ttlMinutes": 60, "contextTokens": 0});
-        assert_eq!(never, expected);
     }
 }

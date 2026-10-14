@@ -105,8 +105,22 @@ fn result(value: &Value) -> ResultLine {
             cache_read_tokens: count(&usage["cache_read_input_tokens"]),
             cache_creation_tokens: count(&usage["cache_creation_input_tokens"]),
             cache_creation_1h_tokens: count(&usage["cache_creation"]["ephemeral_1h_input_tokens"]),
+            output_tokens: count(&usage["output_tokens"]),
+            thinking_tokens: count(&usage["output_tokens_details"]["thinking_tokens"]),
+            model: busiest_model(&value["modelUsage"]),
         },
     }
+}
+
+/// The model that wrote the most output. A request can use more than one model, and the one
+/// that answered writes the most. Empty when the line names no model.
+fn busiest_model(model_usage: &Value) -> String {
+    let output = |entry: &Value| entry["outputTokens"].as_u64().unwrap_or(0);
+    model_usage
+        .as_object()
+        .and_then(|models| models.iter().max_by_key(|(_, entry)| output(entry)))
+        .map(|(name, _)| name.clone())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -114,6 +128,7 @@ mod tests {
     use super::*;
 
     const RECORDED_TURN: &str = include_str!("../../tests/fixtures/sonnet-mood-reply.jsonl");
+    const RECORDED_REVIEW: &str = include_str!("../../tests/fixtures/haiku-review.jsonl");
 
     #[test]
     fn parses_the_recorded_sonnet_turn() {
@@ -154,8 +169,21 @@ mod tests {
                 cache_read_tokens: 0,
                 cache_creation_tokens: 1575,
                 cache_creation_1h_tokens: 1575,
+                output_tokens: 103,
+                thinking_tokens: 0,
+                model: "claude-sonnet-5-5".into(),
             }
         );
+    }
+
+    #[test]
+    fn parses_the_recorded_haiku_review() {
+        let Line::Result(result) = RECORDED_REVIEW.lines().map(parse).next_back().unwrap() else {
+            panic!("the recording ends with the result line");
+        };
+        assert_eq!(result.usage.output_tokens, 491);
+        assert_eq!(result.usage.thinking_tokens, 187);
+        assert_eq!(result.usage.model, "claude-haiku-5-5");
     }
 
     #[test]

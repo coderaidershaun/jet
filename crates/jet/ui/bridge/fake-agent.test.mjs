@@ -63,7 +63,7 @@ test('a reply emits raw lines, started, mood, text and finished with usage, in o
   assert.ok(!text.includes('mood:'), 'the mood line is removed from the text');
   const lines = events.filter((event) => event.kind === 'rawLine').map((event) => JSON.parse(event.line));
   assert.deepEqual([...new Set(lines.map((line) => line.type))], ['system', 'stream_event', 'assistant', 'result']);
-  const streamed = lines.filter((line) => line.type === 'stream_event').map((line) => line.event.delta.text).join('');
+  const streamed = lines.filter((line) => line.event?.type === 'content_block_delta').map((line) => line.event.delta.text).join('');
   assert.equal(streamed, 'mood: happy\n' + text, 'the raw lines carry the mood line the text lost');
   assert.ok(kinds(events).lastIndexOf('rawLine') < events.length - 1, 'the result line comes before finished');
 
@@ -78,6 +78,31 @@ test('a reply emits raw lines, started, mood, text and finished with usage, in o
   const result = lines.find((line) => line.type === 'result');
   assert.equal(result.is_error, false);
   assert.equal(result.usage.cache_creation.ephemeral_1h_input_tokens, finished.usage.cacheCreation1hTokens);
+  assert.ok(finished.usage.outputTokens > 0);
+  assert.equal(finished.usage.outputTokens, result.usage.output_tokens, 'the event and the raw line agree');
+  assert.equal(finished.usage.thinkingTokens, 0);
+  assert.equal(result.usage.output_tokens_details.thinking_tokens, 0);
+  assert.equal(finished.usage.model, 'claude-sonnet-5-5');
+  assert.equal(finished.usage.model, events[1].model);
+
+  const starts = lines.filter((line) => line.event?.type === 'message_start');
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0].event.message.model, 'claude-sonnet-5-5');
+  assert.ok(starts[0].event.message.usage.cache_creation_input_tokens > 0);
+  assert.equal(starts[0].event.message.usage.cache_creation_input_tokens, result.usage.cache_creation_input_tokens);
+  const firstDelta = lines.findIndex((line) => line.event?.type === 'content_block_delta');
+  assert.ok(lines.indexOf(starts[0]) < firstDelta, 'message_start comes before the first text');
+  const progress = lines.filter((line) => line.event?.type === 'message_delta');
+  assert.ok(progress.length >= 1);
+  const counts = progress.map((line) => line.event.usage.output_tokens);
+  assert.deepEqual(counts, [...counts].sort((a, b) => a - b), 'output tokens never go down');
+  assert.equal(counts.at(-1), result.usage.output_tokens);
+  assert.equal(progress.at(-1).event.delta.stop_reason, 'end_turn');
+  assert.equal(result.duration_api_ms, finished.durationMs);
+  assert.equal(typeof result.ttft_ms, 'number');
+  assert.equal(result.num_turns, 1);
+  assert.equal(result.stop_reason, 'end_turn');
+  assert.deepEqual(Object.keys(result.modelUsage), [finished.usage.model]);
 
   clock.t += 5 * 60 * 1000;
   const second = await ask(agent, 'And what about Saturday?');

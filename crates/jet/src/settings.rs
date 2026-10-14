@@ -78,7 +78,7 @@ impl Default for Settings {
             body_colour: None,
             model: Model::default(),
             effort: Effort::default(),
-            turn_budget_usd: 1.0,
+            turn_budget_usd: 10.0,
             drawer_open: true,
             claude_path: None,
         }
@@ -229,7 +229,11 @@ mod tests {
     fn old_files_with_missing_fields_still_load() {
         let path = scratch_file("partial");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, br#"{"behaviour":{"candid":0.1}}"#).unwrap();
+        std::fs::write(
+            &path,
+            br#"{"behaviour":{"candid":0.1},"turnBudgetUsd":1.0}"#,
+        )
+        .unwrap();
         let settings = read_from(&path).unwrap();
         assert_eq!(settings.behaviour.candid, 0.1);
         assert_eq!(settings.behaviour.playful, Behaviour::default().playful);
@@ -276,6 +280,17 @@ mod tests {
                 json.contains(&format!("\"{key}\"")),
                 "missing {key} in {json}"
             );
+        }
+        for (effort, word) in [(Effort::XHigh, "xhigh"), (Effort::Max, "max")] {
+            let settings = Settings {
+                effort,
+                ..settings.clone()
+            };
+            write_to(&path, &settings).unwrap();
+            assert_eq!(read_from(&path).unwrap(), settings);
+            let saved: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(saved["effort"], word);
         }
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }

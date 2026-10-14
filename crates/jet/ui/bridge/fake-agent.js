@@ -4,11 +4,12 @@
 // stays the agent whenever the page runs outside Tauri.
 
 import { renderMarkdown } from './markdown.js';
-import { BASE_CONTEXT_TOKENS, MESSAGES, MODEL_IDS, bodyFor, chunksOf, costFor, lines, moodFor, usageFor, wants, wireUsage } from './fake-script.js';
+import { BASE_CONTEXT_TOKENS, MESSAGES, MODEL_IDS, bodyFor, chunksOf, costFor, lines, moodFor, tokensIn, usageFor, wants, wireModelUsage, wireUsage } from './fake-script.js';
 
 const KEY = 'jet.fake.';
 const HISTORY_LIMIT = 200;
 const CACHE_TTL_MINUTES = 60;
+const DELTAS_PER_MESSAGE_DELTA = 4;
 const NOTE_LIMITS = { memory: 2200, user: 1375, recent: 1500 };
 const NOT_FOUND_AT = ['~/.local/bin/claude', '/opt/homebrew/bin/claude', '/usr/local/bin/claude'];
 
@@ -122,6 +123,8 @@ export function createFakeAgent({
     const mood = moodFor(text, replyNumber);
     const body = bodyFor(text, replyNumber);
     let received = '';
+    // Known before streaming, so the first line of the stream can already carry the input and cache counts.
+    const { usage, outputTokens, contextAfter } = usageFor({ contextBefore, userText: text, replyText: body, warm });
 
     const stopped = () => {
       const entry = saveEntry({ role: 'jet', text: received, html: renderMarkdown(received), status: 'stopped', at: now() });
@@ -131,29 +134,37 @@ export function createFakeAgent({
     await pause(asks.slow ? slowMs : firstTokenMs);
     if (control.stopped) return stopped();
 
+    const ttftMs = now() - startedAt;
+    emit({ kind: 'rawLine', line: lines.messageStart(sessionId, { model, usage, ttftMs }) });
     if (mood) {
       emit({ kind: 'rawLine', line: lines.delta(sessionId, 'mood: ' + mood + '\n') });
       emit({ kind: 'mood', mood });
     }
+    let deltaCount = 0;
     for (const chunk of chunksOf(body, chunkChars)) {
       if (control.stopped) return stopped();
       emit({ kind: 'rawLine', line: lines.delta(sessionId, chunk) });
       received += chunk;
       emit({ kind: 'text', delta: chunk });
+      deltaCount += 1;
+      if (deltaCount % DELTAS_PER_MESSAGE_DELTA === 0) {
+        emit({ kind: 'rawLine', line: lines.messageDelta(sessionId, { usage, outputTokens: tokensIn(received), stopReason: null }) });
+      }
       await pause(chunkMs);
     }
     if (control.stopped) return stopped();
 
-    const { usage, outputTokens, contextAfter } = usageFor({ contextBefore, userText: text, replyText: received, warm });
+    emit({ kind: 'rawLine', line: lines.messageDelta(sessionId, { usage, outputTokens, stopReason: 'end_turn' }) });
     const durationMs = now() - startedAt;
     const costUsd = costFor(usage, outputTokens);
     write('contextTokens', contextAfter);
     emit({ kind: 'rawLine', line: lines.assistant(sessionId, (mood ? 'mood: ' + mood + '\n' : '') + received) });
-    const result = { text: received, isError: false, durationMs, costUsd, usage: wireUsage(usage, outputTokens) };
+    const modelUsage = wireModelUsage({ model, usage, outputTokens, costUsd });
+    const result = { text: received, isError: false, durationMs, ttftMs, costUsd, usage: wireUsage(usage, outputTokens), modelUsage };
     emit({ kind: 'rawLine', line: lines.result(sessionId, result) });
     const html = renderMarkdown(received);
     const entry = saveEntry({ role: 'jet', text: received, html, ...(mood ? { mood } : {}), status: 'complete', at: now() });
-    end({ kind: 'finished', entry, durationMs, costUsd, usage });
+    end({ kind: 'finished', entry, durationMs, costUsd, usage: { ...usage, outputTokens, thinkingTokens: 0, model } });
   }
 
   return {

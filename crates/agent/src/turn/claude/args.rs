@@ -67,7 +67,7 @@ mod tests {
             system_prompt: "You-are-Jet.".into(),
             model: Model::Sonnet,
             effort: Effort::Medium,
-            budget_usd: 1.0,
+            budget_usd: 10.0,
             session,
             schema: None,
         }
@@ -85,9 +85,18 @@ mod tests {
             "-p --output-format stream-json --verbose --include-partial-messages \
              --model sonnet --effort medium --system-prompt You-are-Jet. \
              --tools '' --safe-mode --strict-mcp-config --no-chrome --permission-prompts none \
-             --autocompact 100k --max-budget-usd 1.00",
+             --autocompact 100k --max-budget-usd 10.00",
         );
         assert_eq!(args(&chat_request(SessionMode::New)), new_chat);
+
+        for (effort, word) in [(Effort::XHigh, "xhigh"), (Effort::Max, "max")] {
+            let mut request = chat_request(SessionMode::New);
+            request.effort = effort;
+            let mut expected = new_chat.clone();
+            let at = expected.iter().position(|arg| arg == "--effort").unwrap();
+            expected[at + 1] = word.to_owned();
+            assert_eq!(args(&request), expected);
+        }
 
         let resume = SessionMode::Resume(SessionId("abc-123".into()));
         let resumed = [new_chat, words("--resume abc-123")].concat();

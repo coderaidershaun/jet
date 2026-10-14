@@ -13,7 +13,7 @@ test('defaults mirror Rust and carry the chat fields, and merge fills gaps from 
   assert.equal(defaults.bodyColour, null);
   assert.equal(defaults.model, 'sonnet');
   assert.equal(defaults.effort, 'medium');
-  assert.equal(defaults.turnBudgetUsd, 1);
+  assert.equal(defaults.turnBudgetUsd, 10);
   assert.equal(defaults.drawerOpen, true);
   assert.equal(defaults.claudePath, null);
   assert.deepEqual(PRESETS.map((preset) => preset.name), ['Neutral', 'Butler', 'Deckhand', 'Shipmate', 'Quartermaster']);

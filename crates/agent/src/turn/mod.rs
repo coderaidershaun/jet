@@ -80,6 +80,7 @@ pub struct Turn {
     queued: VecDeque<Step>,
     text: String,
     mood: Option<Mood>,
+    init_model: String,
     saw_delta: bool,
     ended: bool,
 }
@@ -104,6 +105,7 @@ impl Turn {
             queued: VecDeque::new(),
             text: String::new(),
             mood: None,
+            init_model: String::new(),
             saw_delta: false,
             ended: false,
         })
@@ -164,6 +166,7 @@ impl Turn {
         self.queued.push_back(Step::Raw(line));
         match parsed {
             Line::Init { session_id, model } => {
+                self.init_model.clone_from(&model);
                 self.queued.push_back(Step::Init { session_id, model });
             }
             Line::TextDelta(delta) => {
@@ -176,7 +179,7 @@ impl Turn {
         }
     }
 
-    fn take_result(&mut self, result: ResultLine) {
+    fn take_result(&mut self, mut result: ResultLine) {
         if let Some((subtype, message)) = result.failure() {
             return self.end(Step::Failed(TurnError::Reported { subtype, message }));
         }
@@ -184,6 +187,9 @@ impl Turn {
             let text = result.result.as_deref().unwrap_or_default();
             let split = self.splitter.push(text);
             self.release(split);
+        }
+        if result.usage.model.is_empty() {
+            result.usage.model.clone_from(&self.init_model);
         }
         self.end(Step::Finished(Summary {
             duration_ms: result.duration_ms,
@@ -327,6 +333,11 @@ mod tests {
             cases[5].1.last(),
             Some(Step::Failed(TurnError::Timeout { .. }))
         ));
+
+        let Some(Step::Finished(summary)) = cases[0].1.last() else {
+            panic!("the success case finishes");
+        };
+        assert_eq!(summary.usage.model, "claude-fake");
 
         // A result line ends the turn even if the process lingers.
         lines.push(result_line("ignored"));

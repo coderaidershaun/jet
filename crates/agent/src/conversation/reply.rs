@@ -254,7 +254,7 @@ impl Reply {
         if let Ending::Finished(summary) = ending
             && let Some(mut session) = Session::load(dir)?
         {
-            let usage = summary.usage;
+            let usage = &summary.usage;
             session.context_tokens =
                 usage.cache_read_tokens + usage.cache_creation_tokens + usage.input_tokens;
             session.save(dir)?;

@@ -267,3 +267,18 @@ mod test_support {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn cache_status_json_matches_the_ui_contract() {
+        let conversation = Conversation::new(DataDir::scratch("cache-never"));
+        let never = serde_json::to_value(conversation.cache_status().unwrap()).unwrap();
+        let expected = json!({"lastRequestAt": null, "ttlMinutes": 60, "contextTokens": 0});
+        assert_eq!(never, expected);
+    }
+}

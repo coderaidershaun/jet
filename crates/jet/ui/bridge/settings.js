@@ -16,7 +16,7 @@
  * @property {Persona} persona
  * @property {[number, number, number] | null} bodyColour   null = the rig's rest colour
  * @property {'fable' | 'opus' | 'sonnet' | 'haiku'} model
- * @property {'low' | 'medium' | 'high'} effort
+ * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max'} effort
  * @property {number} turnBudgetUsd
  * @property {boolean} drawerOpen
  * @property {string | null} claudePath   null = find Claude Code on its own
@@ -48,7 +48,7 @@ export function defaultSettings() {
     bodyColour: null,
     model: 'sonnet',
     effort: 'medium',
-    turnBudgetUsd: 1,
+    turnBudgetUsd: 10,
     drawerOpen: true,
     claudePath: null,
   };
