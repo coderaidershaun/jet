@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { PRESETS, defaultSettings, merge } from './settings.js';
+import { PRESETS, defaultSettings, merge, displayName } from './settings.js';
 
 test('defaults mirror Rust and carry the chat fields, and merge fills gaps from them', () => {
   const defaults = defaultSettings();
@@ -34,4 +34,13 @@ test('defaults mirror Rust and carry the chat fields, and merge fills gaps from 
 test('defaults_match_the_rust_fixture', () => {
   const fixture = JSON.parse(readFileSync(new URL('./default-settings.json', import.meta.url), 'utf8'));
   assert.deepEqual(defaultSettings(), fixture);
+});
+
+test('the shown name is the persona name, or Jet while it is blank', () => {
+  const settings = defaultSettings();
+  assert.equal(displayName(settings), 'Jet');
+  settings.persona.name = '  Neo ';
+  assert.equal(displayName(settings), 'Neo');
+  settings.persona.name = '   ';
+  assert.equal(displayName(settings), 'Jet');
 });

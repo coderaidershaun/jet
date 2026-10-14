@@ -1,10 +1,11 @@
 // The settings about how Jet looks and moves: body colour, behaviour presets,
 // the expressiveness master and its channels, and reduced motion.
 
-import { PRESETS } from '../../bridge/settings.js';
+import { PRESETS, displayName } from '../../bridge/settings.js';
 import { h } from '../dom.js';
 import { button, note, section, sliderField, switchRow, textField } from './controls.js';
 import { hexToRgb, masterWord, moveMaster, presetFor, rgbToHex, setFollow, takeOverChannel } from './form.js';
+import { named } from './names.js';
 
 const SWATCHES = [
   ['Coral', '#ff6a3d'],
@@ -62,7 +63,7 @@ function colourSection({ settings, changed, defaultColour }) {
   }
   paintSwatches();
 
-  const reset = button("Reset to Jet's coral", {
+  const reset = button('', {
     onClick: () => {
       settings.bodyColour = null;
       hex.set(rgbToHex(defaultColour));
@@ -71,6 +72,7 @@ function colourSection({ settings, changed, defaultColour }) {
       changed('colour');
     },
   });
+  named(reset, "Reset to {name}'s coral", displayName(settings));
   return section('look', 'Look', h('div', { class: 'swatches' }, ...swatches), hex.el, problem, reset);
 }
 

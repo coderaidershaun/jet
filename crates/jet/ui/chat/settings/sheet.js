@@ -2,11 +2,13 @@
 // bottom on a phone), holds the nine sections, and saves a short while after
 // the last edit.
 
+import { displayName } from '../../bridge/settings.js';
 import { h, icon } from '../dom.js';
 import { buildClaude } from './claude.js';
 import { buildLook } from './look.js';
 import { buildMemory } from './memory.js';
 import { buildModel } from './model.js';
+import { paintNames } from './names.js';
 import { buildPersona } from './persona.js';
 
 const SAVE_AFTER_EDIT_MS = 600;
@@ -39,6 +41,7 @@ export function createSheet({ dialog, context, onChange, save }) {
   };
   const changed = (kind) => {
     onChange(kind);
+    if (kind === 'persona') paintNames(body, displayName(ctx.settings));
     if (kind === 'claude') claudePathEdited = true;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveEdits, SAVE_AFTER_EDIT_MS);

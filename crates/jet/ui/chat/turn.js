@@ -4,6 +4,7 @@
 // It is handed the agent and every part of the page instead of importing them,
 // so the agent is chosen in one place.
 
+import { displayName } from '../bridge/settings.js';
 import { localTimeLabel } from './clock.js';
 import { createReveal } from './thread/throttle.js';
 
@@ -129,7 +130,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       composerView.setLayout(composer.layout);
       view.render(thread.rows());
       live.send(view.liveLane(), now, takeoff);
-      page.announce.textContent = 'Jet is replying';
+      page.announce.textContent = displayName(settings) + ' is replying';
       paint();
 
       reveal = createReveal({

@@ -4,7 +4,7 @@
 
 import { connectAgent } from '../bridge/agent.js';
 import { loadRig } from '../bridge/rig.js';
-import { loadSettings, saveSettings } from '../bridge/settings.js';
+import { displayName, loadSettings, saveSettings } from '../bridge/settings.js';
 import { createComposer } from './composer/state.js';
 import { createComposerView } from './composer/view.js';
 import { icon } from './dom.js';
@@ -161,11 +161,13 @@ async function start() {
   });
 
   function paintPersona() {
-    const name = settings.persona.name.trim() || 'Jet';
+    const name = displayName(settings);
     const title = settings.persona.jobTitle.trim() || 'assistant';
     $('header-name').textContent = name;
     $('greeting').textContent = "Hi, I'm " + name + ', your ' + title.charAt(0).toLowerCase() + title.slice(1) + '.';
     composerView.setPlaceholder('Message ' + name);
+    $('held-text').textContent = 'Sends when ' + name + ' finishes';
+    live.setName(name);
     drawer.setPersona({ name, jobTitle: title });
   }
 

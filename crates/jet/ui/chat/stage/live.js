@@ -37,7 +37,8 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
   const node = document.createElement('div');
   node.className = 'jet-live';
   node.setAttribute('role', 'img');
-  node.setAttribute('aria-label', 'Jet, idle');
+  let name = 'Jet';
+  node.setAttribute('aria-label', name + ', idle');
   node.append(svg);
 
   /** @type {ReturnType<typeof createFlight> | null} */
@@ -65,7 +66,7 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
 
   function frame(now) {
     const { busy } = director.tick(now);
-    const label = 'Jet, ' + director.status;
+    const label = name + ', ' + director.status;
     if (label !== lastLabel) {
       lastLabel = label;
       node.setAttribute('aria-label', label);
@@ -97,6 +98,13 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
   }
 
   return {
+    /** The persona name, read by the label that tells screen readers what Jet is doing. */
+    setName(next) {
+      name = next;
+      lastLabel = '';
+      needsDraw = true;
+    },
+
     start() {
       player.breathing = motion();
       requestAnimationFrame(loop);

@@ -2,18 +2,20 @@
 // its own button. When the notes change behind the editor's back, edits that
 // were not saved are kept and a reload is offered instead.
 
+import { displayName } from '../../bridge/settings.js';
 import { h } from '../dom.js';
 import { button, section } from './controls.js';
 import { countCodePoints } from './form.js';
+import { named } from './names.js';
 
 const NOTES = [
-  ['memory', 'MEMORY.md', 'Ongoing work, decisions and things Jet agreed to do'],
+  ['memory', 'MEMORY.md', 'Ongoing work, decisions and things {name} agreed to do'],
   ['user', 'USER.md', 'Who you are and how you like to work'],
   ['recent', 'RECENT.md', 'What the last conversation was about'],
 ];
 
 /** @param {import('./sheet.js').SheetContext} ctx */
-export function buildMemory({ agent }) {
+export function buildMemory({ agent, settings }) {
   /** @type {Record<string, string>} */
   let saved = { memory: '', user: '', recent: '' };
   let limits = { memory: 2200, user: 1375, recent: 1500 };
@@ -49,7 +51,7 @@ export function buildMemory({ agent }) {
     });
     const top = h('span', { class: 'field-top' }, h('span', { class: 'field-label', text: file }), counter);
     const actions = h('div', { class: 'row-actions' }, save, reload, status);
-    const el = h('div', { class: 'field' }, top, h('span', { class: 'help', text: hint }), area, actions);
+    const el = h('div', { class: 'field' }, top, named(h('span', { class: 'help' }), hint, displayName(settings)), area, actions);
     return { key, area, reload, paint, el, dirty };
   });
 

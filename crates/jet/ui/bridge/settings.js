@@ -95,3 +95,8 @@ export async function saveSettings(settings) {
     console.warn('settings could not be saved:', error);
   }
 }
+
+/** The name the page shows for Jet: the persona's name, or Jet while it is blank. */
+export function displayName(settings) {
+  return settings.persona.name.trim() || 'Jet';
+}
