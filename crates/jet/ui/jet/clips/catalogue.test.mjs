@@ -26,6 +26,8 @@ const OPTIONS = {
   done: [{}, { long: true }],
   error: [{}, { exclaim: false }],
   interrupted: [{ rotate: 120 }],
+  batBall: [{ loopMs: 1040 }, { loopMs: 1040, continued: true }],
+  doze: [{ loopMs: 2800 }, { loopMs: 2800, continued: true }],
 };
 
 function everyClip(dials = DIALS) {

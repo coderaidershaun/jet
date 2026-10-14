@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { buildZoom } from './clips/zoom.js';
 import { createDirector, MOODS } from './director.js';
 import { createPlayer } from './player.js';
+import { PROP, PROP_STRIDE } from './state.js';
 
 const rig = JSON.parse(readFileSync(fileURLToPath(new URL('../../rig/jet.json', import.meta.url)), 'utf8'));
 
@@ -125,7 +126,7 @@ test('stop plays interrupted at once and drops the queue', () => {
 });
 
 test('typing leans only when idle and leans back only after a lean', () => {
-  const { director, seen, run } = setup();
+  const { director, seen, run } = setup(shipmate, () => 0);
   director.typing(false, 0);
   run(0, 100);
   assert.deepEqual(seen, [], 'no lean back without a lean');
@@ -171,4 +172,123 @@ test('reduced motion moves nowhere and skips the zoom', () => {
   run(0, 3000);
   assert.deepEqual(seen, ['working']);
   assert.equal(director.status, 'working');
+});
+
+test("typing picks lean, peer or creep with the director's random, and leans back from each", () => {
+  const picks = [0, 0.5, 0.99];
+  const { director, seen, run } = setup(shipmate, () => picks.shift());
+  let now = 0;
+  for (let i = 0; i < 3; i++) {
+    director.typing(true, now);
+    run(now, now + 600);
+    director.typing(false, now + 600);
+    now = run(now + 600, now + 1400) + FRAME_MS;
+  }
+  assert.deepEqual(seen, ['lean', 'leanBack', 'peer', 'leanBack', 'creep', 'leanBack']);
+  assert.equal(director.status, 'idle');
+});
+
+test('a stall plays an antic only when idle or leaning, and keeps it going until something else plays', () => {
+  const juggling = setup(shipmate, () => 0);
+  juggling.director.stall(0);
+  juggling.run(0, 100);
+  assert.equal(juggling.director.status, 'typing');
+  juggling.run(100, 25000);
+  assert.deepEqual(juggling.seen, ['batBall'], 'the bat and ball carry on past one loop');
+  assert.equal(juggling.player.clip.info.continued, true, 'the loop playing now carries on the first');
+
+  const dozing = setup(shipmate, () => 0.99);
+  dozing.director.stall(0);
+  dozing.run(0, 100);
+  assert.deepEqual(dozing.seen, ['doze']);
+
+  const leaning = setup(shipmate, () => 0);
+  leaning.director.typing(true, 0);
+  leaning.run(0, 500);
+  leaning.director.stall(500);
+  leaning.run(500, 600);
+  assert.deepEqual(leaning.seen, ['lean', 'batBall'], 'a stall after a lean plays an antic');
+
+  const slow = setup({ ...shipmate, motion: 2 }, () => 0);
+  slow.director.stall(0);
+  slow.run(0, 100);
+  assert.deepEqual(slow.seen, ['doze'], 'below motion 3 there is no bat to hold, so Jet dozes');
+
+  const replying = setup(shipmate, () => 0);
+  replying.director.send({ cruiseMs: 800 }, 0);
+  replying.run(0, 100);
+  replying.director.stall(100);
+  replying.run(100, 200);
+  assert.deepEqual(replying.seen, ['zoom'], 'no antic during a reply');
+
+  const moved = setup(shipmate, () => 0);
+  moved.director.mood('excited', 0);
+  moved.run(0, 100);
+  moved.director.stall(100);
+  moved.run(100, 200);
+  assert.deepEqual(moved.seen, ['excited'], 'no antic during a mood');
+
+  const reduced = setup({ ...shipmate, reducedMotion: true }, () => 0);
+  reduced.director.stall(0);
+  reduced.run(0, 100);
+  assert.deepEqual(reduced.seen, [], 'no antic under reduced motion');
+
+  const dials = { ...shipmate };
+  const switched = setup(dials, () => 0);
+  switched.director.stall(0);
+  switched.run(0, 100);
+  dials.reducedMotion = true;
+  switched.run(100, 12000);
+  assert.deepEqual(switched.seen, ['batBall', 'batBallEnd'], 'once reduced motion is on, the antic ends instead of carrying on');
+  assert.equal(switched.director.status, 'idle');
+});
+
+test('typing during an antic ends it and then plays a typing hold, and an emptied field ends it with nothing after', () => {
+  const picks = [0, 0.5];
+  const typingAgain = setup(shipmate, () => picks.shift());
+  typingAgain.director.stall(0);
+  typingAgain.run(0, 3000);
+  typingAgain.director.typing(true, 3000);
+  typingAgain.run(3000, 5000);
+  assert.deepEqual(typingAgain.seen, ['batBall', 'batBallEnd', 'peer'], 'the antic ends with its own clip, then Jet peers in');
+  assert.equal(typingAgain.director.status, 'typing');
+  typingAgain.director.typing(false, 5000);
+  typingAgain.run(5000, 6000);
+  assert.equal(typingAgain.seen.at(-1), 'leanBack');
+  assert.equal(typingAgain.director.status, 'idle');
+
+  const emptied = setup(shipmate, () => 0);
+  emptied.director.stall(0);
+  emptied.run(0, 3000);
+  emptied.director.typing(false, 3000);
+  emptied.run(3000, 6000);
+  assert.deepEqual(emptied.seen, ['batBall', 'batBallEnd'], 'an emptied field ends the antic and nothing follows');
+  assert.equal(emptied.director.status, 'idle');
+
+  const changedMind = setup(shipmate, () => 0);
+  changedMind.director.stall(0);
+  changedMind.run(0, 3000);
+  changedMind.director.typing(true, 3000);
+  changedMind.director.typing(false, 3000);
+  changedMind.run(3000, 6000);
+  assert.deepEqual(changedMind.seen, ['batBall', 'leanBack'], 'no typing hold plays after the lean back');
+  assert.equal(changedMind.director.status, 'idle');
+});
+
+test('a send or a hello during an antic ends it with both props hidden', () => {
+  const propOpacities = (prop) => [prop[PROP.OPACITY], prop[PROP_STRIDE + PROP.OPACITY]];
+  const interruptions = {
+    zoom: (director, now) => director.send({ cruiseMs: 800 }, now),
+    hello: (director, now) => director.hello(now),
+  };
+  for (const [clip, interrupt] of Object.entries(interruptions)) {
+    const { director, player, seen, run } = setup(shipmate, () => 0);
+    director.stall(0);
+    run(0, 1000);
+    assert.ok(propOpacities(player.state.prop).every((opacity) => opacity > 0), 'the bat and the ball show before the ' + clip);
+    interrupt(director, 1000);
+    run(1000, 1216);
+    assert.deepEqual(propOpacities(player.state.prop), [0, 0], 'the bat and the ball are gone 216 ms into the ' + clip);
+    assert.equal(seen.at(-1), clip);
+  }
 });

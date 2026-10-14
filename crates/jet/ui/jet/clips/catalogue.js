@@ -2,12 +2,13 @@
 // new clip is added here and nowhere else.
 
 import { buildAnnoyed } from './annoyed.js';
+import { buildBatBall, buildBatBallEnd, buildDoze, buildDozeEnd } from './antics.js';
 import { buildDone } from './done.js';
 import { buildError } from './error.js';
 import { buildExcited } from './excited.js';
 import { buildHello } from './hello.js';
 import { buildInterrupted } from './interrupted.js';
-import { buildLean, buildLeanBack } from './lean.js';
+import { buildCreep, buildLean, buildLeanBack, buildPeer } from './lean.js';
 import { buildNeedsYou } from './needs-you.js';
 import { buildThinking } from './thinking.js';
 import { buildWorking, buildWorkingEnd } from './working.js';
@@ -35,4 +36,10 @@ export const CLIPS = {
   lean: { label: 'Lean', build: buildLean, hold: true },
   leanBack: { label: 'Lean back', build: buildLeanBack, hold: false },
   interrupted: { label: 'Interrupted', build: buildInterrupted, hold: false },
+  peer: { label: 'Peer', build: buildPeer, hold: true },
+  creep: { label: 'Creep', build: buildCreep, hold: true },
+  batBall: { label: 'Bat and ball', build: buildBatBall, hold: true },
+  batBallEnd: { label: 'Bat and ball ends', build: buildBatBallEnd, hold: false },
+  doze: { label: 'Doze', build: buildDoze, hold: true },
+  dozeEnd: { label: 'Doze ends', build: buildDozeEnd, hold: false },
 };

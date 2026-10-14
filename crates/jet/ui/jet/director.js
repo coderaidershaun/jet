@@ -1,4 +1,4 @@
-// Decides which clip Jet plays for each thing that happens in a chat: the user typing,
+// Decides which clip Jet plays for each thing that happens in a chat: the user typing or stalling,
 // a message going out, a mood arriving, the reply finishing or failing, the user
 // stopping it. It only chooses and orders clips. It has no DOM and no timers, and it
 // reads time only from the `now` it is given, so a host can drive it from any clock.
@@ -38,7 +38,32 @@ const STATUS_OF_CLIP = {
   interrupted: 'stopped',
   lean: 'typing',
   leanBack: 'typing',
+  peer: 'typing',
+  creep: 'typing',
+  batBall: 'typing',
+  batBallEnd: 'typing',
+  doze: 'typing',
+  dozeEnd: 'typing',
 };
+
+/** The holds Jet plays when the user starts typing; one is picked at random each time. */
+const TYPING_HOLDS = ['lean', 'peer', 'creep'];
+
+/** The antics Jet passes the time with when the user stalls mid-message, each with the clip that ends it. */
+const ANTIC_ENDS = { batBall: 'batBallEnd', doze: 'dozeEnd' };
+const isAntic = (clipName) => Object.hasOwn(ANTIC_ENDS, clipName);
+
+// An antic is a loop of this length, started again each time it runs out.
+const ANTIC_LOOP_MS = 10000;
+
+// SMELL: this repeats the rule the bat-and-ball clip uses to decide whether its props show, so the
+// two can drift apart and Jet would stand holding nothing.
+/** The antics the dials allow: none under reduced motion, and only the doze at shape 0 or below motion 3, where the bat and the ball cannot show. */
+function anticsFor({ shape, motion, reducedMotion }) {
+  if (reducedMotion) return [];
+  const batBallShows = shape > 0 && motion >= 3;
+  return batBallShows ? Object.keys(ANTIC_ENDS) : ['doze'];
+}
 
 /**
  * @typedef {object} Step
@@ -80,6 +105,26 @@ export function createDirector({ player, rig, params, random = Math.random }) {
 
   const isPlaying = (name) => player.playing && current !== null && current.clip === name;
   const loopPlays = () => isPlaying('working');
+  const anticPlays = () => player.playing && current !== null && isAntic(current.clip);
+  const leaning = () => player.playing && current !== null && (TYPING_HOLDS.includes(current.clip) || current.clip === 'leanBack');
+  const pickTypingHold = () => ({ clip: pick(TYPING_HOLDS, random) });
+
+  /** Ends the antic that is playing. When the user is typing again, a typing hold follows it. */
+  function endAntic(typingAgain, now) {
+    start({ clip: ANTIC_ENDS[current.clip] }, now);
+    if (typingAgain) {
+      leaned = true;
+      // SMELL: a hello that cuts in during the end clip keeps this hold queued, so the hold plays after
+      // the hello with no lean back to follow it.
+      queued = pickTypingHold();
+    }
+  }
+
+  /** Starts an antic that ran out again where it left off, or ends it once the dials no longer allow it. */
+  function carryOnAntic(antic, now) {
+    if (anticsFor(params()).includes(antic)) start({ clip: antic, options: { loopMs: ANTIC_LOOP_MS, continued: true } }, now);
+    else start({ clip: ANTIC_ENDS[antic] }, now);
+  }
 
   /** @returns {import('./clip.js').Clip} the clip now playing */
   function start(step, now) {
@@ -145,19 +190,37 @@ export function createDirector({ player, rig, params, random = Math.random }) {
     },
 
     /**
-     * The user started or stopped typing. Jet leans in only when nothing else is going
-     * on, and leans back only after it leaned in.
+     * The user started or stopped typing. Jet plays a typing hold, picked at random, only
+     * when nothing else is going on, and leans back only after one. During an antic,
+     * typing ends it and a typing hold follows, and an emptied field ends it with nothing after.
      * @param {boolean} active
      * @param {number} now
      */
     typing(active, now) {
-      if (active && statusNow() === 'idle' && !running && !queued && !waitingDone) {
+      if (anticPlays()) {
+        endAntic(active, now);
+      } else if (active && statusNow() === 'idle' && !running && !queued && !waitingDone) {
         leaned = true;
-        start({ clip: 'lean' }, now);
+        start(pickTypingHold(), now);
       } else if (!active && leaned) {
         leaned = false;
+        if (queued && TYPING_HOLDS.includes(queued.clip)) queued = null;
         start({ clip: 'leanBack' }, now);
       }
+    },
+
+    /**
+     * The user stopped typing with text still in the field. Jet passes the time with an
+     * antic, but only when it is idle or leaning, no reply runs, nothing waits and motion
+     * is not reduced.
+     * @param {number} now
+     */
+    stall(now) {
+      const antics = anticsFor(params());
+      if (antics.length === 0 || running || queued || waitingDone || anticPlays()) return;
+      if (player.playing && !leaning()) return;
+      leaned = false;
+      start({ clip: pick(antics, random), options: { loopMs: ANTIC_LOOP_MS } }, now);
     },
 
     /**
@@ -271,7 +334,8 @@ export function createDirector({ player, rig, params, random = Math.random }) {
      * after a travel such as the zoom, the queued clip, else the waiting done, else the loop if a reply is still
      * running with no mood yet; after the loop ran out of spin, a continuation of it if the
      * reply is still running with no mood yet; after anything else, the queued clip, else the
-     * waiting done, else nothing.
+     * waiting done, else the same antic again if an antic ran out (or its end clip once the dials no
+     * longer allow it), else nothing.
      * @param {number} now
      * @returns {{ clip: string | null, busy: boolean }}
      *   `clip` is the catalogue name of the clip playing after this tick, or null;
@@ -295,6 +359,8 @@ export function createDirector({ player, rig, params, random = Math.random }) {
           startDone(long, now);
         } else if (isTravel(ended.clip) && loopWanted) {
           startLoop(now);
+        } else if (isAntic(ended.clip)) {
+          carryOnAntic(ended.clip, now);
         }
       }
       return { clip: player.playing ? current.clip : null, busy: player.playing || queued !== null || waitingDone !== null };

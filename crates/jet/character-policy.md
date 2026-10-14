@@ -97,8 +97,8 @@ A clip is a function `buildX(rig, params, options)` beside `ui/jet/clips/hello.j
 - A track the clip does not mention holds its current value. A track it does mention should also say where it ends, so an interrupted zoom does not leave the ground moving under a hello.
 - Give every beat a name that is a verb (dip, swing, peak, tuck, melt, launch, cruise, brake). Names already used are the vocabulary; reuse them.
 - Add the clip to `clips/catalogue.js`. `catalogue.test.mjs` holds every clip in it to the shared contract: time runs forward in every track, shape 0 never leaves the circle, eyes 0 never show a face, any clip that interrupts any clip comes to rest with no ground speed and no grooves (and with both props hidden, unless it is a hold), shape 0, motion below 3 and reduced motion never show a prop, and every prop a clip names is a known kind. So a clip's own test file covers only its own choices.
-- A clip may take options. Hello takes `brief`, zoom takes `cruiseMs`, working takes `spinMs` and `continueFrom`, workingEnd takes `rotate`, done takes `long`, error takes `exclaim` and interrupted takes `rotate`.
-- **A hold ends away from the circle on purpose.** `lean` and `working` are holds. Jet stays in them until something else plays, so the director always follows a hold with a clip that ends at the circle (`leanBack`, `workingEnd`, `interrupted` or a mood).
+- A clip may take options. Hello takes `brief`, zoom takes `cruiseMs`, working takes `spinMs` and `continueFrom`, workingEnd takes `rotate`, done takes `long`, error takes `exclaim`, interrupted takes `rotate`, and batBall and doze take `loopMs` and `continued`.
+- **A hold ends away from the circle on purpose.** `lean`, `peer`, `creep`, `working`, `batBall` and `doze` are holds. Jet stays in them until something else plays, so the director always gets Jet back to the circle through a clip that ends there (`leanBack`, `workingEnd`, `interrupted`, `batBallEnd`, `dozeEnd`, a travel or a mood), though a typing hold may first give way to an antic.
 - **Rotate stays below one turn.** End every whole turn of the ring with two keys at the same time, 360 and then 0. They look the same, and any clip that hides the ring turns it back by less than a turn.
 - The working loop turns clockwise, one turn in 1.1 s for its first 8 s, then one turn that slows to 1.8 s, then one turn in 1.8 s. `working` and `workingEnd` ignore the tempo: the loop is a status, not a mood.
 - The director (`ui/jet/director.js`) decides which clip plays for each chat status and mood. It never builds a clip by hand: it reads `clips/catalogue.js`.
@@ -111,7 +111,7 @@ Shapes already chosen for statuses, so new work stays consistent:
 | Status | Shape | Eyes | Notes |
 | --- | --- | --- | --- |
 | Idle | circle, breathing | faint, blinking every 4–9 s | built |
-| You start typing | leans toward the input | none | built: `lean`, then `leanBack`; only when idle |
+| You start typing | leans toward the input, peers up on tiptoe, or creeps closer | none; faint and narrowed in the peer | built: `lean`, `peer` or `creep` at random, then `leanBack`; only when idle |
 | Working | loop, spinning clockwise | none | built: `working`, `workingEnd`; the hole opens from the centre; the gap opens top-right; never cut a turn short |
 | Progress known | loop whose gap closes in proportion | none | |
 | Done | ✓ for a beat, or the small jump | smile | built: `done` (the quick squash, and the long small jump) |
@@ -126,6 +126,7 @@ Shapes already chosen for statuses, so new work stays consistent:
 | Asleep | flat on a side | closed | long idle |
 | Interrupted | shrinks to a dot | none | built: `interrupted` |
 | Offline | hollow ring, muted colour | none | |
+| You stall mid-message | bat and ball (the ball bounces on the bat, the body squashes with each landing), or a doze (slumped, a slow 3% sway) | faint; slits in the doze | built: `batBall` or `doze` at random 6 s after the last keystroke while the field has text; typing again plays `batBallEnd` or `dozeEnd`, then a typing hold, and emptying the field plays the end clip alone; a send or a hello cuts in and the props fade; never under reduced motion, and one already playing ends at its next loop once the dials no longer allow it; the bat and ball only from motion 3 and above shape 0 |
 
 The reply starts with a mood word, and the director maps each word to one clip:
 

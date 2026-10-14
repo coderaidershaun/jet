@@ -169,6 +169,7 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
     },
 
     typing: (active, now = performance.now()) => director.typing(active, now),
+    stall: (now = performance.now()) => director.stall(now),
     mood: (word, now = performance.now()) => director.mood(word, now),
     replying: (now = performance.now()) => director.replying(now),
     done: (job, now = performance.now()) => director.done(job, now),
