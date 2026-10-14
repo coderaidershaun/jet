@@ -20,6 +20,7 @@
  * @property {number} turnBudgetUsd
  * @property {boolean} drawerOpen
  * @property {string | null} claudePath   null = find Claude Code on its own
+ * @property {import('./workstation.js').WorkstationSettings} workstation
  */
 
 const STORAGE_KEY = 'jet.settings';
@@ -51,6 +52,13 @@ export function defaultSettings() {
     turnBudgetUsd: 10,
     drawerOpen: true,
     claudePath: null,
+    workstation: {
+      bridgePath: '/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-bridge',
+      polysimDir: '/Users/shaun/Code/DEVELOPMENT/polysim',
+      strategyId: 'strat-micro-recorder',
+      links: ['127.0.0.1:9310'],
+      token: null,
+    },
   };
 }
 

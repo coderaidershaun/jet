@@ -28,6 +28,36 @@ pub struct Settings {
     pub drawer_open: bool,
     /// Where Claude Code lives; `None` means look in the usual places.
     pub claude_path: Option<PathBuf>,
+    pub workstation: Workstation,
+}
+
+/// Where polysim-bridge is, which strategy it shows and which trading engines it may attach to.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Workstation {
+    /// `None` means not set up; the page then shows the setup card.
+    pub bridge_path: Option<PathBuf>,
+    /// The folder polysim-bridge runs in; `None` means the folder that holds the program.
+    pub polysim_dir: Option<PathBuf>,
+    pub strategy_id: String,
+    /// `host:port` of each engine, in the order the link bar steps through them.
+    pub links: Vec<String>,
+    /// The link token, kept in plain text in this file.
+    pub token: Option<String>,
+}
+
+// Written by hand so that logging the settings never prints the token.
+impl std::fmt::Debug for Workstation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Workstation")
+            .field("bridge_path", &self.bridge_path)
+            .field("polysim_dir", &self.polysim_dir)
+            .field("strategy_id", &self.strategy_id)
+            .field("links", &self.links)
+            .field("token", &self.token.as_ref().map(|_| "<hidden>"))
+            .finish()
+    }
 }
 
 /// Position on the behaviour wheel. Both axes run -1 to 1 and the point stays
@@ -81,6 +111,21 @@ impl Default for Settings {
             turn_budget_usd: 10.0,
             drawer_open: true,
             claude_path: None,
+            workstation: Workstation::default(),
+        }
+    }
+}
+
+impl Default for Workstation {
+    fn default() -> Self {
+        Workstation {
+            bridge_path: Some(PathBuf::from(
+                "/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-bridge",
+            )),
+            polysim_dir: Some(PathBuf::from("/Users/shaun/Code/DEVELOPMENT/polysim")),
+            strategy_id: "strat-micro-recorder".into(),
+            links: vec!["127.0.0.1:9310".into()],
+            token: None,
         }
     }
 }
@@ -263,6 +308,13 @@ mod tests {
             turn_budget_usd: 2.5,
             drawer_open: false,
             claude_path: Some(PathBuf::from("/opt/tools/claude")),
+            workstation: Workstation {
+                bridge_path: Some(PathBuf::from("/opt/polysim/polysim-bridge")),
+                polysim_dir: None,
+                strategy_id: "strat-other".into(),
+                links: vec!["10.0.0.5:9310".into(), "10.0.0.6:9310".into()],
+                token: Some("s3cret".into()),
+            },
             ..Settings::default()
         };
         write_to(&path, &settings).unwrap();
@@ -275,6 +327,9 @@ mod tests {
             "turnBudgetUsd",
             "drawerOpen",
             "claudePath",
+            "bridgePath",
+            "polysimDir",
+            "strategyId",
         ] {
             assert!(
                 json.contains(&format!("\"{key}\"")),
