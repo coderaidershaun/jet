@@ -24,8 +24,15 @@ const MOOD_CLIPS = {
 // A job that took at least this long gets the long done clip.
 const LONG_JOB_MS = 8000;
 
+/**
+ * Each clip Jet can travel to the reply with, and how the host flies Jet while it plays.
+ * Every travel clip must have the zoom's three phases, launch, cruise and brake, because the
+ * host flies Jet across the page during the cruise.
+ */
+const TRAVELS = { zoom: 'roll' };
+const isTravel = (clipName) => Object.hasOwn(TRAVELS, clipName);
+
 const STATUS_OF_CLIP = {
-  zoom: 'travelling',
   working: 'working',
   workingEnd: 'working',
   interrupted: 'stopped',
@@ -41,13 +48,25 @@ const STATUS_OF_CLIP = {
  */
 
 /**
+ * @template T
+ * @param {T[]} list
+ * @param {() => number} random   a number in [0, 1)
+ * @returns {T}
+ */
+function pick(list, random) {
+  return list[Math.floor(random() * list.length)];
+}
+
+/**
  * @param {{
  *   player: ReturnType<typeof import('./player.js').createPlayer>,
  *   rig: import('./rig.js').Rig,
  *   params: () => import('./clip.js').Params,
- * }} deps   `params` is read each time a clip is built, so the dials are always the current ones
+ *   random?: () => number,
+ * }} deps   `params` is read each time a clip is built, so the dials are always the current ones;
+ *   `random` gives a number in [0, 1) for every choice, and a test passes its own
  */
-export function createDirector({ player, rig, params }) {
+export function createDirector({ player, rig, params, random = Math.random }) {
   /** @type {Step | null} */
   let current = null;
   /** @type {Step | null} */
@@ -87,12 +106,30 @@ export function createDirector({ player, rig, params }) {
   function statusNow() {
     if (!player.playing) return leaned ? 'typing' : 'idle';
     if (current.failed) return 'failed';
+    if (isTravel(current.clip)) return 'travelling';
     return STATUS_OF_CLIP[current.clip] ?? 'reacting';
   }
 
   function clearWaiting() {
     queued = null;
     waitingDone = null;
+  }
+
+  /**
+   * The clip Jet plays as a message goes out, before it travels, or null for none.
+   * @returns {Step | null}
+   */
+  function pickSendReaction() {
+    return null;
+  }
+
+  /**
+   * The clip Jet travels to the reply with.
+   * @param {{ cruiseMs: number, dx: number, dy: number }} job   `dx` and `dy` are the pixels from Jet to the reply, for a travel that suits only some directions
+   * @returns {Step}
+   */
+  function pickTravel({ cruiseMs }) {
+    return { clip: pick(Object.keys(TRAVELS), random), options: { cruiseMs } };
   }
 
   return {
@@ -124,23 +161,29 @@ export function createDirector({ player, rig, params }) {
     },
 
     /**
-     * A message went out and a reply is on its way. Jet zooms to the reply and then
-     * works. With reduced motion there is no zoom and the host moves nothing.
-     * @param {{ cruiseMs: number }} job   how long the zoom's cruise lasts
+     * A message went out and a reply is on its way. Jet travels to the reply and then
+     * works. With reduced motion there is no travel and the host moves nothing.
+     * @param {{ cruiseMs: number, dx?: number, dy?: number }} job   how long the travel's cruise lasts,
+     *   and the pixels from Jet to the reply (0 when unknown)
      * @param {number} now
-     * @returns {{ moveAt: number, moveMs: number }}   when the host moves the thread, and for how long, in ms from `now`
+     * @returns {{ moveAt: number, moveMs: number, profile: string }}   when the host moves the thread, and
+     *   for how long, in ms from `now`, and how the host flies Jet there
      */
-    send({ cruiseMs }, now) {
+    send({ cruiseMs, dx = 0, dy = 0 }, now) {
       running = true;
       answered = false;
       leaned = false;
       clearWaiting();
       if (params().reducedMotion) {
         startLoop(now);
-        return { moveAt: 0, moveMs: 0 };
+        return { moveAt: 0, moveMs: 0, profile: 'roll' };
       }
-      const zoom = start({ clip: 'zoom', options: { cruiseMs } }, now);
-      return { moveAt: zoom.phases[0].end, moveMs: zoom.phases[1].end - zoom.phases[0].end };
+      // SMELL: the reaction is chosen but never played, because every choice is null for now. Playing one
+      // means starting the travel only once the reaction has ended.
+      const reaction = pickSendReaction();
+      const travel = pickTravel({ cruiseMs, dx, dy });
+      const clip = start(travel, now);
+      return { moveAt: clip.phases[0].end, moveMs: clip.phases[1].end - clip.phases[0].end, profile: TRAVELS[travel.clip] };
     },
 
     /**
@@ -225,7 +268,7 @@ export function createDirector({ player, rig, params }) {
     /**
      * Moves Jet to time `now`. Call it once per frame, before drawing. When the clip that was
      * playing has ended, it starts the next one:
-     * after the zoom, the queued clip, else the waiting done, else the loop if a reply is still
+     * after a travel such as the zoom, the queued clip, else the waiting done, else the loop if a reply is still
      * running with no mood yet; after the loop ran out of spin, a continuation of it if the
      * reply is still running with no mood yet; after anything else, the queued clip, else the
      * waiting done, else nothing.
@@ -250,7 +293,7 @@ export function createDirector({ player, rig, params }) {
           const { long } = waitingDone;
           waitingDone = null;
           startDone(long, now);
-        } else if (ended.clip === 'zoom' && loopWanted) {
+        } else if (isTravel(ended.clip) && loopWanted) {
           startLoop(now);
         }
       }

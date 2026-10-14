@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createPlayer } from '../player.js';
-import { RING, TRACKS } from '../state.js';
+import { PROP, PROP_KINDS, PROP_STRIDE, RING, TRACKS } from '../state.js';
 import { CLIPS } from './catalogue.js';
 
 const rig = JSON.parse(readFileSync(fileURLToPath(new URL('../../../rig/jet.json', import.meta.url)), 'utf8'));
@@ -41,6 +41,7 @@ function everyClip(dials = DIALS) {
 }
 
 const nearly = (a, b, eps = 1e-9) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < eps);
+const propOpacities = (prop) => [prop[PROP.OPACITY], prop[PROP_STRIDE + PROP.OPACITY]];
 
 test("every clip's tracks run forward in time", () => {
   for (const { entry, options, dial, title } of everyClip()) {
@@ -74,7 +75,7 @@ test('shape at zero never leaves the circle, in any clip', () => {
 test('eyes at zero never show a face, in any clip', () => {
   for (const { entry, options, dial, title } of everyClip(Object.fromEntries(Object.entries(DIALS).map(([k, v]) => [k, { ...v, eyes: 0 }])))) {
     const clip = entry.build(rig, dial, options);
-    for (const key of clip.eyes) assert.deepEqual(key.v.slice(4), [0, 0], title + ': an eye key has a size');
+    for (const key of clip.eyes) assert.deepEqual(key.v.slice(4, 6), [0, 0], title + ': an eye key has a size');
   }
 });
 
@@ -100,11 +101,29 @@ test('any clip interrupting any clip comes to rest with no ground speed or groov
       assert.equal(state.speed, 0, title + ': the ground is still moving');
       assert.ok(!groundCoverRing(state.ring), title + ': a ground-coloured ring is left showing');
       if (next.entry.hold) continue;
+      assert.deepEqual(propOpacities(state.prop), [0, 0], title + ': ends with a prop showing');
       assert.ok(nearly(state.body, rig.poses.circle, 1e-6), title + ': does not end at the circle');
-      assert.deepEqual(state.eyes.slice(4), [0, 0], title + ': ends with eyes showing');
+      assert.deepEqual(state.eyes.slice(4, 6), [0, 0], title + ': ends with eyes showing');
       assert.ok(nearly(state.colour, rig.palette.rest, 1e-6), title + ': ends tinted');
       assert.equal(state.scale, 1, title + ': ends at another scale');
       assert.ok(state.ring[RING.OPACITY] <= 0.005 || state.ring[RING.RX] <= 0.1, title + ': ends with the ring showing');
     }
+  }
+});
+
+test('no clip shows a prop at shape 0, below motion 3 or under reduced motion, and props name known kinds', () => {
+  const noProps = {
+    'shape 0': { ...shipmate, shape: 0 },
+    'motion 2': { ...shipmate, motion: 2 },
+    'motion 0': { ...shipmate, motion: 0 },
+    'reduced motion': { ...shipmate, reducedMotion: true },
+  };
+  for (const { entry, options, dial, title } of everyClip(noProps)) {
+    const clip = entry.build(rig, dial, options);
+    for (const { v } of clip.prop ?? []) assert.deepEqual(propOpacities(v), [0, 0], title + ': a prop shows');
+  }
+  for (const { entry, options, dial, title } of [...everyClip(), ...everyClip(noProps)]) {
+    const clip = entry.build(rig, dial, options);
+    for (const kind of clip.props ?? []) assert.ok(kind === null || PROP_KINDS.includes(kind), title + ': there is no prop called ' + kind);
   }
 });

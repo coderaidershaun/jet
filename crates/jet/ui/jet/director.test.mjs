@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { buildZoom } from './clips/zoom.js';
 import { createDirector, MOODS } from './director.js';
 import { createPlayer } from './player.js';
 
@@ -10,9 +11,9 @@ const rig = JSON.parse(readFileSync(fileURLToPath(new URL('../../rig/jet.json', 
 const shipmate = { candid: 0.55, playful: 0.35, shape: 6, eyes: 4, colour: 6, motion: 6, reducedMotion: false };
 const FRAME_MS = 16;
 
-function setup(dials = shipmate) {
+function setup(dials = shipmate, random) {
   const player = createPlayer(rig);
-  const director = createDirector({ player, rig, params: () => dials });
+  const director = createDirector({ player, rig, params: () => dials, random });
   const seen = [];
   // Runs frames from `from` to `to` and records each new clip name that shows up.
   function run(from, to) {
@@ -28,9 +29,20 @@ function setup(dials = shipmate) {
 const ZOOM_DONE_MS = 3500;
 
 test('a send zooms, then the loop runs until the reply arrives', () => {
-  const { director, seen, run } = setup();
-  const { moveAt, moveMs } = director.send({ cruiseMs: 2000 }, 0);
-  assert.ok(moveAt > 0 && moveMs > 0, 'the host is told when to move the thread');
+  let draws = 0;
+  const random = () => {
+    draws += 1;
+    return 0.99;
+  };
+  const { director, seen, run } = setup(shipmate, random);
+  const zoom = buildZoom(rig, shipmate, { cruiseMs: 2000 });
+  const [launch, cruise] = zoom.phases;
+  assert.deepEqual(
+    director.send({ cruiseMs: 2000, dx: -300, dy: 400 }, 0),
+    { moveAt: launch.end, moveMs: cruise.end - launch.end, profile: 'roll' },
+    'the host moves the thread during the cruise and flies Jet with a roll',
+  );
+  assert.ok(draws > 0, 'the director chooses with the random it was given');
   assert.equal(director.status, 'travelling');
   run(0, ZOOM_DONE_MS);
   assert.equal(director.status, 'working');
@@ -155,7 +167,7 @@ test('an unknown mood is treated as neutral', () => {
 
 test('reduced motion moves nowhere and skips the zoom', () => {
   const { director, seen, run } = setup({ ...shipmate, reducedMotion: true });
-  assert.deepEqual(director.send({ cruiseMs: 2000 }, 0), { moveAt: 0, moveMs: 0 });
+  assert.deepEqual(director.send({ cruiseMs: 2000 }, 0), { moveAt: 0, moveMs: 0, profile: 'roll' });
   run(0, 3000);
   assert.deepEqual(seen, ['working']);
   assert.equal(director.status, 'working');

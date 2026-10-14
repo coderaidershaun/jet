@@ -12,6 +12,8 @@ import { lerp } from './maths.js';
  * @property {import('./track.js').Key[]} scale
  * @property {import('./track.js').Key[]} [ring]
  * @property {import('./track.js').Key[]} [speed]
+ * @property {import('./track.js').Key[]} [prop]    ten numbers per key, see PROP
+ * @property {[string | null, string | null]} [props]   what each prop slot draws, from PROP_KINDS; a clip that shows no prop leaves it out
  * @property {number} total                          clip length in ms
  * @property {{ name: string, end: number }[]} phases  in order, ends in ms
  * @property {{ label: string, value: string, on?: boolean }[]} readout
@@ -30,6 +32,17 @@ import { lerp } from './maths.js';
  */
 
 /**
+ * How much the eyes dial scales the eyes: 0 when the dial is below 1.5, too
+ * low for any eyes, then from 0.66 up to 1 at the top of the dial.
+ * @param {number} eyesDial   0..10
+ * @returns {number}
+ */
+export function eyeSizeFor(eyesDial) {
+  const ke = eyesDial / 10;
+  return ke < 0.15 ? 0 : 0.6 + 0.4 * ke;
+}
+
+/**
  * Returns the dials as the numbers that a clip's formulas read, and the
  * helpers that apply the shape and eyes dials to the rig.
  *
@@ -43,7 +56,9 @@ import { lerp } from './maths.js';
  * shape 0 never leaves the circle. `k` scales the blend, so a `k` above 1
  * takes the pose further than the shape dial alone does. `eyes(name, rx, ry)`
  * places the eyes for a pose and gives them the size `rx` by `ry`, scaled by
- * `eyeSize`. `hiddenEyes(name)` places them with no size.
+ * `eyeSize`, in the ground colour (tint 0). `hiddenEyes(name)` places them
+ * with no size and fully faint (tint 1). So a face opens out of faint eyes
+ * into the ground colour, and closes back to faint.
  *
  * @param {import('./rig.js').Rig} rig
  * @param {Params} p
@@ -65,12 +80,12 @@ export function readDials(rig, p) {
   const reduced = p.reducedMotion;
   const circle = rig.poses.circle;
   const rest = rig.palette.rest;
-  const eyeSize = ke < 0.15 ? 0 : 0.6 + 0.4 * ke;
+  const eyeSize = eyeSizeFor(p.eyes);
 
   const pose = (name, k = 1) => lerp(circle, rig.poses[name], k * ks);
   const eyeAt = (name) => lerp(rig.eyes.circle, rig.eyes[name], ks);
-  const eyes = (name, rx, ry) => [...eyeAt(name), rx * eyeSize, ry * eyeSize];
-  const hiddenEyes = (name) => [...eyeAt(name), 0, 0];
+  const eyes = (name, rx, ry) => [...eyeAt(name), rx * eyeSize, ry * eyeSize, 0];
+  const hiddenEyes = (name) => [...eyeAt(name), 0, 0, 1];
 
   return { ks, ke, kc, km, x, y, reduced, eyeSize, circle, rest, pose, eyes, hiddenEyes };
 }
@@ -86,12 +101,12 @@ function checkTime(track, at) {
  * in milliseconds from the start of the clip.
  *
  * `body(dt, v, e)` moves the time on by `dt` milliseconds, scaled by the
- * tempo, and writes a body key there. Each of the other five writers puts one
+ * tempo, and writes a body key there. Each of the other six writers puts one
  * key at the time `at` that it is given. `e` is the easing used while arriving
  * at the key. `t()` is the time the body has reached, and it is 0 before the
  * first body key.
  * Write `t()` with its brackets: a bare `t` is the function, not the time. The
- * five writers refuse a time that is not a finite number, so a writer that is
+ * six writers refuse a time that is not a finite number, so a writer that is
  * given a bare `t` throws. Nothing checks `total` or the end of a phase, which
  * the clip file writes by hand: a bare `t` goes into them with no error.
  *
@@ -107,12 +122,13 @@ function checkTime(track, at) {
  *   scale: (at: number, v: number, e?: import('./track.js').Key['e']) => void,
  *   ring: (at: number, v: number[], e?: import('./track.js').Key['e']) => void,
  *   speed: (at: number, v: number, e?: import('./track.js').Key['e']) => void,
+ *   prop: (at: number, v: number[], e?: import('./track.js').Key['e']) => void,
  *   t: () => number,
  * }}
  */
 export function createClip(tempo) {
   /** @type {Clip} */
-  const clip = { body: [], eyes: [], colour: [], scale: [], ring: [], speed: [], total: 0, phases: [], readout: [], info: {} };
+  const clip = { body: [], eyes: [], colour: [], scale: [], ring: [], speed: [], prop: [], total: 0, phases: [], readout: [], info: {} };
   let t = 0;
   const body = (dt, v, e) => { t += dt * tempo; clip.body.push({ t, v, e }); };
   const eye = (at, v, e) => { checkTime('eyes', at); clip.eyes.push({ t: at, v, e }); };
@@ -120,7 +136,8 @@ export function createClip(tempo) {
   const scale = (at, v, e) => { checkTime('scale', at); clip.scale.push({ t: at, v, e }); };
   const ring = (at, v, e) => { checkTime('ring', at); clip.ring.push({ t: at, v, e }); };
   const speed = (at, v, e) => { checkTime('speed', at); clip.speed.push({ t: at, v, e }); };
-  return { clip, body, eye, colour, scale, ring, speed, t: () => t };
+  const prop = (at, v, e) => { checkTime('prop', at); clip.prop.push({ t: at, v, e }); };
+  return { clip, body, eye, colour, scale, ring, speed, prop, t: () => t };
 }
 
 /**

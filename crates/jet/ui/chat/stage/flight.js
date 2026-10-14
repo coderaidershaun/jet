@@ -21,10 +21,13 @@ export function cruiseMsFor(distancePx) {
  * @param {{
  *   from: { x: number, y: number }, to: { x: number, y: number },
  *   fromScale: number, toScale: number, startAt: number, durationMs: number,
- * }} flight   points are the middle of Jet's body on screen
+ *   profile?: 'roll',
+ * }} flight   points are the middle of Jet's body on screen; `profile` is how Jet flies,
+ *   and `'roll'` turns toward the way Jet goes and mirrors when it goes left
  * @returns {{ endsAt: number, sample: (now: number) => { x: number, y: number, rotate: number, mirror: boolean, scale: number } }}
  */
-export function createFlight({ from, to, fromScale, toScale, startAt, durationMs }) {
+export function createFlight({ from, to, fromScale, toScale, startAt, durationMs, profile = 'roll' }) {
+  if (profile !== 'roll') throw new RangeError('there is no flight profile called ' + profile);
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const turn = clamp((Math.atan2(dy, Math.abs(dx)) * 180) / Math.PI, -MAX_TILT_DEG, MAX_TILT_DEG);

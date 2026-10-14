@@ -68,21 +68,22 @@ What they cover:
 | `ui/chat/drawer/rates.test.mjs` | the recorded Sonnet turn costs 0.007334 at list price; Haiku 5.5 moves to its long-prompt prices at 100 000 prompt tokens; a model with no price has no estimate |
 | `ui/chat/drawer/usage.test.mjs` | the recorded Sonnet turn read line by line (live counts, then the reported cost and timings, then the totals); a second reply at another thinking level gets its own row; a stopped reply keeps its tokens; stray lines change nothing |
 | `ui/chat/settings/form.test.mjs` | hex and rgb both ways, code-point counts, the master moves only the channels that follow it |
-| `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; the cruise grows with distance |
+| `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; a flight profile it cannot fly fails; the cruise grows with distance |
 | `ui/chat/thread/scroll.test.mjs` | the thread follows within 80 px of the bottom, and a send always follows |
 | `ui/chat/thread/store.test.mjs` | grouping and day pills, the slot's life from waiting to its end, the held message |
 | `ui/chat/thread/throttle.test.mjs` | markdown renders at most every 50 ms with a trailing call; the first reveal waits for the mood |
-| `ui/jet/clip.test.mjs` | a time writer refuses a bare `t` |
+| `ui/jet/clip.test.mjs` | a time writer refuses a bare `t`; a face is drawn in the ground colour (tint 0) and hidden eyes are faint (tint 1) |
 | `ui/jet/clips/annoyed.test.mjs` | a centred or deferential Jet never glares, tints or narrows its eyes |
-| `ui/jet/clips/catalogue.test.mjs` | in every clip: tracks run forward, shape 0 and eyes 0 hold, any interruption comes to rest |
+| `ui/jet/clips/catalogue.test.mjs` | in every clip: tracks run forward, shape 0 and eyes 0 hold, any interruption comes to rest with both props hidden; no prop shows at shape 0, below motion 3 or under reduced motion, and every prop a clip names is a known kind |
 | `ui/jet/clips/hello.test.mjs` | tracks run forward, ends at the circle, each dial does its job, the brief hello |
 | `ui/jet/clips/working.test.mjs` | the loop opens top right, spins clockwise, slows after 8 s, continues, and closes after its turn |
 | `ui/jet/clips/zoom.test.mjs` | the ground moves only mid-cruise, the host sets the cruise, the dials and reduced motion, a hello after a zoom |
-| `ui/jet/director.test.mjs` | send, zoom and loop; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion |
+| `ui/jet/director.test.mjs` | send, zoom and loop, with the zoom's own timing, the roll profile and the random the director was given; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion |
 | `ui/jet/easing.test.mjs` | `cubicBezier` pins both ends |
 | `ui/jet/maths.test.mjs` | `lerp` blends and may run past 1 |
-| `ui/jet/player.test.mjs` | a clip starts from the live state and ends at rest |
+| `ui/jet/player.test.mjs` | a clip starts from the live state and ends at rest; at rest the circle opens faint eyes, a hold keeps its own and eyes below 1.5 show none; the faint eyes blink on a random gap of 4 to 9 s and never under reduced motion; breathing of 1.8%; a clip's props play with it and a clip with no prop track fades them within 200 ms |
 | `ui/jet/rig.test.mjs` | `pathFrom` writes one closed path |
+| `ui/jet/view.test.mjs` | an eye blends from the ground colour to a light tint of the body, and six eye numbers draw as before; each kind of prop draws where its track puts it, as faint as the spin grooves, and hides at opacity 0; no inline styles |
 | `ui/jet/track.test.mjs` | the sampler holds the ends and applies the easing |
 
 The frontend is plain ES modules with no bundler, so there is nothing to install for `ui/`. Tauri serves the folder as-is (`build.frontendDist` in `tauri.conf.json`), and so does the dev server.
@@ -151,7 +152,7 @@ crates/jet
     │   ├── stage/                  the live Jet
     │   │   ├── live.js             the live Jet node, the director host, lane placement, the frame loop
     │   │   ├── flight.js           the path of Jet from where it stood to the new lane (pure)
-    │   │   ├── flight.test.mjs     the flight holds, lands, turns (capped at 25°) and mirrors; the cruise grows with distance
+    │   │   ├── flight.test.mjs     the flight holds, lands, turns (capped at 25°) and mirrors; an unknown profile fails; the cruise grows with distance
     │   │   └── stage.css           the empty state, the hero spot and the live Jet's place in a lane
     │   ├── thread/                 the conversation
     │   │   ├── store.js            messages, notices, the running reply and the held message, as rows (pure)
@@ -194,7 +195,7 @@ crates/jet
     ├── jet/                        the engine
     │   ├── rig.js                  the rig as the page sees it; turns a pose into an SVG path
     │   ├── rig.test.mjs            pathFrom writes one closed path
-    │   ├── state.js                Jet at one moment: the six tracks, the ring's numbers, colour
+    │   ├── state.js                Jet at one moment: the seven tracks, the ring's and the props' numbers, colour
     │   ├── track.js                keyframe tracks and how to sample one
     │   ├── track.test.mjs          the sampler holds the ends and applies the easing
     │   ├── easing.js               cubic-bezier, same numbers as CSS
@@ -202,10 +203,10 @@ crates/jet
     │   ├── maths.js                lerp and clamp
     │   ├── maths.test.mjs          lerp blends and may run past 1
     │   ├── clip.js                 what a clip is, and how the dials reach one (readDials, createClip, onOff)
-    │   ├── clip.test.mjs           a time writer refuses a bare t
+    │   ├── clip.test.mjs           a time writer refuses a bare t; faces in the ground colour, hidden eyes faint
     │   ├── clips/                  one file per clip
     │   │   ├── catalogue.js        the one list of every clip: label, builder, whether it is a hold
-    │   │   ├── catalogue.test.mjs  in every clip: tracks run forward, shape 0 and eyes 0 hold, any interruption comes to rest
+    │   │   ├── catalogue.test.mjs  in every clip: tracks run forward, shape 0 and eyes 0 hold, any interruption comes to rest; props hidden at the end and under the low dials
     │   │   ├── beats.js            the beats the mood clips share: stand up, melt back, the dials they read
     │   │   ├── hello.js            stand up, wave, melt
     │   │   ├── hello.test.mjs      tracks run forward, ends at the circle, each dial does its job
@@ -223,10 +224,11 @@ crates/jet
     │   │   ├── interrupted.js      the loop collapses to the pip, waits, grows back
     │   │   └── lean.js             the lean while the user types, and the lean back (holds)
     │   ├── director.js             chooses and orders clips for each chat event; the MOODS list
-    │   ├── director.test.mjs       send, zoom and loop; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion
-    │   ├── player.js               owns Jet's state, plays clips from wherever Jet is; no DOM
-    │   ├── player.test.mjs         a clip starts from the live state and ends at rest
-    │   ├── view.js                 draws a state into an SVG: body, ring, eyes; the only code that draws Jet
+    │   ├── director.test.mjs       send, zoom (its timing, profile and random) and loop; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion
+    │   ├── player.js               owns Jet's state, plays clips from wherever Jet is; breathes and blinks faint eyes at rest; no DOM
+    │   ├── player.test.mjs         a clip starts from the live state and ends at rest; faint eyes and their blink; breathing; props fade with their clip
+    │   ├── view.js                 draws a state into an SVG: props, body, ring, eyes with their tint; the only code that draws Jet
+    │   ├── view.test.mjs           the eye tint in two layers and six numbers as before; each prop kind draws and hides
     │   └── scene.js                scenery in its own SVG layers, scrolled by the speed track; not part of Jet
     └── lab/                        the controls around Jet
         ├── main.js                 boot, frame loop, a step list for each button, replay-on-change, save-on-change
@@ -279,7 +281,7 @@ The settings commands reject with a message string. The chat commands, from `age
 
 ## Adding a clip
 
-Write a `buildX(rig, params)` in `ui/jet/clips/`, next to `hello.js`. It makes two calls to `ui/jet/clip.js`. The first is `readDials(rig, params)`. It returns the dials as the numbers that a clip's formulas read, the circle pose, the rest colour, and the helpers `pose`, `eyes` and `hiddenEyes`, which already apply the shape and eyes dials. The second is `createClip(tempo)`, which the clip calls when it has worked out its tempo. It returns the empty clip, one writer for each track (`body`, `eye`, `colour`, `scale`, `ring`, `speed`) and `t()`, the time that the body has reached. Write `t()` with its brackets: the five writers that take a time throw when they are given a bare `t`, but `total` and the end of a phase are written by hand and nothing checks them. The new file then holds only its own choreography: its easing table, its tempo, its phases, its `info` and its readout rows (`onOff` gives the value of a row that is on or off). Set `total`, `phases`, `info` and `readout` on the clip and return it. `zoom.js` shows a clip that uses the ring (spin grooves) and the speed track (scenery), and `working.js` shows one that opens a loop over the pip. The player and the view need no changes.
+Write a `buildX(rig, params)` in `ui/jet/clips/`, next to `hello.js`. It makes two calls to `ui/jet/clip.js`. The first is `readDials(rig, params)`. It returns the dials as the numbers that a clip's formulas read, the circle pose, the rest colour, and the helpers `pose`, `eyes` and `hiddenEyes`, which already apply the shape and eyes dials. The second is `createClip(tempo)`, which the clip calls when it has worked out its tempo. It returns the empty clip, one writer for each track (`body`, `eye`, `colour`, `scale`, `ring`, `speed`, `prop`) and `t()`, the time that the body has reached. Write `t()` with its brackets: the six writers that take a time throw when they are given a bare `t`, but `total` and the end of a phase are written by hand and nothing checks them. The new file then holds only its own choreography: its easing table, its tempo, its phases, its `info` and its readout rows (`onOff` gives the value of a row that is on or off). Set `total`, `phases`, `info` and `readout` on the clip and return it. `zoom.js` shows a clip that uses the ring (spin grooves) and the speed track (scenery), and `working.js` shows one that opens a loop over the pip. A clip that shows a prop sets `clip.props` to the kind of each slot, and must hide both by its end unless it is a hold. The player and the view need no changes, unless the clip needs a new kind of prop: that needs a shape in `ui/jet/view.js` and a name in `PROP_KINDS` in `ui/jet/state.js`.
 
 Then list the clip in `ui/jet/clips/catalogue.js`. Every clip is listed there, with its label, its builder and whether it is a hold. The lab and the director both read that list. Give the clip a button in `ui/lab.html` and a step list in `BUTTONS` in `ui/lab/main.js` so it can be tried.
 

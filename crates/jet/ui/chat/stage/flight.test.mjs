@@ -23,9 +23,15 @@ test('the flight holds before its start, lands on the slot, turns toward travel 
   const early = left.sample(1000 + 800 * 0.09);
   assert.ok(early.rotate > 0 && early.rotate < 25, 'the turn eases in over the first part');
 
-  const right = createFlight({ from: { x: 200, y: 700 }, to: { x: 600, y: 300 }, fromScale: 0.6, toScale: 0.6, startAt: 0, durationMs: 800 });
+  const right = createFlight({ from: { x: 200, y: 700 }, to: { x: 600, y: 300 }, fromScale: 0.6, toScale: 0.6, startAt: 0, durationMs: 800, profile: 'roll' });
   assert.equal(right.sample(400).mirror, false);
   near(right.sample(400).rotate, -25, 1e-6);
+
+  assert.throws(
+    () => createFlight({ from: { x: 200, y: 700 }, to: { x: 600, y: 300 }, fromScale: 0.6, toScale: 0.6, startAt: 0, durationMs: 800, profile: 'teleport' }),
+    (error) => error instanceof RangeError && /teleport/.test(error.message),
+    'a profile the flight cannot fly fails loudly instead of rolling',
+  );
 });
 
 test('flight tilt is capped', () => {

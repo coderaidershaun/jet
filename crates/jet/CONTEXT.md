@@ -7,18 +7,21 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Anchor** — one of the ten points of the closed path, stored with its two handles. (policy §2)
 - **Foot** — the anchor Jet stands on. It does not move unless a pose is airborne. (policy §2)
 - **Airborne** — a pose whose name starts with `zoom`: Jet is rolling or flying, so the foot is off the ground. (policy §2)
-- **Circle** — the rest pose, round and with no face. Calm is always a return to it, and shape 0 never leaves it. (policy §1)
+- **Circle** — the rest pose, round, with only faint eyes. Calm is always a return to it, and shape 0 never leaves it. (policy §1)
 - **Ring** — the one stroked element beside the body: the working loop, and the spin grooves when Jet rolls. (policy §2)
 - **Pip** — a dot on the foot. The body shrinks to it under the working loop and when Jet is interrupted. (policy §2)
+- **Tint** — how far an eye has gone from the ground colour, 0, to the body colour lightened toward white, 1. A face is drawn at tint 0. (policy §2)
+- **Faint eyes** — the circle's rest state: small light eyes at tint 1 that blink now and then. Hidden eyes are faint eyes with no size. (policy §2)
+- **Prop** — a thing Jet holds or uses, such as an umbrella. There are two slots on a track of their own, the clip names the kind in each, and a prop never outlives its clip. (policy §2)
 
-- **State** — Jet at one moment: body, eyes, colour, scale, ring and speed. The only meaning of "state". _Avoid_: using it for idle, working or done.
+- **State** — Jet at one moment: body, eyes, colour, scale, ring, speed and props. The only meaning of "state". _Avoid_: using it for idle, working or done.
 - **Speed** — how fast the scenery scrolls. Jet stays where it is; the world moves. _Avoid_: tempo. (policy §2)
 - **Status** — what Jet is telling the user about the job: idle, working, done, needs you, error and the rest of the table. _Avoid_: state, mode. (policy §8)
 
-- **Track** — how one part of the state changes during a clip: keys in time order. There are six, named after the fields of the state. (policy §7)
+- **Track** — how one part of the state changes during a clip: keys in time order. There are seven, named after the fields of the state. (policy §7)
 - **Key** — a value at a time, with the easing used while arriving at it. (policy §7)
 - **Easing** — a CSS cubic-bezier curve, named in the clip file. (policy §4)
-- **Clip** — one stretch of movement, written fresh from the dials each time: six tracks, a total length, phases and a readout. _Avoid_: animation, asset (nothing is stored). (policy §7)
+- **Clip** — one stretch of movement, written fresh from the dials each time: seven tracks, a total length, phases and a readout. _Avoid_: animation, asset (nothing is stored). (policy §7)
 - **Hello** — the reference clip: Jet stands up, waves and melts back to the circle. (policy §8)
 - **Zoom** — the clip for "jetting off": Jet winds up, rolls past the scenery and brakes. Its poses are the airborne ones. (policy §8)
 - **Hold** — a clip that ends away from the circle on purpose, such as the lean while the user types or the working loop. The director always follows one with a clip that ends at the circle. (policy §7)

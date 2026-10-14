@@ -64,8 +64,16 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
     node.style.transform = '';
   }
 
+  function tuneIdle() {
+    player.breathing = motion();
+    player.eyes = params().eyes;
+    player.reducedMotion = reduced();
+  }
+
   function frame(now) {
     const { busy } = director.tick(now);
+    // Idle frames are skipped or drawn rarely, which would miss the faint eyes opening or blinking.
+    if (player.eyesMoved) needsDraw = true;
     const label = name + ', ' + director.status;
     if (label !== lastLabel) {
       lastLabel = label;
@@ -106,7 +114,7 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
     },
 
     start() {
-      player.breathing = motion();
+      tuneIdle();
       requestAnimationFrame(loop);
     },
 
@@ -151,9 +159,11 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
       scrollToBottom();
       const last = anchorOf(node.getBoundingClientRect());
       const toScale = scaleOf();
-      const cruiseMs = cruiseMsFor(Math.hypot(last.x - first.x, last.y - first.y));
-      const { moveAt, moveMs } = director.send({ cruiseMs }, now);
-      flight = createFlight({ from: first, to: last, fromScale, toScale, startAt: now + moveAt, durationMs: moveMs });
+      const dx = last.x - first.x;
+      const dy = last.y - first.y;
+      const cruiseMs = cruiseMsFor(Math.hypot(dx, dy));
+      const { moveAt, moveMs, profile } = director.send({ cruiseMs, dx, dy }, now);
+      flight = createFlight({ from: first, to: last, fromScale, toScale, startAt: now + moveAt, durationMs: moveMs, profile });
       applyFlight(now);
       needsDraw = true;
     },
@@ -171,9 +181,9 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
       needsDraw = true;
     },
 
-    /** Settings changed what the idle breathing looks like. */
+    /** Settings changed how Jet rests: its breathing, its faint eyes and their blinking. */
     refresh() {
-      player.breathing = motion();
+      tuneIdle();
       needsDraw = true;
     },
   };

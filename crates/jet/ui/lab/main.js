@@ -92,11 +92,17 @@ async function start() {
     return true;
   }
 
+  function tuneIdle() {
+    player.breathing = settings.expressiveness.channels.motion;
+    player.eyes = settings.expressiveness.channels.eyes;
+    player.reducedMotion = settings.reducedMotion;
+  }
+
   let replayTimer = 0;
   let saveTimer = 0;
   let replayWanted = false;
   function changed() {
-    player.breathing = settings.expressiveness.channels.motion;
+    tuneIdle();
     clearTimeout(replayTimer);
     replayTimer = setTimeout(() => { replayWanted = true; }, REPLAY_AFTER_CHANGE_MS);
     clearTimeout(saveTimer);
@@ -112,7 +118,7 @@ async function start() {
   dial.set(settings.expressiveness);
   repeatBox.checked = settings.repeat;
   reducedBox.checked = settings.reducedMotion;
-  player.breathing = settings.expressiveness.channels.motion;
+  tuneIdle();
   renderReadout(CLIPS.hello.label, CLIPS.hello.build(rig, params()));
 
   for (const element of document.querySelectorAll('[data-button]')) {
