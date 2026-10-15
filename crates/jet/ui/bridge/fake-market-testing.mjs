@@ -1,6 +1,6 @@
-// What the tests of the pretend market and of the pretend feed share: a fixed start time, a
-// source of chance that can be repeated, a market on a clock the test moves by hand, and two
-// checks of shape.
+// What the tests of the pretend market and of the pretend feed share: a fixed start time, the
+// names of a tick's sections, a source of chance that can be repeated, a market on a clock the
+// test moves by hand, and two checks of shape.
 
 import assert from 'node:assert/strict';
 import { createFakeMarket } from './fake-market.js';
@@ -8,6 +8,8 @@ import { defaultSettings } from './settings.js';
 
 export const START = Date.UTC(2026, 9, 14, 12, 34, 56, 789);
 export const FRAME_MS = 16;
+/** Every section a tick can carry, in the order the bridge writes them. */
+export const SECTIONS = ['view', 'ladder', 'summary', 'account', 'features', 'channels', 'latency', 'chart', 'risk', 'gaps'];
 
 /** A small seeded random number generator, so a run can be repeated. */
 export function seeded(seed) {

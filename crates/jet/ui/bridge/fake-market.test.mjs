@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FRAME_MS, START, assertKeys, assertSolidBucket, newMarket } from './fake-market-testing.mjs';
+import { FRAME_MS, SECTIONS, START, assertKeys, assertSolidBucket, newMarket } from './fake-market-testing.mjs';
 
 const TONES = new Set(['text', 'text2', 'bid', 'ask', 'sellFill', 'positive', 'negative', 'warning', 'invalid', 'stale', 'selected', 'focus', 'canvas']);
-const SECTIONS = ['view', 'ladder', 'summary', 'account', 'features', 'channels', 'latency', 'chart', 'risk', 'gaps'];
 const assertTextTone = (value, what) => {
   assertKeys(value, ['text', 'tone'], what);
   assert.equal(typeof value.text, 'string', what);
@@ -17,7 +16,7 @@ test('the market opens with hello, link, lifecycle and catalog, and its first ti
   assert.deepEqual(opening.map((line) => line.kind), ['hello', 'link', 'lifecycle', 'catalog']);
   const [hello, link, lifecycle, catalog] = opening;
 
-  assertKeys(hello, ['kind', 'protocol', 'bridge', 'polysim', 'tickMs', 'groupings', 'levels']);
+  assertKeys(hello, ['kind', 'protocol', 'bridge', 'polysim', 'tickMs', 'groupings', 'levels', 'channels']);
   assert.equal(hello.protocol, 1);
   assert.equal(hello.bridge, 'fake-workstation');
   assert.equal(hello.polysim, 'fake');
@@ -27,6 +26,12 @@ test('the market opens with hello, link, lifecycle and catalog, and its first ti
     [1, 100, '0.01 bp'], [1, 20, '0.05 bp'], [1, 10, '0.1 bp'], [1, 4, '0.25 bp'], [1, 2, '0.5 bp'], [1, 1, '1 bp'], [2, 1, '2 bp'], [5, 1, '5 bp'],
   ]);
   assert.deepEqual(hello.levels, { min: 12, max: 30, default: 12 });
+  assert.deepEqual(hello.channels, {
+    system: { label: 'System', emptyNote: 'no system events' },
+    orders: { label: 'Orders', emptyNote: 'no orders' },
+    trades: { label: 'Pub trades', emptyNote: 'no public trades' },
+    fills: { label: 'Trade fills', emptyNote: 'no fills' },
+  }, 'the bridge words each channel for the tabs');
 
   assertKeys(link, ['kind', 'peer', 'peerIndex', 'peerCount', 'session', 'chips', 'peerClickable', 'button', 'connection']);
   assert.equal(link.peer, '127.0.0.1:9310');
@@ -135,7 +140,8 @@ test('the market opens with hello, link, lifecycle and catalog, and its first ti
   };
   for (const [name, expected] of Object.entries(rowKeys)) {
     const channel = channels[name];
-    assertKeys(channel, ['appended', 'rows'], name);
+    assertKeys(channel, ['appended', 'full', 'rows'], name);
+    assert.equal(channel.full, true, name + ' is sent whole the first time');
     assert.ok(channel.rows.length >= 8 && channel.rows.length <= 12, name + ' opens with about ten backfilled rows');
     assert.equal(channel.appended, channel.rows.length, name + ' counts every row it has made');
     let newer = '99:99:99.999';
@@ -276,6 +282,7 @@ test('ticks walk the mid, keep the ladder full, send only new channel rows and o
       if (before !== undefined) {
         assert.ok(channel.rows.length > 0, name + ' is sent only when it has new rows');
         assert.equal(channel.rows.length, channel.appended - before, name + ' sends exactly the rows added since the last tick');
+        assert.equal(channel.full, false, name + ' sends only a delta after the first tick');
       }
       for (let n = 1; n < channel.rows.length; n += 1) assert.ok(channel.rows[n].time <= channel.rows[n - 1].time, name + ' rows are newest first');
       appended[name] = channel.appended;

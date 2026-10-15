@@ -1,7 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createFakeWorkstation } from './fake-workstation.js';
-import { FRAME_MS, START, assertKeys, assertSolidBucket, newMarket, seeded } from './fake-market-testing.mjs';
+import { REPLAY_TICK_MS, TAPE_URL, createFakeWorkstation } from './fake-workstation.js';
+import { FRAME_MS, SECTIONS, START, assertKeys, assertSolidBucket, newMarket, seeded } from './fake-market-testing.mjs';
 import { defaultSettings } from './settings.js';
 
 /** Moves a market's clock a frame at a time and collects what it sends. */
@@ -129,13 +130,14 @@ test('each command changes what the market sends next', () => {
   assert.deepEqual(staleLink.chips[1], { text: 'STALE', tone: 'stale' });
   assert.equal(staleLines.find((line) => line.kind === 'lifecycle').screen, 'live');
   const staleTicks = staleLines.filter((line) => line.kind === 'tick');
-  const stale = staleTicks.at(-1).ladder;
+  const stale = staleTicks.filter((line) => line.ladder).at(-1).ladder;
   assert.equal(stale.status, 'stale');
-  assert.match(stale.pill.text, /^STALE \d+ ms$/);
+  assert.match(stale.pill.text, /^STALE \d+\.\d s$/, 'from a second on the age is in seconds with a tenth, as polysim writes it');
   assert.equal(stale.pill.tone, 'stale');
   assert.equal(stale.muted, true);
   const firstStale = staleTicks.findIndex((line) => line.ladder?.status === 'stale');
-  assert.ok(firstStale >= 0 && firstStale < staleTicks.length - 100, 'the engine is stale for a good while');
+  assert.ok(firstStale >= 0 && firstStale < staleTicks.length - 50, 'the engine is stale for a good while');
+  assert.match(staleTicks[firstStale].ladder.pill.text, /^STALE \d+ ms$/, 'under a second the age is in milliseconds');
   assert.ok(staleTicks.slice(firstStale).every((line) => !line.chart && !line.risk), 'a stale engine adds no bucket and the open one stops moving, so nothing is sent');
   staleTicks.flatMap((line) => line.chart?.buckets ?? []).forEach(assertSolidBucket);
   assert.ok(staleTicks.every((line) => !line.channels?.trades), 'a stale engine makes no trades');
@@ -240,4 +242,104 @@ test('the pretend feed runs on its clock, takes commands and is silent after sto
   await frames(200);
   assert.equal(restarted.length, stoppedAt, 'nothing arrives after stop');
   await assert.rejects(feed.command({ cmd: 'resync' }), { kind: 'io' });
+});
+
+test('the recorded tape is real bridge output: every line kind, every section, no gap', () => {
+  const text = readFileSync(TAPE_URL, 'utf8');
+  assert.ok(Buffer.byteLength(text) < 1024 * 1024, 'the commit hook refuses a file over 1 MiB');
+  assert.ok(text.endsWith('\n'), 'the tape ends on a whole line');
+  const lines = text.slice(0, -1).split('\n').map((raw) => JSON.parse(raw));
+  for (const line of lines) assert.ok(line !== null && typeof line === 'object' && typeof line.kind === 'string', 'a line is an object with a kind');
+
+  assert.equal(lines[0].kind, 'hello');
+  assert.deepEqual([lines[0].protocol, lines[0].bridge], [1, 'polysim-bridge']);
+  assert.deepEqual([...new Set(lines.map((line) => line.kind))].sort(), ['catalog', 'hello', 'lifecycle', 'link', 'tick']);
+  assert.deepEqual(lines.filter((line) => line.kind === 'lifecycle').map((line) => line.screen), ['starting', 'live']);
+
+  const ticks = lines.filter((line) => line.kind === 'tick');
+  assert.deepEqual(ticks.map((tick) => tick.seq), ticks.map((_, n) => n + 1), 'seq runs from 1 with no gap');
+  for (const section of SECTIONS) assert.ok(ticks.some((tick) => section in tick), 'some tick carries ' + section);
+});
+
+test('with a tape the pretend feed replays it, ignores commands and starts over; a tape that cannot load falls back to the market', async () => {
+  const opening = [
+    { kind: 'hello', protocol: 1, bridge: 'polysim-bridge' },
+    { kind: 'link', peer: '127.0.0.1:9310' },
+    { kind: 'lifecycle', screen: 'live' },
+    { kind: 'catalog', session: 0 },
+  ];
+  const ticks = [{ kind: 'tick', session: 0, seq: 1 }, { kind: 'tick', session: 0, seq: 2 }];
+  const tapeOf = (...parts) => parts.flat().map((part) => (typeof part === 'string' ? part : JSON.stringify(part))).join('\n') + '\n';
+  const tape = tapeOf(opening, 'not json', '', '{"kind":7}', ticks);
+  const bridgeLine = (detail) => ({ kind: 'bridge', status: 'starting', detail });
+  const settings = defaultSettings().workstation;
+
+  const waits = [];
+  const wait = (ms) => new Promise((resolve) => waits.push({ ms, resolve }));
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  /** Lets every wait that is pending end, then lets the replay run on to its next wait. */
+  const elapse = async () => {
+    for (const pending of waits.splice(0)) pending.resolve();
+    await settle();
+  };
+
+  const feed = createFakeWorkstation({ wait, loadTape: async () => tape });
+  const lines = [];
+  await feed.start(settings, (line) => lines.push(line));
+  assert.deepEqual(lines, [bridgeLine('the recorded tape'), ...opening], 'Jet’s starting line, then the tape up to its first tick, junk lines dropped');
+  assert.deepEqual(waits.map((pending) => pending.ms), [REPLAY_TICK_MS], 'a tick waits for its place in time');
+
+  await feed.command({ cmd: 'chart_mode', mode: 'candles' });
+  await settle();
+  assert.equal(lines.length, 5, 'a recording cannot answer a command');
+
+  await elapse();
+  assert.deepEqual(lines.slice(5), [ticks[0]]);
+  await elapse();
+  assert.deepEqual(
+    lines.slice(6),
+    [ticks[1], bridgeLine('the recorded tape, from the start'), ...opening],
+    'after the last line the tape starts over, so every area starts over too',
+  );
+
+  await feed.stop();
+  const stoppedAt = lines.length;
+  await elapse();
+  await elapse();
+  assert.equal(lines.length, stoppedAt, 'nothing arrives after stop');
+  await assert.rejects(feed.command({ cmd: 'resync' }), { kind: 'io' });
+
+  const consoleWarn = console.warn;
+  const warnings = [];
+  console.warn = (...words) => warnings.push(words);
+  try {
+    for (const outcome of [() => tape, () => { throw new Error('HTTP 404'); }]) {
+      let release = null;
+      const gate = new Promise((resolve) => { release = resolve; });
+      const late = createFakeWorkstation({ wait, loadTape: async () => { await gate; return outcome(); } });
+      const lateLines = [];
+      const starting = late.start(settings, (line) => lateLines.push(line));
+      await late.stop();
+      release();
+      await starting;
+      await elapse();
+      assert.deepEqual([lateLines, waits, warnings], [[], [], []], 'a tape that loads, or fails to, after stop starts nothing and reports nothing');
+    }
+
+    const tapes = [() => Promise.reject(new Error('HTTP 404')), async () => tapeOf(opening)];
+    for (const loadTape of tapes) {
+      warnings.length = 0;
+      const fallback = createFakeWorkstation({ now: () => START, wait, random: seeded(3), loadTape });
+      const got = [];
+      await fallback.start(settings, (line) => got.push(line));
+      assert.equal(warnings.length, 1, 'the fallback is reported once');
+      assert.deepEqual(got.map((line) => line.kind), ['bridge', 'hello', 'link', 'lifecycle', 'catalog']);
+      assert.deepEqual([got[0].detail, got[1].bridge], ['the pretend feed', 'fake-workstation'], 'the pretend market runs');
+      await fallback.command({ cmd: 'resync' });
+      assert.deepEqual(got.slice(5).map((line) => line.kind), ['catalog'], 'and it answers commands');
+      await fallback.stop();
+    }
+  } finally {
+    console.warn = consoleWarn;
+  }
 });

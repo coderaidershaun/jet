@@ -1,8 +1,7 @@
 /* The ladder, the workstation's right panel: a 30 px header over rows that stretch to fill the body.
    The sizes the page works out come in as custom properties. No transitions. */
 
-/* The mount point would otherwise take its content's height; these make it, and the ladder in it, fill the panel. */
-#ws-ladder { height: 100%; min-height: 0; }
+/* The ladder fills the mount point, which the page makes as tall as its panel. */
 #ws-ladder > .ladder { height: 100%; }
 
 .ladder {
@@ -82,7 +81,6 @@
   border-radius: 0;
   outline: none;
   color: var(--ws-text);
-  color-scheme: dark;
   font: 12.5px var(--font);
   line-height: var(--ws-header-h);
 }

@@ -3,6 +3,8 @@
 
 const UNKNOWN_GATE = { text: '--', tone: 'text2' };
 const ARMED_GATE = { text: 'ARMED', tone: 'positive' };
+// The bridge writes a feature that was never sent as this dash and gives it no tone of its own.
+const NEVER_SENT = '--';
 
 /**
  * The last row of the account band. A halt takes the whole row, since a refusal beside it would
@@ -34,9 +36,11 @@ export function sideRow(side) {
 
 /**
  * One line of the feature list. A feature that has gone stale still shows the bar of a recent change.
+ * A value that was never sent is grey like a stale one, but its name stays bright.
  * @param {import('../../bridge/workstation.js').FeatureRow} row
  */
 export function featureRow(row) {
   const dim = row.stale === true;
-  return { name: row.name, value: row.value, title: row.hover, bar: row.changed === true, dim, valueTone: dim ? 'text2' : 'text' };
+  const isValueGrey = dim || row.value === NEVER_SENT;
+  return { name: row.name, value: row.value, title: row.hover, bar: row.changed === true, dim, valueTone: isValueGrey ? 'text2' : 'text' };
 }

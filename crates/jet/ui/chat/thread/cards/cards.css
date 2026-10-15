@@ -73,8 +73,6 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .byline { margin: 0 0 6px; color: var(--muted); font-size: 12px; line-height: 16px; }
 
 .card .body { font-size: 14px; line-height: 20px; }
-/* The card lets any word break anywhere, which would shrink a table's columns to a letter wide. A table keeps its words whole and scrolls sideways instead. */
-.card .body table { overflow-wrap: normal; }
 .footnote { color: var(--muted); font-size: 12px; line-height: 17px; }
 .show-label, .crumb { margin: 8px 0 2px; color: var(--muted); font-size: 12px; line-height: 16px; }
 .piece-heading { margin: 8px 0 2px; font-size: 14px; line-height: 20px; }
@@ -95,7 +93,8 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .claim-sources { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .follow-ups { margin: 8px 0 0; padding: 0 6px 0 26px; color: var(--muted); }
 
-.documents { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 12px; line-height: 16px; }
+/* The card lets any word break anywhere, which would shrink this table's columns to a letter wide. */
+.documents { display: block; max-width: 100%; overflow-x: auto; overflow-wrap: normal; border-collapse: collapse; font-size: 12px; line-height: 16px; }
 .documents th, .documents td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 
 .health { margin: 0; padding: 4px 6px; list-style: none; }

@@ -1,6 +1,7 @@
 //! A stand-in for a library's MCP server, for tests. It serves the same streamable HTTP as
 //! quanty and polysim do, and what it does is chosen by marker files in its own folder, so
-//! tests that run side by side never share settings.
+//! tests that run side by side never share settings. Like polysim, it stops when its input
+//! closes if it is started with `--watch-stdin`.
 
 use std::collections::HashSet;
 use std::fs::OpenOptions;
@@ -15,6 +16,8 @@ use serde_json::{Value, json};
 
 const PIDS_FILE: &str = "fake-mcp-pids";
 const REQUESTS_FILE: &str = "fake-mcp-requests.jsonl";
+/// Gets a line each time the program stops because its input closed.
+const STDIN_CLOSED_FILE: &str = "stdin-closed";
 /// When this file exists, the program behaves like one that has no `--http` mode.
 const NO_HTTP_MARKER: &str = "no-http";
 /// When this file exists, every answer comes as an event stream, as quanty sends it.
@@ -66,28 +69,63 @@ struct Server {
     opened: AtomicU64,
 }
 
+/// What the program was asked to do on its command line.
+struct Options {
+    port: u16,
+    stops_when_input_closes: bool,
+}
+
+/// Reads `--http <port>`, optionally followed by `--watch-stdin`. A folder with the
+/// `no-http` marker makes the program behave like one that has no `--http` mode.
+fn parse_options(args: &[String]) -> Option<Options> {
+    if Path::new(NO_HTTP_MARKER).exists() {
+        return None;
+    }
+    match args {
+        [http, port] if http == "--http" => Some(Options {
+            port: port.parse().ok()?,
+            stops_when_input_closes: false,
+        }),
+        [http, port, watch] if http == "--http" && watch == "--watch-stdin" => Some(Options {
+            port: port.parse().ok()?,
+            stops_when_input_closes: true,
+        }),
+        _ => None,
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let port = match args.as_slice() {
-        [flag, port] if flag == "--http" && !Path::new(NO_HTTP_MARKER).exists() => {
-            port.parse::<u16>().ok()
-        }
-        _ => None,
-    };
-    let Some(port) = port else {
+    let Some(options) = parse_options(&args) else {
         eprintln!(
-            "fake-mcp: unknown argument {:?}\nusage: fake-mcp --http <port>",
-            args.first().map_or("", String::as_str)
+            "fake-mcp: unknown arguments {args:?}\nusage: fake-mcp --http <port> [--watch-stdin]"
         );
         return ExitCode::from(2);
     };
-    match serve(port) {
+    if options.stops_when_input_closes {
+        stop_when_input_closes();
+    }
+    match serve(options.port) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("fake-mcp: {error}");
             ExitCode::from(1)
         }
     }
+}
+
+/// Reads the program's input to the end on a thread of its own, then notes that it closed
+/// and exits. An input that cannot be read is as good as one that closed.
+fn stop_when_input_closes() {
+    std::thread::spawn(|| {
+        if let Err(error) = io::copy(&mut io::stdin(), &mut io::sink()) {
+            eprintln!("fake-mcp: could not read its input: {error}");
+        }
+        if let Err(error) = append(STDIN_CLOSED_FILE, "closed") {
+            eprintln!("fake-mcp: could not note that its input closed: {error}");
+        }
+        std::process::exit(0);
+    });
 }
 
 fn serve(port: u16) -> io::Result<()> {

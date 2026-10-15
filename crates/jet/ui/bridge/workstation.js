@@ -1,12 +1,13 @@
 // The workstation page's one way to polysim-bridge, and the one JavaScript definition of what the
 // bridge says. Every other module is handed a WorkstationFeed and never asks which one it is.
 // Inside Tauri it is the real feed, which runs polysim-bridge and streams its lines; in a plain
-// browser it is the pretend feed, which makes up plausible lines in the same shape.
+// browser it is the pretend feed, which makes up plausible lines in the same shape, or replays a
+// recording of the real bridge when asked.
 //
 // Geometry travels as small integers (half-ticks, tick indexes, bucket indexes, mantissas) and
 // every string the page shows arrives already formatted, with a tone word the CSS maps to a colour.
 
-import { createFakeWorkstation } from './fake-workstation.js';
+import { createFakeWorkstation, fetchTape } from './fake-workstation.js';
 import { createTauriWorkstation } from './tauri-workstation.js';
 
 /** @typedef {'text' | 'text2' | 'bid' | 'ask' | 'sellFill' | 'positive' | 'negative' | 'warning' | 'invalid' | 'stale' | 'selected' | 'focus' | 'canvas'} Tone */
@@ -32,7 +33,10 @@ import { createTauriWorkstation } from './tauri-workstation.js';
  * @property {number} tickMs
  * @property {{ ticks: { perBucket: number, label: string }[], bps: { numerator: number, denominator: number, label: string }[] }} groupings
  * @property {{ min: number, max: number, default: number }} levels
+ * @property {{ system: ChannelWords, orders: ChannelWords, trades: ChannelWords, fills: ChannelWords }} channels
  */
+
+/** @typedef {{ label: string, emptyNote: string }} ChannelWords   the tab's name, and what the list says when it has no rows */
 
 /**
  * The link bar: which trading engine, in what state. Sent when it changes.
@@ -156,11 +160,12 @@ import { createTauriWorkstation } from './tauri-workstation.js';
 /**
  * Each channel holds only the rows newer than the last `appended` the page saw, newest first, or
  * the newest 256 after a generation or instrument change. The page keeps a 256-row ring per channel.
+ * `full` is true when the page should replace its ring instead of laying the rows on top.
  * @typedef {object} ChannelsSection
- * @property {{ appended: number, rows: SystemRow[] }} [system]
- * @property {{ appended: number, rows: OrderRow[] }} [orders]
- * @property {{ appended: number, rows: TradeRow[] }} [trades]
- * @property {{ appended: number, rows: FillRow[] }} [fills]
+ * @property {{ appended: number, full: boolean, rows: SystemRow[] }} [system]
+ * @property {{ appended: number, full: boolean, rows: OrderRow[] }} [orders]
+ * @property {{ appended: number, full: boolean, rows: TradeRow[] }} [trades]
+ * @property {{ appended: number, full: boolean, rows: FillRow[] }} [fills]
  */
 
 /**
@@ -185,10 +190,10 @@ import { createTauriWorkstation } from './tauri-workstation.js';
  * @typedef {object} ChartSection
  * @property {number} generation
  * @property {number} capacity
- * @property {number} first   the visible window
- * @property {number} last
- * @property {number} low
- * @property {number} high
+ * @property {number | null} first   the visible window; null until the first mid sample, when `note` says why
+ * @property {number | null} last
+ * @property {number | null} low
+ * @property {number | null} high
  * @property {{ v: number, label: string }[]} axis   empty until the page sends `chart_ticks`
  * @property {ChartBucket[]} buckets
  * @property {ChartFill[]} fills
@@ -207,7 +212,7 @@ import { createTauriWorkstation } from './tauri-workstation.js';
  * @property {number} generation
  * @property {'exposure' | 'pnl'} series
  * @property {TextTone | null} latest
- * @property {{ exposure: RiskBounds, pnl: RiskBounds }} bounds
+ * @property {{ exposure: RiskBounds | null, pnl: RiskBounds | null }} bounds
  * @property {{ exposure: RiskAxis, pnl: RiskAxis }} axis
  * @property {RiskBucket[]} buckets
  * @property {string | null} note
@@ -274,8 +279,14 @@ import { createTauriWorkstation } from './tauri-workstation.js';
  * @property {() => Promise<void>} stop   no line arrives after it resolves
  */
 
-/** @returns {WorkstationFeed} */
-export function connectWorkstation() {
+/**
+ * Inside Tauri this is the real feed, whatever `replayTape` says. Outside it is the pretend market,
+ * or, when `replayTape` is set, a replay of the recorded bridge output.
+ * @param {{ replayTape?: boolean }} [options]
+ * @returns {WorkstationFeed}
+ */
+export function connectWorkstation({ replayTape = false } = {}) {
   const tauri = globalThis.window?.__TAURI__;
-  return tauri ? createTauriWorkstation(tauri) : createFakeWorkstation();
+  if (tauri) return createTauriWorkstation(tauri);
+  return createFakeWorkstation(replayTape ? { loadTape: fetchTape } : {});
 }

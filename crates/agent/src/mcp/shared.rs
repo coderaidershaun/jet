@@ -25,9 +25,9 @@ const NOT_STARTED: &str = "it has not been started yet";
 ///
 /// A library whose program does not take `--http <port>` and print `listening on <url>` on
 /// its error output is not shared: Claude Code starts its own copy for each reply.
-// SMELL: a polysim-mcp that dies without being asked to stop (a crash, a force quit of
-// the app, a restart of the dev server) leaves its engines running, and the next copy
-// cannot see them.
+// SMELL: a polysim-mcp that crashes leaves its engines running, and the next copy cannot
+// see them. When Jet itself ends, polysim does stop its engines, because the input Jet
+// holds open for it closes.
 #[derive(Clone, Default)]
 pub struct SharedServers {
     hosted: Arc<Mutex<Hosted>>,
@@ -139,8 +139,8 @@ impl SharedServers {
         client.call(tool, arguments)
     }
 
-    /// Stops every server and waits for them to go: SIGTERM first, so polysim can stop its
-    /// engines, and a kill only after 25 seconds.
+    /// Stops every server and waits for them to go: polysim's input is closed and SIGTERM
+    /// sent first, so it can stop its engines, and a kill only after 25 seconds.
     // SMELL: closing the app waits up to 25 seconds while polysim stops its engines.
     pub fn shutdown(&self) {
         let running = {

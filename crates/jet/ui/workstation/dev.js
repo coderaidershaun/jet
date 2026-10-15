@@ -1,5 +1,6 @@
 // Starts the workstation on its own page, so it can be tried in a plain browser (on the pretend
-// feed) or in the app's window (on polysim-bridge), without the chat around it.
+// feed, or on a recording of the real bridge with ?tape=1) or in the app's window (on
+// polysim-bridge), without the chat around it.
 
 import { connectWorkstation } from '../bridge/workstation.js';
 import { loadSettings } from '../bridge/settings.js';
@@ -7,7 +8,8 @@ import { createWorkstation, mountAreas } from './page.js';
 
 async function start() {
   const settings = await loadSettings();
-  const store = createWorkstation({ root: document.getElementById('workstation'), feed: connectWorkstation() });
+  const replayTape = new URLSearchParams(location.search).get('tape') === '1';
+  const store = createWorkstation({ root: document.getElementById('workstation'), feed: connectWorkstation({ replayTape }) });
   await mountAreas(store);
   await store.start(settings.workstation);
 }

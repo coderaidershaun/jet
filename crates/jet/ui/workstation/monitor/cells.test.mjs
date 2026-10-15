@@ -27,11 +27,12 @@ test('side counts: lost turns invalid above zero, a leak shows +N', () => {
   });
 });
 
-test('a feature row: changed shows the bar, stale dims the name and greys the value', () => {
-  const feature = (changed, stale) => ({ name: 'obi_half_bp', value: '-0.1234', changed, stale, hover: 'obi_half_bp  =  -0.1234' });
+test('a feature row: changed shows the bar, stale dims the name and greys the value, and a value never sent is grey too', () => {
+  const feature = (changed, stale, value = '-0.1234') => ({ name: 'obi_half_bp', value, changed, stale, hover: 'obi_half_bp  =  ' + value });
   const plain = featureRow(feature(false, false));
   assert.deepEqual(plain, { name: 'obi_half_bp', value: '-0.1234', title: 'obi_half_bp  =  -0.1234', bar: false, dim: false, valueTone: 'text' });
   assert.deepEqual(featureRow(feature(true, false)), { ...plain, bar: true }, 'a change shows the bar and nothing else');
   assert.deepEqual(featureRow(feature(false, true)), { ...plain, dim: true, valueTone: 'text2' }, 'a stale feature dims its name and greys its value');
   assert.deepEqual(featureRow(feature(true, true)), { ...plain, bar: true, dim: true, valueTone: 'text2' }, 'a feature can be both');
+  assert.deepEqual(featureRow(feature(false, false, '--')), { ...plain, value: '--', title: 'obi_half_bp  =  --', valueTone: 'text2' }, 'a value never sent greys the value and leaves the name bright');
 });

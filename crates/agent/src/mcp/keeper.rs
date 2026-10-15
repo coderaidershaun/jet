@@ -161,7 +161,7 @@ fn keep(state: &Arc<KeeperState>, launch: &Launch) {
         // A new process knows none of the old sessions.
         launch.client.forget_session();
         let started = Instant::now();
-        match spawn_http(&launch.server, launch.port) {
+        match spawn_http(launch.name, &launch.server, launch.port) {
             Ok(child) => match watch(state, launch, child, is_first_run) {
                 AfterExit::StartAgain => {}
                 AfterExit::End => return,

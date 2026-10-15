@@ -78,6 +78,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Typeset** — turning a math element's TeX into KaTeX's drawing on the page. _Avoid_: render (that is Markdown to HTML).
 - **Workstation** — the polysim trading page: toolbar, latency, charts, monitor, ladder and link bar. It paints what the feed sends and decides no number itself. _Avoid_: dashboard.
 - **Feed** — the bridge lines the workstation reads: from polysim-bridge inside the app (restarted by Jet when it fails), from the pretend feed in a browser.
+- **Tape** — polysim-bridge's own output recorded from the sim engine (`ui/bridge/fixtures/polysim-tape.jsonl`); the pretend feed replays it on `workstation.html?tape=1`. _Avoid_: recording of the feed (the feed is what the page reads, live).
 - **Bridge line** — one JSON object on one line with `kind` first: `hello`, `link`, `lifecycle`, `catalog`, `tick` and `bye` from polysim-bridge, and Jet's own `bridge` status line. A line's `session` is the engine link's session, not the **Session** above. _Avoid_: message, event (those belong to the chat).
 - **Section** — one part of a tick, such as the ladder or the chart. A tick carries only the sections that changed.
 - **Area** — one part of the workstation with its own folder under `ui/workstation/` and its own mount point.

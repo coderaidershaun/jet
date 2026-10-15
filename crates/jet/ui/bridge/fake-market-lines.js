@@ -12,6 +12,12 @@ export const INSTRUMENTS = [
   { id: 1, display: 'ETHUSDT', base: 'ETH', quote: 'USDT', tick: '0.01', startBid: 420000, position: 1.5, cash: 12000 },
 ];
 export const SPIN_US = 1_000_000;
+const CHANNEL_WORDS = {
+  system: { label: 'System', emptyNote: 'no system events' },
+  orders: { label: 'Orders', emptyNote: 'no orders' },
+  trades: { label: 'Pub trades', emptyNote: 'no public trades' },
+  fills: { label: 'Trade fills', emptyNote: 'no fills' },
+};
 
 const CONNECTION_CHIPS = {
   connecting: { text: 'CONNECTING', tone: 'text2' },
@@ -24,6 +30,7 @@ export function helloLine() {
     kind: 'hello', protocol: 1, bridge: 'fake-workstation', polysim: 'fake', tickMs: 16,
     groupings: { ticks: TICK_GROUPINGS, bps: BPS_GROUPINGS },
     levels: LEVELS,
+    channels: CHANNEL_WORDS,
   };
 }
 

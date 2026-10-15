@@ -100,7 +100,7 @@ pub struct Turn {
     mood: Option<Mood>,
     init_model: String,
     saw_delta: bool,
-    /// Text came before a new call to the model began, so the next text starts a new
+    /// Text was shown before a new call to the model began, so the next text starts a new
     /// paragraph.
     needs_paragraph_break: bool,
     ended: bool,
@@ -215,14 +215,9 @@ impl Turn {
                     mcp,
                 });
             }
-            Line::MessageStart => self.needs_paragraph_break |= self.saw_delta,
+            Line::MessageStart => self.begin_call(),
             Line::TextDelta(delta) => {
                 self.saw_delta = true;
-                let delta = if std::mem::take(&mut self.needs_paragraph_break) {
-                    format!("\n\n{delta}")
-                } else {
-                    delta
-                };
                 let split = self.splitter.push(&delta);
                 self.release(split);
             }
@@ -254,12 +249,26 @@ impl Turn {
         }));
     }
 
-    fn release(&mut self, split: Split) {
-        if let Some(mood) = split.mood {
+    /// A new call to the model has begun. It may open with a mood line of its own, so the
+    /// check for one starts again, and its text is set apart from any text already shown.
+    fn begin_call(&mut self) {
+        let rest = self.splitter.finish();
+        self.release(rest);
+        self.splitter = MoodSplitter::new();
+        self.needs_paragraph_break = !self.text.is_empty();
+    }
+
+    fn release(&mut self, mut split: Split) {
+        if let Some(mood) = split.mood
+            && self.mood.is_none()
+        {
             self.mood = Some(mood);
             self.queued.push_back(Step::Mood(mood));
         }
         if !split.text.is_empty() {
+            if std::mem::take(&mut self.needs_paragraph_break) {
+                split.text.insert_str(0, "\n\n");
+            }
             self.text.push_str(&split.text);
             self.queued.push_back(Step::Text(split.text));
         }
@@ -301,8 +310,8 @@ mod tests {
     use serde_json::json;
 
     use super::scripted::{
-        Script, Scripted, delta_line, error_result_line, init_line, reply_lines, request,
-        result_line, tool_use_line,
+        Script, Scripted, delta_line, error_result_line, init_line, message_start_line,
+        reply_lines, request, result_line, tool_result_line, tool_use_line,
     };
     use super::*;
     use crate::chat::Failure;
@@ -428,5 +437,60 @@ mod tests {
                 .iter()
                 .any(|step| matches!(step, Step::Mood(Mood::Happy)))
         );
+    }
+
+    #[test]
+    fn a_mood_line_that_opens_a_later_call_is_removed_and_the_first_mood_wins() {
+        let call = tool_use_line(&[("a", "mcp__polysim__start_strategy", json!({}))]);
+        let cases = [
+            (
+                "text, then a call, then a mood line",
+                vec![
+                    init_line("s1"),
+                    message_start_line(),
+                    delta_line("Mode is sim. Starting it."),
+                    call.clone(),
+                    tool_result_line("a", "started"),
+                    message_start_line(),
+                    delta_line("mood: happy\nThe engine runs."),
+                    result_line("unused"),
+                ],
+                "Mode is sim. Starting it.\n\nThe engine runs.",
+                Mood::Happy,
+            ),
+            (
+                "a mood line, then a call, then another mood line",
+                vec![
+                    init_line("s1"),
+                    message_start_line(),
+                    delta_line("mood: neutral\n"),
+                    delta_line("Starting it."),
+                    call,
+                    tool_result_line("a", "started"),
+                    message_start_line(),
+                    delta_line("mood: hap"),
+                    delta_line("py\nThe engine runs."),
+                    result_line("unused"),
+                ],
+                "Starting it.\n\nThe engine runs.",
+                Mood::Neutral,
+            ),
+        ];
+        for (name, lines, text, mood) in cases {
+            let transport = Scripted::new().then(Script::lines(lines));
+            let mut turn = Turn::start(&transport, &request()).unwrap();
+            let (mut shown, mut moods) = (String::new(), Vec::new());
+            for step in turn.by_ref() {
+                match step {
+                    Step::Text(delta) => shown.push_str(&delta),
+                    Step::Mood(heard) => moods.push(heard),
+                    _ => {}
+                }
+            }
+            assert_eq!(shown, text, "{name}");
+            assert_eq!(turn.text(), text, "{name}");
+            assert_eq!(moods, [mood], "{name}");
+            assert_eq!(turn.mood(), Some(mood), "{name}");
+        }
     }
 }

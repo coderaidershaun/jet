@@ -240,6 +240,9 @@ fn a_program_without_http_is_left_to_claude() {
 /// A small program that starts the fake server in the background and, when it is told to
 /// stop, writes `got-term`, waits `stop_delay` seconds, writes `stopped` and stops the fake.
 /// It shows that a server was asked to stop and when it was done.
+///
+/// It starts the fake with `--http <port>` only. The shell gives a job it starts in the
+/// background an empty input, so a fake given `--watch-stdin` would stop at once.
 fn stops_on_term(dir: &Path, stop_delay: &str) -> McpServer {
     use std::os::unix::fs::PermissionsExt;
 
@@ -247,7 +250,7 @@ fn stops_on_term(dir: &Path, stop_delay: &str) -> McpServer {
     let script = format!(
         "#!/bin/sh\n\
          trap 'echo term > got-term; sleep {stop_delay}; echo done > stopped; kill $pid; exit 0' TERM\n\
-         \"{fake}\" \"$@\" &\n\
+         \"{fake}\" --http \"$2\" &\n\
          pid=$!\n\
          wait $pid\n"
     );
@@ -321,4 +324,54 @@ fn a_settings_change_stops_the_old_copy_first_restarts_only_that_server_and_swit
         matches!(closed, Err(McpError::NotShared { .. })),
         "{closed:?}"
     );
+}
+
+/// A small program that ignores SIGTERM and then becomes the fake server. Nothing but a
+/// kill or the end of its input can stop it.
+fn ignores_term(dir: &Path) -> McpServer {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fake = env!("CARGO_BIN_EXE_fake-mcp");
+    let script = format!("#!/bin/sh\ntrap '' TERM\nexec \"{fake}\" \"$@\"\n");
+    let program = dir.join("ignores-term.sh");
+    std::fs::write(&program, script).unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    McpServer {
+        enabled: true,
+        command: program,
+        cwd: Some(dir.to_owned()),
+    }
+}
+
+#[test]
+fn a_shared_polysim_watches_its_input_and_stops_when_it_closes() {
+    let (polysim_dir, quanty_dir) = (scratch("watch-polysim"), scratch("watch-quanty"));
+    let servers = McpServers {
+        polysim: ignores_term(&polysim_dir),
+        quanty: fake(&quanty_dir),
+    };
+    let shared = Shared::new();
+    shared.configure(&servers);
+    assert_eq!(shared.urls().len(), 2);
+    let polysim = pids(&polysim_dir)[0];
+
+    // While Jet runs, its input stays open: a polysim whose input was closed from the start
+    // would have gone within this pause.
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(alive(polysim));
+    assert!(lines(&polysim_dir, "stdin-closed").is_empty());
+
+    // Far below the 25 seconds before a kill: only the closed input can have stopped it.
+    let started = Instant::now();
+    shared.shutdown();
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "polysim took {:?} to stop",
+        started.elapsed()
+    );
+    assert_eq!(lines(&polysim_dir, "stdin-closed").len(), 1);
+    assert!(!alive(polysim));
+    // quanty does not know the flag, so it was not given it.
+    assert!(lines(&quanty_dir, "stdin-closed").is_empty());
+    assert!(!alive(pids(&quanty_dir)[0]));
 }

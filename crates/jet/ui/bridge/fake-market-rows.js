@@ -90,7 +90,7 @@ export function createChannels() {
       const section = {};
       for (const [name, channel] of Object.entries(channels)) {
         const fresh = everything ? channel.ring.length : Math.min(channel.appended - channel.sent, channel.ring.length);
-        if (fresh > 0) section[name] = { appended: channel.appended, rows: channel.ring.slice(0, fresh) };
+        if (fresh > 0) section[name] = { appended: channel.appended, full: everything, rows: channel.ring.slice(0, fresh) };
         channel.sent = channel.appended;
       }
       return Object.keys(section).length > 0 ? section : undefined;

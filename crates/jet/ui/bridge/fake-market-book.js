@@ -132,6 +132,9 @@ function distanceText(book, tick, unit, digits) {
   return (unit === 'bps' ? (away / mid) * 10000 : away).toFixed(digits[unit]);
 }
 
+/** How long the engine has been quiet, worded as polysim does: milliseconds under a second, then seconds with a tenth. */
+const staleText = (ms) => 'STALE ' + (ms < 1000 ? ms + ' ms' : Math.floor(ms / 1000) + '.' + Math.floor((ms % 1000) / 100) + ' s');
+
 /** The ladder: `rows` levels each side, the quotes marked on their rows, and a chevron for a quote beyond the last row. */
 export function ladderSection(book, { status, staleMs, ticksEach, rows, unit, random }) {
   const rowsOf = (side) => Array.from({ length: rows }, (_, index) => {
@@ -142,7 +145,7 @@ export function ladderSection(book, { status, staleMs, ticksEach, rows, unit, ra
   const chevron = (side) => (quoteRow(book, side, ticksEach) >= rows ? { text: distanceText(book, book.quotes[side].tick, unit, CHEVRON_DIGITS) } : null);
   return {
     status,
-    pill: status === 'stale' ? { text: 'STALE ' + staleMs + ' ms', tone: 'stale' } : (PILLS[status] ?? null),
+    pill: status === 'stale' ? { text: staleText(staleMs), tone: 'stale' } : (PILLS[status] ?? null),
     muted: status !== 'live',
     mid: { text: midText(midHalf(book)), tone: 'text' },
     midHalfTicks: midHalf(book),
