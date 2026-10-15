@@ -62,11 +62,21 @@ test('a reply slot moves from waiting to streaming and ends as finished, failed 
   thread.reveal('<p>Hi there</p>');
   assert.equal(thread.rows().at(-1).entry.html, '<p>Hi there</p>');
 
+  // A tool call starts running and then comes back; the slot holds one call that changes in place.
+  const listing = { id: 'call-1', server: 'polysim', tool: 'list_strategies', ok: true, result: { engines: [] }, summary: 'polysim · list_strategies · 0 engines', durationMs: 5 };
+  thread.startTool({ id: 'call-1', server: 'polysim', tool: 'list_strategies', input: {} });
+  assert.deepEqual(thread.slot.tools, [{ id: 'call-1', server: 'polysim', tool: 'list_strategies', input: {} }]);
+  thread.finishTool(listing);
+  assert.deepEqual(thread.slot.tools, [{ ...listing, input: {} }]);
+  thread.finishTool({ ...listing, id: 'call-2', tool: 'stop_strategy' });
+  assert.deepEqual(thread.slot.tools.map((call) => call.id), ['call-1', 'call-2'], 'a call that was never seen starting is added');
+
   thread.finish(entry(2, 'jet', at(14, 9, 1), 'Hi there'));
   assert.equal(thread.replying, false);
   assert.equal(thread.slot, null);
   assert.equal(thread.rows().at(-1).entry.status, 'complete');
   assert.equal(thread.rows().filter((row) => row.type === 'jet').length, 1, 'the slot became the finished row');
+  assert.deepEqual(thread.rows().at(-1).entry.tools.map((call) => call.id), ['call-1', 'call-2'], 'the calls the page saw stay when the saved entry lacks them');
 
   const failure = { kind: 'claudeMissing', message: 'Claude Code was not found; looked in /usr/bin' };
   thread.openSlot(at(14, 9, 2));
@@ -78,9 +88,14 @@ test('a reply slot moves from waiting to streaming and ends as finished, failed 
 
   thread.openSlot(at(14, 9, 3));
   thread.appendText('Partial');
-  thread.stop({ id: 4, role: 'jet', text: 'Partial', html: '<p>Partial</p>', status: 'stopped', at: at(14, 9, 3) });
+  thread.startTool({ id: 'call-3', server: 'polysim', tool: 'start_strategy', input: { te_id: 'te-a' } });
+  thread.startTool({ id: 'call-4', server: 'polysim', tool: 'list_strategies', input: {} });
+  thread.finishTool({ ...listing, id: 'call-4' });
+  const savedCall = { ...listing, id: 'call-4', input: {}, summary: 'the saved one' };
+  thread.stop({ id: 4, role: 'jet', text: 'Partial', html: '<p>Partial</p>', status: 'stopped', tools: [savedCall], at: at(14, 9, 3) });
   assert.equal(thread.rows().at(-1).entry.status, 'stopped');
   assert.equal(thread.rows().at(-1).entry.text, 'Partial');
+  assert.deepEqual(thread.rows().at(-1).entry.tools, [savedCall, { id: 'call-3', server: 'polysim', tool: 'start_strategy', input: { te_id: 'te-a' }, unfinished: true }], 'the saved call wins, and a call still running is kept as unfinished');
 });
 
 test('a held message waits for the reply to end, a second Enter appends, and cancel returns the text', () => {

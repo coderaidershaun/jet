@@ -60,6 +60,10 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Notes** — MEMORY, USER and RECENT: the three short files in Jet's prompt that a background review keeps current. The memory commands and the memory section of the settings handle all three.
 - **Library** — quanty or polysim, an MCP server Jet's Claude reaches through tools (settings key `mcp`). _Avoid_: plugin.
 - **Tool call** — one use of a library tool during a reply: started, then finished with its result and a one-line summary; kept with the reply in the transcript.
+- **Shared server** — the one copy of a library's MCP server that the app keeps running for the whole session, over HTTP on a port of this machine. Claude's replies and the engine card both use it, so an engine either one starts outlives the reply. A library whose program does not take `--http` is not shared: Claude starts its own copy for each reply. _Avoid_: host (that is the page that shows Jet).
+- **Engine** — one polysim trading program, named `strategy · te`, such as `strat-micro-recorder · te-binance-spot-btcusdt`. It has a state (running, stopped, exited) and a mode (off, sim, live); live trades real money.
+- **Engine card** — the card above a reply that listed polysim's engines: one row for each engine with its state, its mode, Start or Stop and a mode choice. Every engine card shows the newest listing.
+- **Preface** — the line in square brackets, such as `[Jet: the user started … at 22:41]`, that the page puts before the user's next message so Claude knows what they did on an engine card. The thread shows and saves only the user's words. _Avoid_: note (that is MEMORY, USER and RECENT).
 
 - **Rail** — the drawer narrowed to its icons beside the workstation: Jet at the top to go back to the chat, the workstation button, the gear. _Avoid_: collapsed drawer, mini drawer.
 

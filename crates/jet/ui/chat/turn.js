@@ -36,9 +36,12 @@ function parsedOrNull(line) {
  *   tracker: ReturnType<typeof import('./drawer/usage.js').createUsageTracker>,
  *   page: { headerStatus: HTMLElement, announce: HTMLElement },
  *   afterReply: () => void,
+ *   onToolFinished: (call: any) => void,
+ *   takePreface: () => string | null,
+ *   giveBackPreface: (text: string) => void,
  * }} parts
  */
-export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, tracker, page, afterReply }) {
+export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, tracker, page, afterReply, onToolFinished, takePreface, giveBackPreface }) {
   /** @type {ReturnType<typeof createReveal> | null} */
   let reveal = null;
   let sentAt = 0;
@@ -82,9 +85,12 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         thread.addNotice(event.message);
         break;
       case 'toolStarted':
+        thread.startTool(event);
+        break;
       case 'toolFinished':
-        // The page shows no tool calls, so there is nothing to repaint; their raw lines already reached the log.
-        return;
+        thread.finishTool(event);
+        onToolFinished(event);
+        break;
       case 'mood':
         thread.setMood(event.mood);
         reveal.mood();
@@ -124,9 +130,10 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     else paint();
   }
 
-  function request(text) {
+  function request(text, preface) {
     return {
       text,
+      preface,
       model: settings.model,
       effort: settings.effort,
       budgetUsd: settings.turnBudgetUsd,
@@ -145,6 +152,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     send(text) {
       const now = performance.now();
       sentAt = now;
+      const preface = takePreface();
       const takeoff = live.measure();
       tracker.sent({ effort: settings.effort, at: Date.now() });
       showUsage();
@@ -167,7 +175,9 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
           paint();
         },
       });
-      agent.send(request(text), onEvent).catch((error) => {
+      agent.send(request(text, preface), onEvent).catch((error) => {
+        // Claude never read the message, so what the user did on the cards is still news to it.
+        if (preface) giveBackPreface(preface);
         if (!thread.replying) return;
         const failure = {
           kind: error && error.kind ? error.kind : 'io',

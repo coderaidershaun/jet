@@ -2,6 +2,7 @@
 //! with the `fake-claude` program standing in for Claude Code itself. One test also runs
 //! a whole reply through `Conversation`, to the events and the saved thread.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -160,6 +161,8 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
             quanty: enabled("/q/quanty-mcp"),
             polysim: enabled("/p/polysim-mcp"),
         },
+        shared_mcp: BTreeMap::new(),
+        preface: None,
     };
     let (_, reply) = conversation.send(Arc::new(claude), message).unwrap();
     let events: Vec<Event> = reply.collect();

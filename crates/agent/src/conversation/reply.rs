@@ -18,7 +18,8 @@ pub(super) struct Context {
     pub dir: DataDir,
     pub transport: Arc<dyn Transport>,
     pub request: Request,
-    /// The user's words, without the local time line.
+    /// What Claude reads of the message, without the local time line: the preface, if any,
+    /// then the user's words.
     pub text: String,
     pub local_time: String,
     pub persona_name: String,
@@ -320,6 +321,7 @@ mod tests {
     use super::super::test_support::{Chat, message};
     use super::*;
     use crate::chat::Event;
+    use crate::conversation::Message;
     use crate::turn::scripted::{Script, Scripted, reply_lines};
 
     #[test]
@@ -345,7 +347,11 @@ mod tests {
             .then(Script::lines(reply_lines("third-session", "Third")));
         let chat = Chat::with_transport("reply-vanished", scripted);
         chat.send(message("hello"));
-        let events = chat.send(message("are you there?"));
+        let preface = "[Jet: the user started strat-a · te-b at 22:41]";
+        let events = chat.send(Message {
+            preface: Some(preface.to_owned()),
+            ..message("are you there?")
+        });
 
         let requests = chat.requests();
         assert_eq!(requests.len(), 3);
@@ -353,9 +359,22 @@ mod tests {
             requests[1].session,
             SessionMode::Resume(SessionId("old-session".into()))
         );
+        assert_eq!(requests[1].prompt, format!("{preface}\nare you there?"));
         assert_eq!(requests[2].session, SessionMode::New);
         assert!(requests[2].prompt.starts_with("[local time: "));
-        assert!(requests[2].prompt.ends_with("are you there?"));
+        assert!(
+            requests[2]
+                .prompt
+                .ends_with(&format!("\n{preface}\nare you there?"))
+        );
+        // The thread keeps only what the user wrote.
+        let thread = chat.conversation.history(10).unwrap();
+        let users: Vec<&str> = thread
+            .iter()
+            .filter(|shown| shown.entry.role == Role::User)
+            .map(|shown| shown.entry.text.as_str())
+            .collect();
+        assert_eq!(users, ["hello", "are you there?"]);
 
         let notices: Vec<&Event> = events
             .iter()

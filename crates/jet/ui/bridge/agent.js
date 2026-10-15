@@ -18,7 +18,7 @@ import { createTauriAgent } from './tauri-agent.js';
  * }} ShownEntry
  */
 /** @typedef {{ memory: string, user: string, recent: string, limits?: { memory: number, user: number, recent: number } }} Notes */
-/** @typedef {{ kind: 'busy' | 'claudeMissing' | 'claudeFailed' | 'timeout' | 'io' | 'badLink', message: string }} Failure */
+/** @typedef {{ kind: 'busy' | 'claudeMissing' | 'claudeFailed' | 'timeout' | 'io' | 'badLink' | 'library', message: string }} Failure */
 /** @typedef {{ inputTokens: number, cacheReadTokens: number, cacheCreationTokens: number, cacheCreation1hTokens: number, outputTokens: number, thinkingTokens: number, model: string }} Usage */
 
 /**
@@ -45,6 +45,7 @@ import { createTauriAgent } from './tauri-agent.js';
  * @property {string} localTime
  * @property {string | null} claudePath
  * @property {import('./settings.js').Settings['mcp']} mcp
+ * @property {string | null} preface   what the user did on an engine card since the last message, which Claude reads before the user's words
  */
 
 /**
@@ -59,6 +60,8 @@ import { createTauriAgent } from './tauri-agent.js';
  * @property {(notes: { memory: string, user: string, recent: string }) => Promise<Notes>} saveMemory
  * @property {(text: string) => Promise<string>} renderMarkdown
  * @property {(url: string) => Promise<void>} openLink
+ * @property {(server: string, tool: string, args: object) => Promise<any>} mcpCall   calls one of polysim's engine tools on the copy Jet keeps running; rejects with kind "library" when the server refused, is not running in Jet, or did not answer
+ * @property {() => Promise<void>} reloadLibraries   brings the running library servers in line with the saved settings
  * @property {(listener: (notes: Notes) => void) => () => void} onMemoryUpdated   returns the way to stop listening
  */
 

@@ -1,8 +1,10 @@
 // A pretend Claude for the browser. It keeps its history, session and notes in
 // storage, streams a reply as real stream-json lines with the typed events
-// made from them, and fails on demand when the user's words ask for it. It
-// stays the agent whenever the page runs outside Tauri.
+// made from them, and fails on demand when the user's words ask for it. It also
+// plays a pretend polysim, so the engine card can be tried. It stays the agent
+// whenever the page runs outside Tauri.
 
+import { POLYSIM_ENGINES } from './fixtures/polysim-engines.js';
 import { QUANTY_SEARCH } from './fixtures/quanty-search.js';
 import { renderMarkdown } from './markdown.js';
 import { BASE_CONTEXT_TOKENS, MESSAGES, MODEL_IDS, bodyFor, chunksOf, costFor, lines, moodFor, tokensIn, usageFor, wants, wireModelUsage, wireUsage } from './fake-script.js';
@@ -16,6 +18,13 @@ const NOT_FOUND_AT = ['~/.local/bin/claude', '/opt/homebrew/bin/claude', '/usr/l
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const bridgeError = (kind, message) => ({ kind, message });
+
+/** How many things a tool result lists, for the call's one-line summary. */
+function countOf(result) {
+  if (Array.isArray(result?.results)) return result.results.length + ' results';
+  if (Array.isArray(result?.engines)) return result.engines.length + (result.engines.length === 1 ? ' engine' : ' engines');
+  return 'done';
+}
 
 /**
  * @param {{
@@ -50,6 +59,10 @@ export function createFakeAgent({
   };
   const write = (name, value) => storage.setItem(KEY + name, JSON.stringify(value));
 
+  // The pretend polysim: its engines live as long as the page does, and nothing here trades.
+  const fleet = structuredClone(POLYSIM_ENGINES.result.engines);
+  let pidCounter = 50000;
+
   const listeners = new Set();
   /** @type {{ stopped: boolean, stop: () => void, stopSignal: Promise<void> } | null} */
   let running = null;
@@ -62,7 +75,42 @@ export function createFakeAgent({
     return saved;
   };
 
+  // Each listing is a new call, so its id counts up even after the page is reloaded.
+  const nextListing = () => {
+    const n = read('listings', 0) + 1;
+    write('listings', n);
+    return n;
+  };
+
   const cacheStatus = () => ({ lastRequestAt: read('lastRequestAt', null), ttlMinutes: CACHE_TTL_MINUTES, contextTokens: read('contextTokens', 0) });
+
+  /** One of polysim's engine tools, played on the pretend fleet. */
+  function engineTool(tool, args) {
+    if (tool === 'list_strategies') return { engines: structuredClone(fleet) };
+    if (!['start_strategy', 'stop_strategy', 'set_execution_mode'].includes(tool)) throw bridgeError('library', 'polysim has no tool called ' + tool);
+    const { strategy_id: strategyId, te_id: teId } = args;
+    const engine = fleet.find((one) => one.strategy_id === strategyId && one.te_id === teId);
+    const name = strategyId + ' · ' + teId;
+    if (!engine) throw bridgeError('library', 'polysim does not know ' + name);
+    const running = engine.state === 'running';
+    if (tool === 'start_strategy') {
+      if (running) throw bridgeError('library', name + ' is already running');
+      pidCounter += 1;
+      const consoleLog = '/Users/shaun/Code/DEVELOPMENT/polysim/logs/' + engine.bin + '-' + engine.mode + '-console.log';
+      Object.assign(engine, { state: 'running', pid: pidCounter, started_at: new Date(now()).toISOString(), exit_code: null, console_log: consoleLog });
+      return { strategy_id: strategyId, te_id: teId, pid: engine.pid, mode: engine.mode, console_log: consoleLog };
+    }
+    if (tool === 'stop_strategy') {
+      if (!running) throw bridgeError('library', name + ' is not running');
+      Object.assign(engine, { state: 'stopped', pid: null, started_at: null, exit_code: 0 });
+      return { strategy_id: strategyId, te_id: teId, exit_code: 0, forced: false, duration_ms: 1200 };
+    }
+    if (running) throw bridgeError('library', 'Stop ' + name + ' before changing its mode.');
+    if (!['off', 'sim', 'live'].includes(args.mode)) throw bridgeError('library', 'polysim has no mode called ' + args.mode);
+    const previous = engine.mode;
+    Object.assign(engine, { mode: args.mode, config_error: null });
+    return { strategy_id: strategyId, te_id: teId, previous, mode: args.mode, config_path: 'config/' + strategyId + '/' + teId + '.toml' };
+  }
 
   // A reply that throws must still end, or the page waits forever and refuses every later send as busy.
   function crashed(control, error, onEvent) {
@@ -124,11 +172,18 @@ export function createFakeAgent({
 
     const replyNumber = read('history', []).filter((entry) => entry.role === 'jet' && entry.status === 'complete').length + 1;
     const mood = moodFor(text, replyNumber);
-    const body = asks.quanty ? QUANTY_SEARCH.reply : bodyFor(text, replyNumber);
+    const answer = asks.quanty ? QUANTY_SEARCH.reply : asks.engines ? POLYSIM_ENGINES.reply : bodyFor(text, replyNumber);
+    // The preface is what the page told Claude about engine buttons; quoting it shows that it arrived.
+    const body = request.preface ? 'Noted: ' + request.preface + '\n\n' + answer : answer;
     let received = '';
     const calls = [];
     const withCalls = (entry) => (calls.length ? { ...entry, tools: calls } : entry);
     // Known before streaming, so the first line of the stream can already carry the input and cache counts.
+    const library = asks.quanty
+      ? { use: QUANTY_SEARCH.use, result: QUANTY_SEARCH.result, ok: true }
+      : asks.engines
+        ? { use: { ...POLYSIM_ENGINES.use, id: POLYSIM_ENGINES.use.id + '_' + nextListing() }, result: { engines: structuredClone(fleet) }, ok: true }
+        : null;
     const { usage, outputTokens, contextAfter } = usageFor({ contextBefore, userText: text, replyText: body, warm });
 
     const stopped = () => {
@@ -136,19 +191,18 @@ export function createFakeAgent({
       end({ kind: 'stopped', entry });
     };
 
-    async function searchLibrary() {
-      const { use, result } = QUANTY_SEARCH;
+    async function callLibrary({ use, result, ok }) {
       const [, server, tool] = use.name.split('__');
       emit({ kind: 'rawLine', line: lines.toolUse(sessionId, use) });
       emit({ kind: 'toolStarted', id: use.id, server, tool, input: use.input });
       const calledAt = now();
       await pause(toolMs);
       if (control.stopped) return false;
-      const summary = server + ' · ' + tool + ' · ' + result.results.length + ' results';
+      const summary = server + ' · ' + tool + ' · ' + (ok ? countOf(result) : 'failed');
       const durationMs = now() - calledAt;
-      emit({ kind: 'rawLine', line: lines.toolResult(sessionId, { id: use.id, result }) });
-      emit({ kind: 'toolFinished', id: use.id, server, tool, ok: true, result, summary, durationMs });
-      calls.push({ id: use.id, server, tool, input: use.input, ok: true, result, summary, durationMs });
+      emit({ kind: 'rawLine', line: lines.toolResult(sessionId, { id: use.id, result, isError: !ok }) });
+      emit({ kind: 'toolFinished', id: use.id, server, tool, ok, result, summary, durationMs });
+      calls.push({ id: use.id, server, tool, input: use.input, ok, result, summary, durationMs });
       return true;
     }
 
@@ -156,7 +210,7 @@ export function createFakeAgent({
     if (control.stopped) return stopped();
 
     const ttftMs = now() - startedAt;
-    if (asks.quanty && !(await searchLibrary())) return stopped();
+    if (library && !(await callLibrary(library))) return stopped();
     emit({ kind: 'rawLine', line: lines.messageStart(sessionId, { model, usage, ttftMs }) });
     if (mood) {
       emit({ kind: 'rawLine', line: lines.delta(sessionId, 'mood: ' + mood + '\n') });
@@ -246,6 +300,14 @@ export function createFakeAgent({
     async renderMarkdown(text) {
       return renderMarkdown(text);
     },
+
+    async mcpCall(server, tool, args) {
+      await wait(toolMs);
+      if (server !== 'polysim') throw bridgeError('library', 'The pretend agent has no ' + server + ' server.');
+      return engineTool(tool, args);
+    },
+
+    async reloadLibraries() {},
 
     async openLink(url) {
       if (!/^(https?:|mailto:)/i.test(url)) throw bridgeError('badLink', 'Only http, https and mailto links open: ' + url);

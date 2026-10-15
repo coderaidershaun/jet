@@ -1,10 +1,12 @@
 // The settings sheet: a dialog that slides in from the right (or up from the
-// bottom on a phone), holds the ten sections, and saves a short while after
-// the last edit.
+// bottom on a phone), holds the eleven sections, and saves a short while after
+// the last edit. Changes to the libraries also make the page look at the running
+// copies again, a switch after its save and a program or folder when the sheet closes.
 
 import { displayName } from '../../bridge/settings.js';
 import { h, icon } from '../dom.js';
 import { buildClaude } from './claude.js';
+import { buildLibraries } from './libraries.js';
 import { buildLook } from './look.js';
 import { buildMemory } from './memory.js';
 import { buildModel } from './model.js';
@@ -32,18 +34,26 @@ const SAVE_AFTER_EDIT_MS = 600;
 export function createSheet({ dialog, context, onChange, save }) {
   let saveTimer = 0;
   let claudePathEdited = false;
+  // A switch reloads the libraries after its save. A typed program or folder waits for the sheet to close, so a half-typed path never restarts polysim.
+  let reloadAfterSave = false;
+  let reloadAtClose = false;
   let opener = null;
   // The Rust side looks for Claude Code at the saved path, so a new path is checked only after its save.
   const saveEdits = async () => {
     const recheckClaude = claudePathEdited;
+    const reload = reloadAfterSave;
     claudePathEdited = false;
+    reloadAfterSave = false;
     await save();
     if (recheckClaude) claude.refresh();
+    if (reload) ctx.agent.reloadLibraries().catch((error) => console.warn('the libraries could not be reloaded:', error));
   };
   const changed = (kind) => {
     onChange(kind);
     if (kind === 'persona') paintNames(body, displayName(ctx.settings));
     if (kind === 'claude') claudePathEdited = true;
+    if (kind === 'libraries') reloadAfterSave = true;
+    if (kind === 'library-path') reloadAtClose = true;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveEdits, SAVE_AFTER_EDIT_MS);
   };
@@ -54,7 +64,7 @@ export function createSheet({ dialog, context, onChange, save }) {
   const model = buildModel(ctx);
   const memory = buildMemory(ctx);
   const claude = buildClaude(ctx);
-  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), ...buildLook(ctx), model.el, memory.el, buildWorkstation(ctx), ...claude.el);
+  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), ...buildLook(ctx), model.el, memory.el, buildLibraries(ctx), buildWorkstation(ctx), ...claude.el);
 
   const closeButton = h('button', { class: 'icon-button', type: 'button', 'aria-label': 'Close settings', onClick: () => sheet.close() }, icon('close'));
   dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), closeButton), body);
@@ -88,6 +98,12 @@ export function createSheet({ dialog, context, onChange, save }) {
 
     close() {
       if (!dialog.open) return;
+      if (reloadAtClose) {
+        reloadAtClose = false;
+        reloadAfterSave = true;
+        clearTimeout(saveTimer);
+        saveEdits().catch((error) => console.warn('the settings could not be saved:', error));
+      }
       dialog.classList.remove('open');
       setTimeout(() => {
         dialog.close();

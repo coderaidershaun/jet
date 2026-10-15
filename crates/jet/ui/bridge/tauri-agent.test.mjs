@@ -84,11 +84,14 @@ test('with window.__TAURI__ the agent calls each command with its argument keys 
   await agent.saveMemory({ memory: 'm', user: 'u', recent: 'r', limits: { memory: 1, user: 1, recent: 1 } });
   assert.equal(await agent.renderMarkdown('*x*'), '<p>x</p>');
   await agent.openLink('https://example.com');
+  stub.replies.set('mcp_call', { engines: [] });
+  assert.deepEqual(await agent.mcpCall('polysim', 'list_strategies', {}), { engines: [] });
+  await agent.reloadLibraries();
 
   const commands = stub.calls.map(([command]) => command);
   assert.deepEqual(commands, [
     'send_message', 'agent_status', 'load_history', 'stop_reply', 'forget_conversation',
-    'load_memory', 'save_memory', 'render_markdown', 'open_link',
+    'load_memory', 'save_memory', 'render_markdown', 'open_link', 'mcp_call', 'mcp_reload',
   ]);
   const argsOf = (command) => stub.calls.find(([name]) => name === command)[1];
   assert.deepEqual(Object.keys(argsOf('send_message')).sort(), ['events', 'request']);
@@ -97,7 +100,8 @@ test('with window.__TAURI__ the agent calls each command with its argument keys 
   assert.deepEqual(argsOf('save_memory'), { notes: { memory: 'm', user: 'u', recent: 'r' } });
   assert.deepEqual(argsOf('render_markdown'), { text: '*x*' });
   assert.deepEqual(argsOf('open_link'), { url: 'https://example.com' });
-  for (const command of ['agent_status', 'load_history', 'stop_reply', 'forget_conversation', 'load_memory']) {
+  assert.deepEqual(argsOf('mcp_call'), { server: 'polysim', tool: 'list_strategies', args: {} });
+  for (const command of ['agent_status', 'load_history', 'stop_reply', 'forget_conversation', 'load_memory', 'mcp_reload']) {
     assert.equal(argsOf(command), undefined, command + ' takes no arguments');
   }
 
@@ -108,6 +112,9 @@ test('with window.__TAURI__ the agent calls each command with its argument keys 
   const busy = { kind: 'busy', message: 'Jet is still answering' };
   stub.failures.set('forget_conversation', busy);
   await assert.rejects(agent.forget(), (error) => error.kind === 'busy' && error.message === busy.message);
+  const notShared = { kind: 'library', message: 'Jet is not running polysim itself' };
+  stub.failures.set('mcp_call', notShared);
+  await assert.rejects(agent.mcpCall('polysim', 'start_strategy', {}), (error) => error.kind === 'library' && error.message === notShared.message);
 
   const notes = [];
   const stopFirst = agent.onMemoryUpdated((payload) => notes.push(payload));

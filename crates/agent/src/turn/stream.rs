@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use crate::chat::{McpStatus, SessionId, Usage};
+use crate::chat::{McpStatus, SessionId, Usage, content_value};
 
 /// What one stdout line means for a turn.
 #[derive(Debug, Clone, PartialEq)]
@@ -153,7 +153,7 @@ fn tool_results(value: &Value) -> Line {
         .map(|block| ToolResult {
             id: block["tool_use_id"].as_str().unwrap_or_default().to_owned(),
             is_error: block["is_error"].as_bool().unwrap_or(false),
-            result: own_structured.map_or_else(|| text_result(&block["content"]), Value::clone),
+            result: own_structured.map_or_else(|| content_value(&block["content"]), Value::clone),
         })
         .collect();
     if results.is_empty() {
@@ -161,22 +161,6 @@ fn tool_results(value: &Value) -> Line {
     } else {
         Line::ToolResults(results)
     }
-}
-
-/// A result's text as JSON when it is JSON, else as a string. The content is a string or
-/// a list of blocks, and only the text blocks count.
-fn text_result(content: &Value) -> Value {
-    let text = match content {
-        Value::String(text) => text.clone(),
-        Value::Array(items) => items
-            .iter()
-            .filter(|item| item["type"] == "text")
-            .filter_map(|item| item["text"].as_str())
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => String::new(),
-    };
-    serde_json::from_str(&text).unwrap_or(Value::String(text))
 }
 
 fn result(value: &Value) -> ResultLine {

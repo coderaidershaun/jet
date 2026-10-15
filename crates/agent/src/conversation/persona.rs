@@ -2,6 +2,8 @@
 //! shape it. The prompt holds no clock, so the same inputs always give the same bytes and
 //! Claude's prompt cache keeps hitting.
 
+use std::collections::BTreeSet;
+
 use crate::chat::{Effort, McpServers, Model, Notes, Persona, Tone};
 
 const TEMPLATE: &str = include_str!("persona.md");
@@ -11,23 +13,42 @@ const PERSONA_NOTES_LIMIT: usize = 600;
 
 const ANNOYED_LINE: &str = "- annoyed: the user keeps repeating a mistake or ignoring a risk you already raised. Say so kindly, once.\n";
 
+/// What the prompt says about a quanty import and a polysim engine. The `PER_REPLY` words
+/// are for a library that Claude Code starts for each reply and closes after it; the
+/// `SHARED` words are for one the app keeps running.
+const INGEST_PER_REPLY: &str = "It runs only while your reply runs, so you must keep checking `mcp__quanty__ingest_status` until it is no longer running, and each check is another paid request.";
+const INGEST_SHARED: &str = "The job keeps running after your reply ends; check `mcp__quanty__ingest_status` only when the user asks how it is going.";
+const ENGINE_PER_REPLY: &str =
+    "An engine you start stops when your reply ends, so say so before you start one.";
+const ENGINE_SHARED: &str = "An engine you or the user start keeps running after your reply ends, until it is stopped or Jet closes.";
+
 /// How far the behaviour wheel must move from the centre before Jet takes a side.
 const NEUTRAL_RADIUS: f64 = 0.2;
 const STRONG: f64 = 0.6;
 
-/// The whole system prompt: who Jet is, how to talk, and the three notes.
-pub(super) fn compose(persona: &Persona, tone: &Tone, notes: &Notes) -> String {
+/// The whole system prompt: who Jet is, how to talk, and the three notes. `shared` names the
+/// libraries the app keeps running, which the prompt says outlive a reply. Names only, never
+/// addresses: an address changes at every launch and would end every conversation.
+pub(super) fn compose(
+    persona: &Persona,
+    tone: &Tone,
+    notes: &Notes,
+    shared: &BTreeSet<&str>,
+) -> String {
     let annoyed = if tone.candid >= NEUTRAL_RADIUS {
         ANNOYED_LINE
     } else {
         ""
     };
+    let (ingest, engine) = lifetimes(shared);
     let mut prompt = fill(
         TEMPLATE,
         &[
             ("name", &persona.name),
             ("job_title", &persona.job_title),
             ("annoyed_line", annoyed),
+            ("ingest_lifetime", ingest),
+            ("engine_lifetime", engine),
         ],
     );
     for line in tone_lines(tone) {
@@ -52,19 +73,36 @@ pub(super) fn compose(persona: &Persona, tone: &Tone, notes: &Notes) -> String {
     prompt
 }
 
+/// What the prompt says about how long a quanty import and a polysim engine last. They
+/// outlive the reply when the app keeps that library running.
+fn lifetimes(shared: &BTreeSet<&str>) -> (&'static str, &'static str) {
+    let ingest = if shared.contains("quanty") {
+        INGEST_SHARED
+    } else {
+        INGEST_PER_REPLY
+    };
+    let engine = if shared.contains("polysim") {
+        ENGINE_SHARED
+    } else {
+        ENGINE_PER_REPLY
+    };
+    (ingest, engine)
+}
+
 /// A fingerprint of everything baked into a session's prompt: every fixed word of the prompt,
-/// the model, the thinking level and which servers are enabled. A change to any of them
-/// starts a fresh conversation. The notes are left out on purpose: the review updates them
-/// all the time, and that must never end a session.
+/// the model, the thinking level, which servers are enabled and which of them the app keeps
+/// running. A change to any of them starts a fresh conversation. The notes are left out on
+/// purpose: the review updates them all the time, and that must never end a session.
 pub(super) fn prompt_hash(
     persona: &Persona,
     tone: &Tone,
     model: Model,
     effort: Effort,
     mcp: &McpServers,
+    shared: &BTreeSet<&str>,
 ) -> String {
     let mut hash = Fnv1a::new();
-    let prompt = compose(persona, tone, &Notes::default());
+    let prompt = compose(persona, tone, &Notes::default(), shared);
     let servers = mcp.enabled().map(|(name, _)| name);
     let parts = [prompt.as_str(), model.alias(), effort.alias()]
         .into_iter()
@@ -177,6 +215,8 @@ impl Fnv1a {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::chat::{McpServer, Mood};
 
@@ -188,6 +228,7 @@ mod tests {
                 playful: 0.0,
             },
             &Notes::default(),
+            &BTreeSet::new(),
         )
     }
 
@@ -220,7 +261,7 @@ mod tests {
             memory: "- likes {name}".into(),
             ..Notes::default()
         };
-        let prompt = compose(&persona, &Tone::default(), &notes);
+        let prompt = compose(&persona, &Tone::default(), &notes, &BTreeSet::new());
         assert!(
             prompt.starts_with("You are {job_title}, the user's {name}. "),
             "{prompt}"
@@ -244,25 +285,49 @@ mod tests {
             "mcp__polysim__",
             "listed mode is live",
             "stops when your reply ends",
+            "keep checking `mcp__quanty__ingest_status`",
+            "starts with `Jet:`",
         ] {
             assert!(prompt.contains(rule), "the prompt lost: {rule}");
         }
         assert!(!prompt.contains("You have no tools"));
+        assert!(!prompt.contains("keeps running after your reply ends"));
+
+        // A library the app keeps running outlives the reply, and the prompt says so.
+        let compose_with = |shared: &[&str]| {
+            let shared: BTreeSet<&str> = shared.iter().copied().collect();
+            compose(
+                &Persona::default(),
+                &Tone::default(),
+                &Notes::default(),
+                &shared,
+            )
+        };
+        let both = compose_with(&["polysim", "quanty"]);
+        assert!(both.contains("The job keeps running after your reply ends"));
+        assert!(both.contains("keeps running after your reply ends, until it is stopped"));
+        assert!(!both.contains("stops when your reply ends"));
+        assert!(!both.contains("keep checking `mcp__quanty__ingest_status`"));
+        assert!(both.contains("starts with `Jet:`"));
+        let polysim_only = compose_with(&["polysim"]);
+        assert!(polysim_only.contains("keep checking `mcp__quanty__ingest_status`"));
+        assert!(!polysim_only.contains("stops when your reply ends"));
     }
 
     #[test]
     fn the_fingerprint_of_the_defaults_is_pinned() {
-        let hash = |mcp: &McpServers| {
+        let hash = |mcp: &McpServers, shared: &[&str]| {
             prompt_hash(
                 &Persona::default(),
                 &Tone::default(),
                 Model::Sonnet,
                 Effort::Medium,
                 mcp,
+                &shared.iter().copied().collect(),
             )
         };
         let none = McpServers::default();
-        assert_eq!(hash(&none), "709cf46646a7b14e");
+        assert_eq!(hash(&none, &[]), "951e6e3ef93bc065");
         let quanty = McpServers {
             quanty: McpServer {
                 enabled: true,
@@ -270,13 +335,27 @@ mod tests {
             },
             ..McpServers::default()
         };
-        assert_ne!(hash(&quanty), hash(&none));
+        assert_ne!(hash(&quanty, &[]), hash(&none, &[]));
+        // Sharing a library changes what the prompt says about it, so it starts a new
+        // conversation; the address it is shared at never reaches the prompt.
+        assert_ne!(hash(&quanty, &["quanty"]), hash(&quanty, &[]));
     }
 
     #[test]
     fn prompt_has_no_timestamp() {
-        let first = compose(&Persona::default(), &Tone::default(), &Notes::default());
-        let second = compose(&Persona::default(), &Tone::default(), &Notes::default());
+        let none = BTreeSet::new();
+        let first = compose(
+            &Persona::default(),
+            &Tone::default(),
+            &Notes::default(),
+            &none,
+        );
+        let second = compose(
+            &Persona::default(),
+            &Tone::default(),
+            &Notes::default(),
+            &none,
+        );
         assert_eq!(first, second);
         assert!(!first.contains("[local time"));
     }

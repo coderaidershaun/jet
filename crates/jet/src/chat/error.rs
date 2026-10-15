@@ -1,6 +1,6 @@
 //! The error every chat command fails with, sent to the page as a kind and a message.
 
-use agent::{ConversationError, Failure, MemoryError, TransportError, TurnError};
+use agent::{ConversationError, Failure, McpError, MemoryError, TransportError, TurnError};
 use serde::Serialize;
 
 use crate::settings;
@@ -16,6 +16,9 @@ pub enum BridgeError {
     Io(String),
     #[error("{0}")]
     BadLink(String),
+    /// A library call the page made failed, in words the page can show on the engine card.
+    #[error("{0}")]
+    Library(String),
 }
 
 impl BridgeError {
@@ -25,6 +28,7 @@ impl BridgeError {
             BridgeError::ClaudeMissing(_) => "claudeMissing",
             BridgeError::Io(_) => "io",
             BridgeError::BadLink(_) => "badLink",
+            BridgeError::Library(_) => "library",
         }
     }
 }
@@ -51,6 +55,12 @@ impl From<ConversationError> for BridgeError {
 impl From<MemoryError> for BridgeError {
     fn from(error: MemoryError) -> BridgeError {
         BridgeError::Io(error.to_string())
+    }
+}
+
+impl From<McpError> for BridgeError {
+    fn from(error: McpError) -> BridgeError {
+        BridgeError::Library(error.to_string())
     }
 }
 
@@ -95,11 +105,20 @@ mod tests {
                 BridgeError::BadLink("nope".into()),
                 json!({"kind": "badLink", "message": "nope"}),
             ),
+            (
+                BridgeError::Library("not shared".into()),
+                json!({"kind": "library", "message": "not shared"}),
+            ),
         ];
         for (error, expected) in cases {
             assert_eq!(serde_json::to_value(&error).unwrap(), expected);
         }
         let from_agent = BridgeError::from(ConversationError::Busy);
         assert_eq!(serde_json::to_value(&from_agent).unwrap()["kind"], "busy");
+        let from_server = BridgeError::from(McpError::Tool("strat-x is not running".into()));
+        assert_eq!(
+            serde_json::to_value(&from_server).unwrap(),
+            json!({"kind": "library", "message": "strat-x is not running"})
+        );
     }
 }

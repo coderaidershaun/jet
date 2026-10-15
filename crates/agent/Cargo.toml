@@ -13,8 +13,14 @@ path = "src/lib.rs"
 name = "fake-claude"
 path = "src/bin/fake-claude.rs"
 
+# A stand-in for a library's MCP server: the contract tests start it instead of quanty or polysim.
+[[bin]]
+name = "fake-mcp"
+path = "src/bin/fake-mcp.rs"
+
 [dependencies]
 pulldown-cmark = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+ureq = { workspace = true }

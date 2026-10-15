@@ -22,6 +22,11 @@
   font-size: var(--text-size); line-height: var(--text-line);
   overflow-wrap: anywhere;
 }
+/* A Jet row is the lane and then the reply: the cards of its tool calls above the bubble. */
+.reply { display: flex; flex: 1 1 auto; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; max-width: min(560px, calc(100% - var(--lane) - 8px)); }
+.reply > .bubble { max-width: 100%; }
+.cards { display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
+.cards:empty { display: none; }
 .row-jet .bubble { background: var(--bubble-jet); }
 .row-user .bubble { background: var(--bubble-user); color: var(--on-user); max-width: min(560px, 78%, calc(100% - var(--lane) - 8px)); }
 .row-user .body { white-space: pre-wrap; }

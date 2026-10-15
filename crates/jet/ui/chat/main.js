@@ -16,6 +16,8 @@ import { createDrawerView } from './drawer/view.js';
 import { PAGE_NAMES, createPageState } from './page-state.js';
 import { createSheet } from './settings/sheet.js';
 import { createLive } from './stage/live.js';
+import { createEngineCards } from './thread/cards/engines-view.js';
+import { RESULT_CARDS } from './thread/cards/registry.js';
 import { createFollow } from './thread/scroll.js';
 import { createThread } from './thread/store.js';
 import { createThreadView } from './thread/view.js';
@@ -51,6 +53,22 @@ async function start() {
 
   const thread = createThread();
   thread.load(history);
+  const engines = createEngineCards({
+    call: (tool, args) => agent.mcpCall('polysim', tool, args),
+    onAction: (line) => {
+      thread.addNotice(line);
+      turn.paint();
+    },
+    openWorkstation: (row) => {
+      settings.workstation.strategyId = row.strategyId;
+      settings.workstation.links = [row.linkBind];
+      saveSettings(settings);
+      workstation.settingsChanged();
+      pages.show('workstation');
+    },
+  });
+  engines.restore(history);
+  RESULT_CARDS['polysim/list_strategies'] = (card) => engines.card(card.call);
   const follow = createFollow();
   const composer = createComposer({ empty: history.length === 0 });
   const tracker = createUsageTracker();
@@ -172,6 +190,9 @@ async function start() {
     tracker,
     page: { headerStatus: $('header-status'), announce: $('announce') },
     afterReply: refreshStatus,
+    onToolFinished: (call) => engines.toolFinished(call),
+    takePreface: () => engines.takePreface(),
+    giveBackPreface: (text) => engines.giveBackPreface(text),
   });
 
   function paintPersona() {

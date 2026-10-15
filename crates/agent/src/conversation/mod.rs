@@ -6,6 +6,7 @@ mod reply;
 mod review;
 mod session_policy;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -37,6 +38,12 @@ pub struct Message {
     pub local_time: String,
     /// The MCP servers Claude may use for this answer.
     pub mcp: McpServers,
+    /// The address of each library the app keeps running for the session, by name. Claude
+    /// reaches those there; any other enabled library it starts itself for the reply.
+    pub shared_mcp: BTreeMap<String, String>,
+    /// A line the app puts before the user's words in what Claude reads, such as
+    /// `[Jet: the user started ... at 22:41]`. The saved thread keeps only the user's words.
+    pub preface: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -106,37 +113,40 @@ impl Conversation {
         let claim = Claim::take(&self.answering).ok_or(ConversationError::Busy)?;
         let now = now_ms();
         let notes = Notes::load(&self.dir)?;
+        let shared = shared_names(&message);
         let prompt_hash = persona::prompt_hash(
             &message.persona,
             &message.tone,
             message.model,
             message.effort,
             &message.mcp,
+            &shared,
         );
         let saved = Session::load(&self.dir)?;
         let decision = decide(saved.as_ref(), &prompt_hash, now);
 
         let user_entry = Transcript::open(&self.dir).append(NewEntry::user(&message.text), now)?;
+        let words = what_claude_reads(&message);
         let prompt = match decision.mode {
-            SessionMode::New => reply::first_message(&message.local_time, &message.text),
-            _ => message.text.clone(),
+            SessionMode::New => reply::first_message(&message.local_time, &words),
+            _ => words.clone(),
         };
         let request = Request {
             prompt,
-            system_prompt: persona::compose(&message.persona, &message.tone, &notes),
+            system_prompt: persona::compose(&message.persona, &message.tone, &notes, &shared),
             model: message.model,
             effort: message.effort,
             budget_usd: message.budget_usd,
             session: decision.mode,
             schema: None,
-            mcp_config: mcp_config(&message.mcp),
+            mcp_config: mcp_config(&message.mcp, &message.shared_mcp),
         };
         let started = Turn::start(&*transport, &request);
         let context = reply::Context {
             dir: self.dir.clone(),
             transport,
             request,
-            text: message.text,
+            text: words,
             local_time: message.local_time,
             notice: decision
                 .reason
@@ -187,6 +197,25 @@ impl Conversation {
     }
 }
 
+/// The libraries that are both enabled and kept running by the app: the ones whose lifetime
+/// the prompt describes. Names only, because an address must never reach the prompt.
+fn shared_names(message: &Message) -> BTreeSet<&'static str> {
+    message
+        .mcp
+        .enabled()
+        .map(|(name, _)| name)
+        .filter(|name| message.shared_mcp.contains_key(*name))
+        .collect()
+}
+
+/// What Claude reads of the message: the preface, if there is one, then the user's words.
+fn what_claude_reads(message: &Message) -> String {
+    match message.preface.as_deref().map(str::trim) {
+        Some(preface) if !preface.is_empty() => format!("{preface}\n{}", message.text),
+        _ => message.text.clone(),
+    }
+}
+
 /// An entry with its text rendered for display.
 pub(super) fn shown(entry: Entry) -> ShownEntry {
     let html = match entry.role {
@@ -212,6 +241,8 @@ mod test_support {
             budget_usd: 1.0,
             local_time: "Tue 14 Oct 2026, 11:20".to_owned(),
             mcp: McpServers::default(),
+            shared_mcp: BTreeMap::new(),
+            preface: None,
         }
     }
 

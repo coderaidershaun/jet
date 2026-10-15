@@ -2,6 +2,9 @@
 //! channel that streams a reply to it, and the timer that keeps Jet's notes current.
 
 mod error;
+// Open to the crate because Tauri's list of commands must name each command where it is
+// defined; a re-export does not carry what the command macro generates.
+pub(crate) mod libraries;
 mod review_timer;
 
 use std::path::{Path, PathBuf};
@@ -10,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use agent::{
     CacheStatus, ClaudeCli, Conversation, DataDir, Effort, Event, Lines, MEMORY_LIMIT, McpServers,
-    Message, Model, Notes, Persona, RECENT_LIMIT, Request, ShownEntry, Stopper, Tone, Transport,
-    TransportError, USER_LIMIT,
+    Message, Model, Notes, Persona, RECENT_LIMIT, Request, SharedServers, ShownEntry, Stopper,
+    Tone, Transport, TransportError, USER_LIMIT,
 };
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
@@ -174,6 +177,10 @@ pub struct SendRequest {
     claude_path: Option<PathBuf>,
     #[serde(default)]
     mcp: McpServers,
+    /// What the user did on an engine card since the last message; Claude reads it before
+    /// the user's words.
+    #[serde(default)]
+    preface: Option<String>,
 }
 
 /// Saves the user's message, starts the answer on its own thread and returns the saved
@@ -182,6 +189,7 @@ pub struct SendRequest {
 pub async fn send_message(
     app: AppHandle,
     state: State<'_, ChatState>,
+    libraries: State<'_, SharedServers>,
     request: SendRequest,
     events: Channel<Event>,
 ) -> Result<ShownEntry, BridgeError> {
@@ -199,6 +207,8 @@ pub async fn send_message(
         budget_usd: request.budget_usd,
         local_time: request.local_time,
         mcp: request.mcp,
+        shared_mcp: libraries.urls(),
+        preface: request.preface,
     };
     let (user_entry, mut reply) = state.conversation.send(transport, message)?;
     state.review.note_activity();

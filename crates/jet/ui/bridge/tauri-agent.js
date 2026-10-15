@@ -37,6 +37,8 @@ export function createTauriAgent({ core, event }) {
     saveMemory: ({ memory, user, recent }) => call('save_memory', { notes: { memory, user, recent } }),
     renderMarkdown: (text) => call('render_markdown', { text }),
     openLink: (url) => call('open_link', { url }),
+    mcpCall: (server, tool, args) => call('mcp_call', { server, tool, args }),
+    reloadLibraries: () => call('mcp_reload'),
 
     send(request, onEvent) {
       const events = new core.Channel();

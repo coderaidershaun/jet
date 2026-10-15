@@ -1,6 +1,8 @@
 //! The exact command line, environment and MCP server config for a request. The flags and
 //! their order stay fixed so that Claude's prompt cache keeps hitting.
 
+use std::collections::BTreeMap;
+
 use serde_json::{Map, Value, json};
 
 use crate::chat::{McpServer, McpServers};
@@ -30,17 +32,33 @@ const SERVER_TIMEOUT_MS: u64 = 300_000;
 /// folder and the program travel as arguments, and no path ever needs quoting here.
 const LAUNCH_IN_FOLDER: &str = r#"cd "$1" && exec "$2""#;
 
-/// The MCP servers as Claude Code's config JSON, or `None` when none is enabled. The text
-/// depends on the settings alone, so it is the same bytes on every turn.
-pub(crate) fn mcp_config(servers: &McpServers) -> Option<String> {
+/// The MCP servers as Claude Code's config JSON, or `None` when none is enabled. A server in
+/// `shared` is reached at its address; any other is started by Claude Code for the reply.
+/// The text depends on the settings and on those addresses, which stay the same for the
+/// whole session, so it is the same bytes on every turn.
+pub(crate) fn mcp_config(
+    servers: &McpServers,
+    shared: &BTreeMap<String, String>,
+) -> Option<String> {
     let launches: Map<String, Value> = servers
         .enabled()
-        .map(|(name, server)| (name.to_owned(), launch(name, server)))
+        .map(|(name, server)| {
+            let entry = match shared.get(name) {
+                Some(url) => reach(url),
+                None => launch(name, server),
+            };
+            (name.to_owned(), entry)
+        })
         .collect();
     if launches.is_empty() {
         return None;
     }
     Some(json!({ "mcpServers": launches }).to_string())
+}
+
+/// A server that is already running, reached by its address.
+fn reach(url: &str) -> Value {
+    json!({"timeout": SERVER_TIMEOUT_MS, "type": "http", "url": url})
 }
 
 fn launch(name: &str, server: &McpServer) -> Value {
@@ -119,12 +137,16 @@ pub(super) fn args(request: &Request) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use serde_json::json;
 
     use super::*;
     use crate::chat::{Effort, McpServer, Model, SessionId};
 
     const BOTH_SERVERS: &str = r#"{"mcpServers":{"polysim":{"args":["-c","cd \"$1\" && exec \"$2\"","polysim","/p","/p/polysim-mcp"],"command":"/bin/sh","timeout":300000},"quanty":{"args":["-c","cd \"$1\" && exec \"$2\"","quanty","/q","/q/quanty-mcp"],"command":"/bin/sh","timeout":300000}}}"#;
+
+    const QUANTY_SHARED: &str = r#"{"mcpServers":{"polysim":{"args":["-c","cd \"$1\" && exec \"$2\"","polysim","/p","/p/polysim-mcp"],"command":"/bin/sh","timeout":300000},"quanty":{"timeout":300000,"type":"http","url":"http://127.0.0.1:4321/mcp"}}}"#;
 
     const ALLOWED: &str = "mcp__quanty__search,mcp__quanty__answer,mcp__quanty__list_documents,\
         mcp__quanty__read_page,mcp__quanty__health,mcp__quanty__ingest_pdf,\
@@ -164,14 +186,26 @@ mod tests {
             quanty: server("/q/quanty-mcp", Some("/q")),
             polysim: server("/p/polysim-mcp", Some("/p")),
         };
-        assert_eq!(mcp_config(&both).as_deref(), Some(BOTH_SERVERS));
-        assert_eq!(mcp_config(&McpServers::default()), None);
+        let nothing_shared = BTreeMap::new();
+        assert_eq!(
+            mcp_config(&both, &nothing_shared).as_deref(),
+            Some(BOTH_SERVERS)
+        );
+        assert_eq!(mcp_config(&McpServers::default(), &nothing_shared), None);
+        let quanty_shared =
+            BTreeMap::from([("quanty".to_owned(), "http://127.0.0.1:4321/mcp".to_owned())]);
+        assert_eq!(
+            mcp_config(&both, &quanty_shared).as_deref(),
+            Some(QUANTY_SHARED)
+        );
+        // The address of a library that is switched off emits nothing.
+        assert_eq!(mcp_config(&McpServers::default(), &quanty_shared), None);
         let no_folder = McpServers {
             quanty: server("/q/quanty-mcp", None),
             ..McpServers::default()
         };
         assert_eq!(
-            mcp_config(&no_folder).as_deref(),
+            mcp_config(&no_folder, &nothing_shared).as_deref(),
             Some(r#"{"mcpServers":{"quanty":{"command":"/q/quanty-mcp","timeout":300000}}}"#)
         );
 

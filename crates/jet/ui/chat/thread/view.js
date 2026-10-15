@@ -1,11 +1,12 @@
 // Draws the thread's rows: bubbles with their grouping and tails, day and
-// notice pills, the lane beside each Jet message, the waiting dots, the error
-// and stopped bubbles, code blocks with Copy, and links. A row's node is kept
-// for as long as the row lives, so the live Jet standing in a lane is never
-// thrown away by a redraw.
+// notice pills, the lane beside each Jet message, the cards of tool calls above a
+// reply, the waiting dots, the error and stopped bubbles, code blocks with Copy, and
+// links. A row's node is kept for as long as the row lives, so the live Jet standing
+// in a lane is never thrown away by a redraw.
 
 import { clockTime } from '../clock.js';
 import { h } from '../dom.js';
+import { createCardList } from './cards/list.js';
 
 const LOGIN_HINT = /log ?in/i;
 
@@ -17,7 +18,7 @@ const LOGIN_HINT = /log ?in/i;
  * }} options
  */
 export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follow, handlers }) {
-  /** @type {Map<string, { el: HTMLElement, lane: HTMLElement | null, signature: string }>} */
+  /** @type {Map<string, { el: HTMLElement, lane: HTMLElement | null, cards: ReturnType<typeof createCardList> | null, signature: string }>} */
   const nodes = new Map();
   let liveKey = null;
 
@@ -86,20 +87,31 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     const { el } = record;
     el.className = 'row row-' + row.type + (row.first ? ' first' : '') + (row.last ? ' last' : '');
     if (row.type === 'lane') return;
+    if (record.cards) record.cards.sync(row.type === 'jet' ? row.entry.tools ?? [] : []);
     fillBubble(el.querySelector('.bubble'), row, isFinal);
   }
 
   function create(row) {
-    if (row.type === 'day') return { el: h('div', { class: 'pill pill-day', text: row.label }), lane: null, signature: '' };
-    if (row.type === 'notice') return { el: h('div', { class: 'pill pill-notice', role: 'status', text: row.message }), lane: null, signature: '' };
+    if (row.type === 'day') return { el: h('div', { class: 'pill pill-day', text: row.label }), lane: null, cards: null, signature: '' };
+    if (row.type === 'notice') return { el: h('div', { class: 'pill pill-notice', role: 'status', text: row.message }), lane: null, cards: null, signature: '' };
     const lane = row.type === 'user' ? null : h('div', { class: 'lane' });
-    const el = h('div', {}, lane, row.type === 'lane' ? null : h('div', { class: 'bubble' }));
-    return { el, lane, signature: '' };
+    if (row.type !== 'jet') {
+      const el = h('div', {}, lane, row.type === 'lane' ? null : h('div', { class: 'bubble' }));
+      return { el, lane, cards: null, signature: '' };
+    }
+    const cardsEl = h('div', { class: 'cards' });
+    const el = h('div', {}, lane, h('div', { class: 'reply' }, cardsEl, h('div', { class: 'bubble' })));
+    return { el, lane, cards: createCardList(cardsEl), signature: '' };
   }
+
+  // What the cards need to know about each call: which ones there are and how each stands.
+  const callStates = (entry) => (entry.tools ?? [])
+    .map((call) => call.id + ':' + (call.unfinished ? 'unfinished' : call.ok === undefined ? 'running' : call.ok ? 'done' : 'failed'))
+    .join(' ');
 
   const signatureOf = (row, isFinal) => {
     const { entry, failure } = row;
-    const shown = entry && [entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at];
+    const shown = entry && [entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at, callStates(entry)];
     return JSON.stringify([row.type, row.label, row.message, row.first, row.last, isFinal, shown, failure && failure.kind]);
   };
 

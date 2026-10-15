@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createFakeAgent } from './fake-agent.js';
+import { POLYSIM_ENGINES } from './fixtures/polysim-engines.js';
 import { defaultSettings } from './settings.js';
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped']);
@@ -20,11 +21,11 @@ function fastAgent(options = {}) {
 
 const request = (text) => ({ text, model: 'sonnet', effort: 'medium', budgetUsd: 1, persona: { name: 'Jet', jobTitle: 'First-mate', notes: '' }, behaviour: { candid: 0.55, playful: 0.35 }, localTime: 'Wed 14 Oct 2026, 09:00', claudePath: null, mcp: defaultSettings().mcp });
 
-async function ask(agent, text, onEach = () => {}) {
+async function ask(agent, text, onEach = () => {}, extra = {}) {
   const events = [];
   let end;
   const ended = new Promise((resolve) => { end = resolve; });
-  const user = await agent.send(request(text), (event) => {
+  const user = await agent.send({ ...request(text), ...extra }, (event) => {
     events.push(event);
     onEach(event);
     if (TERMINAL.has(event.kind)) end();
@@ -149,6 +150,43 @@ test('"quanty" replays a library search as tool events before the answer', async
   const saved = events.at(-1).entry.tools;
   assert.deepEqual(saved, [{ id: call.id, server: 'quanty', tool: 'search', input: call.input, ok: true, result: finished.result, summary: finished.summary, durationMs: finished.durationMs }]);
   assert.deepEqual((await agent.history()).at(-1).tools, saved);
+});
+
+test('the engines word lists the pretend fleet and mcpCall changes it', async () => {
+  const { agent } = fastAgent();
+  const first = await ask(agent, 'show me my engines');
+  const listed = first.events.find((event) => event.kind === 'toolFinished');
+  assert.deepEqual(first.events.find((event) => event.kind === 'toolStarted'), { kind: 'toolStarted', id: listed.id, server: 'polysim', tool: 'list_strategies', input: {} });
+  assert.deepEqual([listed.ok, listed.result, listed.summary], [true, POLYSIM_ENGINES.result, 'polysim · list_strategies · 4 engines']);
+  assert.deepEqual(first.events.at(-1).entry.tools.map((call) => call.id), [listed.id], 'the call is saved with the reply');
+  const raw = first.events.filter((event) => event.kind === 'rawLine').map((event) => JSON.parse(event.line));
+  assert.ok(raw.some((line) => line.type === 'assistant' && line.message.content.some((block) => block.name === 'mcp__polysim__list_strategies')));
+
+  const fleet = async () => (await agent.mcpCall('polysim', 'list_strategies', {})).engines;
+  const stateOf = async (teId) => (await fleet()).find((engine) => engine.te_id === teId);
+  const off = { strategy_id: 'strat-micro-recorder', te_id: 'te-polymarket-btc-updown-5m' };
+  const started = await agent.mcpCall('polysim', 'start_strategy', off);
+  assert.equal(started.mode, 'off');
+  assert.deepEqual([(await stateOf(off.te_id)).state, (await stateOf(off.te_id)).pid], ['running', started.pid]);
+  await assert.rejects(agent.mcpCall('polysim', 'start_strategy', off), { kind: 'library', message: 'strat-micro-recorder · te-polymarket-btc-updown-5m is already running' });
+  await assert.rejects(agent.mcpCall('polysim', 'set_execution_mode', { ...off, mode: 'sim' }), { kind: 'library', message: 'Stop strat-micro-recorder · te-polymarket-btc-updown-5m before changing its mode.' });
+  await agent.mcpCall('polysim', 'stop_strategy', off);
+  assert.deepEqual([(await stateOf(off.te_id)).state, (await stateOf(off.te_id)).pid], ['stopped', null]);
+  await assert.rejects(agent.mcpCall('polysim', 'stop_strategy', off), { kind: 'library', message: 'strat-micro-recorder · te-polymarket-btc-updown-5m is not running' });
+  const changed = await agent.mcpCall('polysim', 'set_execution_mode', { ...off, mode: 'sim' });
+  assert.deepEqual([changed.previous, changed.mode, (await stateOf(off.te_id)).mode], ['off', 'sim', 'sim']);
+  await assert.rejects(agent.mcpCall('polysim', 'set_execution_mode', { ...off, mode: 'paper' }), { kind: 'library' });
+  await assert.rejects(agent.mcpCall('quanty', 'search', {}), { kind: 'library' });
+  await assert.rejects(agent.mcpCall('polysim', 'start_strategy', { strategy_id: 'nobody', te_id: 'nowhere' }), { kind: 'library' });
+
+  // The next listing shows the fleet as changed, under a new call id, and a preface is quoted back.
+  const preface = '[Jet: the user started strat-micro-recorder · te-polymarket-btc-updown-5m at 22:41]';
+  const second = await ask(agent, 'engines again', () => {}, { preface });
+  const again = second.events.find((event) => event.kind === 'toolFinished');
+  assert.notEqual(again.id, listed.id);
+  assert.equal(again.result.engines.find((engine) => engine.te_id === off.te_id).mode, 'sim');
+  assert.ok(second.events.at(-1).entry.text.startsWith('Noted: ' + preface + '\n\n'));
+  assert.equal(second.user.text, 'engines again', 'the saved user words carry no preface');
 });
 
 test('"fresh" starts a fresh session with a notice', async () => {
