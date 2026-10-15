@@ -2,14 +2,13 @@
 // backfilled history, what is sent when (append-only), and the axis labels. One list of buckets
 // feeds both sections, since the chart and the risk chart share their clock and their window.
 
-import { midText, priceText, timeText } from './fake-market-rows.js';
+import { PRICE_PER_HALF_TICK, midText, priceText, timeText } from './fake-market-rows.js';
 
 export const CAPACITY = 300;
 const HISTORY = 120;
 const MANTISSA = 1e8;
 const MIN_RISK_SPAN = MANTISSA;
 const MIN_PAD = 2;
-const PRICE_PER_HALF_TICK = 0.005;
 
 /** Nice tick values (1, 2 or 5 times a power of ten) between `low` and `high`, at most about `count` of them. */
 function niceTicks(low, high, count, smallestStep) {
@@ -29,15 +28,16 @@ const riskText = (mantissa) => (Math.abs(mantissa) < MANTISSA / 200 ? 0 : mantis
  */
 export function createChartBook(spinUs) {
   const bucketAt = (ms) => Math.floor((ms * 1000) / spinUs);
-  /** @type {{ i: number, o: number | null, h: number | null, l: number | null, c: number | null, gap: boolean, e: number, p: number }[]} */
+  /** @type {{ i: number, o: number, h: number, l: number, c: number, gap: boolean, e: number, p: number }[]} */
   let buckets = [];
   let fills = [];
   let sentFills = 0;
+  let gapPending = false;
   // What each section has already sent: the newest closed bucket, and the last body (to skip a repeat).
   const tracks = { chart: { closed: -1, key: '' }, risk: { closed: -1, key: '' } };
 
   const first = () => buckets[0].i;
-  const chartBucket = (b) => ({ i: b.i, o: b.o, h: b.h, l: b.l, c: b.c, cl: b.gap ? null : midText(b.c), t: timeText((b.i * spinUs) / 1000), gap: b.gap });
+  const chartBucket = (b) => ({ i: b.i, o: b.o, h: b.h, l: b.l, c: b.c, cl: midText(b.c), t: timeText((b.i * spinUs) / 1000), gap: b.gap });
   const riskBucket = (b) => ({ i: b.i, e: b.e, p: b.p, el: riskText(b.e), pl: riskText(b.p) });
 
   /** The buckets a section has not sent yet, plus the open one; all of them when `full`. */
@@ -54,12 +54,6 @@ export function createChartBook(spinUs) {
     if (!full && key === track.key) return undefined;
     track.key = key;
     return body;
-  }
-
-  function range() {
-    const solid = buckets.filter((b) => !b.gap);
-    if (solid.length === 0) return null;
-    return { low: Math.min(...solid.map((b) => b.l)), high: Math.max(...solid.map((b) => b.h)) };
   }
 
   function riskBounds(field) {
@@ -89,6 +83,7 @@ export function createChartBook(spinUs) {
       buckets = [];
       fills = [];
       sentFills = 0;
+      gapPending = false;
       tracks.chart = { closed: -1, key: '' };
       tracks.risk = { closed: -1, key: '' };
       let open = close;
@@ -104,21 +99,24 @@ export function createChartBook(spinUs) {
       return pnl;
     },
 
+    /** Makes the next new bucket one the book lost snapshots before, so that the line breaks there. */
+    markGap() {
+      gapPending = true;
+    },
+
     /** Moves the clock: closes the old bucket when a new one starts, and lets the open bucket follow the mid. */
-    advance({ nowMs, midHalf, exposure, pnl, gap }) {
+    advance({ nowMs, midHalf, exposure, pnl }) {
       const current = bucketAt(nowMs);
       const newest = buckets[buckets.length - 1];
       for (let i = Math.max(newest.i + 1, current - CAPACITY + 1); i <= current; i += 1) {
         const previous = buckets[buckets.length - 1];
-        const start = previous.gap ? midHalf : previous.c;
-        buckets.push({ i, o: gap ? null : start, h: gap ? null : start, l: gap ? null : start, c: gap ? null : start, gap, e: previous.e, p: previous.p });
+        buckets.push({ i, o: previous.c, h: previous.c, l: previous.c, c: previous.c, gap: gapPending, e: previous.e, p: previous.p });
+        gapPending = false;
       }
       const open = buckets[buckets.length - 1];
-      if (!open.gap) {
-        open.h = Math.max(open.h, midHalf);
-        open.l = Math.min(open.l, midHalf);
-        open.c = midHalf;
-      }
+      open.h = Math.max(open.h, midHalf);
+      open.l = Math.min(open.l, midHalf);
+      open.c = midHalf;
       open.e = Math.round(exposure * MANTISSA);
       open.p = Math.round(pnl * MANTISSA);
       if (buckets.length > CAPACITY) {
@@ -143,7 +141,7 @@ export function createChartBook(spinUs) {
     chart({ generation, full, axisCount }) {
       const track = tracks.chart;
       const wanted = unsent(track, full);
-      const seen = range() ?? { low: buckets[buckets.length - 1].c ?? 0, high: buckets[buckets.length - 1].c ?? 0 };
+      const seen = { low: Math.min(...buckets.map((b) => b.l)), high: Math.max(...buckets.map((b) => b.h)) };
       const pad = Math.max(MIN_PAD, Math.round((seen.high - seen.low) * 0.1));
       const low = seen.low - pad;
       const high = seen.high + pad;

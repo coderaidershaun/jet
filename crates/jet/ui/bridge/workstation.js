@@ -173,8 +173,9 @@ import { createTauriWorkstation } from './tauri-workstation.js';
 
 /**
  * One chart bucket: open, high, low, close in half-ticks, the close as text, the open time as text.
- * A gap has null prices.
- * @typedef {{ i: number, o: number | null, h: number | null, l: number | null, c: number | null, cl: string | null, t: string, gap: boolean }} ChartBucket
+ * A bucket always has all its prices. `gap` means the book lost snapshots before this bucket, so
+ * the line breaks there.
+ * @typedef {{ i: number, o: number, h: number, l: number, c: number, cl: string, t: string, gap: boolean }} ChartBucket
  */
 /** @typedef {{ i: number, ht: number, side: 'buy' | 'sell' }} ChartFill */
 
@@ -237,8 +238,9 @@ import { createTauriWorkstation } from './tauri-workstation.js';
 
 /**
  * Jet's own line, not the bridge's: `starting` before each run, `restarting` when a run ended and
- * will be started again, `exited` when the bridge speaks another protocol, `missing` when the
- * program is not there. A deliberate stop sends none.
+ * will be started again, `exited` when the bridge speaks another protocol or keeps failing at
+ * once, so it is not started again, `missing` when the program is not there. A deliberate stop
+ * sends none.
  * @typedef {{ kind: 'bridge', status: 'starting' | 'restarting' | 'exited' | 'missing', detail: string }} BridgeStatusLine
  */
 
@@ -266,7 +268,8 @@ import { createTauriWorkstation } from './tauri-workstation.js';
 /**
  * @typedef {object} WorkstationFeed
  * @property {(workstation: WorkstationSettings, onLine: (line: BridgeLine) => void) => Promise<void>} start
- *   starts the feed, or restarts it when it runs; lines arrive on `onLine` as parsed objects, in order
+ *   starts the feed, or starts it again when it runs; lines arrive on `onLine` as parsed objects, in order.
+ *   Inside the app, a bridge already running from the same settings is kept, and its opening lines are sent again.
  * @property {(command: BridgeCommand) => Promise<void>} command   rejects { kind: 'io', message } when the feed is not running
  * @property {() => Promise<void>} stop   no line arrives after it resolves
  */

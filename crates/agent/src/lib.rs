@@ -1,11 +1,14 @@
 //! Talks to Claude Code for Jet's chat: runs a turn, keeps the thread and notes, composes
-//! who Jet is, and renders replies. It knows nothing about the window around it.
+//! who Jet is, and renders replies. It also keeps the workstation's polysim-bridge program
+//! running. It knows nothing about the window around it.
 
 mod chat;
+mod child;
 mod conversation;
 mod markdown;
 mod memory;
 mod turn;
+mod workstation;
 
 pub use chat::{
     Effort, Entry, EntryId, EntryStatus, Event, Failure, MEMORY_LIMIT, McpServer, McpServers,
@@ -21,3 +24,4 @@ pub use turn::{
     ClaudeCli, Lines, Request, SessionMode, Step, Stopper, Summary, Transport, TransportError,
     Turn, TurnError,
 };
+pub use workstation::{BridgeFeed, BridgeLaunch, BridgeStatus, FeedError, RESTART_DELAYS};

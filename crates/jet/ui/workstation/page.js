@@ -6,6 +6,9 @@
 // section, `register(name, painter)` with `painter(nowMs)` called every animation frame (the clock
 // of `performance.now()`), `send(command)`, `latest(name)` and `leave()`. Adding an area changes
 // no shared file. Until an area's folder exists, its mount point shows the raw sections it will draw.
+//
+// Mount every area before calling `store.start()`. An area that folds the append-only sections
+// (chart, risk and channels) needs the catalog and the full window that arrive right after the start.
 
 import { h } from '../chat/dom.js';
 import { createCommandMemory, createFrameStore } from './store.js';
@@ -68,7 +71,7 @@ export function createWorkstation({ root, feed, onLeave = () => {}, schedule = r
     latest: frames.latest,
     send,
 
-    /** Starts the feed, or starts it again after a settings change; the painting loop is started once. */
+    /** Starts the feed, or starts it again after a settings change, and the painting loop unless it runs. */
     start(workstation) {
       const started = feed.start(workstation, (line) => {
         if (frames.accept(line)) send({ cmd: 'resync' });
