@@ -23,7 +23,7 @@ pub(super) const ISOLATION_ENV: [(&str, &str); 2] = [
 const ALLOWED_TOOLS: &str = "mcp__quanty__search,mcp__quanty__answer,mcp__quanty__list_documents,\
     mcp__quanty__read_page,mcp__quanty__health,mcp__quanty__ingest_pdf,\
     mcp__quanty__ingest_status,mcp__polysim__list_strategies,mcp__polysim__start_strategy,\
-    mcp__polysim__stop_strategy";
+    mcp__polysim__stop_strategy,mcp__polysim__set_execution_mode";
 
 /// How long Claude Code waits for a server to answer before it gives up, in milliseconds.
 const SERVER_TIMEOUT_MS: u64 = 300_000;
@@ -151,7 +151,7 @@ mod tests {
     const ALLOWED: &str = "mcp__quanty__search,mcp__quanty__answer,mcp__quanty__list_documents,\
         mcp__quanty__read_page,mcp__quanty__health,mcp__quanty__ingest_pdf,\
         mcp__quanty__ingest_status,mcp__polysim__list_strategies,mcp__polysim__start_strategy,\
-        mcp__polysim__stop_strategy";
+        mcp__polysim__stop_strategy,mcp__polysim__set_execution_mode";
 
     fn server(command: &str, cwd: Option<&str>) -> McpServer {
         McpServer {

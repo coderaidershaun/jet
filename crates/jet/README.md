@@ -520,7 +520,7 @@ How a reply reaches them:
 
 - The enabled servers go inline as `--mcp-config` JSON. It is built from the settings and from the addresses of the shared servers (below), which stay the same for the whole session, so it is the same bytes every turn and Claude's prompt cache keeps hitting. A shared server is an `http` entry, `{"timeout":300000,"type":"http","url":"http://127.0.0.1:<port>/mcp"}`. Any other server starts through `/bin/sh` in its own folder, because Claude Code ignores a `cwd` in the config, and has a 300 second timeout.
 - `--tools ToolSearch` keeps the tool descriptions out of the prompt: Claude loads one when it needs it.
-- `--allowedTools` names every tool exactly, so a tool a server adds later stays off, and so does polysim's `set_execution_mode`: an engine's mode changes only from the UI.
+- `--allowedTools` names every tool exactly, so a tool a server adds later stays off, and the four polysim engine tools, `set_execution_mode` included, are named; Jet asks the user before any step toward live.
 - `--safe-mode` is gone because it drops MCP servers. `--setting-sources '' --disable-slash-commands` and the variables `CLAUDE_CODE_DISABLE_CLAUDE_MDS` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY` do the rest of its job: no CLAUDE.md, no Claude Code memory, no user settings or commands. The notes review keeps the same isolation and gets no servers.
 - A library whose program does not take `--http` is not shared: Claude Code starts its own copy for each reply and closes it when the reply ends, so an engine polysim started, or a quanty ingest, stops with the reply, and the persona tells Jet so.
 

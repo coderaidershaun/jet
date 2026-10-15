@@ -327,7 +327,7 @@ mod tests {
             )
         };
         let none = McpServers::default();
-        assert_eq!(hash(&none, &[]), "951e6e3ef93bc065");
+        assert_eq!(hash(&none, &[]), "a2240ff01ec6dc23");
         let quanty = McpServers {
             quanty: McpServer {
                 enabled: true,
