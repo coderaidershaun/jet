@@ -1,7 +1,7 @@
 // The one part of the ladder that deals with the store, the pointer and resizing. Lines and
 // events only note what changed; the painter, once per animation frame, draws what did.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { createLadderHeader } from './header.js';
 import { MAX_ROWS, hoveredRow, rowsThatFit } from './rows.js';
 import { createLadderBody } from './view.js';

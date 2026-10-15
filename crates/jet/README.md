@@ -186,6 +186,7 @@ crates/jet
     ├── workstation.html            the workstation on a page of its own, for a browser (pretend feed, or the tape with ?tape=1) or the window (polysim-bridge)
     ├── styles.css                  the lab's look, and the ground colour of Jet's eyes and ring
     ├── package.json                the `node --test` script, nothing to install
+    ├── dom.js                      helpers that build elements without markup strings, for the chat and the workstation
     ├── assets/
     │   └── tile.png                the pattern behind the thread
     ├── bridge/                     the pages' way to the Rust side, with browser fallbacks
@@ -222,7 +223,6 @@ crates/jet
     │   ├── main.js                 boot: loads the rig, settings and history, builds every part, hands each its parts
     │   ├── turn.js                 one turn: a send, each event of the reply, the end of the reply
     │   ├── clock.js                how the page writes times and days
-    │   ├── dom.js                  helpers that build elements without markup strings
     │   ├── page-state.js           which page shows, what Esc does first, and how the drawer looks beside each page (pure)
     │   ├── page-state.test.mjs     the page switch, the Esc order, the saved page, the rail and the docked drawer
     │   ├── stage/                  the live Jet

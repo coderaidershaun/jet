@@ -1,7 +1,7 @@
 // The one part of the chart area that deals with the store, the pointer, resizing and paint timing,
 // so the rest of the area stays plain maths and drawing.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { createSegmented } from '../controls/segmented.js';
 import { linkStylesheet, whenStyled } from '../controls/stylesheet.js';
 import { writeAttribute, writeText } from '../controls/write.js';

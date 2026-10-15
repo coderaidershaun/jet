@@ -1,6 +1,6 @@
 // Lets an area load its own stylesheet, so a page that mounts the area needs no change to its head.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 
 /** Adds a stylesheet link to the page's head, or returns the one already there. */
 export function linkStylesheet(href) {

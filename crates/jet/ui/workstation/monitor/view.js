@@ -1,7 +1,7 @@
 // The centre panel's account, summary and feature bands, built once and patched in place. A value
 // is written only when it differs from what is on screen.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { createChannelView } from './channel-view.js';
 import { featureRow, sideRow, statusRow } from './cells.js';
 

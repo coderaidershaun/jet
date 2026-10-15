@@ -2,7 +2,7 @@
 // destructive button, which forgets the conversation after a confirmation.
 
 import { displayName } from '../../bridge/settings.js';
-import { h } from '../dom.js';
+import { h } from '../../dom.js';
 import { button, note, section, textField } from './controls.js';
 import { named } from './names.js';
 

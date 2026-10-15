@@ -1,7 +1,7 @@
 // The channel tabs, the four row lists and the "N new" badge. Rows never change once built, so a
 // frame adds only the rows that arrived, on top, and removes the oldest.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { CHANNELS } from './channels.js';
 import { badgeText, createFollowing } from './following.js';
 

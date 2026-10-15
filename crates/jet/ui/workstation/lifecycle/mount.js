@@ -1,7 +1,7 @@
 // The overlay over the three panels while the workstation is not live: starting, draining or
 // stopped. The state lives in `mount`, so two workstations on one page never share a screen.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { createLifecycleView } from './view.js';
 
 const STYLESHEET = new URL('./lifecycle.css', import.meta.url).href;

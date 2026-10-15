@@ -3,7 +3,7 @@
 // were not saved are kept and a reload is offered instead.
 
 import { displayName } from '../../bridge/settings.js';
-import { h } from '../dom.js';
+import { h } from '../../dom.js';
 import { button, section } from './controls.js';
 import { countCodePoints } from './form.js';
 import { named } from './names.js';

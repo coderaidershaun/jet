@@ -2,7 +2,7 @@
 // mode, Start or Stop and a mode choice. Every card shows the same newest fleet, and a row
 // is patched in place, so a focused button keeps its focus while the card repaints.
 
-import { h } from '../../dom.js';
+import { h } from '../../../dom.js';
 import { actionFor, actionLine, confirmText, createFleet, createPreface, detailLine, modeBadge, stateBadge } from './engines.js';
 
 const MODES = ['off', 'sim', 'live'];

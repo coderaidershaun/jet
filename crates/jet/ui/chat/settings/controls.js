@@ -1,7 +1,7 @@
 // The few form controls the settings sheet is made of, so each section reads as
 // a list of fields rather than a pile of elements.
 
-import { h } from '../dom.js';
+import { h } from '../../dom.js';
 
 /** A titled block of the sheet. */
 export function section(id, title, ...children) {

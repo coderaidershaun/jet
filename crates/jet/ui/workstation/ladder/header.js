@@ -1,7 +1,7 @@
 // The ladder's header: the unit toggle, the grouping combo and the level stepper. It is built once
 // and only sends commands; the view the bridge sends back is what changes what it shows.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { DEFAULT_LEVELS, groupingChoices, levelAt, levelFill, levelReadout, stepLevel } from './controls.js';
 
 const UNITS = [

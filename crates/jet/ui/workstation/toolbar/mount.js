@@ -1,7 +1,7 @@
 // Builds the strip above the left panel and keeps it in step with the bridge: the way back to the
 // chat, the instrument and chart mode choices, the strategy name and the execution badge.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { createSegmented } from '../controls/segmented.js';
 import { linkStylesheet } from '../controls/stylesheet.js';
 import { writeAttribute, writeText } from '../controls/write.js';

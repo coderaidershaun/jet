@@ -4,7 +4,7 @@
 // copies again, a switch after its save and a program or folder when the sheet closes.
 
 import { displayName } from '../../bridge/settings.js';
-import { h, icon } from '../dom.js';
+import { h, icon } from '../../dom.js';
 import { buildClaude } from './claude.js';
 import { buildLibraries } from './libraries.js';
 import { buildLook } from './look.js';

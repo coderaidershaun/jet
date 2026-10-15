@@ -3,9 +3,9 @@
 // itself, docked beside the thread on wide screens and over it on narrow ones;
 // beside the workstation page it narrows to the rail.
 
+import { h } from '../../dom.js';
 import { RING_HIDDEN } from '../../jet/state.js';
 import { mountJet } from '../../jet/view.js';
-import { h } from '../dom.js';
 import { drawerLayout, drawerOpens } from '../page-state.js';
 import { captionFor } from './caption.js';
 import { NOTHING, compactCount, count, dollars, modelAndThinking, seconds, spendText, turnsText } from './format.js';

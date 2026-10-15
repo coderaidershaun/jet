@@ -1,7 +1,7 @@
 // The screen that covers the panels until the workstation is live. Until the first word about the
 // screen arrives it is bare, so nothing is drawn that nobody said.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 
 /**
  * @param {HTMLElement} root

@@ -1,7 +1,7 @@
 // A row of buttons of which one is chosen. The toolbar and the charts both use it, so the two look and
 // act the same, as in the desktop app this copies.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { linkStylesheet } from './stylesheet.js';
 import { writeAttribute } from './write.js';
 

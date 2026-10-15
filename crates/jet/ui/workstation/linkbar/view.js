@@ -1,7 +1,7 @@
 // The link bar's elements: the chips, the engine chip that steps to the next engine, and the
 // START/STOP button. The chips are rebuilt for each model, which arrives only when the link changes.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { NEXT_PEER_TIP } from './chips.js';
 
 /**

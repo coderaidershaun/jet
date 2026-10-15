@@ -2,7 +2,7 @@
 // the expressiveness master and its channels, and reduced motion.
 
 import { PRESETS, displayName } from '../../bridge/settings.js';
-import { h } from '../dom.js';
+import { h } from '../../dom.js';
 import { button, note, section, sliderField, switchRow, textField } from './controls.js';
 import { hexToRgb, masterWord, moveMaster, presetFor, rgbToHex, setFollow, takeOverChannel } from './form.js';
 import { named } from './names.js';

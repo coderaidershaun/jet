@@ -1,7 +1,7 @@
 // Draws the latency table between the toolbar and the charts, and keeps its numbers in step with the
 // bridge. The page only lays out the text the bridge sends.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { linkStylesheet } from '../controls/stylesheet.js';
 import { writeAttribute, writeText } from '../controls/write.js';
 import { latencyGrid } from './model.js';

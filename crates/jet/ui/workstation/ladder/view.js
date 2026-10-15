@@ -1,7 +1,7 @@
 // The ladder's body: 30 rows a side, built once and patched in place, and the overlays on them.
 // Every write checks first, so a frame that changes nothing touches nothing.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { MAX_ROWS, SEPARATOR_SHARE, chevronsOf, readoutLines, readoutPosition, rowGeometry, strategyCell } from './rows.js';
 
 function setText(element, text) {

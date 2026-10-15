@@ -5,8 +5,8 @@
 // long as the row lives, so the live Jet standing in a lane is never thrown away
 // by a redraw.
 
+import { h } from '../../dom.js';
 import { clockTime } from '../clock.js';
-import { h } from '../dom.js';
 import { typeset } from './math.js';
 import { callState } from './cards/model.js';
 import { createCardList, linkCitations, openSource } from './cards/view.js';

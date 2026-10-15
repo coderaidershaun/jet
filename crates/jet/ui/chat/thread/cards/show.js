@@ -1,7 +1,7 @@
 // Draws one hit or page piece by its kind. Markdown and formulas are typeset as soon as
 // their nodes are in place; code is shown as printed, never through Markdown or math.
 
-import { h } from '../../dom.js';
+import { h } from '../../../dom.js';
 import { typeset } from '../math.js';
 
 const PICTURE_ADDRESS = /^data:image\/(png|jpeg);base64,/;

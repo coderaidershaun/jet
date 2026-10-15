@@ -3,7 +3,7 @@
 // Rows and pieces are drawn the first time they are opened, so a closed card costs
 // nothing.
 
-import { h } from '../../dom.js';
+import { h } from '../../../dom.js';
 import { findSource, splitCitations } from './cite.js';
 import { callState, cardOf } from './model.js';
 import { RESULT_CARDS } from './registry.js';

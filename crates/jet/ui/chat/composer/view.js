@@ -2,7 +2,7 @@
 // screen to the bottom on the first send. It reads the field, asks the
 // composer's rules what to do, and does it.
 
-import { icon } from '../dom.js';
+import { icon } from '../../dom.js';
 
 const HOP_MS = 420;
 

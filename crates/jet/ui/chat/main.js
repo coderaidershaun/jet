@@ -5,10 +5,10 @@
 import { connectAgent } from '../bridge/agent.js';
 import { loadRig } from '../bridge/rig.js';
 import { displayName, loadSettings, saveSettings } from '../bridge/settings.js';
+import { icon } from '../dom.js';
 import { createWorkstationShell } from '../workstation/shell.js';
 import { createComposer } from './composer/state.js';
 import { createComposerView } from './composer/view.js';
-import { icon } from './dom.js';
 import { describeCache } from './drawer/cache.js';
 import { createLog } from './drawer/log.js';
 import { createUsageTracker } from './drawer/usage.js';

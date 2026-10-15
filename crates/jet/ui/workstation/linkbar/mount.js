@@ -1,7 +1,7 @@
 // The one part of the link bar that deals with the store: the link line in, the commands out,
 // and a painter that draws when the line changed.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { linkBarModel } from './chips.js';
 import { createLinkBar } from './view.js';
 

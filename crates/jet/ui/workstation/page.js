@@ -10,7 +10,7 @@
 // Mount every area before calling `store.start()`. An area that folds the append-only sections
 // (chart, risk and channels) needs the catalog and the full window that arrive right after the start.
 
-import { h } from '../chat/dom.js';
+import { h } from '../dom.js';
 import { createCommandMemory, createFrameStore } from './store.js';
 
 /** The areas in the order they are mounted: the folder, the id of its mount point and the sections shown raw until it exists. */

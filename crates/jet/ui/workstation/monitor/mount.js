@@ -1,7 +1,7 @@
 // The workstation's centre panel. Every piece of its state is made inside `mount`, so two
 // workstations on one page never share rows.
 
-import { h } from '../../chat/dom.js';
+import { h } from '../../dom.js';
 import { createChannelRings } from './channels.js';
 import { createMonitorView } from './view.js';
 

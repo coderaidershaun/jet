@@ -1,7 +1,7 @@
 // The settings about how Claude is asked: which model, how hard it thinks, the
 // budget for one turn, and what the replies since the app started have used.
 
-import { h } from '../dom.js';
+import { h } from '../../dom.js';
 import { tokenCount } from '../drawer/usage.js';
 import { note, section, segmented } from './controls.js';
 
