@@ -58,3 +58,6 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.
 - **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.
 - **Flight** — the live Jet's move from where it stood to the slot's lane on a send. _Avoid_: zoom (that is the clip Jet plays during it).
+
+- **Math** — TeX in a reply, between `\(` and `\)`, or for display between `\[` and `\]` or `$$` and `$$`. A single `$` is money, never math.
+- **Typeset** — turning a math element's TeX into KaTeX's drawing on the page. _Avoid_: render (that is Markdown to HTML).

@@ -86,7 +86,18 @@
 .copy::after { content: ""; position: absolute; inset: -8px; }
 .copy:hover, .copy:focus-visible { opacity: 1; }
 .body table { display: block; max-width: 100%; margin: 8px 0; overflow-x: auto; border-collapse: collapse; }
-.body th, .body td { padding: 4px 10px; border: 1px solid var(--line); text-align: left; }
+.body th, .body td { padding: 4px 10px; border: 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.body thead th { font-weight: 600; border-bottom-color: rgba(255, 255, 255, .18); }
+.body .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Math sits on its own classes, not under .body, so a formula outside a bubble looks the same.
+   KaTeX's own size (1.21em) makes a line with a formula taller than a plain line. */
+.math { font-family: var(--mono); }
+.math .katex { font-size: 1.1em; }
+.math-display { display: block; margin: 8px 0; overflow-x: auto; overflow-y: hidden; text-align: center; }
+.math-display:last-child { margin-bottom: 0; }
+.math-display .katex-display { margin: 0; }
+.math-error { color: var(--danger); }
 
 .jump {
   position: absolute; left: 50%; bottom: 16px; z-index: 4; transform: translateX(-50%);
