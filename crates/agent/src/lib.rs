@@ -1,7 +1,4 @@
-//! Talks to Claude Code for Jet's chat: runs a turn, keeps the thread and notes, composes
-//! who Jet is, and renders replies. It also keeps one copy of each library's server running
-//! for the session, and keeps the workstation's polysim-bridge program running. It knows
-//! nothing about the window around it.
+//! Keep Jet's conversations, provider processes and library connections independent of the window.
 
 mod chat;
 mod child;
@@ -24,7 +21,7 @@ pub use markdown::render_markdown;
 pub use mcp::{McpError, SharedServers};
 pub use memory::{DataDir, MemoryError, now_ms};
 pub use turn::{
-    ClaudeCli, Lines, Request, SessionMode, Step, Stopper, Summary, Transport, TransportError,
-    Turn, TurnError,
+    ClaudeCli, CodexCli, Lines, Request, SessionMode, Step, Stopper, Summary, Transport,
+    TransportError, Turn, TurnError,
 };
 pub use workstation::{BridgeFeed, BridgeLaunch, BridgeStatus, FeedError, RESTART_DELAYS};

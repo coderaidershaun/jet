@@ -13,9 +13,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use agent::{
-    CacheStatus, ClaudeCli, Conversation, DataDir, Effort, Event, Lines, MEMORY_LIMIT, McpServers,
-    Message, Model, Notes, Persona, RECENT_LIMIT, Request, SharedServers, ShownEntry, Stopper,
-    Tone, Transport, TransportError, USER_LIMIT,
+    CacheStatus, ClaudeCli, CodexCli, Conversation, DataDir, Effort, Event, Lines, MEMORY_LIMIT,
+    McpServers, Message, Model, Notes, Persona, RECENT_LIMIT, Request, SharedServers, ShownEntry,
+    Stopper, Tone, Transport, TransportError, USER_LIMIT,
 };
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
@@ -76,7 +76,12 @@ impl ChatState {
     fn exit_review_target(&self, app: &AppHandle) -> Result<ReviewTarget, BridgeError> {
         let settings = settings::read_from(&settings::settings_path(app)?)?;
         Ok(ReviewTarget {
-            transport: transport_for(settings.claude_path.as_deref(), &self.data_dir)?,
+            transport: transport_for(
+                settings.model,
+                settings.claude_path.as_deref(),
+                settings.codex_path.as_deref(),
+                &self.data_dir,
+            )?,
             name: settings.persona.name,
         })
     }
@@ -87,27 +92,48 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Stands in for Claude Code when it cannot be found, so the failure reaches the page the
-/// same way as every other one.
-struct MissingClaude {
+/// A missing provider reaches the page through the same failure path as a failed run.
+struct MissingAgent {
+    is_codex: bool,
     searched: Vec<String>,
 }
 
-impl Transport for MissingClaude {
+impl Transport for MissingAgent {
     fn start(&self, _request: &Request) -> Result<Lines, TransportError> {
-        Err(TransportError::ClaudeMissing {
-            searched: self.searched.clone(),
-        })
+        if self.is_codex {
+            Err(TransportError::CodexMissing {
+                searched: self.searched.clone(),
+            })
+        } else {
+            Err(TransportError::ClaudeMissing {
+                searched: self.searched.clone(),
+            })
+        }
     }
 }
 
 fn transport_for(
-    configured: Option<&Path>,
+    model: Model,
+    claude_path: Option<&Path>,
+    codex_path: Option<&Path>,
     data_dir: &Path,
 ) -> Result<Arc<dyn Transport>, BridgeError> {
-    match ClaudeCli::locate(configured, data_dir) {
+    if model.is_codex() {
+        return match CodexCli::locate(codex_path, data_dir) {
+            Ok(codex) => Ok(Arc::new(codex)),
+            Err(TransportError::CodexMissing { searched }) => Ok(Arc::new(MissingAgent {
+                is_codex: true,
+                searched,
+            })),
+            Err(other) => Err(other.into()),
+        };
+    }
+    match ClaudeCli::locate(claude_path, data_dir) {
         Ok(claude) => Ok(Arc::new(claude)),
-        Err(TransportError::ClaudeMissing { searched }) => Ok(Arc::new(MissingClaude { searched })),
+        Err(TransportError::ClaudeMissing { searched }) => Ok(Arc::new(MissingAgent {
+            is_codex: false,
+            searched,
+        })),
         Err(other) => Err(other.into()),
     }
 }
@@ -115,33 +141,50 @@ fn transport_for(
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentStatus {
-    claude: ClaudeStatus,
+    claude: ProgramStatus,
     data_dir: String,
     busy: bool,
     cache: CacheStatus,
 }
 
 #[derive(Serialize)]
-struct ClaudeStatus {
+struct ProgramStatus {
+    provider: &'static str,
     found: bool,
     path: Option<String>,
     searched: Vec<String>,
 }
 
-/// Where Claude Code is, whether a reply is running, and whether the prompt cache is warm.
+/// Where the selected agent is, whether a reply is running, and whether the prompt cache is warm.
 #[tauri::command]
 pub async fn agent_status(
     app: AppHandle,
     state: State<'_, ChatState>,
 ) -> Result<AgentStatus, BridgeError> {
-    let configured = settings::read_from(&settings::settings_path(&app)?)?.claude_path;
-    let claude = match ClaudeCli::locate(configured.as_deref(), &state.data_dir) {
-        Ok(claude) => ClaudeStatus {
+    let settings = settings::read_from(&settings::settings_path(&app)?)?;
+    let provider = if settings.model.is_codex() {
+        "Codex"
+    } else {
+        "Claude Code"
+    };
+    let located = if settings.model.is_codex() {
+        CodexCli::locate(settings.codex_path.as_deref(), &state.data_dir)
+            .map(|cli| cli.program().to_path_buf())
+    } else {
+        ClaudeCli::locate(settings.claude_path.as_deref(), &state.data_dir)
+            .map(|cli| cli.program().to_path_buf())
+    };
+    let program = match located {
+        Ok(path) => ProgramStatus {
+            provider,
             found: true,
-            path: Some(claude.program().display().to_string()),
+            path: Some(path.display().to_string()),
             searched: Vec::new(),
         },
-        Err(TransportError::ClaudeMissing { searched }) => ClaudeStatus {
+        Err(
+            TransportError::ClaudeMissing { searched } | TransportError::CodexMissing { searched },
+        ) => ProgramStatus {
+            provider,
             found: false,
             path: None,
             searched,
@@ -149,7 +192,7 @@ pub async fn agent_status(
         Err(other) => return Err(other.into()),
     };
     Ok(AgentStatus {
-        claude,
+        claude: program,
         data_dir: state.data_dir.display().to_string(),
         busy: state.conversation.is_busy(),
         cache: state.conversation.cache_status()?,
@@ -177,8 +220,10 @@ pub struct SendRequest {
     #[serde(default)]
     claude_path: Option<PathBuf>,
     #[serde(default)]
+    codex_path: Option<PathBuf>,
+    #[serde(default)]
     mcp: McpServers,
-    /// What the user did on an engine card since the last message; Claude reads it before
+    /// What the user did on an engine card since the last message; the model reads it before
     /// the user's words.
     #[serde(default)]
     preface: Option<String>,
@@ -194,7 +239,12 @@ pub async fn send_message(
     request: SendRequest,
     events: Channel<Event>,
 ) -> Result<ShownEntry, BridgeError> {
-    let transport = transport_for(request.claude_path.as_deref(), &state.data_dir)?;
+    let transport = transport_for(
+        request.model,
+        request.claude_path.as_deref(),
+        request.codex_path.as_deref(),
+        &state.data_dir,
+    )?;
     let target = ReviewTarget {
         transport: Arc::clone(&transport),
         name: request.persona.name.clone(),

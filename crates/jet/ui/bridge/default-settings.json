@@ -9,12 +9,13 @@
   "repeat": true,
   "persona": { "name": "Jet", "jobTitle": "First-mate", "notes": "" },
   "bodyColour": null,
-  "model": "sonnet",
+  "model": "gpt-6.1-sol",
   "effort": "medium",
   "turnBudgetUsd": 10.0,
   "page": "chat",
   "drawerOpen": true,
   "claudePath": null,
+  "codexPath": null,
   "mcp": {
     "quanty": {
       "enabled": true,

@@ -1,6 +1,4 @@
-//! Remembers how the user set Jet up: who Jet is, which model answers, where the behaviour
-//! handle sits, how expressive each channel is, and the motion switches. Saved as JSON in
-//! the app's config folder so the frontend finds Jet the way it left it.
+//! Save Jet's settings in the app's config folder so each launch restores the user's choices.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -23,14 +21,15 @@ pub struct Settings {
     pub body_colour: Option<[u8; 3]>,
     pub model: Model,
     pub effort: Effort,
-    /// The most one answer may cost, in US dollars.
+    /// The most one Claude answer may cost, in US dollars.
     pub turn_budget_usd: f64,
     pub drawer_open: bool,
     /// The page shown last; the window opens on it again.
     pub page: Page,
     /// Where Claude Code lives; `None` means look in the usual places.
     pub claude_path: Option<PathBuf>,
-    /// The MCP servers Jet's Claude may use: the quanty library and the polysim engines.
+    pub codex_path: Option<PathBuf>,
+    /// The library servers Jet's agent may use: the quanty library and the polysim engines.
     pub mcp: McpServers,
     pub workstation: Workstation,
 }
@@ -125,6 +124,7 @@ impl Default for Settings {
             drawer_open: true,
             page: Page::default(),
             claude_path: None,
+            codex_path: None,
             mcp: default_mcp(),
             workstation: Workstation::default(),
         }
@@ -319,7 +319,7 @@ mod tests {
         assert_eq!(settings.expressiveness, Expressiveness::default());
         assert_eq!(settings.persona, Persona::default());
         assert_eq!(settings.body_colour, None);
-        assert_eq!(settings.model, Model::Sonnet);
+        assert_eq!(settings.model, Model::Gpt61Sol);
         assert_eq!(settings.effort, Effort::Medium);
         assert_eq!(settings.turn_budget_usd, 1.0);
         assert!(settings.drawer_open);

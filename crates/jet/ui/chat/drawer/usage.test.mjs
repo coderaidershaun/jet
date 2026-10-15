@@ -148,3 +148,16 @@ test('lines that are not JSON values or carry no usage change nothing', () => {
   tracker.raw(lineOf('result'));
   assert.deepEqual(tracker.snapshot(), closed, 'lines after the reply ended are ignored');
 });
+
+test('Codex usage retains unknown dollars and does not count cached tokens twice', () => {
+  const tracker = createUsageTracker();
+  tracker.sent({ effort: 'medium', at: 0 });
+  tracker.started({ sessionId: 'codex-session', model: 'gpt-6.1-sol' });
+  tracker.raw({ type: 'result', usage: { input_tokens: 20, cache_read_input_tokens: 80, output_tokens: 12 } });
+  tracker.finished({ costUsd: 0, usage: { model: 'gpt-6.1-sol', outputTokens: 12 } });
+  const snap = tracker.snapshot();
+  assert.equal(tokenCount(snap.total), 112);
+  assert.equal(snap.total.usd, null);
+  assert.equal(snap.current.reportedUsd, null);
+  assert.equal(snap.byModelEffort[0].usd, null);
+});

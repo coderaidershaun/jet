@@ -14,5 +14,6 @@ serde_json = { version = "1.0.154", default-features = false, features = ["std"]
 tauri = { version = "2.12.3", default-features = false, features = ["compression", "dynamic-acl", "wry"] }
 tauri-build = { version = "2.7.2", default-features = false, features = ["config-json"] }
 tauri-plugin-opener = { version = "2.7.1", default-features = false }
+tempfile = { version = "3.27.0", default-features = false, features = ["getrandom"] }
 thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
 ureq = { version = "3.4.2", default-features = false }

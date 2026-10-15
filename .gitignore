@@ -1,6 +1,7 @@
 /target
 /crates/jet/gen/schemas
 .claude
+.scratch
 
 # rex:ignore claude
 .claude/skills/

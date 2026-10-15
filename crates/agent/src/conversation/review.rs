@@ -1,5 +1,5 @@
 //! Keeps the three notes current. Once the conversation has been quiet for a while, one
-//! cheap Claude call reads everything said since the last review and rewrites the notes.
+//! cheap model call reads everything said since the last review and rewrites the notes.
 
 use std::time::Duration;
 
@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use super::persona::{fill, note_or_empty};
 use super::{Claim, Conversation};
-use crate::chat::{Effort, Entry, MEMORY_LIMIT, Model, Notes, RECENT_LIMIT, Role, USER_LIMIT};
+use crate::chat::{Effort, Entry, MEMORY_LIMIT, Notes, RECENT_LIMIT, Role, USER_LIMIT};
 use crate::memory::{MemoryError, Session, Transcript, now_ms};
 use crate::turn::{Request, SessionMode, Step, Summary, Transport, Turn, TurnError};
 
@@ -33,11 +33,11 @@ const IDLE_LIMIT: Duration = Duration::from_secs(60);
 pub enum ReviewOutcome {
     /// The notes were rewritten.
     Updated(Notes),
-    /// Claude read the new messages and kept the notes as they were.
+    /// The model read the new messages and kept the notes as they were.
     Unchanged,
     /// Another review is running, or there was nothing new to read.
     Skipped,
-    /// The notes changed, or the thread was forgotten, while Claude was reading, so its
+    /// The notes changed, or the thread was forgotten, while the model was reading, so its
     /// answer was thrown away.
     Stale,
 }
@@ -95,7 +95,7 @@ impl Conversation {
         let request = Request {
             prompt: review_prompt(&before, &pending, name),
             system_prompt: fill(PROMPT, &[("name", name)]),
-            model: Model::Haiku,
+            model: transport.review_model(),
             effort: Effort::Low,
             budget_usd: BUDGET_USD,
             session: SessionMode::Ephemeral,
@@ -228,7 +228,7 @@ fn schema() -> Value {
 mod tests {
     use super::super::test_support::Chat;
     use super::*;
-    use crate::chat::{EntryId, SessionId};
+    use crate::chat::{EntryId, Model, SessionId};
     use crate::memory::{DataDir, NewEntry};
     use crate::turn::scripted::{Script, Scripted, structured_result_line};
 

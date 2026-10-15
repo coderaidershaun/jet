@@ -1,3 +1,5 @@
+import { MODELS, effortsFor } from './models.js';
+
 // What the settings look like, what they default to, and how they are saved.
 // Inside Tauri the Rust side owns the file; in a plain browser they go to
 // localStorage under the same key the lab uses, so both pages share them.
@@ -16,13 +18,14 @@
  * @property {boolean} repeat
  * @property {Persona} persona
  * @property {[number, number, number] | null} bodyColour   null = the rig's rest colour
- * @property {'fable' | 'opus' | 'sonnet' | 'haiku'} model
- * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max'} effort
+ * @property {string} model
+ * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'} effort
  * @property {number} turnBudgetUsd
  * @property {boolean} drawerOpen
  * @property {'chat' | 'workstation'} page   the page shown last, opened again at start-up
+ * @property {string | null} codexPath   null = find Codex automatically
  * @property {string | null} claudePath   null = find Claude Code on its own
- * @property {{ quanty: McpServer, polysim: McpServer }} mcp   the libraries Jet's Claude may use
+ * @property {{ quanty: McpServer, polysim: McpServer }} mcp   the libraries Jet's agent may use
  * @property {import('./workstation.js').WorkstationSettings} workstation
  */
 
@@ -50,12 +53,13 @@ export function defaultSettings() {
     repeat: true,
     persona: { name: 'Jet', jobTitle: 'First-mate', notes: '' },
     bodyColour: null,
-    model: 'sonnet',
+    model: 'gpt-6.1-sol',
     effort: 'medium',
     turnBudgetUsd: 10,
     drawerOpen: true,
     page: 'chat',
     claudePath: null,
+    codexPath: null,
     mcp: {
       quanty: {
         enabled: true,
@@ -100,9 +104,13 @@ export async function loadSettings() {
   const defaults = defaultSettings();
   try {
     const bridge = tauri();
-    if (bridge) return merge(defaults, await bridge.invoke('load_settings'));
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? merge(defaults, JSON.parse(raw)) : defaults;
+    const saved = bridge
+      ? await bridge.invoke('load_settings')
+      : JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    const settings = merge(defaults, saved);
+    if (!MODELS.some(([model]) => model === settings.model)) settings.model = defaults.model;
+    if (!effortsFor(settings.model).includes(settings.effort)) settings.effort = 'high';
+    return settings;
   } catch (error) {
     console.warn('settings could not be loaded, using defaults:', error);
     return defaults;

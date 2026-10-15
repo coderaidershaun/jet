@@ -223,6 +223,10 @@ fn answer(server: &Server, request: &Request) -> Answer {
     }
     match method {
         "notifications/initialized" => Answer::status(202),
+        "tools/list" => Answer::body(rpc_result(
+            id,
+            json!({"tools":[{"name":"search","description":"Search the test library","inputSchema":{"type":"object","properties":{"question":{"type":"string"}},"required":["question"],"additionalProperties":false}}]}),
+        )),
         "tools/call" => {
             let name = request.body["params"]["name"].as_str().unwrap_or_default();
             let arguments = &request.body["params"]["arguments"];
@@ -230,7 +234,7 @@ fn answer(server: &Server, request: &Request) -> Answer {
                 lock(&server.sessions).clear();
             }
             let body = match name {
-                "echo" | "forget_sessions" | "crash" => rpc_result(id, echo(arguments)),
+                "echo" | "search" | "forget_sessions" | "crash" => rpc_result(id, echo(arguments)),
                 "fail" => rpc_result(id, failure()),
                 _ => rpc_error(id, -32601, "no such tool"),
             };

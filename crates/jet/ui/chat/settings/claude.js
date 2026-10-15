@@ -1,6 +1,3 @@
-// The settings about Claude Code itself: where to find it, and the one
-// destructive button, which forgets the conversation after a confirmation.
-
 import { displayName } from '../../bridge/settings.js';
 import { h } from '../../dom.js';
 import { button, note, section, textField } from './controls.js';
@@ -19,6 +16,10 @@ export function buildClaude({ settings, agent, changed, onClaudeChecked, onForge
     },
   });
 
+  const codexPath = textField({
+    label: 'Path to codex', value: settings.codexPath ?? '', placeholder: 'Found automatically',
+    onInput: (text) => { settings.codexPath = text.trim() || null; changed('claude'); },
+  });
   const failure = h('p', { class: 'problem', role: 'alert' });
   const showAsk = () => {
     confirmBox.hidden = true;
@@ -35,7 +36,7 @@ export function buildClaude({ settings, agent, changed, onClaudeChecked, onForge
   };
   const cancel = button('Cancel', { onClick: showAsk });
   const confirmBox = h('div', { class: 'confirm', role: 'group', 'aria-label': 'Confirm forgetting', hidden: true },
-    named(h('p'), "Clears the thread and starts a fresh Claude Code session. {name}'s memory notes are kept.", displayName(settings)),
+    named(h('p'), "Clears the thread and starts a fresh agent session. {name}'s memory notes are kept.", displayName(settings)),
     h('div', { class: 'row-actions' }, cancel, button('Forget', { class: 'action danger', onClick: forget })),
   );
   const ask = button('Forget this conversation', {
@@ -49,17 +50,17 @@ export function buildClaude({ settings, agent, changed, onClaudeChecked, onForge
 
   return {
     el: [
-      section('claude', 'Claude Code', path.el, status),
+      section('claude', 'Agent programs', codexPath.el, path.el, status),
       section('forget', 'Forget this conversation', note('Start again with an empty thread.'), ask, confirmBox, failure),
     ],
 
-    /** Asks where Claude Code is, and shows the answer here and in the page's banner. */
+    /** Asks where the selected agent is, and shows the answer here and in the page's banner. */
     async refresh() {
       try {
-        const { claude } = await agent.status();
-        status.textContent = claude.found ? 'Found at ' + claude.path : 'Not found. Looked in ' + claude.searched.join(', ');
-        status.dataset.found = String(claude.found);
-        onClaudeChecked(claude);
+        const { claude: program } = await agent.status();
+        status.textContent = program.found ? (program.provider ?? 'Agent') + ' found at ' + program.path : 'Not found. Looked in ' + program.searched.join(', ');
+        status.dataset.found = String(program.found);
+        onClaudeChecked(program);
       } catch (error) {
         status.textContent = 'Could not check: ' + (error && error.message ? error.message : error);
       }

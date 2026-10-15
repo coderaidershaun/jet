@@ -141,6 +141,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       behaviour: { ...settings.behaviour },
       localTime: localTimeLabel(Date.now()),
       claudePath: settings.claudePath,
+      codexPath: settings.codexPath,
       mcp: settings.mcp,
     };
   }
@@ -176,7 +177,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         },
       });
       agent.send(request(text, preface), onEvent).catch((error) => {
-        // Claude never read the message, so what the user did on the cards is still news to it.
+        // The model never read the message, so what the user did on the cards is still news to it.
         if (preface) giveBackPreface(preface);
         if (!thread.replying) return;
         const failure = {

@@ -1,16 +1,13 @@
 // What the replies since the app started have used: tokens, time and spend. A
 // reply is counted from the raw stream lines while it runs and closed by the
-// cost Claude Code reports at its end. Nothing here is saved between launches.
+// cost the provider reports, when available. Nothing here is saved between launches.
 
 import { estimateUsd } from './rates.js';
 
 const isObject = (value) => typeof value === 'object' && value !== null;
 const TEXT_FIELDS = new Set(['sessionId', 'model', 'stopReason']);
 
-/**
- * Copies the fields a line or event carries; an absent field leaves the old value. The lines come
- * straight from Claude Code, so a field of the wrong type is skipped too, or it would turn a sum into text.
- */
+// Provider fields can have unexpected types; skip them so a token sum never becomes text.
 function assign(reply, fields) {
   for (const [key, value] of Object.entries(fields)) {
     const fits = TEXT_FIELDS.has(key) ? typeof value === 'string' : Number.isFinite(value);
@@ -103,14 +100,14 @@ export function createUsageTracker() {
     into.cacheReadTokens += closed.cacheReadTokens;
     into.cacheWriteTokens += closed.cacheWrite5mTokens + closed.cacheWrite1hTokens;
     into.outputTokens += closed.outputTokens;
-    into.usd += usd;
+    into.usd = into.usd === null || usd === null ? null : into.usd + usd;
   };
 
   function close(status) {
     reply.status = status;
     const usedNothing = tokenCount(reply) === 0 && (reply.reportedUsd ?? 0) <= 0;
     if (usedNothing) return;
-    const usd = reply.reportedUsd ?? estimateUsd(reply.model, reply) ?? 0;
+    const usd = reply.reportedUsd ?? estimateUsd(reply.model, reply);
     const model = reply.model ?? 'unknown';
     const key = model + '\n' + reply.effort;
     if (!rows.has(key)) {
@@ -142,7 +139,7 @@ export function createUsageTracker() {
     finished(event) {
       if (reply.status !== 'streaming') return;
       assign(reply, { outputTokens: event.usage?.outputTokens, thinkingTokens: event.usage?.thinkingTokens, model: event.usage?.model });
-      if (reply.reportedUsd === null) assign(reply, { reportedUsd: event.costUsd });
+      if (reply.reportedUsd === null && !reply.model?.startsWith('gpt-')) assign(reply, { reportedUsd: event.costUsd });
       close('done');
     },
 

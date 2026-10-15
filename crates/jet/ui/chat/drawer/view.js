@@ -129,7 +129,7 @@ export function createDrawerView({
       h('td', { text: modelAndThinking(row) }),
       h('td', { class: 'usage-number', text: count(row.replies) }),
       h('td', { class: 'usage-number', text: count(tokenCount(row)) }),
-      h('td', { class: 'usage-number', text: row.usd.toFixed(4) }),
+      h('td', { class: 'usage-number', text: row.usd === null ? NOTHING : row.usd.toFixed(4) }),
     )));
 
     setValue('model', modelAndThinking(current));

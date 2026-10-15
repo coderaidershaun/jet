@@ -14,6 +14,7 @@ import { createLog } from './drawer/log.js';
 import { createUsageTracker } from './drawer/usage.js';
 import { createDrawerView } from './drawer/view.js';
 import { PAGE_NAMES, createPageState } from './page-state.js';
+import { modelPicker } from './settings/model-picker.js';
 import { createSheet } from './settings/sheet.js';
 import { createLive } from './stage/live.js';
 import { createEngineCards } from './thread/cards/engines-view.js';
@@ -75,6 +76,14 @@ async function start() {
   let cache = status.cache;
   let leanTimer = 0;
   let stallTimer = 0;
+
+  const quickModel = modelPicker(settings, async () => {
+    drawer.setModel(settings);
+    await saveSettings(settings);
+    const latest = await agent.status();
+    showProgramStatus(latest.claude);
+  });
+  $('composer').append(quickModel.el);
 
   $('gear').append(icon('gear'));
   $('drawer-toggle').append(icon('menu'));
@@ -160,19 +169,19 @@ async function start() {
   });
 
   const paintCache = () => drawer.setCache(describeCache(cache, Date.now()));
-  function showClaude(claude) {
-    if (claude.found) {
+  function showProgramStatus(program) {
+    if (program.found) {
       view.setBanner(null);
       return;
     }
-    const message = "I couldn't find Claude Code. I looked in: " + claude.searched.join(', ');
+    const message = "I couldn't find " + (program.provider ?? "Claude Code") + ". I looked in: " + program.searched.join(', ');
     view.setBanner(message, { label: 'Settings', run: () => sheet.open('claude') });
   }
   async function refreshStatus() {
     try {
       const latest = await agent.status();
       cache = latest.cache;
-      showClaude(latest.claude);
+      showProgramStatus(latest.claude);
     } catch (error) {
       console.warn('the agent status could not be read:', error);
     }
@@ -228,7 +237,7 @@ async function start() {
       defaultColour,
       totals: () => tracker.snapshot().total,
       systemReducesMotion: () => systemReduces.matches,
-      onClaudeChecked: showClaude,
+      onClaudeChecked: showProgramStatus,
       onForget: forget,
     },
     save: () => saveSettings(settings),
@@ -238,7 +247,7 @@ async function start() {
         applyColour();
         drawer.recolour();
         live.recolour();
-      } else if (kind === 'model') drawer.setModel({ model: settings.model, effort: settings.effort });
+      } else if (kind === 'model') { drawer.setModel(settings); quickModel.refresh(); }
       else if (kind === 'motion') {
         applyReduced();
         live.refresh();
@@ -305,7 +314,7 @@ async function start() {
   drawer.setModel({ model: settings.model, effort: settings.effort });
   drawer.setUsage(tracker.snapshot());
   paintPersona();
-  showClaude(status.claude);
+  showProgramStatus(status.claude);
   page.dataset.layout = composer.layout;
   if (history.length === 0) {
     live.showHero();

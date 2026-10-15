@@ -5,18 +5,18 @@ use std::time::Duration;
 use super::transport::TransportError;
 use crate::chat::Failure;
 
-/// How much of Claude's error output the user is shown.
+/// How much of the program's error output the user is shown.
 const STDERR_SHOWN: usize = 300;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TurnError {
     #[error(transparent)]
     Transport(#[from] TransportError),
-    #[error("no output from Claude Code for {} seconds", idle.as_secs())]
+    #[error("no output from Agent for {} seconds", idle.as_secs())]
     Timeout { idle: Duration },
-    #[error("Claude Code reported {subtype}: {message}")]
+    #[error("Agent reported {subtype}: {message}")]
     Reported { subtype: String, message: String },
-    #[error("Claude Code ended without a result")]
+    #[error("Agent ended without a result")]
     NoResult,
 }
 
@@ -24,6 +24,12 @@ impl From<&TurnError> for Failure {
     /// The message is written for the user and shown as it stands.
     fn from(error: &TurnError) -> Failure {
         match error {
+            TurnError::Transport(TransportError::CodexMissing { searched }) => Failure::Io {
+                message: format!(
+                    "I couldn't find Codex. I looked in: {}",
+                    searched.join(", ")
+                ),
+            },
             TurnError::Transport(TransportError::ClaudeMissing { searched }) => {
                 Failure::ClaudeMissing {
                     message: format!(
@@ -36,8 +42,8 @@ impl From<&TurnError> for Failure {
                 let tail = last_chars(stderr.trim(), STDERR_SHOWN);
                 let message = if tail.is_empty() {
                     match code {
-                        Some(code) => format!("Claude Code exited with code {code}"),
-                        None => "Claude Code exited without a status code".to_owned(),
+                        Some(code) => format!("Agent exited with code {code}"),
+                        None => "Agent exited without a status code".to_owned(),
                     }
                 } else {
                     tail.to_owned()
@@ -49,7 +55,7 @@ impl From<&TurnError> for Failure {
             },
             TurnError::Timeout { idle } => Failure::Timeout {
                 message: format!(
-                    "Claude stopped responding after {} minutes.",
+                    "The agent stopped responding after {} minutes.",
                     idle.as_secs() / 60
                 ),
             },
@@ -57,7 +63,7 @@ impl From<&TurnError> for Failure {
                 message: message.clone(),
             },
             TurnError::NoResult => Failure::ClaudeFailed {
-                message: "Claude Code ended without a reply.".to_owned(),
+                message: "Agent ended without a reply.".to_owned(),
             },
         }
     }

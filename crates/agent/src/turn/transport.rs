@@ -1,5 +1,4 @@
-//! The one door to Claude: a `Transport` takes a request and hands back the stream of
-//! lines. The real one starts Claude Code; a remote one could stand in later.
+//! Providers expose the same request and line stream so turns can share cancellation and errors.
 
 use std::io;
 use std::path::PathBuf;
@@ -8,13 +7,18 @@ use std::sync::{Arc, mpsc};
 
 use crate::chat::{Effort, Model, SessionId};
 
-/// Starts one request to Claude and streams its output.
+/// Starts one request and streams its output.
 pub trait Transport: Send + Sync {
+    /// The provider model used for structured memory review.
+    fn review_model(&self) -> Model {
+        Model::Haiku
+    }
+
     /// Begins the request. Failing here means nothing was started.
     fn start(&self, request: &Request) -> Result<Lines, TransportError>;
 }
 
-/// Everything one run of Claude needs.
+/// Everything one provider run needs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Request {
     /// The text sent on standard input.
@@ -31,7 +35,7 @@ pub struct Request {
     pub mcp_config: Option<String>,
 }
 
-/// How a request relates to Claude Code's saved conversations.
+/// How a request relates to the agent's saved conversations.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionMode {
     New,
@@ -42,7 +46,7 @@ pub enum SessionMode {
 
 /// What a started request gives back.
 pub struct Lines {
-    /// Each line of standard output, or the reason the run ended badly. The channel
+    /// Each original or translated output line, or why the run ended badly. The channel
     /// closes when the run is over.
     pub receiver: mpsc::Receiver<Result<String, TransportError>>,
     pub stopper: Stopper,
@@ -82,22 +86,33 @@ impl Stopper {
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
+    #[error("unsupported Codex model {} with thinking level {}", model.alias(), effort.alias())]
+    CodexModel { model: Model, effort: Effort },
+    #[error("invalid MCP configuration: {source}")]
+    McpConfig {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("invalid MCP server name {name:?}; use only letters, digits, underscores or hyphens")]
+    McpServerName { name: String },
     #[error("Claude Code was not found; looked in {}", searched.join(", "))]
     ClaudeMissing { searched: Vec<String> },
+    #[error("Codex was not found; looked in {}", searched.join(", "))]
+    CodexMissing { searched: Vec<String> },
     #[error("could not start {program}: {source}")]
     Spawn {
         program: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("could not send the prompt to Claude Code: {source}")]
+    #[error("could not send the prompt to the agent: {source}")]
     Stdin {
         #[source]
         source: io::Error,
     },
-    #[error("Claude Code exited with {}", describe_exit(*code))]
+    #[error("Agent process exited with {}", describe_exit(*code))]
     Exited { code: Option<i32>, stderr: String },
-    #[error("could not read Claude Code's output: {source}")]
+    #[error("could not read the agent output: {source}")]
     Read {
         #[source]
         source: io::Error,

@@ -1,37 +1,12 @@
-// The settings about how Claude is asked: which model, how hard it thinks, the
-// budget for one turn, and what the replies since the app started have used.
-
 import { h } from '../../dom.js';
 import { tokenCount } from '../drawer/usage.js';
-import { note, section, segmented } from './controls.js';
+import { note, section } from './controls.js';
 
-const MODELS = [
-  { value: 'fable', label: 'Fable' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'haiku', label: 'Haiku' },
-];
-const EFFORTS = [
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'xhigh', label: 'XHigh' },
-  { value: 'max', label: 'Max' },
-];
+import { isCodex } from '../../bridge/models.js';
+import { modelPicker } from './model-picker.js';
 
-/** @param {import('./sheet.js').SheetContext} ctx */
 export function buildModel({ settings, changed, totals }) {
-  const pickModel = (value) => {
-    settings.model = value;
-    changed('model');
-  };
-  const pickEffort = (value) => {
-    settings.effort = value;
-    changed('model');
-  };
-  const model = segmented({ label: 'Model', options: MODELS, value: settings.model, onChange: pickModel });
-  const effort = segmented({ label: 'Thinking', options: EFFORTS, value: settings.effort, onChange: pickEffort });
-
+  const picker = modelPicker(settings, (kind) => { budgetField.hidden = isCodex(settings.model); changed(kind); });
   const budget = h('input', { type: 'number', min: '0.1', step: '0.25', inputmode: 'decimal' });
   budget.value = settings.turnBudgetUsd.toFixed(2);
   budget.addEventListener('change', () => {
@@ -46,7 +21,7 @@ export function buildModel({ settings, changed, totals }) {
   const paintTotals = () => {
     const usedSoFar = totals();
     const rows = [
-      ['Cost', '$' + usedSoFar.usd.toFixed(4)],
+      ['Cost', usedSoFar.usd === null ? 'Not reported' : '$' + usedSoFar.usd.toFixed(4)],
       ['Tokens', tokenCount(usedSoFar).toLocaleString('en-GB')],
       ['Cache reads', usedSoFar.cacheReadTokens.toLocaleString('en-GB')],
     ];
@@ -54,9 +29,10 @@ export function buildModel({ settings, changed, totals }) {
   };
   paintTotals();
 
-  const appliesNote = note('Applies to the next conversation. Memory review always uses Haiku.');
+  const appliesNote = note('Changes apply to the next reply. Codex memory review uses GPT-6 Luna; Claude uses Haiku. Codex reports tokens, but does not provide a dollar budget limit.');
+  budgetField.hidden = isCodex(settings.model);
   return {
-    el: section('model', 'Model and thinking', model.el, effort.el, budgetField, appliesNote, h('h4', { text: 'This session' }), used),
-    refresh: paintTotals,
+    el: section('model', 'Model and thinking', picker.el, budgetField, appliesNote, h('h4', { text: 'This session' }), used),
+    refresh() { picker.refresh(); budgetField.hidden = isCodex(settings.model); paintTotals(); },
   };
 }

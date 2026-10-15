@@ -1,9 +1,11 @@
-//! One exchange with Claude: start a request and read it back as steps. A turn always ends
+//! One exchange with an agent: start a request and read it back as steps. A turn always ends
 //! in exactly one of finished, stopped or failed, so the caller never waits for nothing.
 
 mod claude;
+mod codex;
 mod error;
 mod mood;
+mod process;
 #[cfg(test)]
 pub(crate) mod scripted;
 mod stream;
@@ -19,16 +21,17 @@ use serde_json::Value;
 use crate::chat::{McpStatus, Mood, SessionId, ToolCall, Usage};
 pub use claude::ClaudeCli;
 pub(crate) use claude::mcp_config;
+pub use codex::CodexCli;
 pub use error::TurnError;
 use mood::{MoodSplitter, Split};
 use stream::{Line, ResultLine};
 use tools::ToolCalls;
 pub use transport::{Lines, Request, SessionMode, Stopper, Transport, TransportError};
 
-/// How long Claude may stay silent before the turn gives up.
+/// How long the agent may stay silent before the turn gives up.
 const IDLE_LIMIT: Duration = Duration::from_secs(120);
 
-/// While a tool runs, Claude may stay silent this many times as long, because a library
+/// While a tool runs, the agent may stay silent this many times as long, because a library
 /// answer can take minutes.
 const TOOL_IDLE_FACTOR: u32 = 3;
 
@@ -36,7 +39,7 @@ const TOOL_IDLE_FACTOR: u32 = 3;
 /// or `Failed`, and there is never more than one of them.
 #[derive(Debug)]
 pub enum Step {
-    /// A stdout line, untouched, before the steps made from it.
+    /// A transport line before the steps made from it.
     Raw(String),
     Init {
         session_id: SessionId,
@@ -65,7 +68,7 @@ pub struct Summary {
     pub duration_ms: u64,
     pub cost_usd: f64,
     pub usage: Usage,
-    /// Claude's final answer as plain text.
+    /// The model's final answer as plain text.
     pub result: String,
     /// The answer as data, when the request asked for a schema.
     pub structured_output: Option<Value>,
@@ -411,7 +414,7 @@ mod tests {
             let failure = Failure::from(&TurnError::Timeout { idle });
             assert_eq!(
                 failure.message(),
-                format!("Claude stopped responding after {minutes} minutes.")
+                format!("The agent stopped responding after {minutes} minutes.")
             );
         }
 

@@ -27,5 +27,6 @@ path = "src/bin/fake-bridge.rs"
 pulldown-cmark = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 thiserror = { workspace = true }
 ureq = { workspace = true }

@@ -1,12 +1,12 @@
-//! The data that crosses into the app or onto disk: the events a reply streams, the saved
-//! thread entries, and the settings that shape the persona. The names and the JSON shapes
-//! here are what the chat page reads, so change them with the page.
+//! The app and saved conversations share these data types so event and file formats stay consistent.
 
+mod model;
 mod tools;
 mod usage;
 
 use serde::{Deserialize, Serialize};
 
+pub use model::{Effort, Model};
 pub use tools::{McpServer, McpServers, McpStatus, ToolCall};
 pub(crate) use tools::{content_text, content_value};
 pub use usage::Usage;
@@ -18,54 +18,6 @@ pub const MEMORY_LIMIT: usize = 2200;
 pub const USER_LIMIT: usize = 1375;
 /// The longest RECENT note, in characters.
 pub const RECENT_LIMIT: usize = 1500;
-
-/// Which Claude model answers the chat.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Model {
-    Fable,
-    Opus,
-    #[default]
-    Sonnet,
-    Haiku,
-}
-
-impl Model {
-    /// The name the Claude Code command line accepts.
-    pub fn alias(self) -> &'static str {
-        match self {
-            Model::Fable => "fable",
-            Model::Opus => "opus",
-            Model::Sonnet => "sonnet",
-            Model::Haiku => "haiku",
-        }
-    }
-}
-
-/// How hard Claude thinks before it answers.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Effort {
-    Low,
-    #[default]
-    Medium,
-    High,
-    XHigh,
-    Max,
-}
-
-impl Effort {
-    /// The name the Claude Code command line accepts.
-    pub fn alias(self) -> &'static str {
-        match self {
-            Effort::Low => "low",
-            Effort::Medium => "medium",
-            Effort::High => "high",
-            Effort::XHigh => "xhigh",
-            Effort::Max => "max",
-        }
-    }
-}
 
 /// How Jet feels in a reply. The first line of every reply names one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,7 +47,7 @@ impl Mood {
         Mood::Hello,
     ];
 
-    /// The word Claude writes on the mood line.
+    /// The word the model writes on the mood line.
     pub fn word(self) -> &'static str {
         match self {
             Mood::Neutral => "neutral",
@@ -163,7 +115,7 @@ pub struct Notes {
     pub recent: String,
 }
 
-/// Claude Code's own name for a conversation.
+/// The provider's own name for a conversation.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SessionId(pub String);
@@ -248,7 +200,7 @@ impl Failure {
     rename_all_fields = "camelCase"
 )]
 pub enum Event {
-    /// A line from Claude Code, untouched, sent before the typed events made from it.
+    /// A transport line sent before the typed events made from it.
     RawLine {
         line: String,
     },
@@ -267,7 +219,7 @@ pub enum Event {
     Text {
         delta: String,
     },
-    /// Claude called an MCP tool; it is running now. A call still running when the reply
+    /// The model called a library tool; it is running now. A call still running when the reply
     /// ends gets no `ToolFinished`, and the saved entry keeps only finished calls.
     ToolStarted {
         id: String,

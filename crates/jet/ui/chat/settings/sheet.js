@@ -1,7 +1,4 @@
-// The settings sheet: a dialog that slides in from the right (or up from the
-// bottom on a phone), holds the eleven sections, and saves a short while after
-// the last edit. Changes to the libraries also make the page look at the running
-// copies again, a switch after its save and a program or folder when the sheet closes.
+// Delay saving until editing pauses, and wait for complete paths before restarting libraries.
 
 import { displayName } from '../../bridge/settings.js';
 import { h, icon } from '../../dom.js';
@@ -19,7 +16,7 @@ const SAVE_AFTER_EDIT_MS = 600;
 /**
  * @typedef {object} SheetContext
  * @property {import('../../bridge/settings.js').Settings} settings   edited in place
- * @property {*} agent   what the page talks to Claude through
+ * @property {*} agent   what the page talks to the agent through
  * @property {(kind: string) => void} changed   tell the page what changed; saving follows
  * @property {number[]} defaultColour   the rig's own rest colour
  * @property {() => import('../drawer/usage.js').UsageTotals} totals   what the replies since the app started have used, read on each refresh
@@ -33,25 +30,25 @@ const SAVE_AFTER_EDIT_MS = 600;
  */
 export function createSheet({ dialog, context, onChange, save }) {
   let saveTimer = 0;
-  let claudePathEdited = false;
+  let needsProgramCheck = false;
   // A switch reloads the libraries after its save. A typed program or folder waits for the sheet to close, so a half-typed path never restarts polysim.
   let reloadAfterSave = false;
   let reloadAtClose = false;
   let opener = null;
-  // The Rust side looks for Claude Code at the saved path, so a new path is checked only after its save.
+  // The Rust side reads the saved model and program paths, so changes are checked only after saving.
   const saveEdits = async () => {
-    const recheckClaude = claudePathEdited;
+    const checkProgram = needsProgramCheck;
     const reload = reloadAfterSave;
-    claudePathEdited = false;
+    needsProgramCheck = false;
     reloadAfterSave = false;
     await save();
-    if (recheckClaude) claude.refresh();
+    if (checkProgram) programs.refresh();
     if (reload) ctx.agent.reloadLibraries().catch((error) => console.warn('the libraries could not be reloaded:', error));
   };
   const changed = (kind) => {
     onChange(kind);
     if (kind === 'persona') paintNames(body, displayName(ctx.settings));
-    if (kind === 'claude') claudePathEdited = true;
+    if (kind === 'claude' || kind === 'model') needsProgramCheck = true;
     if (kind === 'libraries') reloadAfterSave = true;
     if (kind === 'library-path') reloadAtClose = true;
     clearTimeout(saveTimer);
@@ -63,8 +60,8 @@ export function createSheet({ dialog, context, onChange, save }) {
 
   const model = buildModel(ctx);
   const memory = buildMemory(ctx);
-  const claude = buildClaude(ctx);
-  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), ...buildLook(ctx), model.el, memory.el, buildLibraries(ctx), buildWorkstation(ctx), ...claude.el);
+  const programs = buildClaude(ctx);
+  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), ...buildLook(ctx), model.el, memory.el, buildLibraries(ctx), buildWorkstation(ctx), ...programs.el);
 
   const closeButton = h('button', { class: 'icon-button', type: 'button', 'aria-label': 'Close settings', onClick: () => sheet.close() }, icon('close'));
   dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), closeButton), body);
@@ -89,7 +86,7 @@ export function createSheet({ dialog, context, onChange, save }) {
       requestAnimationFrame(() => dialog.classList.add('open'));
       model.refresh();
       memory.refresh();
-      claude.refresh();
+      programs.refresh();
       if (sectionId) {
         const target = body.querySelector('#section-' + sectionId);
         if (target) target.scrollIntoView({ block: 'start' });

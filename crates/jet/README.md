@@ -2,6 +2,26 @@
 
 Jet is the first-mate character: a circle that stands up, waves, spins while it works and melts back. This crate is Jet's desktop home, a Tauri 2 window around a small animation player and a chat page that Jet lives in. `CONTEXT.md` holds the words this crate uses, and `character-policy.md` holds the rules for how Jet looks and moves.
 
+## Models
+
+Use **Model** and **Thinking** directly below the message box. Models are grouped under
+Codex and Claude; selections are saved and apply to the next reply. Changing the model or
+thinking level starts a fresh provider session while retaining the visible thread and memory.
+The default is **Codex / GPT-6.1 Sol / Medium**.
+
+Install the Codex CLI and run `codex login` once with your ChatGPT account. Jet launches
+`codex exec --json` headlessly and uses that sign-in, without an API key. Claude remains
+available through its installed `claude` CLI. Custom paths are in Settings → Agent programs.
+Codex must support `--ignore-user-config` and `--ignore-rules` (tested with CLI 0.162.1).
+
+Codex can call every tool exposed by enabled library MCP servers. Jet grants those servers
+headless tool permission; managed Codex restrictions still apply. No shell tools are exposed.
+
+Codex supports chat resume, the configured library MCP tools, and structured memory review
+using GPT-6 Luna. Thinking choices depend on the model. Codex token usage is displayed;
+dollar spend is unknown because the CLI does not report it, and the USD budget control
+applies only to Claude. See [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode).
+
 ## Run it
 
 The app:

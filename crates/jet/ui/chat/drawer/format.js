@@ -16,7 +16,7 @@ export const count = (number) => number.toLocaleString('en-GB');
 /** Full below 10 000, then shortened (41.6K, 2.3M), so a long day's tokens still fit a narrow tile. */
 export const compactCount = (number) => (number < COMPACT_FROM ? count(number) : compact.format(number));
 
-export const dollars = (usd) => '$' + usd.toFixed(4);
+export const dollars = (usd) => usd === null ? NOTHING : '$' + usd.toFixed(4);
 
 export const seconds = (ms) => (ms === null ? NOTHING : (ms / 1000).toFixed(2) + ' s');
 
