@@ -1,0 +1,50 @@
+/* The chart area's own styles, which the area loads itself when it mounts. The script sets the split and the
+   strip height from the numbers the charts are painted with, so the grid rows and the drawing agree to the pixel. */
+
+.ws-chart-stack {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--ws-chart-split, 70%) var(--ws-chart-strip) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--ws-panel);
+  overflow: hidden;
+}
+
+.ws-chart-plot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ws-chart-cross {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ws-chart-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-block: var(--ws-hairline) solid var(--ws-border);
+  background: var(--ws-panel);
+}
+
+.ws-chart-sub .ws-seg {
+  width: 168px;
+  height: 22px;
+}
+
+.ws-chart-latest {
+  font: 11px var(--mono);
+  color: var(--ws-text-2);
+  font-variant-numeric: tabular-nums;
+}
