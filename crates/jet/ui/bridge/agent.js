@@ -58,6 +58,7 @@ import { createTauriAgent } from './tauri-agent.js';
  * @property {() => Promise<Notes>} loadMemory
  * @property {(notes: { memory: string, user: string, recent: string }) => Promise<Notes>} saveMemory
  * @property {(text: string) => Promise<string>} renderMarkdown
+ * @property {(path: string) => Promise<string>} readLibraryImage   a picture of the quanty library as a data: address
  * @property {(url: string) => Promise<void>} openLink
  * @property {(listener: (notes: Notes) => void) => () => void} onMemoryUpdated   returns the way to stop listening
  */

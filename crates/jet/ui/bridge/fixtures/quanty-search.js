@@ -1,4 +1,5 @@
 // A real quanty search recorded from Claude Code: the call, what the library gave back, and Jet's answer.
+// After it come three hits added by hand, so every kind of source shows, and a search that failed.
 export const QUANTY_SEARCH = {
   "use": {
     "id": "toolu_01K3EDj1tq5Co9obfZ2yX4Nx",
@@ -139,4 +140,99 @@ export const QUANTY_SEARCH = {
     "cost_usd": 0.000004600000000000001
   },
   "reply": "Vega is how much an option's theoretical value changes when implied volatility moves by one percentage point. Calls and puts both have positive vega, because higher volatility makes any option worth more [1]. For example, with a vega of 0.15, an option worth 3.25 at 20% volatility becomes worth about 3.40 at 21% [1].\n\n- **Where it's largest:** at-the-money options. It also grows with time to expiry, so long-dated options are more sensitive to volatility than short-dated ones [2][3].\n- **Vega and gamma:** gamma tells you whether you want more or less *realized* volatility. Vega tells you whether you want more or less *implied* volatility. The two usually move together, but not always [5].\n- **Units:** the textbook formula gives the change for a full 100% move in volatility. Divide by 100 to get the usual \"per point\" figure [4].\n- **Name:** vega isn't a Greek letter. Academics sometimes call it kappa [1].\n\nIf you want, I can go on to volga/vomma, which is how vega itself changes as volatility moves."
+};
+
+// Three more hits, added by hand with their text copied from the library's own files, so a formula, a table and a figure show as well as chunks.
+export const ADDED_HITS = [
+  {
+    "number": 6,
+    "document_id": "abbfc870-9746-50d3-95f8-50d53cc9a9e7",
+    "document": "Option Volatility & Pricing, chapter 18: The Black Scholes Model",
+    "media": "Option Volatility & Pricing",
+    "category": "book",
+    "authors": [
+      "Sheldon Natenberg"
+    ],
+    "media_tags": [
+      "options",
+      "trading"
+    ],
+    "tags": [],
+    "page": 12,
+    "printed_page": "350",
+    "kind": "formula",
+    "text": "C = S e^{(b-r)t} N(d_1) - X e^{-rt} N(d_2)",
+    "score": 0.7712,
+    "reason": {
+      "why": "concept",
+      "concept": "Black-Scholes model"
+    }
+  },
+  {
+    "number": 7,
+    "document_id": "abbfc870-9746-50d3-95f8-50d53cc9a9e7",
+    "document": "Option Volatility & Pricing, chapter 18: The Black Scholes Model",
+    "media": "Option Volatility & Pricing",
+    "category": "book",
+    "authors": [
+      "Sheldon Natenberg"
+    ],
+    "media_tags": [
+      "options",
+      "trading"
+    ],
+    "tags": [],
+    "page": 12,
+    "printed_page": "350",
+    "kind": "table",
+    "label": "Figure 18-6",
+    "text": "| | Call | Put |\n|---|---|---|\n| Delta (Δ) | \\(e^{(b-r)t} N(d_1)\\) | \\(e^{(b-r)t} [N(d_1)-1]\\) |\n| Gamma (Γ) | \\(\\frac{e^{(b-r)t} n(d_1)}{S\\sigma\\sqrt{t}}\\) (same for calls and puts) | \\(\\frac{e^{(b-r)t} n(d_1)}{S\\sigma\\sqrt{t}}\\) |\n| Theta (Θ)* | \\(\\frac{-S e^{(b-r)t} n(d_1)\\sigma}{2\\sqrt{t}} + (b-r)S e^{(b-r)t} N(d_1) - rX e^{-rt} N(d_2)\\) | \\(\\frac{-S e^{(b-r)t} n(d_1)\\sigma}{2\\sqrt{t}} + (b-r)S e^{(b-r)t} N(d_1) + rX e^{-rt} N(-d_2)\\) |\n| Vega** | \\(S e^{(b-r)t} n(d_1)\\sqrt{t}\\) (same for calls and puts) | \\(S e^{(b-r)t} n(d_1)\\sqrt{t}\\) |\n| Rho (P)** | \\(tXe^{-rt} N(d_2)\\) if b ≠ 0; -tC if b = 0 | \\(-tXe^{-rt} N(-d_2)\\) if b ≠ 0; -tP if b = 0 |\n| Rho\\(_f\\) or Phi (Φ) | \\(-tS e^{(b-r)t} N(d_1)\\) | \\(tS e^{(b-r)t} N(-d_1)\\) |\n| Elasticity (Λ) | \\(\\Delta_C (S/C)\\) | \\(\\Delta_P (S/P)\\) |",
+    "score": 0.765,
+    "reason": {
+      "why": "cited",
+      "by": 4,
+      "label": "Figure 18-6"
+    }
+  },
+  {
+    "number": 8,
+    "document_id": "c1855664-0f5a-550a-93c0-d6c993e5da1f",
+    "document": "Option Volatility & Pricing, chapter 7: Risk Measurement I",
+    "media": "Option Volatility & Pricing",
+    "category": "book",
+    "authors": [
+      "Sheldon Natenberg"
+    ],
+    "media_tags": [
+      "options",
+      "trading"
+    ],
+    "tags": [],
+    "page": 15,
+    "printed_page": "111",
+    "kind": "figure",
+    "label": "Figure 7-10",
+    "text": "Figure 7-10 Theoretical value of a call with changing volatility. A line chart with 'Call option value' on the vertical axis and underlying price on the horizontal axis, running from 'Lower underlying prices' on the left to 'Higher underlying prices' on the right.\n\nA vertical dotted line marks the 'Exercise price'. The 'Lower volatility' curve is solid, flat near zero at low prices and rising convexly to the upper right. The 'Higher volatility' curve is dotted and lies above the solid curve everywhere, converging with it at the top right. The 'Intrinsic value' is a dashed line, zero until the exercise price and then rising linearly to the upper right.\n\nThe figure shows that a call's theoretical value is higher with higher volatility, with the gap largest near the exercise price, and that both values lie above intrinsic value.\n\nText printed in the figure: \"Call option value\"; \"Exercise price\"; \"Lower volatility\"; \"Higher volatility\"; \"Intrinsic value\"; \"Lower underlying prices\"; \"Higher underlying prices\"",
+    "picture": "content/option-volatility-pricing/chapter-7/page-num-15/01-figure.png",
+    "score": 0.759,
+    "reason": {
+      "why": "cited",
+      "by": 1,
+      "label": "Figure 7-10"
+    }
+  }
+];
+
+// A search that failed because the library was down, and the reply Jet gives.
+export const QUANTY_DOWN = {
+  "use": {
+    "id": "toolu_quanty_down_01",
+    "name": "mcp__quanty__search",
+    "input": {
+      "question": "What is vega, the sensitivity of an option price to volatility?",
+      "limit": 5
+    }
+  },
+  "result": "could not connect to the graph: FalkorDB at 127.0.0.1:6379 refused the connection. Call the `health` tool to see which service is not ready.",
+  "reply": "I couldn't reach the library just now: quanty says it cannot connect to its graph store, so I can't cite the books. From memory, vega is how much an option's value changes when implied volatility moves by one percentage point. Ask me to check the library's health and I'll find which service is down."
 };

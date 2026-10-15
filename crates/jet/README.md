@@ -33,7 +33,8 @@ The pretend agent answers from the words in your message. A word counts when a w
 | `error` | the reply fails the way Claude Code does when it is not logged in |
 | `missing` | the reply fails as if Claude Code was not installed |
 | `timeout` | the reply fails with "Claude stopped responding after 2 minutes." |
-| `quanty` | a recorded library search comes first: the call and what the library gave back reach the page as `toolStarted` and `toolFinished` events, and as the stream lines behind them, then the answer streams; the `started` event lists the servers of the `mcp` setting |
+| `quanty` | a library search comes first: the call and what the library gave back reach the page as `toolStarted` and `toolFinished` events, and as the stream lines behind them, then the answer streams; the `started` event lists the servers of the `mcp` setting. The search is the recorded one plus three hits added by hand, a formula, a table of Greeks and a figure, so every kind of source shows; in a browser the figure reads "Picture unavailable" |
+| `quanty down` | the search fails with quanty's own advice, so the thread shows the failed card with the health hint, and the reply says the library is down |
 
 Tests:
 
@@ -58,13 +59,15 @@ What they cover:
 | `src/settings.rs` `default_settings_match_the_ui_fixture` | `ui/bridge/default-settings.json` is exactly the defaults Rust writes |
 | `src/settings.rs` `json_uses_camel_case_for_the_frontend` | the page reads `reducedMotion`, not `reduced_motion` |
 | `src/chat/error.rs` `bridge_error_serialises_as_kind_and_message` | every command error reaches the page as `{ kind, message }` |
+| `src/chat/image.rs` `a_picture_in_the_library_comes_back_as_a_data_address` | a relative and an absolute path, a PNG, a `.JPG` and a `.jpeg` come back as a `data:` address whose bytes equal the file |
+| `src/chat/image.rs` `pictures_outside_the_library_of_another_kind_or_too_large_are_refused` | no quanty folder, a folder that does not exist, a path that leaves the folder, a link that points out of it, a GIF, a folder named `dir.png`, a file over 8 MB and a missing file are each refused with their own error |
 | `src/chat/mod.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
 | `../agent/src/markdown/mod.rs` `math_and_tables_match_the_shared_vectors` | the app's renderer gives the html of every case in `ui/bridge/fixtures/math-vectors.json`: math in prose, display math, money, delimiters that open nothing, code, lists, number columns; and never writes a `style` attribute |
 | `rig/poses.rs` `generator_prints_the_committed_rig` | the generator prints exactly `rig/jet.json` |
-| `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps; the `quanty` word replays the recorded library search as tool events before the answer |
+| `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps; the `quanty` word replays the recorded library search and the hits added by hand as tool events before the answer |
 | `ui/bridge/markdown.test.mjs` | the browser fallback gives the same html as the app's renderer for every shared case, with no `style` attribute |
 | `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; merge fills gaps from them; `defaults_match_the_rust_fixture`: the page's defaults are exactly `ui/bridge/default-settings.json` |
-| `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method calls its command with the right argument keys and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
+| `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method (`readLibraryImage` too) calls its command with the right argument keys and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
 | `ui/chat/composer/state.test.mjs` | centred until the first send, Send becomes Stop, Enter and Escape |
 | `ui/chat/drawer/cache.test.mjs` | the cache chip is warm until the TTL ends, then cold with the tokens to re-read |
 | `ui/chat/drawer/caption.test.mjs` | the gear caption reads the model word and the thinking level |
@@ -73,9 +76,11 @@ What they cover:
 | `ui/chat/drawer/usage.test.mjs` | the recorded Sonnet turn read line by line (live counts, then the reported cost and timings, then the totals); a second reply at another thinking level gets its own row; a stopped reply keeps its tokens; stray lines change nothing |
 | `ui/chat/settings/form.test.mjs` | hex and rgb both ways, code-point counts, the master moves only the channels that follow it |
 | `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; the cruise grows with distance |
+| `ui/chat/thread/cards/model.test.mjs` | each tool reads as what it is doing while it runs and sums up what came back; a failed call shows the server's advice with the health hint split off, and a call the reply outran says it stopped; each kind of hit (chunk, formula, table, figure, code, footnote, unknown) is shown its own way, with its row line and a page's breadcrumbs |
+| `ui/chat/thread/cards/cite.test.mjs` | `[n]` in Jet's text links to the nearest earlier card that holds source n; `[0]`, `[x]` and `[1234]` are not citations; a page's pieces are not sources |
 | `ui/chat/thread/math.test.mjs` | a formula is drawn once per mode and the newest are kept; each is labelled for screen readers; a formula KaTeX cannot read keeps its TeX and is tried again; KaTeX's drawings reach the page with no `style` attribute and keep their width |
 | `ui/chat/thread/scroll.test.mjs` | the thread follows within 80 px of the bottom, and a send always follows |
-| `ui/chat/thread/store.test.mjs` | grouping and day pills, the slot's life from waiting to its end, the held message |
+| `ui/chat/thread/store.test.mjs` | grouping and day pills, the slot's life from waiting to its end, the held message, a reply's tool calls as they start and finish, and one still running at the end kept as unfinished |
 | `ui/chat/thread/throttle.test.mjs` | markdown renders at most every 50 ms with a trailing call; the first reveal waits for the mood |
 | `ui/jet/clip.test.mjs` | a time writer refuses a bare `t` |
 | `ui/jet/clips/annoyed.test.mjs` | a centred or deferential Jet never glares, tints or narrows its eyes |
@@ -127,6 +132,7 @@ crates/jet
 │   └── chat/
 │       ├── mod.rs                  the commands the chat page calls, and the channel that streams a reply to it
 │       ├── error.rs                the error every chat command fails with, sent as `{ kind, message }`
+│       ├── image.rs                reads a picture of the quanty library for the page as a `data:` address, only from inside that folder
 │       └── review_timer.rs         the timer that keeps Jet's notes current once the chat goes quiet
 └── ui/
     ├── index.html                  the chat page: header, drawer, thread, composer, settings dialog
@@ -151,7 +157,7 @@ crates/jet
     │   ├── markdown.test.mjs       the shared math and table cases, with no style attribute
     │   └── fixtures/
     │       ├── math-vectors.json   the cases both Markdown renderers must agree on, run by a test on each side
-    │       └── quanty-search.js    a real quanty search recorded from Claude Code: the call, what the library gave back and the answer, which the pretend agent replays
+    │       └── quanty-search.js    a real quanty search recorded from Claude Code (the call, what the library gave back and the answer), three hits added by hand so every kind of source shows, and a search that failed; the pretend agent replays them
     ├── chat/                       the chat page
     │   ├── main.js                 boot: loads the rig, settings and history, builds every part, hands each its parts
     │   ├── turn.js                 one turn: a send, each event of the reply, the end of the reply
@@ -163,16 +169,25 @@ crates/jet
     │   │   ├── flight.test.mjs     the flight holds, lands, turns (capped at 25°) and mirrors; the cruise grows with distance
     │   │   └── stage.css           the empty state, the hero spot and the live Jet's place in a lane
     │   ├── thread/                 the conversation
-    │   │   ├── store.js            messages, notices, the running reply and the held message, as rows (pure)
-    │   │   ├── store.test.mjs      grouping and pills; the slot's life; the held message
-    │   │   ├── view.js             draws the rows: bubbles, lanes, dots, code blocks, links
+    │   │   ├── store.js            messages, notices, the running reply with its tool calls, and the held message, as rows (pure)
+    │   │   ├── store.test.mjs      grouping and pills; the slot's life; the held message; a reply's tool calls
+    │   │   ├── view.js             draws the rows: bubbles, lanes, the cards above a reply, citation chips, dots, code blocks, links
     │   │   ├── math.js             draws the formulas of a reply with KaTeX, keeps each drawing, moves KaTeX's style attributes onto the element
     │   │   ├── math.test.mjs       once per mode, the newest kept, labelled; a bad formula is tried again; no style attribute
     │   │   ├── scroll.js           when the thread follows new text (pure)
     │   │   ├── scroll.test.mjs     follows within 80 px of the bottom; a send always follows
     │   │   ├── throttle.js         when streamed text becomes HTML: at most every 50 ms, stale answers dropped
     │   │   ├── throttle.test.mjs   the 50 ms rule with a trailing call; the first reveal waits for the mood
-    │   │   └── thread.css          rows, bubbles, lanes, pills and the Markdown inside bubbles
+    │   │   ├── thread.css          rows, bubbles, lanes, pills and the Markdown inside bubbles
+    │   │   └── cards/              what the thread shows for a tool call
+    │   │       ├── model.js        what one call's card says: the running line, the summary, the advice of a failure, the sources and how each kind of hit is shown (pure)
+    │   │       ├── model.test.mjs  the line and summary of each tool, failed and stopped calls, each kind of hit
+    │   │       ├── cite.js         how `[n]` in Jet's text finds its source: split at each citation, matched to the nearest card above (pure)
+    │   │       ├── cite.test.mjs   `[n]` links to the nearest earlier card that holds source n
+    │   │       ├── view.js         draws the cards, keeps finished ones across redraws, turns `[n]` into chips and opens a source when its chip is pressed
+    │   │       ├── show.js         draws one hit or page piece: Markdown, a formula, a table, a figure with its picture, code
+    │   │       ├── registry.js     how a finished call is drawn, by `server/tool`; a tool not named gets the default card
+    │   │       └── cards.css       the cards, their source rows, the spinner, the citation chips
     │   ├── composer/               the field and the Send/Stop button
     │   │   ├── state.js            the composer's rules: where it sits, the button, Enter, Escape (pure)
     │   │   ├── state.test.mjs      centred until the first send; Send becomes Stop; Enter and Escape
@@ -302,6 +317,7 @@ The settings commands reject with a message string. The chat commands, from `age
 | `load_memory` | nothing | the three notes and their length limits | |
 | `save_memory` | `{ notes }` | the notes as saved, cut to their limits | the next message starts a fresh session so Claude sees them |
 | `render_markdown` | `{ text }` | the text as HTML | the page asks while a reply streams; math comes back as `.math` elements for the page to typeset |
+| `read_library_image` | `{ path }` | a `data:image/png;base64,…` or `data:image/jpeg;base64,…` address | a relative path is read from the quanty folder (`mcp.quanty.cwd`); a file outside it once links are followed, not .png/.jpg/.jpeg, or over 8 MB is refused with kind `io` |
 | `open_link` | `{ url }` | nothing | opens `http`, `https` and `mailto` links in the user's own apps; any other scheme fails with `badLink` |
 
 ## Libraries over MCP
@@ -321,6 +337,7 @@ What the page gets:
 - `started` carries `mcp`: each server and its state. Only `failed` means offline; `pending` is still starting.
 - `toolStarted` when Claude has written a call (`id`, `server`, `tool`, `input`) and `toolFinished` when it comes back (`ok`, `result`, a one-line `summary` such as `quanty · search · 5 results`, and `durationMs`). Only MCP tools make events; Claude Code's own ToolSearch stays in the raw log. A call still running when the reply ends gets no `toolFinished`.
 - The saved entry keeps its finished calls in `tools`. Entries without calls look as they did before.
+- The thread shows each call as a card above the reply: a spinner while it runs, then a folded card of what came back. `[n]` in the reply becomes a chip that opens source n of the nearest card above it. A figure's picture is read through `read_library_image` when its row opens.
 - While a call runs, Claude may stay silent three times as long as usual, so a reply times out after 6 minutes of silence then.
 - The text of separate calls to the model is joined with a blank line.
 

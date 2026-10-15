@@ -76,6 +76,7 @@ test('with window.__TAURI__ the agent calls each command with its argument keys 
   assert.equal(swallowed.length, 1);
 
   stub.replies.set('render_markdown', '<p>x</p>');
+  stub.replies.set('read_library_image', 'data:image/png;base64,AAAA');
   await agent.status();
   await agent.history();
   await agent.stop();
@@ -84,11 +85,12 @@ test('with window.__TAURI__ the agent calls each command with its argument keys 
   await agent.saveMemory({ memory: 'm', user: 'u', recent: 'r', limits: { memory: 1, user: 1, recent: 1 } });
   assert.equal(await agent.renderMarkdown('*x*'), '<p>x</p>');
   await agent.openLink('https://example.com');
+  assert.equal(await agent.readLibraryImage('content/a.png'), 'data:image/png;base64,AAAA');
 
   const commands = stub.calls.map(([command]) => command);
   assert.deepEqual(commands, [
     'send_message', 'agent_status', 'load_history', 'stop_reply', 'forget_conversation',
-    'load_memory', 'save_memory', 'render_markdown', 'open_link',
+    'load_memory', 'save_memory', 'render_markdown', 'open_link', 'read_library_image',
   ]);
   const argsOf = (command) => stub.calls.find(([name]) => name === command)[1];
   assert.deepEqual(Object.keys(argsOf('send_message')).sort(), ['events', 'request']);
@@ -97,6 +99,7 @@ test('with window.__TAURI__ the agent calls each command with its argument keys 
   assert.deepEqual(argsOf('save_memory'), { notes: { memory: 'm', user: 'u', recent: 'r' } });
   assert.deepEqual(argsOf('render_markdown'), { text: '*x*' });
   assert.deepEqual(argsOf('open_link'), { url: 'https://example.com' });
+  assert.deepEqual(argsOf('read_library_image'), { path: 'content/a.png' });
   for (const command of ['agent_status', 'load_history', 'stop_reply', 'forget_conversation', 'load_memory']) {
     assert.equal(argsOf(command), undefined, command + ' takes no arguments');
   }

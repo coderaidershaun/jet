@@ -54,6 +54,9 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Notes** — MEMORY, USER and RECENT: the three short files in Jet's prompt that a background review keeps current. The memory commands and the memory section of the settings handle all three.
 - **Library** — quanty or polysim, an MCP server Jet's Claude reaches through tools (settings key `mcp`). _Avoid_: plugin.
 - **Tool call** — one use of a library tool during a reply: started, then finished with its result and a one-line summary; kept with the reply in the transcript.
+- **Card** — what the thread shows for one tool call, above the reply's text: a line with a spinner while the call runs, then a folded card of what came back, or of the failure. _Avoid_: widget, panel.
+- **Source** — one item a library search or answer gives back, numbered from 1, with its document, page and kind. _Avoid_: result (that is the whole reply of a tool), hit (that is what a source holds).
+- **Citation** — `[n]` in Jet's text, shown as a chip that opens source n of the nearest card above it. _Avoid_: reference, footnote.
 
 - **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.
 - **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.

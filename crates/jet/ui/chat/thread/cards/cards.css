@@ -1,0 +1,118 @@
+/* The cards of tool calls: the line with a spinner while a call runs, the folded
+   card of what came back (sources, pages, reports), the citation chips in Jet's
+   text, and the formulas and pictures inside a card. */
+.card {
+  min-width: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
+  font-size: 13px; line-height: 18px; overflow-wrap: anywhere;
+}
+.card[data-tone="invalid"] { border-color: rgba(255, 123, 114, .4); }
+.card[data-tone="invalid"] .card-meta { color: var(--danger); }
+.card[data-tone="ok"] .card-meta { color: var(--ok); }
+.card.is-cited { border-color: var(--accent); }
+
+.card-head { margin: 0; }
+.card-name { font-weight: 600; }
+.card-meta { color: var(--muted); }
+
+/* Summaries are plain blocks: the grid of a row lives on an inner span, because the app's engine has ignored a grid on summary. */
+.card > summary, .source > summary {
+  position: relative; display: block; min-height: 44px; cursor: pointer; list-style: none; outline-offset: -2px; border-radius: 12px;
+}
+.card > summary::-webkit-details-marker, .source > summary::-webkit-details-marker { display: none; }
+.card > summary { padding: 13px 36px 13px 14px; }
+.card > summary:hover, .source > summary:hover { background: rgba(255, 255, 255, .04); }
+.card > summary::after, .source > summary::after {
+  content: ""; position: absolute; right: 16px; top: 50%; width: 7px; height: 7px; margin-top: -6px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg);
+}
+details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
+
+.card-running, .card-ended { min-height: 44px; }
+.card-running { display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+.card-ended { color: var(--muted); }
+.card-ended .card-line { display: block; padding: 13px 14px; }
+.card-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-running .card-line { flex: 1 1 auto; }
+
+.spinner {
+  flex: none; width: 12px; height: 12px; border: 2px solid rgba(61, 139, 255, .25); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 900ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.reduced .spinner { width: 8px; height: 8px; margin: 2px; background: var(--accent); border: 0; animation: none; }
+
+.card-failed .card-head { padding: 13px 14px 4px; }
+.card-advice, .card-hint { margin: 0; padding: 0 14px 13px; }
+.card-advice { padding-bottom: 4px; }
+.card-hint { color: var(--muted); }
+
+.card-body { padding: 0 8px 8px; }
+.card-asked { margin: 0; padding: 0 6px 6px; color: var(--muted); font-style: italic; }
+.card-empty, .card-note { margin: 0; padding: 4px 6px; color: var(--muted); }
+
+.source { border-top: 1px solid var(--line); }
+.source > summary { padding: 6px 28px 6px 6px; border-radius: 8px; }
+.source > summary::after { right: 10px; }
+.source-line { display: grid; grid-template-columns: 28px minmax(0, 1fr) 40px; column-gap: 8px; align-items: center; }
+.source-n { color: var(--muted); font: 12px/18px var(--mono); }
+.source-what { min-width: 0; }
+.source-doc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.source-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; color: var(--muted); font-size: 12px; line-height: 16px; }
+.reason {
+  max-width: 100%; padding: 0 7px; overflow: hidden; background: rgba(255, 255, 255, .07); border-radius: 999px;
+  font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap;
+}
+.score { width: 40px; height: 4px; border: 0; -webkit-appearance: none; appearance: none; background: none; }
+.score::-webkit-meter-bar { height: 4px; background: rgba(255, 255, 255, .1); border: 0; border-radius: 2px; }
+.score::-webkit-meter-optimum-value, .score::-webkit-meter-suboptimum-value, .score::-webkit-meter-even-less-good-value {
+  background: var(--accent); border-radius: 2px; opacity: .75;
+}
+.score::-moz-meter-bar { background: var(--accent); border-radius: 2px; opacity: .75; }
+.source-body { padding: 4px 6px 10px 42px; }
+.source.is-cited > summary { background: rgba(61, 139, 255, .16); }
+.byline { margin: 0 0 6px; color: var(--muted); font-size: 12px; line-height: 16px; }
+
+.card .body { font-size: 14px; line-height: 20px; }
+.footnote { color: var(--muted); font-size: 12px; line-height: 17px; }
+.show-label, .crumb { margin: 8px 0 2px; color: var(--muted); font-size: 12px; line-height: 16px; }
+.piece-heading { margin: 8px 0 2px; font-size: 14px; line-height: 20px; }
+.plain { margin: 0; white-space: pre-wrap; }
+.piece + .crumb, .piece + .piece { margin-top: 6px; }
+
+.formula { margin: 8px 0; overflow-x: auto; text-align: center; }
+.formula .math { font-family: var(--mono); font-size: 13px; line-height: 20px; }
+.formula-label { display: block; color: var(--muted); font-size: 12px; text-align: right; }
+
+.figure { margin: 8px 0 0; }
+.figure figcaption { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 16px; }
+.picture { display: block; max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
+.picture-wait, .picture-missing { margin: 0; color: var(--muted); font-size: 12px; line-height: 16px; }
+
+.answer-title { margin: 0; padding: 4px 6px; font-size: 14px; line-height: 20px; }
+.claim-heading { margin: 8px 6px 0; font-size: 13px; line-height: 18px; }
+.claim { padding: 2px 6px 6px; }
+.claim-sources { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.follow-ups { margin: 8px 0 0; padding: 0 6px 0 26px; color: var(--muted); }
+
+.documents { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 12px; line-height: 16px; }
+.documents th, .documents td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+
+.health { margin: 0; padding: 4px 6px; list-style: none; }
+.health li { position: relative; padding: 3px 0 3px 18px; }
+.health li::before { content: ""; position: absolute; left: 4px; top: 10px; width: 7px; height: 7px; background: var(--ok); border-radius: 50%; }
+.health li[data-tone="invalid"] { color: var(--danger); }
+.health li[data-tone="invalid"]::before { background: var(--danger); }
+
+.fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; padding: 4px 6px; }
+.fields dt { color: var(--muted); }
+.fields dd { margin: 0; }
+.fields pre { margin: 0; font: 12px/17px var(--mono); white-space: pre-wrap; }
+
+/* "[n]" in Jet's text. The ::after widens the target without moving the lines of text. */
+.cite {
+  position: relative; display: inline-block; min-width: 18px; height: 18px; margin: 0 1px; padding: 0 5px; vertical-align: 1px;
+  background: rgba(61, 139, 255, .22); border: 0; border-radius: 9px;
+  color: var(--link-jet); font: 600 11px/18px var(--mono); font-variant-numeric: tabular-nums; text-align: center;
+}
+.cite::after { content: ""; position: absolute; inset: -4px -2px; }
+.cite:hover { background: rgba(61, 139, 255, .38); }

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createFakeAgent } from './fake-agent.js';
+import { ADDED_HITS } from './fixtures/quanty-search.js';
 import { defaultSettings } from './settings.js';
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped']);
@@ -136,8 +137,9 @@ test('"quanty" replays a library search as tool events before the answer', async
   const finished = events.find((event) => event.kind === 'toolFinished');
   assert.equal(finished.id, call.id);
   assert.equal(finished.ok, true);
-  assert.deepEqual(finished.result, returned.tool_use_result.structuredContent);
-  assert.equal(finished.summary, 'quanty · search · 5 results');
+  const structured = returned.tool_use_result.structuredContent;
+  assert.deepEqual(finished.result, { ...structured, results: [...structured.results, ...ADDED_HITS] }, 'the recorded results come first, then the hits added by hand');
+  assert.equal(finished.summary, 'quanty · search · 8 results');
   assert.equal(typeof finished.durationMs, 'number');
 
   const raw = events.filter((event) => event.kind === 'rawLine').map((event) => JSON.parse(event.line));

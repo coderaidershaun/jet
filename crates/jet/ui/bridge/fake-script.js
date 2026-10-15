@@ -74,6 +74,7 @@ export function wants(text) {
     timeout: mentions(text, 'timeout'),
     fresh: mentions(text, 'fresh'),
     quanty: mentions(text, 'quanty'),
+    quantyDown: mentions(text, 'quanty down'),
   };
 }
 
@@ -211,7 +212,15 @@ export const lines = {
     session_id: sessionId,
   }),
   // What the tool gave back: its text in the message, and the same data structured beside it.
-  toolResult: (sessionId, { id, result }) => {
+  // A failure is only text, flagged as an error, and has nothing structured.
+  toolResult: (sessionId, { id, result, isError = false }) => {
+    if (isError) {
+      return JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: result }] },
+        session_id: sessionId,
+      });
+    }
     const content = JSON.stringify(result);
     return JSON.stringify({
       type: 'user',

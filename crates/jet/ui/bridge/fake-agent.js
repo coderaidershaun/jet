@@ -3,7 +3,7 @@
 // made from them, and fails on demand when the user's words ask for it. It
 // stays the agent whenever the page runs outside Tauri.
 
-import { QUANTY_SEARCH } from './fixtures/quanty-search.js';
+import { ADDED_HITS, QUANTY_DOWN, QUANTY_SEARCH } from './fixtures/quanty-search.js';
 import { renderMarkdown } from './markdown.js';
 import { BASE_CONTEXT_TOKENS, MESSAGES, MODEL_IDS, bodyFor, chunksOf, costFor, lines, moodFor, tokensIn, usageFor, wants, wireModelUsage, wireUsage } from './fake-script.js';
 
@@ -13,6 +13,10 @@ const CACHE_TTL_MINUTES = 60;
 const DELTAS_PER_MESSAGE_DELTA = 4;
 const NOTE_LIMITS = { memory: 2200, user: 1375, recent: 1500 };
 const NOT_FOUND_AT = ['~/.local/bin/claude', '/opt/homebrew/bin/claude', '/usr/local/bin/claude'];
+
+// The recorded search with the hits added by hand after it, and the search that failed.
+const SEARCH_REPLAYED = { ...QUANTY_SEARCH, result: { ...QUANTY_SEARCH.result, results: [...QUANTY_SEARCH.result.results, ...ADDED_HITS] }, ok: true };
+const SEARCH_DOWN = { ...QUANTY_DOWN, ok: false };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const bridgeError = (kind, message) => ({ kind, message });
@@ -124,7 +128,8 @@ export function createFakeAgent({
 
     const replyNumber = read('history', []).filter((entry) => entry.role === 'jet' && entry.status === 'complete').length + 1;
     const mood = moodFor(text, replyNumber);
-    const body = asks.quanty ? QUANTY_SEARCH.reply : bodyFor(text, replyNumber);
+    const libraryCall = asks.quantyDown ? SEARCH_DOWN : asks.quanty ? SEARCH_REPLAYED : null;
+    const body = libraryCall ? libraryCall.reply : bodyFor(text, replyNumber);
     let received = '';
     const calls = [];
     const withCalls = (entry) => (calls.length ? { ...entry, tools: calls } : entry);
@@ -136,19 +141,18 @@ export function createFakeAgent({
       end({ kind: 'stopped', entry });
     };
 
-    async function searchLibrary() {
-      const { use, result } = QUANTY_SEARCH;
+    async function callLibrary({ use, result, ok }) {
       const [, server, tool] = use.name.split('__');
       emit({ kind: 'rawLine', line: lines.toolUse(sessionId, use) });
       emit({ kind: 'toolStarted', id: use.id, server, tool, input: use.input });
       const calledAt = now();
       await pause(toolMs);
       if (control.stopped) return false;
-      const summary = server + ' · ' + tool + ' · ' + result.results.length + ' results';
+      const summary = server + ' · ' + tool + ' · ' + (ok ? result.results.length + ' results' : 'failed');
       const durationMs = now() - calledAt;
-      emit({ kind: 'rawLine', line: lines.toolResult(sessionId, { id: use.id, result }) });
-      emit({ kind: 'toolFinished', id: use.id, server, tool, ok: true, result, summary, durationMs });
-      calls.push({ id: use.id, server, tool, input: use.input, ok: true, result, summary, durationMs });
+      emit({ kind: 'rawLine', line: lines.toolResult(sessionId, { id: use.id, result, isError: !ok }) });
+      emit({ kind: 'toolFinished', id: use.id, server, tool, ok, result, summary, durationMs });
+      calls.push({ id: use.id, server, tool, input: use.input, ok, result, summary, durationMs });
       return true;
     }
 
@@ -156,7 +160,7 @@ export function createFakeAgent({
     if (control.stopped) return stopped();
 
     const ttftMs = now() - startedAt;
-    if (asks.quanty && !(await searchLibrary())) return stopped();
+    if (libraryCall && !(await callLibrary(libraryCall))) return stopped();
     emit({ kind: 'rawLine', line: lines.messageStart(sessionId, { model, usage, ttftMs }) });
     if (mood) {
       emit({ kind: 'rawLine', line: lines.delta(sessionId, 'mood: ' + mood + '\n') });
@@ -245,6 +249,10 @@ export function createFakeAgent({
 
     async renderMarkdown(text) {
       return renderMarkdown(text);
+    },
+
+    async readLibraryImage(path) {
+      throw bridgeError('io', 'Library pictures open only in the app, not in a browser: ' + path);
     },
 
     async openLink(url) {
