@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { CLIPS } from './clips/catalogue.js';
 import { buildZoom } from './clips/zoom.js';
 import { createDirector, MOODS } from './director.js';
 import { createPlayer } from './player.js';
@@ -11,7 +12,8 @@ const rig = JSON.parse(readFileSync(fileURLToPath(new URL('../../rig/jet.json', 
 const shipmate = { candid: 0.55, playful: 0.35, shape: 6, eyes: 4, colour: 6, motion: 6, reducedMotion: false };
 const FRAME_MS = 16;
 
-function setup(dials = shipmate, random) {
+// A draw of 0 takes the first of every choice, which is no send reaction.
+function setup(dials = shipmate, random = () => 0) {
   const player = createPlayer(rig);
   const director = createDirector({ player, rig, params: () => dials, random });
   const seen = [];
@@ -27,12 +29,14 @@ function setup(dials = shipmate, random) {
 }
 
 const ZOOM_DONE_MS = 3500;
+// Each choice the director makes takes the next of these draws, then 0.
+const drawsOf = (...draws) => () => draws.shift() ?? 0;
 
 test('a send zooms, then the loop runs until the reply arrives', () => {
   let draws = 0;
   const random = () => {
     draws += 1;
-    return 0.99;
+    return 0;
   };
   const { director, seen, run } = setup(shipmate, random);
   const zoom = buildZoom(rig, shipmate, { cruiseMs: 2000 });
@@ -171,4 +175,54 @@ test('reduced motion moves nowhere and skips the zoom', () => {
   run(0, 3000);
   assert.deepEqual(seen, ['working']);
   assert.equal(director.status, 'working');
+});
+
+test('a send reaction plays first and the travel waits for it', () => {
+  const firstDraw = { salute: 0.2, nod: 0.4, blink: 0.6, hop: 0.8 };
+  for (const [name, draw] of Object.entries(firstDraw)) {
+    const { director, seen, run } = setup(shipmate, drawsOf(draw));
+    const reaction = CLIPS[name].build(rig, shipmate);
+    const [launch, cruise] = buildZoom(rig, shipmate, { cruiseMs: 2000 }).phases;
+    assert.deepEqual(
+      director.send({ cruiseMs: 2000, dx: -300, dy: 400 }, 0),
+      { moveAt: reaction.total + launch.end, moveMs: cruise.end - launch.end, profile: 'roll' },
+      name + ': the host moves the thread only once the send reaction is over and the launch is done',
+    );
+    assert.equal(director.status, 'reacting', name);
+    run(0, reaction.total - 1);
+    assert.equal(director.status, 'reacting', name + ' is still playing');
+    run(reaction.total, reaction.total);
+    assert.equal(director.status, 'travelling', name + ' has ended and the travel starts');
+    run(reaction.total, reaction.total + ZOOM_DONE_MS);
+    assert.deepEqual(seen, [name, 'zoom', 'working']);
+  }
+});
+
+test('a mood during the send reaction plays after the travel, and a stop drops the travel', () => {
+  const salute = drawsOf(0.2);
+  const { director, seen, run } = setup(shipmate, salute);
+  director.send({ cruiseMs: 800 }, 0);
+  run(0, 100);
+  director.mood('excited', 100);
+  run(100, 6000);
+  assert.deepEqual(seen, ['salute', 'zoom', 'excited']);
+
+  const stopping = setup(shipmate, drawsOf(0.2));
+  stopping.director.send({ cruiseMs: 800 }, 0);
+  stopping.run(0, 100);
+  stopping.director.stopped(100);
+  stopping.run(100, 6000);
+  assert.deepEqual(stopping.seen, ['salute', 'interrupted'], 'the travel that was waiting is dropped');
+});
+
+test('a serious Jet skips the blink as a message goes out', () => {
+  const firstClipAt = (dials, draw) => {
+    const { director, seen, run } = setup(dials, drawsOf(draw));
+    director.send({ cruiseMs: 800 }, 0);
+    run(0, 0);
+    return seen[0];
+  };
+  const serious = { ...shipmate, playful: -0.5 };
+  for (let draw = 0; draw < 1; draw += 0.05) assert.notEqual(firstClipAt(serious, draw), 'blink', 'draw ' + draw);
+  assert.equal(firstClipAt(shipmate, 0.6), 'blink', 'a Jet that is not serious still blinks');
 });

@@ -48,6 +48,15 @@ const STATUS_OF_CLIP = {
  */
 
 /**
+ * The clips Jet may play as a message goes out, before it travels, all equally likely. Null plays none, and it comes
+ * first so that a draw near 0 is the plain choice, as it is for the travel.
+ * Each lasts at most 350 ms, because the take-off waits for it.
+ */
+const SEND_REACTIONS = [null, 'salute', 'nod', 'blink', 'hop'];
+// A Jet more serious than this skips the blink.
+const SERIOUS_BELOW = -0.3;
+
+/**
  * @template T
  * @param {T[]} list
  * @param {() => number} random   a number in [0, 1)
@@ -71,6 +80,10 @@ export function createDirector({ player, rig, params, random = Math.random }) {
   let current = null;
   /** @type {Step | null} */
   let queued = null;
+  // The travel waits here while a send reaction plays, in a slot of its own, so that a mood that arrives
+  // meanwhile queues behind it instead of replacing it.
+  /** @type {{ step: Step, clip: import('./clip.js').Clip } | null} */
+  let queuedTravel = null;
   /** @type {{ long: boolean } | null} */
   let waitingDone = null;
   let running = false;
@@ -81,10 +94,16 @@ export function createDirector({ player, rig, params, random = Math.random }) {
   const isPlaying = (name) => player.playing && current !== null && current.clip === name;
   const loopPlays = () => isPlaying('working');
 
-  /** @returns {import('./clip.js').Clip} the clip now playing */
-  function start(step, now) {
+  const buildClip = (step) => CLIPS[step.clip].build(rig, params(), step.options);
+
+  /**
+   * @param {Step} step
+   * @param {number} now
+   * @param {import('./clip.js').Clip} [clip]   the step's clip when it is already built, else it is built now
+   * @returns {import('./clip.js').Clip} the clip now playing
+   */
+  function start(step, now, clip = buildClip(step)) {
     current = step;
-    const clip = CLIPS[step.clip].build(rig, params(), step.options);
     player.play(clip, now);
     return clip;
   }
@@ -112,6 +131,7 @@ export function createDirector({ player, rig, params, random = Math.random }) {
 
   function clearWaiting() {
     queued = null;
+    queuedTravel = null;
     waitingDone = null;
   }
 
@@ -120,7 +140,9 @@ export function createDirector({ player, rig, params, random = Math.random }) {
    * @returns {Step | null}
    */
   function pickSendReaction() {
-    return null;
+    const choices = params().playful < SERIOUS_BELOW ? SEND_REACTIONS.filter((name) => name !== 'blink') : SEND_REACTIONS;
+    const name = pick(choices, random);
+    return name ? { clip: name } : null;
   }
 
   /**
@@ -161,13 +183,14 @@ export function createDirector({ player, rig, params, random = Math.random }) {
     },
 
     /**
-     * A message went out and a reply is on its way. Jet travels to the reply and then
-     * works. With reduced motion there is no travel and the host moves nothing.
+     * A message went out and a reply is on its way. Jet may play a short send reaction,
+     * then travels to the reply, then works. With reduced motion there is no send reaction
+     * and no travel, and the host moves nothing.
      * @param {{ cruiseMs: number, dx?: number, dy?: number }} job   how long the travel's cruise lasts,
      *   and the pixels from Jet to the reply (0 when unknown)
      * @param {number} now
-     * @returns {{ moveAt: number, moveMs: number, profile: string }}   when the host moves the thread, and
-     *   for how long, in ms from `now`, and how the host flies Jet there
+     * @returns {{ moveAt: number, moveMs: number, profile: string }}   when the host moves the thread, in ms from
+     *   `now` and after any send reaction, for how long, and how the host flies Jet there
      */
     send({ cruiseMs, dx = 0, dy = 0 }, now) {
       running = true;
@@ -178,18 +201,24 @@ export function createDirector({ player, rig, params, random = Math.random }) {
         startLoop(now);
         return { moveAt: 0, moveMs: 0, profile: 'roll' };
       }
-      // SMELL: the reaction is chosen but never played, because every choice is null for now. Playing one
-      // means starting the travel only once the reaction has ended.
       const reaction = pickSendReaction();
       const travel = pickTravel({ cruiseMs, dx, dy });
-      const clip = start(travel, now);
-      return { moveAt: clip.phases[0].end, moveMs: clip.phases[1].end - clip.phases[0].end, profile: TRAVELS[travel.clip] };
+      const travelClip = buildClip(travel);
+      let delay = 0;
+      if (reaction) {
+        delay = start(reaction, now).total;
+        queuedTravel = { step: travel, clip: travelClip };
+      } else {
+        start(travel, now, travelClip);
+      }
+      const [launch, cruise] = travelClip.phases;
+      return { moveAt: delay + launch.end, moveMs: cruise.end - launch.end, profile: TRAVELS[travel.clip] };
     },
 
     /**
      * The reply's mood word arrived. An unknown or missing word is neutral, which only
-     * closes the loop. Any other word plays its clip, after the zoom or after the loop
-     * has ended if either is playing. The queue holds one clip, so a newer mood replaces an older one.
+     * closes the loop. Any other word plays its clip, after the send reaction and the zoom, or after
+     * the loop has ended, if any of them is playing. The queue holds one clip, so a newer mood replaces an older one.
      * @param {string} word
      * @param {number} now
      */
@@ -268,6 +297,7 @@ export function createDirector({ player, rig, params, random = Math.random }) {
     /**
      * Moves Jet to time `now`. Call it once per frame, before drawing. When the clip that was
      * playing has ended, it starts the next one:
+     * after a send reaction, the travel waiting for it;
      * after a travel such as the zoom, the queued clip, else the waiting done, else the loop if a reply is still
      * running with no mood yet; after the loop ran out of spin, a continuation of it if the
      * reply is still running with no mood yet; after anything else, the queued clip, else the
@@ -285,6 +315,10 @@ export function createDirector({ player, rig, params, random = Math.random }) {
         const loopWanted = running && !answered;
         if (ended.clip === 'working' && loopWanted) {
           start({ clip: 'working', options: { continueFrom: { rotate: player.state.ring[RING.ROTATE], elapsedMs: now - loopStart } } }, now);
+        } else if (queuedTravel) {
+          const { step, clip } = queuedTravel;
+          queuedTravel = null;
+          start(step, now, clip);
         } else if (queued) {
           const next = queued;
           queued = null;

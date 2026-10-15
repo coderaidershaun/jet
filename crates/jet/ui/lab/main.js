@@ -42,6 +42,10 @@ const BUTTONS = {
   sorry: [{ clip: 'error', options: { exclaim: false }, label: 'Sorry' }],
   typing: [{ clip: 'lean', holdMs: TYPING_HOLD_MS }, { clip: 'leanBack' }],
   interrupted: [{ clip: 'working', options: { spinMs: 60000 }, runMs: LOOP_BEFORE_STOP_MS }, { clip: 'interrupted', options: turnedNow }],
+  salute: [{ clip: 'salute' }],
+  nod: [{ clip: 'nod' }],
+  blink: [{ clip: 'blink' }],
+  hop: [{ clip: 'hop' }],
 };
 
 async function start() {

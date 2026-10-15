@@ -11,7 +11,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Ring** — the one stroked element beside the body: the working loop, and the spin grooves when Jet rolls. (policy §2)
 - **Pip** — a dot on the foot. The body shrinks to it under the working loop and when Jet is interrupted. (policy §2)
 - **Tint** — how far an eye has gone from the ground colour, 0, to the body colour lightened toward white, 1. A face is drawn at tint 0. (policy §2)
-- **Faint eyes** — the circle's rest state: small light eyes at tint 1 that blink now and then. Hidden eyes are faint eyes with no size. (policy §2)
+- **Faint eyes** — the circle's rest state: small light eyes at tint 1 that blink now and then. Hidden eyes are faint eyes with no size. A send reaction such as the nod or the hop may keep them on the moving body. (policy §2)
 - **Prop** — a thing Jet holds or uses, such as an umbrella. There are two slots on a track of their own, the clip names the kind in each, and a prop never outlives its clip. (policy §2)
 
 - **State** — Jet at one moment: body, eyes, colour, scale, ring, speed and props. The only meaning of "state". _Avoid_: using it for idle, working or done.
@@ -38,7 +38,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Catalogue** — the one list of every clip, each with its label, its builder and whether it is a hold. The lab and the director both read it. (policy §7)
 - **Director** — decides which clip plays for each chat event: typing, a send, a mood, done, a failure, a stop. It only orders clips; the player plays them. (policy §7)
 - **Mood** — the one word at the start of a reply that says how Jet should react: neutral, happy, excited, thinking, curious, sorry, alert, annoyed or hello. An unknown word is neutral. _Avoid_: emotion, status. (policy §8)
-- **Reaction** — the clip the director plays for a mood, or for done. _Avoid_: animation. (policy §8)
+- **Reaction** — the clip the director plays for a mood, for done, or as a message goes out (a send reaction: a salute, a nod, a blink or a hop, before the travel). _Avoid_: animation. (policy §8)
 
 - **Player** — owns the state and moves it through a clip, starting from wherever Jet is. (policy §3)
 - **View** — draws a state.

@@ -77,9 +77,10 @@ What they cover:
 | `ui/jet/clips/annoyed.test.mjs` | a centred or deferential Jet never glares, tints or narrows its eyes |
 | `ui/jet/clips/catalogue.test.mjs` | in every clip: tracks run forward, shape 0 and eyes 0 hold, any interruption comes to rest with both props hidden; no prop shows at shape 0, below motion 3 or under reduced motion, and every prop a clip names is a known kind |
 | `ui/jet/clips/hello.test.mjs` | tracks run forward, ends at the circle, each dial does its job, the brief hello |
+| `ui/jet/clips/send-reactions.test.mjs` | every send reaction is over within 350 ms (the blink within 300) with a body key in each phase; the salute reaches higher when candid and bows when deferential; the blink shuts a face in ink twice, and holds it open under reduced motion; the nod and the hop keep faint eyes the size they are at rest, riding the body |
 | `ui/jet/clips/working.test.mjs` | the loop opens top right, spins clockwise, slows after 8 s, continues, and closes after its turn |
 | `ui/jet/clips/zoom.test.mjs` | the ground moves only mid-cruise, the host sets the cruise, the dials and reduced motion, a hello after a zoom |
-| `ui/jet/director.test.mjs` | send, zoom and loop, with the zoom's own timing, the roll profile and the random the director was given; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion |
+| `ui/jet/director.test.mjs` | send, zoom and loop, with the zoom's own timing, the roll profile and the random the director was given; a send reaction plays before the travel and the take-off waits for it; a mood during it plays after the travel, and a stop drops the travel; a serious Jet skips the blink; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion |
 | `ui/jet/easing.test.mjs` | `cubicBezier` pins both ends |
 | `ui/jet/maths.test.mjs` | `lerp` blends and may run past 1 |
 | `ui/jet/player.test.mjs` | a clip starts from the live state and ends at rest; at rest the circle opens faint eyes, a hold keeps its own and eyes below 1.5 show none; the faint eyes blink on a random gap of 4 to 9 s and never under reduced motion; breathing of 1.8%; a clip's props play with it and a clip with no prop track fades them within 200 ms |
@@ -213,6 +214,8 @@ crates/jet
     │   │   ├── beats.js            the beats the mood clips share: stand up, melt back, the dials they read
     │   │   ├── hello.js            stand up, wave, melt
     │   │   ├── hello.test.mjs      tracks run forward, ends at the circle, each dial does its job
+    │   │   ├── send-reactions.js   the short clips as a message goes out: salute, nod, blink, hop
+    │   │   ├── send-reactions.test.mjs  each within 350 ms with a beat per phase; the salute's reach and bow; the double blink; faint eyes on the nod and the hop
     │   │   ├── zoom.js             wind up, roll past the scenery, brake
     │   │   ├── zoom.test.mjs       the ground moves only mid-cruise; a hello after a zoom stops it
     │   │   ├── working.js          the working loop and how it closes
@@ -227,7 +230,7 @@ crates/jet
     │   │   ├── interrupted.js      the loop collapses to the pip, waits, grows back
     │   │   └── lean.js             the lean while the user types, and the lean back (holds)
     │   ├── director.js             chooses and orders clips for each chat event; the MOODS list
-    │   ├── director.test.mjs       send, zoom (its timing, profile and random) and loop; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion
+    │   ├── director.test.mjs       send, zoom (its timing, profile and random) and loop; a send reaction before the travel, a mood or a stop during it, no blink when serious; quick reply; mood; done waits; stop; typing; unknown mood; reduced motion
     │   ├── player.js               owns Jet's state, plays clips from wherever Jet is; breathes and blinks faint eyes at rest; no DOM
     │   ├── player.test.mjs         a clip starts from the live state and ends at rest; faint eyes and their blink; breathing; props fade with their clip
     │   ├── view.js                 draws a state into an SVG: props, body, ring, eyes with their tint; the only code that draws Jet
