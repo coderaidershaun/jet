@@ -15,6 +15,7 @@ import { buildNeedsYou } from './needs-you.js';
 import { buildThinking } from './thinking.js';
 import { buildWorking, buildWorkingEnd } from './working.js';
 import { buildZoom } from './zoom.js';
+import { buildBlink, buildHop, buildNod, buildSalute } from './send-reactions.js';
 
 /**
  * @typedef {object} CatalogueEntry
@@ -46,4 +47,8 @@ export const CLIPS = {
   dozeEnd: { label: 'Doze ends', build: buildDozeEnd, hold: false },
   drop: { label: 'Drop', build: buildDrop, hold: false },
   abseil: { label: 'Abseil', build: buildAbseil, hold: false },
+  salute: { label: 'Salute', build: buildSalute, hold: false },
+  nod: { label: 'Nod', build: buildNod, hold: false },
+  blink: { label: 'Blink', build: buildBlink, hold: false },
+  hop: { label: 'Hop', build: buildHop, hold: false },
 };

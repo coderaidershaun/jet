@@ -49,6 +49,10 @@ const BUTTONS = {
   doze: [{ clip: 'doze', options: { loopMs: ANTIC_SHOW_MS } }, { clip: 'dozeEnd' }],
   drop: [{ clip: 'drop' }],
   abseil: [{ clip: 'abseil' }],
+  salute: [{ clip: 'salute' }],
+  nod: [{ clip: 'nod' }],
+  blink: [{ clip: 'blink' }],
+  hop: [{ clip: 'hop' }],
 };
 
 async function start() {
