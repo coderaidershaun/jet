@@ -1,6 +1,7 @@
 /* The thread: rows of bubbles with the lane beside each Jet message, pills for
    days and notices, the waiting dots, and the Markdown inside Jet's bubbles. */
-.thread { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
+/* No scroll anchoring: a source row fills in after it opens, and the browser would scroll the row away to keep the rows below it still. */
+.thread { position: absolute; inset: 0; overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
 .thread:focus-visible { outline-offset: -2px; }
 .column {
   max-width: calc(820px + 2 * var(--gutter)); margin: 0 auto;
@@ -24,6 +25,12 @@
   font-size: var(--text-size); line-height: var(--text-line);
   overflow-wrap: anywhere;
 }
+/* A Jet reply is its cards above its bubble, in one column no wider than a bubble may be. */
+.reply { display: flex; flex: 1 1 auto; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; max-width: min(560px, calc(100% - var(--lane) - 8px)); }
+.reply > .bubble { max-width: 100%; }
+.cards { display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
+.cards:empty { display: none; }
+
 .row-jet .bubble { background: var(--bubble-jet); }
 .row-user .bubble { background: var(--bubble-user); color: var(--on-user); max-width: min(560px, 78%, calc(100% - var(--lane) - 8px)); }
 .row-user .body { white-space: pre-wrap; }

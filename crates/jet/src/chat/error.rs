@@ -3,6 +3,7 @@
 use agent::{ConversationError, Failure, MemoryError, TransportError, TurnError};
 use serde::Serialize;
 
+use super::image::ImageError;
 use crate::settings;
 
 /// Why a command failed. The page reads `kind` to decide what to show.
@@ -50,6 +51,12 @@ impl From<ConversationError> for BridgeError {
 
 impl From<MemoryError> for BridgeError {
     fn from(error: MemoryError) -> BridgeError {
+        BridgeError::Io(error.to_string())
+    }
+}
+
+impl From<ImageError> for BridgeError {
+    fn from(error: ImageError) -> BridgeError {
         BridgeError::Io(error.to_string())
     }
 }

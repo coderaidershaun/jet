@@ -13,7 +13,7 @@ const GROUP_GAP_MS = 3 * 60 * 1000;
  * @property {'day' | 'notice' | 'user' | 'jet' | 'lane'} type
  * @property {string} [label]         day pills
  * @property {string} [message]       notice pills
- * @property {{ id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string, status: string, error?: string, at: number }} [entry]
+ * @property {{ id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string, status: string, error?: string, tools?: import('./cards/model.js').ShownCall[], at: number }} [entry]
  * @property {{ kind: string, message: string }} [failure]
  * @property {boolean} [first]        first bubble of its group
  * @property {boolean} [last]         last bubble of its group, so it carries the tail
@@ -44,9 +44,19 @@ export function createThread({ now = Date.now } = {}) {
     return slot;
   }
 
+  // The saved entry wins. A call the page saw that it lacks is kept, and one still running is marked
+  // unfinished, so Stop during a search leaves its card on the page.
+  function withSeenCalls(patch, seen) {
+    const saved = patch.tools ?? [];
+    const missing = (seen ?? [])
+      .filter((call) => !saved.some((kept) => kept.id === call.id))
+      .map((call) => (call.ok === undefined ? { ...call, unfinished: true } : call));
+    return missing.length ? { ...patch, tools: [...saved, ...missing] } : patch;
+  }
+
   function endSlot(patch, failure) {
     const open = requireSlot('end the reply');
-    open.entry = patch;
+    open.entry = withSeenCalls(patch, open.entry.tools);
     open.at = patch.at;
     if (failure) open.failure = failure;
     slot = null;
@@ -101,6 +111,22 @@ export function createThread({ now = Date.now } = {}) {
       const entry = requireSlot('append text').entry;
       entry.text += delta;
       entry.status = 'streaming';
+    },
+
+    /** A tool call has started; it shows as running until it finishes. */
+    startTool({ id, server, tool, input }) {
+      const entry = requireSlot('start a tool call').entry;
+      entry.tools = [...(entry.tools ?? []), { id, server, tool, input }];
+    },
+
+    /** A call came back; it takes the place of the running one. */
+    finishTool({ id, server, tool, ok, result, summary, durationMs }) {
+      const entry = requireSlot('finish a tool call').entry;
+      const calls = entry.tools ?? [];
+      const outcome = { ok, result, summary, durationMs };
+      entry.tools = calls.some((call) => call.id === id)
+        ? calls.map((call) => (call.id === id ? { ...call, ...outcome } : call))
+        : [...calls, { id, server, tool, input: null, ...outcome }];
     },
 
     /** The rendered HTML of the text so far. */

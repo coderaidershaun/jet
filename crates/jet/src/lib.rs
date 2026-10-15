@@ -42,6 +42,7 @@ pub fn run() -> Result<(), Error> {
             chat::load_memory,
             chat::save_memory,
             chat::render_markdown,
+            chat::read_library_image,
             chat::open_link,
             workstation::workstation_start,
             workstation::workstation_command,

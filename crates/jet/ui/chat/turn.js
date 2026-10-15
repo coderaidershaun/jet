@@ -82,9 +82,11 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         thread.addNotice(event.message);
         break;
       case 'toolStarted':
+        thread.startTool(event);
+        break;
       case 'toolFinished':
-        // The page shows no tool calls, so there is nothing to repaint; their raw lines already reached the log.
-        return;
+        thread.finishTool(event);
+        break;
       case 'mood':
         thread.setMood(event.mood);
         reveal.mood();

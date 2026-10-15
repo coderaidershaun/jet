@@ -33,7 +33,8 @@ The pretend agent answers from the words in your message. A word counts when a w
 | `error` | the reply fails the way Claude Code does when it is not logged in |
 | `missing` | the reply fails as if Claude Code was not installed |
 | `timeout` | the reply fails with "Claude stopped responding after 2 minutes." |
-| `quanty` | a recorded library search comes first: the call and what the library gave back reach the page as `toolStarted` and `toolFinished` events, and as the stream lines behind them, then the answer streams; the `started` event lists the servers of the `mcp` setting |
+| `quanty` | a library search comes first: the call and what the library gave back reach the page as `toolStarted` and `toolFinished` events, and as the stream lines behind them, then the answer streams; the `started` event lists the servers of the `mcp` setting. The search is the recorded one plus three hits added by hand, a formula, a table of Greeks and a figure, so every kind of source shows; in a browser the figure reads "Picture unavailable" |
+| `quanty down` | the search fails with quanty's own advice, so the thread shows the failed card with the health hint, and the reply says the library is down |
 
 The pretend feed makes up the book, the quotes and every line polysim-bridge would send, from a clock and a source of chance, so a browser needs no engine. It trades BTCUSDT and ETHUSDT, and answers every command of the protocol:
 
@@ -71,13 +72,15 @@ What they cover:
 | `crates/agent/tests/workstation_feed.rs` `a_bridge_on_another_protocol_is_stopped_and_not_restarted` | the hello passes, then `exited` names both protocols; a bridge that ignores its input closing is killed, and nothing starts it again |
 | `crates/agent/tests/workstation_feed.rs` `a_missing_bridge_is_reported_once` | a program that is not there gives `starting`, then one `missing` naming the path, and no restart; a command then fails with "not running" |
 | `crates/agent/tests/workstation_feed.rs` `a_bridge_that_rejects_its_arguments_is_stopped_after_two_tries` | a bridge that exits with an error within a second of starting, before any `hello`, is tried once more and then given up: `starting`, `restarting`, `starting`, `exited` naming the exit code and the error line, and no third try |
+| `src/chat/image.rs` `a_picture_in_the_library_comes_back_as_a_data_address` | a relative and an absolute path, a PNG, a `.JPG` and a `.jpeg` come back as a `data:` address whose bytes equal the file |
+| `src/chat/image.rs` `pictures_outside_the_library_of_another_kind_or_too_large_are_refused` | no quanty folder, a folder that does not exist, a path that leaves the folder, a link that points out of it, a GIF, a folder named `dir.png`, a file over 8 MB and a missing file are each refused with their own error |
 | `src/chat/mod.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
 | `../agent/src/markdown/mod.rs` `math_and_tables_match_the_shared_vectors` | the app's renderer gives the html of every case in `ui/bridge/fixtures/math-vectors.json`: math in prose, display math, money, delimiters that open nothing, code, lists, number columns; and never writes a `style` attribute |
 | `rig/poses.rs` `generator_prints_the_committed_rig` | the generator prints exactly `rig/jet.json` |
 | `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps; the `quanty` word replays the recorded library search as tool events before the answer |
 | `ui/bridge/markdown.test.mjs` | the browser fallback gives the same html as the app's renderer for every shared case, with no `style` attribute |
 | `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; merge fills gaps from them; `defaults_match_the_rust_fixture`: the page's defaults are exactly `ui/bridge/default-settings.json` |
-| `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method calls its command with the right argument keys and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
+| `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method (`readLibraryImage` too) calls its command with the right argument keys and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
 | `ui/bridge/tauri-workstation.test.mjs` | with Tauri the workstation calls its three commands one after another with the right keys, lines of a replaced or stopped channel are dropped, and failures reach the page as `{ kind, message }`; without Tauri the pretend feed is used |
 | `ui/bridge/fake-market.test.mjs` `the market opens with hello, link, lifecycle and catalog…` | every line and tick section of the pretend market has the shape, keys and value words of the protocol, and survives JSON unchanged |
 | `ui/bridge/fake-market.test.mjs` `ticks walk the mid, keep the ladder full…` | the mid moves at most one tick a frame, the ladder keeps its rows, channels send only new rows, chart and risk buckets are only appended, every bucket has all its prices, and a `gap` bucket turns up about every 45 s |
@@ -94,10 +97,12 @@ What they cover:
 | `ui/chat/drawer/usage.test.mjs` | the recorded Sonnet turn read line by line (live counts, then the reported cost and timings, then the totals); a second reply at another thinking level gets its own row; a stopped reply keeps its tokens; stray lines change nothing |
 | `ui/chat/page-state.test.mjs` | the page switches between the chat and the workstation, and a page already shown or not known changes nothing; Esc closes the sheet first, then takes the workstation back to the chat, then is left to the composer; the page shown last is saved and opens again, and an unknown saved page opens the chat; a wide drawer becomes the rail beside the workstation and is docked as the user left it on the chat, and a narrow drawer is the overlay on both pages |
 | `ui/chat/settings/form.test.mjs` | hex and rgb both ways, code-point counts, the master moves only the channels that follow it |
-| `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; a flight profile it cannot fly fails, a clip name and an inherited name too; the cruise grows with distance; every profile closes the gap without turning back and lands, and the drop and the abseil never turn or mirror; the drop speeds up until 40% and then slows; the abseil hangs at three heights |
+| `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; the cruise grows with distance |
+| `ui/chat/thread/cards/model.test.mjs` | each tool reads as what it is doing while it runs and sums up what came back; a failed call shows the server's advice with the health hint split off, and a call the reply outran says it stopped; each kind of hit (chunk, formula, table, figure, code, footnote, unknown) is shown its own way, with its row line and a page's breadcrumbs |
+| `ui/chat/thread/cards/cite.test.mjs` | `[n]` in Jet's text links to the nearest earlier card that holds source n; `[0]`, `[x]` and `[1234]` are not citations; a page's pieces are not sources |
 | `ui/chat/thread/math.test.mjs` | a formula is drawn once per mode and the newest are kept; each is labelled for screen readers; a formula KaTeX cannot read keeps its TeX and is tried again; KaTeX's drawings reach the page with no `style` attribute and keep their width |
 | `ui/chat/thread/scroll.test.mjs` | the thread follows within 80 px of the bottom, and a send always follows |
-| `ui/chat/thread/store.test.mjs` | grouping and day pills, the slot's life from waiting to its end, the held message |
+| `ui/chat/thread/store.test.mjs` | grouping and day pills, the slot's life from waiting to its end, the held message, a reply's tool calls as they start and finish, and one still running at the end kept as unfinished |
 | `ui/chat/thread/throttle.test.mjs` | markdown renders at most every 50 ms with a trailing call; the first reveal waits for the mood |
 | `ui/jet/clip.test.mjs` | a time writer refuses a bare `t`; a face is drawn in the ground colour (tint 0) and hidden eyes are faint (tint 1) |
 | `ui/jet/clips/abseil.test.mjs` | the rope comes down in the launch and stays through the cruise, Jet kicks off three times, the rope whips up and fades on landing; no ground speed or grooves |
@@ -166,6 +171,7 @@ crates/jet
 │   └── chat/
 │       ├── mod.rs                  the commands the chat page calls, and the channel that streams a reply to it
 │       ├── error.rs                the error every chat command fails with, sent as `{ kind, message }`
+│       ├── image.rs                reads a picture of the quanty library for the page as a `data:` address, only from inside that folder
 │       └── review_timer.rs         the timer that keeps Jet's notes current once the chat goes quiet
 └── ui/
     ├── index.html                  the chat page: header, drawer, thread, composer, the workstation page, settings dialog
@@ -217,16 +223,25 @@ crates/jet
     │   │   ├── flight.test.mjs     the flight holds, lands, turns (capped at 25°) and mirrors; an unknown profile fails; the cruise grows with distance; every profile lands; the drop's speed-up and the abseil's three heights
     │   │   └── stage.css           the empty state, the hero spot and the live Jet's place in a lane
     │   ├── thread/                 the conversation
-    │   │   ├── store.js            messages, notices, the running reply and the held message, as rows (pure)
-    │   │   ├── store.test.mjs      grouping and pills; the slot's life; the held message
-    │   │   ├── view.js             draws the rows: bubbles, lanes, dots, code blocks, links
+    │   │   ├── store.js            messages, notices, the running reply with its tool calls, and the held message, as rows (pure)
+    │   │   ├── store.test.mjs      grouping and pills; the slot's life; the held message; a reply's tool calls
+    │   │   ├── view.js             draws the rows: bubbles, lanes, the cards above a reply, citation chips, dots, code blocks, links
     │   │   ├── math.js             draws the formulas of a reply with KaTeX, keeps each drawing, moves KaTeX's style attributes onto the element
     │   │   ├── math.test.mjs       once per mode, the newest kept, labelled; a bad formula is tried again; no style attribute
     │   │   ├── scroll.js           when the thread follows new text (pure)
     │   │   ├── scroll.test.mjs     follows within 80 px of the bottom; a send always follows
     │   │   ├── throttle.js         when streamed text becomes HTML: at most every 50 ms, stale answers dropped
     │   │   ├── throttle.test.mjs   the 50 ms rule with a trailing call; the first reveal waits for the mood
-    │   │   └── thread.css          rows, bubbles, lanes, pills and the Markdown inside bubbles
+    │   │   ├── thread.css          rows, bubbles, lanes, pills and the Markdown inside bubbles
+    │   │   └── cards/              what the thread shows for a tool call
+    │   │       ├── model.js        what one call's card says: the running line, the summary, the advice of a failure, the sources and how each kind of hit is shown (pure)
+    │   │       ├── model.test.mjs  the line and summary of each tool, failed and stopped calls, each kind of hit
+    │   │       ├── cite.js         how `[n]` in Jet's text finds its source: split at each citation, matched to the nearest card above (pure)
+    │   │       ├── cite.test.mjs   `[n]` links to the nearest earlier card that holds source n
+    │   │       ├── view.js         draws the cards, keeps finished ones across redraws, turns `[n]` into chips and opens a source when its chip is pressed
+    │   │       ├── show.js         draws one hit or page piece: Markdown, a formula, a table, a figure with its picture, code
+    │   │       ├── registry.js     how a finished call is drawn, by `server/tool`; a tool not named gets the default card
+    │   │       └── cards.css       the cards, their source rows, the spinner, the citation chips
     │   ├── composer/               the field and the Send/Stop button
     │   │   ├── state.js            the composer's rules: where it sits, the button, Enter, Escape (pure)
     │   │   ├── state.test.mjs      centred until the first send; Send becomes Stop; Enter and Escape
@@ -446,6 +461,7 @@ The settings commands reject with a message string. The chat commands, from `age
 | `load_memory` | nothing | the three notes and their length limits | |
 | `save_memory` | `{ notes }` | the notes as saved, cut to their limits | the next message starts a fresh session so Claude sees them |
 | `render_markdown` | `{ text }` | the text as HTML | the page asks while a reply streams; math comes back as `.math` elements for the page to typeset |
+| `read_library_image` | `{ path }` | a `data:image/png;base64,…` or `data:image/jpeg;base64,…` address | a relative path is read from the quanty folder (`mcp.quanty.cwd`); a file outside it once links are followed, not .png/.jpg/.jpeg, or over 8 MB is refused with kind `io` |
 | `open_link` | `{ url }` | nothing | opens `http`, `https` and `mailto` links in the user's own apps; any other scheme fails with `badLink` |
 | `workstation_start` | `{ workstation, events }` | nothing | starts polysim-bridge from the workstation settings; its lines stream over the `events` channel, each as the JSON object it is. When the bridge is still kept running from the same settings (a page reload), it is not restarted, so the link to the engine stays up: the new channel gets Jet's newest `bridge` line and the bridge's newest `hello`, `link`, `lifecycle` and `catalog`, and a `resync` is sent to the bridge. With different settings, or when the bridge was given up on, the running one is stopped and a new one started |
 | `workstation_command` | `{ command }` | nothing | sends one command object to the bridge; fails with `io` when the bridge is not running |
@@ -489,6 +505,7 @@ What the page gets:
 - `started` carries `mcp`: each server and its state. Only `failed` means offline; `pending` is still starting.
 - `toolStarted` when Claude has written a call (`id`, `server`, `tool`, `input`) and `toolFinished` when it comes back (`ok`, `result`, a one-line `summary` such as `quanty · search · 5 results`, and `durationMs`). Only MCP tools make events; Claude Code's own ToolSearch stays in the raw log. A call still running when the reply ends gets no `toolFinished`.
 - The saved entry keeps its finished calls in `tools`. Entries without calls look as they did before.
+- The thread shows each call as a card above the reply: a spinner while it runs, then a folded card of what came back. `[n]` in the reply becomes a chip that opens source n of the nearest card above it. A figure's picture is read through `read_library_image` when its row opens.
 - While a call runs, Claude may stay silent three times as long as usual, so a reply times out after 6 minutes of silence then.
 - The text of separate calls to the model is joined with a blank line.
 
