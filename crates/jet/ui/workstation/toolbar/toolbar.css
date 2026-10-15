@@ -1,0 +1,127 @@
+/* The strip above the left panel. It is cells side by side, each full height and parted by a
+   hairline, so nothing floats on it. Sizes are those of the desktop app this copies. */
+
+.ws-tools {
+  display: flex;
+  height: 100%;
+  box-sizing: border-box;
+  background: var(--ws-panel-raised);
+  border-bottom: var(--ws-hairline) solid var(--ws-border);
+}
+
+.ws-esc {
+  flex: 0 0 64px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-right: var(--ws-hairline) solid var(--ws-border);
+  background: transparent;
+  color: var(--ws-text-2);
+  font: 12px var(--font);
+  cursor: pointer;
+}
+
+.ws-esc:hover {
+  background: var(--ws-panel);
+}
+
+.ws-esc:focus-visible,
+.ws-instrument select:focus-visible {
+  outline: 2px solid var(--ws-focus);
+  outline-offset: -2px;
+}
+
+.ws-instrument {
+  position: relative;
+  flex: 0 0 220px;
+  box-sizing: border-box;
+  border-right: var(--ws-hairline) solid var(--ws-border);
+}
+
+.ws-instrument select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0 22px 0 4px;
+  border: 0;
+  border-radius: 0;
+  background: var(--ws-panel-raised);
+  color: var(--ws-text);
+  font: 13px var(--font);
+  cursor: pointer;
+}
+
+/* Only hover darkens the cell. A select keeps its focus after a pick, so a focus rule would leave it dark. */
+.ws-instrument select:hover {
+  background: var(--ws-panel);
+}
+
+.ws-instrument select option {
+  background: var(--ws-panel-raised);
+  color: var(--ws-text);
+}
+
+/* The caret is drawn with borders so that it takes its colour from the theme. */
+.ws-instrument::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  margin-top: -3px;
+  border-top: 6px solid var(--ws-text-2);
+  border-right: 5px solid transparent;
+  border-left: 5px solid transparent;
+  pointer-events: none;
+}
+
+.ws-tool-mode {
+  flex: 0 0 112px;
+  display: flex;
+  box-sizing: border-box;
+  border-right: var(--ws-hairline) solid var(--ws-border);
+}
+
+/* The cell's own hairlines and the toolbar's bottom rule already run along the other three sides. */
+.ws-tool-mode .ws-seg {
+  width: 100%;
+  height: 100%;
+  border-width: var(--ws-hairline) 0 0;
+}
+
+.ws-strategy {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: center;
+  padding-left: 12px;
+  font: 13px var(--font);
+  color: var(--ws-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The badge keeps its own attributes, not data-tone: the page's tone rules would colour its text. */
+.ws-badge {
+  flex: 0 0 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ws-border);
+  color: var(--ws-text);
+  font: 12px var(--font);
+}
+
+.ws-badge[data-fill="warning"] {
+  background: var(--ws-warning);
+}
+
+.ws-badge[data-fill="negative"] {
+  background: var(--ws-negative);
+}
+
+.ws-badge[data-ink="canvas"] {
+  color: var(--ws-canvas);
+}

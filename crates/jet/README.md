@@ -19,7 +19,7 @@ cargo run -p jet --example serve            # port 8787
 cargo run -p jet --example serve -- 9000    # another port
 ```
 
-It prints two addresses. `http://127.0.0.1:8787/` is the chat, running on a pretend agent that keeps its thread in the browser's storage. `http://127.0.0.1:8787/lab.html` is the lab, a page of buttons and dials for trying every clip. Edits to files in `ui/` show on reload.
+It prints three addresses. `http://127.0.0.1:8787/` is the chat, running on a pretend agent that keeps its thread in the browser's storage. `http://127.0.0.1:8787/lab.html` is the lab, a page of buttons and dials for trying every clip. `http://127.0.0.1:8787/workstation.html` is the whole workstation on a pretend feed, and its left panel (the toolbar, the latency table and the charts) is built in `ui/workstation/toolbar/`, `latency/` and `chart/`. Edits to files in `ui/` show on reload. `http://127.0.0.1:8787/workstation/chart/dev.html` is the workstation's charts on their own, on a made-up feed; add `?mode=candles` or `?series=pnl` to start in candles or on PnL, and `?hover=0.6` to put the pointer over the chart.
 
 The pretend agent answers from the words in your message. A word counts when a word of the message starts with it, in any case.
 
@@ -100,6 +100,10 @@ What they cover:
 | `ui/workstation/monitor/cells.test.mjs` | the account's status row (a halt takes the row with its reason, otherwise the last refusal beside ARMED or `--`); side counts (lost turns invalid above zero, a leak shows `+N`); a feature row (changed shows the bar, stale dims the name and greys the value) |
 | `ui/workstation/monitor/channels.test.mjs` | channel deltas go on top newest first and each ring keeps its newest 256; a full set, a new session, generation or instrument, and a new bridge start the rings over, while a tick without those sections does not |
 | `ui/workstation/monitor/following.test.mjs` | a list at the top counts nothing, scrolled away it counts what was appended since and the badge says so; the badge brings a list back, and each channel follows on its own |
+| `ui/workstation/chart/layout.test.mjs` | the stack splits 70 / 30 under a 30 px strip, each plot is inset 10 with a 72 px gutter, and a pill stays inside the stack; the label count is floor(h / 22) in single precision, and zero when h / 13.2 is under 5 |
+| `ui/workstation/chart/model.test.mjs` | buckets append by index, the open bucket is replaced, and a new generation or a new bridge starts over; the window spans capacity slots; a hole or a gap flag breaks the line and a candle takes its colour from close against open; the crosshair picks the bucket under the pointer and shows the frame's own labels |
+| `ui/workstation/latency/model.test.mjs` | the latency grid puts the bridge's rows under its column headers, keeps each cell's tone (a short row is padded with `--`, a long one cut) and sets the slot column apart |
+| `ui/workstation/toolbar/model.test.mjs` | the toolbar lists the catalog's instruments and shows the view's, defaults to Line, and colours the execution badge like the desktop app: OFF in the border fill, SIM in warning, LIVE in negative |
 
 The frontend is plain ES modules with no bundler, so there is nothing to install for `ui/`. Tauri serves the folder as-is (`build.frontendDist` in `tauri.conf.json`), and so does the dev server.
 
@@ -276,21 +280,48 @@ crates/jet
     └── workstation/                the polysim workstation page, one folder for each area
         ├── shell.js                its header, the setup card and the workstation itself, built and its feed started the first time the page opens; the feed is paused while the chat shows
         ├── shell.css               the chat's header, thread and composer step aside; the page's header, link chip and setup card
+        ├── chart/                  the left panel's charts: the mid chart, the risk chart, the crosshair
+        │   ├── mount.js            builds the area and connects the bridge frames, the pointer, the size and the paint timing
+        │   ├── model.js            the frames folded by index; the window, the fractions, the runs, what lies under the pointer (pure)
+        │   ├── model.test.mjs      buckets append by index and a new generation starts over; the window; runs and candle colours; the crosshair's labels
+        │   ├── layout.js           the 70 / 30 split, the plots, the pointer fraction, the label count, where a pill goes (pure)
+        │   ├── layout.test.mjs     the split and the insets, a pill stays inside; the label count is floor(h / 22) in single precision
+        │   ├── view.js             paints the two charts and the crosshair on canvases, in the colours and fonts of the page's tokens
+        │   ├── chart.css           the stack, the size of the strip and the layer for the crosshair
+        │   ├── dev.html            the charts alone on a made-up feed (?mode=candles, ?series=pnl, ?hover=0.6)
+        │   ├── dev.js              boots that page on the workstation's frame store: the Line, Candles and Resync buttons, the hover
+        │   ├── dev-feed.js         the made-up bridge: a wandering price, fills, one hole and one gap flag in each window; dev only
+        │   └── dev.css             that page's layout; its colours and fonts come from the workstation's stylesheet
+        ├── controls/               what more than one area uses
+        │   ├── stylesheet.js       links an area's own stylesheet and waits for it to apply
+        │   ├── segmented.js        the one-of-a-few button strip of the toolbar and of the chart's strip; a click reports the pick, the frame shows it
+        │   ├── segmented.css       the strip's look: a fill and a bar on the chosen cell, hairlines between the cells
+        │   └── write.js            writes a text or an attribute only when it changed, for the painters that run every frame
+        ├── latency/                the latency table above the charts
+        │   ├── mount.js            builds the grid and writes the bridge's numbers into it, rebuilding only when its shape changes
+        │   ├── model.js            the header, the columns and each row's cells with their tones, the last column marked as slots (pure)
+        │   ├── model.test.mjs      rows sit under their headers, tones are kept, the slot column is set apart
+        │   └── latency.css         the grid, the rule between rows and the divider before the slot column
         ├── lifecycle/              the screen over the panels while the workstation is starting, draining or stopped
         │   ├── mount.js            hands each lifecycle line to the view
         │   ├── view.js             the title and the reason; hidden while the screen is live
         │   └── lifecycle.css       the centred text over the canvas
-        └── monitor/                the centre panel: account, quote summary, features, and the four channels of rows
-            ├── mount.js            wires the store's lines to the rings and the view, a new set for each mount
-            ├── view.js             the account band, the summary band and the feature list, patched in place
-            ├── channel-view.js     the tabs, the four row lists and the "N new" badge; new rows go on top
-            ├── channels.js         the 256-row ring of each channel and how a tick folds into it (pure)
-            ├── channels.test.mjs   deltas go on top; a full set, session, generation, instrument or new bridge starts over
-            ├── following.js        which lists are at the newest rows and how many rows came in since (pure)
-            ├── following.test.mjs  the count and the badge; following again; each channel on its own
-            ├── cells.js            what the status row, the side counts and a feature row show (pure)
-            ├── cells.test.mjs      a halt takes the status row; lost warns above zero; changed and stale feature rows
-            └── monitor.css         the bands, the tabs, the rows and the badge
+        ├── monitor/                the centre panel: account, quote summary, features, and the four channels of rows
+        │   ├── mount.js            wires the store's lines to the rings and the view, a new set for each mount
+        │   ├── view.js             the account band, the summary band and the feature list, patched in place
+        │   ├── channel-view.js     the tabs, the four row lists and the "N new" badge; new rows go on top
+        │   ├── channels.js         the 256-row ring of each channel and how a tick folds into it (pure)
+        │   ├── channels.test.mjs   deltas go on top; a full set, session, generation, instrument or new bridge starts over
+        │   ├── following.js        which lists are at the newest rows and how many rows came in since (pure)
+        │   ├── following.test.mjs  the count and the badge; following again; each channel on its own
+        │   ├── cells.js            what the status row, the side counts and a feature row show (pure)
+        │   ├── cells.test.mjs      a halt takes the status row; lost warns above zero; changed and stale feature rows
+        │   └── monitor.css         the bands, the tabs, the rows and the badge
+        └── toolbar/                the strip above the left panel
+            ├── mount.js            builds Esc, the instrument menu, Line | Candles, the strategy name and the execution badge
+            ├── model.js            the instrument shown, the chart mode, the strategy and the badge's fill and ink, from the catalog and the view (pure)
+            ├── model.test.mjs      the instruments listed, the view followed, the badge coloured like the desktop app
+            └── toolbar.css         the cells of the strip, the instrument menu's caret and the badge's fills
 ```
 
 Three ideas carry the design:
