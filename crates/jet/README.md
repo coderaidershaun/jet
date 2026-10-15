@@ -28,6 +28,7 @@ The pretend agent answers from the words in your message. A word counts when a w
 | a mood word: `neutral`, `happy`, `excited`, `thinking`, `curious`, `sorry`, `alert`, `annoyed` or `hello` | the reply starts with that mood; with no mood word, every third reply gets one anyway |
 | `slow` | the first word comes after 12 s instead of 2.6 s, so the working loop has time to spin and Stop has time to be pressed |
 | `code` | the reply holds a code block |
+| `math` | the reply holds inline and display math, a dollar amount, a table of numbers and a code block |
 | `fresh` | a new session starts, with a notice in the thread |
 | `error` | the reply fails the way Claude Code does when it is not logged in |
 | `missing` | the reply fails as if Claude Code was not installed |
@@ -57,8 +58,10 @@ What they cover:
 | `src/settings.rs` `json_uses_camel_case_for_the_frontend` | the page reads `reducedMotion`, not `reduced_motion` |
 | `src/chat/error.rs` `bridge_error_serialises_as_kind_and_message` | every command error reaches the page as `{ kind, message }` |
 | `src/chat/mod.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
+| `../agent/src/markdown/mod.rs` `math_and_tables_match_the_shared_vectors` | the app's renderer gives the html of every case in `ui/bridge/fixtures/math-vectors.json`: math in prose, display math, money, delimiters that open nothing, code, lists, number columns; and never writes a `style` attribute |
 | `rig/poses.rs` `generator_prints_the_committed_rig` | the generator prints exactly `rig/jet.json` |
 | `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps |
+| `ui/bridge/markdown.test.mjs` | the browser fallback gives the same html as the app's renderer for every shared case, with no `style` attribute |
 | `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; merge fills gaps from them; `defaults_match_the_rust_fixture`: the page's defaults are exactly `ui/bridge/default-settings.json` |
 | `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method calls its command with the right argument keys and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
 | `ui/chat/composer/state.test.mjs` | centred until the first send, Send becomes Stop, Enter and Escape |
@@ -69,6 +72,7 @@ What they cover:
 | `ui/chat/drawer/usage.test.mjs` | the recorded Sonnet turn read line by line (live counts, then the reported cost and timings, then the totals); a second reply at another thinking level gets its own row; a stopped reply keeps its tokens; stray lines change nothing |
 | `ui/chat/settings/form.test.mjs` | hex and rgb both ways, code-point counts, the master moves only the channels that follow it |
 | `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; the cruise grows with distance |
+| `ui/chat/thread/math.test.mjs` | a formula is drawn once per mode and the newest are kept; each is labelled for screen readers; a formula KaTeX cannot read keeps its TeX and is tried again; KaTeX's drawings reach the page with no `style` attribute and keep their width |
 | `ui/chat/thread/scroll.test.mjs` | the thread follows within 80 px of the bottom, and a send always follows |
 | `ui/chat/thread/store.test.mjs` | grouping and day pills, the slot's life from waiting to its end, the held message |
 | `ui/chat/thread/throttle.test.mjs` | markdown renders at most every 50 ms with a trailing call; the first reveal waits for the mood |
@@ -142,7 +146,10 @@ crates/jet
     │   ├── fake-agent.js           the pretend Claude the chat runs on in a browser
     │   ├── fake-agent.test.mjs     a reply's events in order incl. the live stream lines and usage, a fresh session, the three failures, stop, storage
     │   ├── fake-script.js          what the pretend Claude says and the stream lines it writes: message_start, message_delta, a result with timing fields, real model ids
-    │   └── markdown.js             a small, safe Markdown renderer for the browser fallback
+    │   ├── markdown.js             a small, safe Markdown renderer for the browser fallback, with math and tables
+    │   ├── markdown.test.mjs       the shared math and table cases, with no style attribute
+    │   └── fixtures/
+    │       └── math-vectors.json   the cases both Markdown renderers must agree on, run by a test on each side
     ├── chat/                       the chat page
     │   ├── main.js                 boot: loads the rig, settings and history, builds every part, hands each its parts
     │   ├── turn.js                 one turn: a send, each event of the reply, the end of the reply
@@ -157,6 +164,8 @@ crates/jet
     │   │   ├── store.js            messages, notices, the running reply and the held message, as rows (pure)
     │   │   ├── store.test.mjs      grouping and pills; the slot's life; the held message
     │   │   ├── view.js             draws the rows: bubbles, lanes, dots, code blocks, links
+    │   │   ├── math.js             draws the formulas of a reply with KaTeX, keeps each drawing, moves KaTeX's style attributes onto the element
+    │   │   ├── math.test.mjs       once per mode, the newest kept, labelled; a bad formula is tried again; no style attribute
     │   │   ├── scroll.js           when the thread follows new text (pure)
     │   │   ├── scroll.test.mjs     follows within 80 px of the bottom; a send always follows
     │   │   ├── throttle.js         when streamed text becomes HTML: at most every 50 ms, stale answers dropped
@@ -228,6 +237,8 @@ crates/jet
     │   ├── player.test.mjs         a clip starts from the live state and ends at rest
     │   ├── view.js                 draws a state into an SVG: body, ring, eyes; the only code that draws Jet
     │   └── scene.js                scenery in its own SVG layers, scrolled by the speed track; not part of Jet
+    ├── vendor/
+    │   └── katex/                  KaTeX 0.16.47 (MIT), copied unchanged from npm: katex.mjs, katex.min.css, fonts/ (20 .woff2), LICENSE and VERSION
     └── lab/                        the controls around Jet
         ├── main.js                 boot, frame loop, a step list for each button, replay-on-change, save-on-change
         ├── wheel.js                behaviour wheel, presets, axis sliders
@@ -258,6 +269,20 @@ The five thinking levels are `low`, `medium`, `high`, `xhigh` and `max`. The pre
 
 The settings sheet's "This session" block reads the same totals, so the two places show the same tokens and the same cost.
 
+## Math and tables
+
+A reply's math is typeset with KaTeX, and a table's columns of numbers are right-aligned. Type `math` into the pretend agent to see both.
+
+- **Delimiters.** `\( … \)` is inline math. `\[ … \]` and `$$ … $$` are display math. A single `$` is money and is never math, so "$100" stays as written.
+- **Code is left alone.** Inside a code span or a fenced block, delimiters stay as written.
+- **What does not open math shows as written.** An unclosed `\(`, a stray `\)`, an empty `\(\)` and a pair split by a blank line come back as the text they were. While a reply streams, a formula whose closer has not arrived yet shows as text.
+- **The markup.** The Markdown renderer (Rust in the app, `ui/bridge/markdown.js` in a browser) draws nothing. Each formula becomes `<span class="math" data-tex="…">…</span>`, with `math-display` added for display math, or `<div class="math math-display" data-tex="…">` when display math is alone in its paragraph. `typeset(node)` in `ui/chat/thread/math.js` finds the `.math` elements below a node and draws each one. A formula KaTeX cannot read keeps its TeX, gets the class `math-error` and is tried again on the next paint.
+- **Tables.** A column whose body cells are all numbers (`100`, `-0.25`, `$5`, `5%`, `1,200.50`) gets `class="num"` on its header and its cells, and is right-aligned. A table never carries a `style` attribute. Markdown alignment colons are accepted and ignored.
+- **One set of cases.** `ui/bridge/fixtures/math-vectors.json` holds the cases both renderers must give the same html for. The Rust test and the node test both run it.
+- **KaTeX.** KaTeX 0.16.47 (MIT) is vendored in `ui/vendor/katex/`: `katex.mjs`, `katex.min.css`, the 20 `.woff2` fonts and the licence, copied unchanged from the npm tarball. `VERSION` there has the tarball address and its checksum. The page's security policy blocks `style` attributes, and KaTeX writes a few of them itself (the arrow over a vector, tall braces), so `math.js` builds KaTeX's tree through the DOM and moves those styles onto the element's style object, which the policy allows.
+
+To upgrade KaTeX: download the new tarball from the npm registry, check its sha512 against the registry's `dist.integrity` and its `version`, copy the same files byte for byte, and update `VERSION`. Then check that `katex.__renderToDomTree` still exists (it is not a public API) and that `ui/chat/thread/math.test.mjs` still passes.
+
 ## Commands the window can call
 
 The settings commands reject with a message string. The chat commands, from `agent_status` down, reject with `{ kind, message }`, where `kind` is `busy`, `claudeMissing`, `io` or `badLink`.
@@ -274,7 +299,7 @@ The settings commands reject with a message string. The chat commands, from `age
 | `forget_conversation` | nothing | nothing | the transcript is moved aside and the session is dropped; the notes stay; fails with `busy` while a reply is running |
 | `load_memory` | nothing | the three notes and their length limits | |
 | `save_memory` | `{ notes }` | the notes as saved, cut to their limits | the next message starts a fresh session so Claude sees them |
-| `render_markdown` | `{ text }` | the text as HTML | the page asks while a reply streams |
+| `render_markdown` | `{ text }` | the text as HTML | the page asks while a reply streams; math comes back as `.math` elements for the page to typeset |
 | `open_link` | `{ url }` | nothing | opens `http`, `https` and `mailto` links in the user's own apps; any other scheme fails with `badLink` |
 
 ## Adding a clip

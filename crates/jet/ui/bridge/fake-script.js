@@ -17,6 +17,49 @@ const REPLIES = [
 
 const CODE_REPLY = 'Here is a small example you can start from:\n\n```js\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n\nconsole.log(greet("Jet"));\n```\n\nPaste it in and tell me what you see.';
 
+const MATH_REPLY = [
+  String.raw`Here is the Black-Scholes price of a European call. The stock follows a lognormal walk with volatility \( \sigma \), and \( N(\cdot) \) is the standard normal distribution function:`,
+  '',
+  String.raw`\[`,
+  String.raw`C = S\,N(d_1) - K e^{-rT} N(d_2)`,
+  String.raw`\]`,
+  '',
+  'where',
+  '',
+  '$$',
+  String.raw`d_1 = \frac{\ln(S/K) + \left(r + \tfrac{1}{2}\sigma^2\right)T}{\sigma\sqrt{T}}, \qquad d_2 = d_1 - \sigma\sqrt{T}`,
+  '$$',
+  '',
+  String.raw`For a $100 stock, a $100 strike, one year to expiry, a 5% rate and \( \sigma = 0.2 \):`,
+  '',
+  '| Input | Value |',
+  '| --- | --- |',
+  String.raw`| Spot \( S \) | 100 |`,
+  String.raw`| Strike \( K \) | 100 |`,
+  String.raw`| Rate \( r \) | 5% |`,
+  String.raw`| Volatility \( \sigma \) | 0.20 |`,
+  String.raw`| Call price \( C \) | 10.45 |`,
+  '',
+  'The call is',
+  '',
+  String.raw`\[`,
+  String.raw`\text{moneyness} = \begin{cases} \text{in the money} & S > K \\ \text{at the money} & S = K \\ \text{out of the money} & S < K \end{cases}`,
+  String.raw`\]`,
+  '',
+  String.raw`and a book of calls with weights \( \vec{w} \) is worth \( \vec{w} \cdot \vec{C} \).`,
+  '',
+  '```python',
+  'from math import exp, log, sqrt',
+  'from statistics import NormalDist',
+  '',
+  'def call(S, K, T, r, sigma):',
+  '    d1 = (log(S / K) + (r + sigma**2 / 2) * T) / (sigma * sqrt(T))',
+  '    d2 = d1 - sigma * sqrt(T)',
+  '    N = NormalDist().cdf',
+  '    return S * N(d1) - K * exp(-r * T) * N(d2)',
+  '```',
+].join('\n');
+
 /** @param {string} text @param {string} word */
 const mentions = (text, word) => new RegExp('\\b' + word, 'i').test(text);
 
@@ -24,6 +67,7 @@ const mentions = (text, word) => new RegExp('\\b' + word, 'i').test(text);
 export function wants(text) {
   return {
     code: mentions(text, 'code'),
+    math: mentions(text, 'math'),
     slow: mentions(text, 'slow'),
     error: mentions(text, 'error'),
     missing: mentions(text, 'missing'),
@@ -47,6 +91,7 @@ export function moodFor(text, replyNumber) {
 
 /** @param {string} text @param {number} replyNumber */
 export function bodyFor(text, replyNumber) {
+  if (wants(text).math) return MATH_REPLY;
   if (wants(text).code) return CODE_REPLY;
   return REPLIES[(replyNumber - 1) % REPLIES.length];
 }

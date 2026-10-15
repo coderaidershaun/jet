@@ -6,6 +6,7 @@
 
 import { clockTime } from '../clock.js';
 import { h } from '../dom.js';
+import { typeset } from './math.js';
 
 const LOGIN_HINT = /log ?in/i;
 
@@ -74,6 +75,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     } else {
       body.innerHTML = entry.html;
       sealCode(body);
+      typeset(body);
       if (entry.status === 'streaming') bubble.setAttribute('aria-busy', 'true');
       if (entry.status === 'stopped') body.append(h('p', { class: 'stopped', text: entry.text ? 'Stopped' : 'Stopped before replying' }));
     }
