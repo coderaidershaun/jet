@@ -1,0 +1,6 @@
+katex 0.16.47
+Tarball: https://registry.npmjs.org/katex/-/katex-0.16.47.tgz
+Integrity: sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg==
+License: MIT, see LICENSE
+Copied unchanged from the tarball: dist/katex.mjs, dist/katex.min.css, dist/fonts/*.woff2 (20 files) and LICENSE.
+The stylesheet also names .woff and .ttf files that are left out, because the browsers Jet runs in load the .woff2 files first.

@@ -67,3 +67,5 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.
 - **Flight** — the live Jet's move from where it stood to the slot's lane on a send. _Avoid_: zoom (that is one travel clip; see **Travel**).
 - **Profile** — how the host flies Jet during a travel's cruise: `roll` turns toward the way Jet goes and mirrors going left, `drop` falls faster and faster and then slows to land, `abseil` goes down in three steps. Each travel clip names one. _Avoid_: path.
+- **Math** — TeX in a reply, between `\(` and `\)`, or for display between `\[` and `\]` or `$$` and `$$`. A single `$` is money, never math.
+- **Typeset** — turning a math element's TeX into KaTeX's drawing on the page. _Avoid_: render (that is Markdown to HTML).
