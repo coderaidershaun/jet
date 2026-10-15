@@ -153,8 +153,8 @@ test('each kind of hit is shown its own way, and an unknown kind as plain text',
   assert.deepEqual(figure.show, { as: 'figure', picture: ADDED_HITS[2].picture, text: ADDED_HITS[2].text, label: 'Figure 7-10' });
   assert.deepEqual([figure.page, figure.reason], ['p.111', 'cited by [1]']);
 
-  assert.deepEqual(showOf('code', 'price = $x$ * \\(y\\)', { language: 'python' }), { as: 'code', text: 'price = $x$ * \\(y\\)', language: 'python' }, 'code is kept exactly as printed');
-  assert.deepEqual(showOf('code', 'x = 1', {}), { as: 'code', text: 'x = 1', language: null });
+  assert.deepEqual(showOf('code', 'price = $x$ * \\(y\\)', { language: 'c++', label: 'Listing 2.1' }), { as: 'code', text: 'price = $x$ * \\(y\\)', language: 'c++', label: 'Listing 2.1' }, 'code is kept exactly as printed');
+  assert.deepEqual(showOf('code', 'x = 1', {}), { as: 'code', text: 'x = 1', language: null, label: null });
   assert.deepEqual(showOf('footnote', 'A note.'), { as: 'markdown', text: 'A note.', footnote: true });
   assert.deepEqual(showOf('heading', 'Vega'), { as: 'heading', text: 'Vega' });
   assert.deepEqual(showOf('figure', 'A chart.', { label: 'Figure 1' }), { as: 'figure', picture: null, text: 'A chart.', label: 'Figure 1' }, 'a figure with no stored picture says so');

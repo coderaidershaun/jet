@@ -1,23 +1,11 @@
-// Draws one hit or page piece by its kind. The typesetter is loaded the first time
-// it is needed, from a module that may not be in this build; without it a
-// formula shows its TeX as text.
+// Draws one hit or page piece by its kind. Markdown and formulas are typeset as soon as
+// their nodes are in place; code is shown as printed, never through Markdown or math.
 
 import { h } from '../../dom.js';
+import { typeset } from '../math.js';
 
 const PICTURE_ADDRESS = /^data:image\/(png|jpeg);base64,/;
 const PICTURE_UNSHOWABLE = 'The picture came back in a form the page cannot show.';
-
-let typesetter = null;
-
-/**
- * The page's typesetter, or null when this build has none.
- * SMELL: when the module is missing, the first open of a source logs one 404 in the console. The failure is
- * caught, so a formula shows its TeX as text. A plain import is better once every build has the module.
- */
-function loadTypeset() {
-  typesetter ??= import('../math.js').then((math) => math.typeset, () => null);
-  return typesetter;
-}
 
 async function fillMarkdown(element, { text, footnote }, { render, seal }) {
   const body = h('div', { class: footnote ? 'body footnote' : 'body' });
@@ -30,7 +18,7 @@ async function fillMarkdown(element, { text, footnote }, { render, seal }) {
     return;
   }
   seal(body);
-  (await loadTypeset())?.(body);
+  typeset(body);
 }
 
 async function showPicture(slot, { picture, label }, readImage) {
@@ -73,7 +61,7 @@ export async function fillShow(element, show, parts) {
       );
       element.append(wrapper);
       // The typesetter only looks inside the node it is given, so it gets the wrapper.
-      (await loadTypeset())?.(wrapper);
+      typeset(wrapper);
       break;
     }
     case 'table':
@@ -89,6 +77,7 @@ export async function fillShow(element, show, parts) {
       break;
     }
     case 'code': {
+      if (show.label) element.append(h('p', { class: 'show-label', text: show.label }));
       const block = h('div', {}, h('pre', {}, h('code', { class: show.language ? 'language-' + show.language : null, text: show.text })));
       parts.seal(block);
       element.append(block);

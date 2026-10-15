@@ -15,7 +15,7 @@
  *   | { as: 'formula', tex: string, label: string | null }
  *   | { as: 'table', text: string, label: string | null }
  *   | { as: 'figure', picture: string | null, text: string, label: string | null }
- *   | { as: 'code', text: string, language: string | null }
+ *   | { as: 'code', text: string, language: string | null, label: string | null }
  *   | { as: 'plain', text: string }} Show
  */
 /** @typedef {{ n: number, document: string, page: string, kind: string, reason: string, why: string, score: number | null, byline: string, title: string, show: Show }} SourceRow */
@@ -101,7 +101,7 @@ export function showOf(kind, text, item = {}) {
     case 'figure':
       return { as: 'figure', picture: orNull(picture), text: words, label: orNull(label) };
     case 'code':
-      return { as: 'code', text: words, language: orNull(language) };
+      return { as: 'code', text: words, language: orNull(language), label: orNull(label) };
     default:
       return { as: 'plain', text: words };
   }
