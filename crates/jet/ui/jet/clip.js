@@ -42,6 +42,9 @@ export function eyeSizeFor(eyesDial) {
   return ke < 0.15 ? 0 : 0.6 + 0.4 * ke;
 }
 
+/** The radius of the faint eyes at rest, before the eyes dial scales it. */
+export const FAINT_EYE_SIZE = 2.2;
+
 /**
  * Returns the dials as the numbers that a clip's formulas read, and the
  * helpers that apply the shape and eyes dials to the rig.
@@ -58,7 +61,9 @@ export function eyeSizeFor(eyesDial) {
  * places the eyes for a pose and gives them the size `rx` by `ry`, scaled by
  * `eyeSize`, in the ground colour (tint 0). `hiddenEyes(name)` places them
  * with no size and fully faint (tint 1). So a face opens out of faint eyes
- * into the ground colour, and closes back to faint.
+ * into the ground colour, and closes back to faint. `faintEyes(name, k)` places
+ * the resting faint eyes on a pose blended by `k`, at the size the player gives
+ * them at rest, so a clip can carry them without a jump.
  *
  * @param {import('./rig.js').Rig} rig
  * @param {Params} p
@@ -68,6 +73,7 @@ export function eyeSizeFor(eyesDial) {
  *   pose: (name: string, k?: number) => number[],
  *   eyes: (name: string, rx: number, ry: number) => number[],
  *   hiddenEyes: (name: string) => number[],
+ *   faintEyes: (name: string, k?: number) => number[],
  * }}
  */
 export function readDials(rig, p) {
@@ -86,8 +92,12 @@ export function readDials(rig, p) {
   const eyeAt = (name) => lerp(rig.eyes.circle, rig.eyes[name], ks);
   const eyes = (name, rx, ry) => [...eyeAt(name), rx * eyeSize, ry * eyeSize, 0];
   const hiddenEyes = (name) => [...eyeAt(name), 0, 0, 1];
+  const faintEyes = (name, k = 1) => {
+    const size = FAINT_EYE_SIZE * eyeSize;
+    return [...lerp(rig.eyes.circle, rig.eyes[name], k * ks), size, size, 1];
+  };
 
-  return { ks, ke, kc, km, x, y, reduced, eyeSize, circle, rest, pose, eyes, hiddenEyes };
+  return { ks, ke, kc, km, x, y, reduced, eyeSize, circle, rest, pose, eyes, hiddenEyes, faintEyes };
 }
 
 function checkTime(track, at) {

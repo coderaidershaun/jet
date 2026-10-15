@@ -3,7 +3,7 @@
 // moment, so a new clip blends in instead of cutting. At rest Jet breathes and
 // shows faint eyes that blink now and then. It knows nothing about the DOM.
 
-import { eyeSizeFor } from './clip.js';
+import { eyeSizeFor, FAINT_EYE_SIZE } from './clip.js';
 import { cubicBezier } from './easing.js';
 import { PROP, PROP_HIDDEN, PROP_SLOTS, PROP_STRIDE, RING_HIDDEN, TRACKS } from './state.js';
 import { sample } from './track.js';
@@ -16,7 +16,6 @@ import { sample } from './track.js';
 
 const IDLE_BREATH_PERIOD_MS = 3400;
 const IDLE_BREATH_DEPTH = 0.018;
-const FAINT_EYE_SIZE = 2.2;
 const FAINT_EYES_IN_MS = 240;
 const AT_REST_TOLERANCE = 1e-6;
 const BLINK_CLOSE_MS = 60;

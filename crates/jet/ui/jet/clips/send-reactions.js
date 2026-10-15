@@ -22,7 +22,6 @@ const ease = {
 // Earlier than in the mood clips, because the shortest send reaction is over in about 200 ms
 // and the ground must be still by then.
 const GROUND_CLEAR_MS = 150;
-const FAINT_EYE_SIZE = 2.2;
 // The faint eyes shrink away this long before the end, because a clip ends with no eye size
 // and the player grows them back at rest.
 const FAINT_EYES_OUT_MS = 50;
@@ -67,8 +66,7 @@ const HOP_LIFT = 0.5;
 
 /**
  * Reads the dials and makes the empty clip for a send reaction, with the ground already
- * cleared. `faintEyes(name, k)` places the circle's faint eyes on a pose blended by `k`, as
- * `pose(name, k)` blends the body. `phase(name)` closes a phase at the time the body has reached.
+ * cleared. `phase(name)` closes a phase at the time the body has reached.
  * @param {import('../rig.js').Rig} rig
  * @param {import('../clip.js').Params} p
  */
@@ -85,13 +83,7 @@ function startReaction(rig, p) {
   ring(GROUND_CLEAR_MS, RING_HIDDEN.slice(), ease.inOut);
   speed(GROUND_CLEAR_MS, 0, ease.settle);
   const phase = (name) => clip.phases.push({ name, end: t() });
-  // SMELL: this belongs beside eyes() and hiddenEyes() in the shared dials, and FAINT_EYE_SIZE copies the size the
-  // player gives the faint eyes at rest; if the two differ, the faint eyes jump in size as a send reaction starts.
-  const faintEyes = (name, k = 1) => {
-    const size = FAINT_EYE_SIZE * dials.eyeSize;
-    return [...lerp(rig.eyes.circle, rig.eyes[name], k * dials.ks), size, size, 1];
-  };
-  return { ...dials, ...writers, tempo, bounce, faintEyes, phase };
+  return { ...dials, ...writers, tempo, bounce, phase };
 }
 
 /**
