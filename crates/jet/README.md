@@ -104,6 +104,9 @@ What they cover:
 | `ui/workstation/chart/model.test.mjs` | buckets append by index, the open bucket is replaced, and a new generation or a new bridge starts over; the window spans capacity slots; a hole or a gap flag breaks the line and a candle takes its colour from close against open; the crosshair picks the bucket under the pointer and shows the frame's own labels |
 | `ui/workstation/latency/model.test.mjs` | the latency grid puts the bridge's rows under its column headers, keeps each cell's tone (a short row is padded with `--`, a long one cut) and sets the slot column apart |
 | `ui/workstation/toolbar/model.test.mjs` | the toolbar lists the catalog's instruments and shows the view's, defaults to Line, and colours the execution badge like the desktop app: OFF in the border fill, SIM in warning, LIVE in negative |
+| `ui/workstation/ladder/controls.test.mjs` | the level stepper steps and drags inside 12 to 30 and reads (N) when fewer rows fit; the grouping list comes from hello for the current unit and each choice sends its own command |
+| `ui/workstation/ladder/rows.test.mjs` | the ladder fits floor(side / 8.5) rows, at most 30, and its text shrinks with the row to a 7 px floor; the order shows before the wanted quote; the pointer finds the ask or bid row and the readout spells it out inside the ladder; a chevron shows for each quote off the rows |
+| `ui/workstation/linkbar/chips.test.mjs` | the link bar reads "no engine attached" until a link line, then its chips in order; only the engine chip is a button, and only when the bridge allows; the button asserts the next state |
 
 The frontend is plain ES modules with no bundler, so there is nothing to install for `ui/`. Tauri serves the folder as-is (`build.frontendDist` in `tauri.conf.json`), and so does the dev server.
 
@@ -297,6 +300,15 @@ crates/jet
         │   ├── segmented.js        the one-of-a-few button strip of the toolbar and of the chart's strip; a click reports the pick, the frame shows it
         │   ├── segmented.css       the strip's look: a fill and a bar on the chosen cell, hairlines between the cells
         │   └── write.js            writes a text or an attribute only when it changed, for the painters that run every frame
+        ├── ladder/                 the right panel: the DOM ladder and its header
+        │   ├── mount.js            wires the ladder to the store: stylesheet, lines, resizing, the pointer, the painter
+        │   ├── rows.js             the body's rules: rows that fit, text sizes, the row under the pointer, the strategy cell, the readout, the chevrons (pure)
+        │   ├── rows.test.mjs       rows that fit and the text sizes; the order before the wanted quote; the hovered row and the readout; the chevrons
+        │   ├── controls.js         the header's rules: the level stepper and the grouping choices (pure)
+        │   ├── controls.test.mjs   the stepper steps and drags inside its range and reads (N) when fewer rows fit; the grouping list and its commands
+        │   ├── header.js           the 30 px header: unit toggle, grouping combo, level stepper
+        │   ├── view.js             the body: 30 rows a side, the separator, the status pill, the chevrons and the hover readout
+        │   └── ladder.css          the ladder's look
         ├── latency/                the latency table above the charts
         │   ├── mount.js            builds the grid and writes the bridge's numbers into it, rebuilding only when its shape changes
         │   ├── model.js            the header, the columns and each row's cells with their tones, the last column marked as slots (pure)
@@ -306,6 +318,12 @@ crates/jet
         │   ├── mount.js            hands each lifecycle line to the view
         │   ├── view.js             the title and the reason; hidden while the screen is live
         │   └── lifecycle.css       the centred text over the canvas
+        ├── linkbar/                the strip about the engine link, under the three panels
+        │   ├── mount.js            wires the link bar to the store: stylesheet, the link line, the painter
+        │   ├── chips.js            what the bar says for the latest link line (pure)
+        │   ├── chips.test.mjs      no engine until a link line; the chips in order; the engine chip steps to the next engine only when allowed; the button asserts the next state
+        │   ├── view.js             the chips, the engine chip that is a button, and START/STOP
+        │   └── linkbar.css         the link bar's look
         ├── monitor/                the centre panel: account, quote summary, features, and the four channels of rows
         │   ├── mount.js            wires the store's lines to the rings and the view, a new set for each mount
         │   ├── view.js             the account band, the summary band and the feature list, patched in place
