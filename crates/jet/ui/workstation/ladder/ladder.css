@@ -1,0 +1,296 @@
+/* The ladder, the workstation's right panel: a 30 px header over rows that stretch to fill the body.
+   The sizes the page works out come in as custom properties. No transitions. */
+
+/* The mount point would otherwise take its content's height; these make it, and the ladder in it, fill the panel. */
+#ws-ladder { height: 100%; min-height: 0; }
+#ws-ladder > .ladder { height: 100%; }
+
+.ladder {
+  position: relative;
+  isolation: isolate; /* keeps the ladder's layers below any page layer, such as the starting screen */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* a narrow panel clips the header's controls, it never widens the body */
+  grid-template-rows: var(--ws-header-h) minmax(0, 1fr);
+  background: var(--ws-panel);
+}
+.ladder [hidden] { display: none; }
+
+.ladder-head {
+  --ladder-target-h: 44px;
+  position: relative;
+  z-index: 4;
+  display: flex;
+  background: var(--ws-panel-raised);
+  border-bottom: var(--ws-hairline) solid var(--ws-border);
+  box-sizing: border-box;
+  font: 12px/1 var(--font);
+}
+.ladder-unit {
+  display: flex;
+  flex: 0 0 96px;
+  background: var(--ws-panel);
+  border: var(--ws-hairline) solid var(--ws-border);
+  box-sizing: border-box;
+}
+.ladder-segment {
+  flex: 1;
+  border: 0;
+  background: none;
+  color: var(--ws-text-2);
+  font: inherit;
+  padding: 0;
+}
+.ladder-segment + .ladder-segment { border-left: var(--ws-hairline) solid var(--ws-border); }
+.ladder-segment:hover:not([aria-pressed="true"]) { background: var(--ws-panel-raised); }
+.ladder-segment[aria-pressed="true"] {
+  color: var(--ws-text);
+  background: var(--ws-selected-fill);
+  box-shadow: inset 0 -2px var(--ws-selected);
+}
+
+/* The wrapper draws the combo; the select inside is a transparent 44 px target. */
+.ladder-combo {
+  position: relative;
+  flex: 0 0 88px;
+  border-right: var(--ws-hairline) solid var(--ws-border);
+  box-sizing: border-box;
+}
+.ladder-combo:hover { background: var(--ws-panel); }
+.ladder-combo:has(> select:focus-visible) { box-shadow: inset 0 -2px var(--ws-focus); }
+.ladder-combo::after {
+  content: '';
+  position: absolute;
+  right: 8px;
+  top: calc((var(--ws-header-h) - 4px) / 2);
+  width: 8px;
+  height: 4px;
+  background: var(--ws-text-2);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  pointer-events: none;
+}
+.ladder-grouping {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: var(--ladder-target-h);
+  margin: 0;
+  padding: 0 20px calc(var(--ladder-target-h) - var(--ws-header-h)) 8px;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  color: var(--ws-text);
+  color-scheme: dark;
+  font: 12.5px var(--font);
+  line-height: var(--ws-header-h);
+}
+.ladder-grouping option { background: var(--ws-panel-raised); color: var(--ws-text); }
+
+.ladder-levels {
+  display: flex;
+  flex: 0 1 128px;
+  min-width: 60px;
+  margin-left: auto;
+  background: var(--ws-panel);
+  border: var(--ws-hairline) solid var(--ws-border);
+  box-sizing: border-box;
+}
+.ladder-step {
+  flex: 0 0 var(--ws-header-h);
+  border: 0;
+  background: none;
+  color: var(--ws-text);
+  font: inherit;
+  padding: 0;
+}
+.ladder-track {
+  flex: 1 1 0;
+  min-width: 0;
+  border-left: var(--ws-hairline) solid var(--ws-border);
+  border-right: var(--ws-hairline) solid var(--ws-border);
+  box-sizing: border-box;
+}
+.ladder-step:hover, .ladder-track:hover { background: var(--ws-panel-raised); }
+.ladder-track-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--ladder-fill, 0) * 100%);
+  background: var(--ws-selected-fill);
+  box-shadow: inset 0 -2px var(--ws-selected);
+}
+/* Reversed, so the capped readout sits at the right with the level left of it and LVL at the far
+   left. Each part is as tall as the track, so a track too narrow for all three wraps LVL onto a
+   clipped second line instead of overprinting. */
+.ladder-track-text {
+  position: relative;
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  height: 100%;
+  padding: 0 4px;
+  overflow: hidden;
+}
+.ladder-track-text > * { display: flex; align-items: center; height: 100%; }
+.ladder-label { margin-right: auto; color: var(--ws-text-2); }
+.ladder-capped { font-size: 10px; color: var(--ws-warning); }
+
+/* Every header control reaches 44 px down from its own top, over the top of the body, which takes no clicks. */
+.ladder-segment, .ladder-step, .ladder-track { position: relative; }
+.ladder-segment::after, .ladder-step::after, .ladder-track::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--ladder-target-h);
+}
+.ladder-segment:focus-visible, .ladder-step:focus-visible, .ladder-track:focus-visible {
+  outline: 2px solid var(--ws-focus);
+  outline-offset: -2px;
+}
+
+.ladder-body {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) var(--ladder-separator-share) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+.ladder-body::before, .ladder-body::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  width: var(--ws-hairline);
+  background: var(--ws-border);
+}
+.ladder-body::before { left: calc(100% / 3); }
+.ladder-body::after { left: calc(200% / 3); }
+
+.ladder-side { position: relative; z-index: 1; display: flex; min-height: 0; }
+.ladder-asks { flex-direction: column-reverse; }
+.ladder-bids { flex-direction: column; }
+.ladder-row {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  box-sizing: border-box;
+}
+.ladder-asks .ladder-row {
+  border-top: var(--ws-hairline) solid color-mix(in srgb, var(--ws-border) calc(var(--ladder-grid-fade, 1) * 100%), transparent);
+}
+.ladder-bids .ladder-row {
+  border-bottom: var(--ws-hairline) solid color-mix(in srgb, var(--ws-border) calc(var(--ladder-grid-fade, 1) * 100%), transparent);
+}
+.ladder-row[data-hover] { background: var(--ws-hover-fill); }
+
+.ladder-cell {
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 0 8px;
+  box-sizing: border-box;
+  font: var(--ladder-cell-font, 13px)/1 var(--mono);
+}
+.ladder-price {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--ws-text);
+  text-align: center;
+}
+.ladder-row[data-side="ask"] .ladder-public { text-align: right; color: var(--ws-ask); }
+.ladder-row[data-side="bid"] .ladder-public { text-align: left; color: var(--ws-bid); }
+.ladder-strategy { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.ladder-row[data-side="bid"] .ladder-strategy { flex-direction: row-reverse; }
+.ladder [data-tone="want"] { color: var(--ws-want); }
+.ladder-tag { font: var(--ladder-tag-font, 9px)/1 var(--font); }
+.ladder-body[data-tags="hidden"] .ladder-tag { display: none; }
+.ladder-body[data-muted="true"] .ladder-cell { opacity: var(--ws-muted); }
+
+/* Rings show only while the book is live. They sit inside the cell and thin with the row, never under one device pixel. */
+.ladder-body[data-status="live"] .ladder-price[data-ring="confirmed"] {
+  box-shadow: inset 0 0 0 max(calc(2px * var(--ladder-ring-scale, 1)), var(--ws-hairline)) var(--ws-selected);
+}
+.ladder-body[data-status="live"] .ladder-price[data-ring="inflight"] {
+  box-shadow: inset 0 0 0 max(calc(1px * var(--ladder-ring-scale, 1)), var(--ws-hairline)) var(--ws-warning);
+}
+.ladder-body[data-status="live"] .ladder-price[data-ring="lost"] {
+  box-shadow: inset 0 0 0 max(calc(1px * var(--ladder-ring-scale, 1)), var(--ws-hairline)) var(--ws-invalid);
+}
+.ladder-body[data-status="live"] .ladder-price[data-ring="desired"] {
+  box-shadow: inset 0 0 0 max(calc(1px * var(--ladder-ring-scale, 1)), var(--ws-hairline)) var(--ws-want);
+}
+
+.ladder-separator {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  background: var(--ws-panel-raised);
+  border-top: 2px solid var(--ws-focus);
+  border-bottom: 2px solid var(--ws-focus);
+  box-sizing: border-box;
+}
+.ladder-mid { font: 16px/1 var(--mono); }
+.ladder-mid-label {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font: 9px/1 var(--font);
+  color: var(--ws-text-2);
+}
+
+/* Overlays take no pointer events, so the text under them can still be selected. */
+.ladder-pill, .ladder-chevron, .ladder-readout {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  background: var(--ws-panel-raised);
+  border: 1px solid;
+  border-radius: 3px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.ladder-pill {
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 24px;
+  padding: 0 8px;
+  font: 13px/22px var(--font);
+}
+.ladder-chevron {
+  left: 50%;
+  transform: translateX(-50%);
+  height: var(--ladder-chevron-h, 18px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-color: var(--ws-focus);
+  color: var(--ws-focus);
+  font: 10px/1 var(--font);
+}
+.ladder-chevron[data-direction="up"] { top: 4px; }
+.ladder-chevron[data-direction="down"] { bottom: 4px; }
+.ladder-arrow { width: 9px; height: 9px; background: var(--ws-selected); }
+.ladder-chevron[data-direction="up"] .ladder-arrow { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.ladder-chevron[data-direction="down"] .ladder-arrow { clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.ladder-readout {
+  left: 0;
+  top: 0;
+  transform: translate(var(--ladder-readout-x, 0), var(--ladder-readout-y, 0));
+  padding: 8px;
+  font: 11px/1.35 var(--mono);
+  white-space: pre;
+  color: var(--ws-text);
+  border-color: var(--ws-border);
+}

@@ -84,6 +84,9 @@ What they cover:
 | `ui/jet/player.test.mjs` | a clip starts from the live state and ends at rest |
 | `ui/jet/rig.test.mjs` | `pathFrom` writes one closed path |
 | `ui/jet/track.test.mjs` | the sampler holds the ends and applies the easing |
+| `ui/workstation/ladder/controls.test.mjs` | the level stepper steps and drags inside 12 to 30 and reads (N) when fewer rows fit; the grouping list comes from hello for the current unit and each choice sends its own command |
+| `ui/workstation/ladder/rows.test.mjs` | the ladder fits floor(side / 8.5) rows, at most 30, and its text shrinks with the row to a 7 px floor; the order shows before the wanted quote; the pointer finds the ask or bid row and the readout spells it out inside the ladder; a chevron shows for each quote off the rows |
+| `ui/workstation/linkbar/chips.test.mjs` | the link bar reads "no engine attached" until a link line, then its chips in order; only the engine chip is a button, and only when the bridge allows; the button asserts the next state |
 
 The frontend is plain ES modules with no bundler, so there is nothing to install for `ui/`. Tauri serves the folder as-is (`build.frontendDist` in `tauri.conf.json`), and so does the dev server.
 
@@ -228,11 +231,27 @@ crates/jet
     │   ├── player.test.mjs         a clip starts from the live state and ends at rest
     │   ├── view.js                 draws a state into an SVG: body, ring, eyes; the only code that draws Jet
     │   └── scene.js                scenery in its own SVG layers, scrolled by the speed track; not part of Jet
-    └── lab/                        the controls around Jet
-        ├── main.js                 boot, frame loop, a step list for each button, replay-on-change, save-on-change
-        ├── wheel.js                behaviour wheel, presets, axis sliders
-        ├── dial.js                 expressiveness dial and the four channels
-        └── readout.js              what the dials turned into, progress bar
+    ├── lab/                        the controls around Jet
+    │   ├── main.js                 boot, frame loop, a step list for each button, replay-on-change, save-on-change
+    │   ├── wheel.js                behaviour wheel, presets, axis sliders
+    │   ├── dial.js                 expressiveness dial and the four channels
+    │   └── readout.js              what the dials turned into, progress bar
+    └── workstation/                the polysim workstation page
+        ├── ladder/                 the right panel: the DOM ladder and its header
+        │   ├── mount.js            wires the ladder to the store: stylesheet, lines, resizing, the pointer, the painter
+        │   ├── rows.js             the body's rules: rows that fit, text sizes, the row under the pointer, the strategy cell, the readout, the chevrons (pure)
+        │   ├── rows.test.mjs       rows that fit and the text sizes; the order before the wanted quote; the hovered row and the readout; the chevrons
+        │   ├── controls.js         the header's rules: the level stepper and the grouping choices (pure)
+        │   ├── controls.test.mjs   the stepper steps and drags inside its range and reads (N) when fewer rows fit; the grouping list and its commands
+        │   ├── header.js           the 30 px header: unit toggle, grouping combo, level stepper
+        │   ├── view.js             the body: 30 rows a side, the separator, the status pill, the chevrons and the hover readout
+        │   └── ladder.css          the ladder's look
+        └── linkbar/                the strip about the engine link, under the three panels
+            ├── mount.js            wires the link bar to the store: stylesheet, the link line, the painter
+            ├── chips.js            what the bar says for the latest link line (pure)
+            ├── chips.test.mjs      no engine until a link line; the chips in order; the engine chip steps to the next engine only when allowed; the button asserts the next state
+            ├── view.js             the chips, the engine chip that is a button, and START/STOP
+            └── linkbar.css         the link bar's look
 ```
 
 Three ideas carry the design:
