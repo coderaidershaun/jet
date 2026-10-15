@@ -97,6 +97,9 @@ What they cover:
 | `ui/jet/rig.test.mjs` | `pathFrom` writes one closed path |
 | `ui/jet/view.test.mjs` | an eye blends from the ground colour to a light tint of the body, and six eye numbers draw as before; each kind of prop draws where its track puts it, as faint as the spin grooves, and hides at opacity 0; no inline styles |
 | `ui/jet/track.test.mjs` | the sampler holds the ends and applies the easing |
+| `ui/workstation/monitor/cells.test.mjs` | the account's status row (a halt takes the row with its reason, otherwise the last refusal beside ARMED or `--`); side counts (lost turns invalid above zero, a leak shows `+N`); a feature row (changed shows the bar, stale dims the name and greys the value) |
+| `ui/workstation/monitor/channels.test.mjs` | channel deltas go on top newest first and each ring keeps its newest 256; a full set, a new session, generation or instrument, and a new bridge start the rings over, while a tick without those sections does not |
+| `ui/workstation/monitor/following.test.mjs` | a list at the top counts nothing, scrolled away it counts what was appended since and the badge says so; the badge brings a list back, and each channel follows on its own |
 
 The frontend is plain ES modules with no bundler, so there is nothing to install for `ui/`. Tauri serves the folder as-is (`build.frontendDist` in `tauri.conf.json`), and so does the dev server.
 
@@ -270,9 +273,24 @@ crates/jet
     │   ├── wheel.js                behaviour wheel, presets, axis sliders
     │   ├── dial.js                 expressiveness dial and the four channels
     │   └── readout.js              what the dials turned into, progress bar
-    └── workstation/                the workstation page as the chat window shows it
+    └── workstation/                the polysim workstation page, one folder for each area
         ├── shell.js                its header, the setup card and the workstation itself, built and its feed started the first time the page opens; the feed is paused while the chat shows
-        └── shell.css               the chat's header, thread and composer step aside; the page's header, link chip and setup card
+        ├── shell.css               the chat's header, thread and composer step aside; the page's header, link chip and setup card
+        ├── lifecycle/              the screen over the panels while the workstation is starting, draining or stopped
+        │   ├── mount.js            hands each lifecycle line to the view
+        │   ├── view.js             the title and the reason; hidden while the screen is live
+        │   └── lifecycle.css       the centred text over the canvas
+        └── monitor/                the centre panel: account, quote summary, features, and the four channels of rows
+            ├── mount.js            wires the store's lines to the rings and the view, a new set for each mount
+            ├── view.js             the account band, the summary band and the feature list, patched in place
+            ├── channel-view.js     the tabs, the four row lists and the "N new" badge; new rows go on top
+            ├── channels.js         the 256-row ring of each channel and how a tick folds into it (pure)
+            ├── channels.test.mjs   deltas go on top; a full set, session, generation, instrument or new bridge starts over
+            ├── following.js        which lists are at the newest rows and how many rows came in since (pure)
+            ├── following.test.mjs  the count and the badge; following again; each channel on its own
+            ├── cells.js            what the status row, the side counts and a feature row show (pure)
+            ├── cells.test.mjs      a halt takes the status row; lost warns above zero; changed and stale feature rows
+            └── monitor.css         the bands, the tabs, the rows and the badge
 ```
 
 Three ideas carry the design:
