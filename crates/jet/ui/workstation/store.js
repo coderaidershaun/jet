@@ -99,11 +99,11 @@ const VIEW_COMMANDS = new Set(['select', 'chart_mode', 'dom_unit', 'dom_grouping
  */
 export function createCommandMemory() {
   const kept = new Map();
-  let power = null;
+  let pauseOrResume = null;
   return {
     note(command) {
       if (command.cmd === 'pause' || command.cmd === 'resume') {
-        power = command;
+        pauseOrResume = command;
         return;
       }
       if (!VIEW_COMMANDS.has(command.cmd)) return;
@@ -113,6 +113,6 @@ export function createCommandMemory() {
     },
 
     /** The remembered commands in the order each was last sent. */
-    replay: () => (power ? [...kept.values(), power] : [...kept.values()]),
+    replay: () => (pauseOrResume ? [...kept.values(), pauseOrResume] : [...kept.values()]),
   };
 }

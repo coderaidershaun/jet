@@ -44,7 +44,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Scenery** — what rushes past during a zoom. Not part of the character: it reads the speed and nothing else. (policy §3)
 - **Host** — the page that shows Jet and decides when a clip plays and how long a job lasts. The chat page and the lab are both hosts.
 - **Lab** — the page of controls around Jet.
-- **Bridge** — `ui/bridge/`: the pages' way to the Rust side (the rig, the settings, the agent), with browser fallbacks.
+- **Bridge** — `ui/bridge/`: the pages' way to the Rust side (the rig, the settings, the agent, the workstation feed), with browser fallbacks. Not polysim-bridge, the program behind the workstation.
 
 - **Turn** — one exchange: the user's message and Jet's reply, from the send to the finished, failed or stopped end.
 - **Session** — the Claude Code conversation the app resumes (`session.json`). A fresh one starts when the prompt inputs change, after a long idle with a big context, or when the old one vanished. _Avoid_: thread, history.
@@ -56,3 +56,9 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.
 - **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.
 - **Flight** — the live Jet's move from where it stood to the slot's lane on a send. _Avoid_: zoom (that is the clip Jet plays during it).
+
+- **Workstation** — the polysim trading page: toolbar, latency, charts, monitor, ladder and link bar. It paints what the feed sends and decides no number itself. _Avoid_: dashboard.
+- **Feed** — the bridge lines the workstation reads: from polysim-bridge inside the app (restarted by Jet when it fails), from the pretend feed in a browser.
+- **Bridge line** — one JSON object on one line with `kind` first: `hello`, `link`, `lifecycle`, `catalog`, `tick` and `bye` from polysim-bridge, and Jet's own `bridge` status line. A line's `session` is the engine link's session, not the **Session** above. _Avoid_: message, event (those belong to the chat).
+- **Section** — one part of a tick, such as the ladder or the chart. A tick carries only the sections that changed.
+- **Area** — one part of the workstation with its own folder under `ui/workstation/` and its own mount point.

@@ -7,7 +7,7 @@ import { ORDER_QTY, ORDER_QTY_TEXT, ladderSection, midHalf, moveBook, moveQuotes
 import { createChartBook } from './fake-market-chart.js';
 import { BPS_GROUPINGS, INSTRUMENTS, LEVELS, SPIN_US, TICK_GROUPINGS, catalogLine, helloLine, lifecycleLine, linkLine } from './fake-market-lines.js';
 import {
-  FEATURE_NAMES, accountSection, createChannels, createFeatures, fillRow, latencySection, orderRow, priceText, systemRow, tradeRow,
+  FEATURE_NAMES, PRICE_PER_HALF_TICK, PRICE_PER_TICK, accountSection, createChannels, createFeatures, fillRow, latencySection, orderRow, priceText, systemRow, tradeRow,
 } from './fake-market-rows.js';
 
 const PRETEND_PEER = '127.0.0.1:9311';
@@ -21,9 +21,9 @@ const STALE_STARTS_AT_MS = 850;
 const LATENCY_EVERY_MS = 250;
 const FILL_EVERY_MS = 8000;
 const TRADES_PER_MS = 5 / 1000;
+const GAP_EVERY_MS = 45_000;
 const ASSERT_TICKS = 10;
 const FILL_QTY = 0.01;
-const PRICE_PER_HALF_TICK = 0.005;
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const withUnit = (grouping, unit) => ({ unit, ...grouping });
@@ -37,79 +37,79 @@ const withUnit = (grouping, unit) => ({ unit, ...grouping });
 export function createFakeMarket({ now, random, workstation }) {
   const peers = [...workstation.links, PRETEND_PEER];
   /** Everything one run knows. `open` replaces it. */
-  let s = null;
+  let run = null;
 
-  const instrument = () => INSTRUMENTS[s.view.instrument];
-  const midPrice = () => midHalf(s.book) * PRICE_PER_HALF_TICK;
-  const onPretendPeer = () => peers[s.peerIndex] === PRETEND_PEER;
-  const connection = (t) => (t - s.sessionAt < CONNECTING_MS ? 'connecting' : onPretendPeer() ? 'stale' : 'live');
-  const phase = (t) => (t - s.sessionAt < STARTING_MS ? 'starting' : 'ready');
-  const grouping = () => s.groupings[s.view.domUnit];
-  const rowCount = () => Math.max(1, Math.min(s.view.domLevels, s.fit ?? s.view.domLevels));
+  const instrument = () => INSTRUMENTS[run.view.instrument];
+  const midPrice = () => midHalf(run.book) * PRICE_PER_HALF_TICK;
+  const onPretendPeer = () => peers[run.peerIndex] === PRETEND_PEER;
+  const connection = (t) => (t - run.sessionAt < CONNECTING_MS ? 'connecting' : onPretendPeer() ? 'stale' : 'live');
+  const phase = (t) => (t - run.sessionAt < STARTING_MS ? 'starting' : 'ready');
+  const grouping = () => run.groupings[run.view.domUnit];
+  const rowCount = () => Math.max(1, Math.min(run.view.domLevels, run.fit ?? run.view.domLevels));
   const remember = (line) => {
-    s.sent[line.kind] = JSON.stringify(line);
+    run.sent[line.kind] = JSON.stringify(line);
     return line;
   };
 
-  const link = (t) => linkLine({ peers, peerIndex: s.peerIndex, session: s.session, connection: connection(t), phase: phase(t), running: s.running, control: s.control });
-  const lifecycle = (t) => lifecycleLine({ session: s.session, phase: phase(t) });
-  const catalog = () => catalogLine({ session: s.session, strategyId: workstation.strategyId, peer: peers[s.peerIndex] });
+  const link = (t) => linkLine({ peers, peerIndex: run.peerIndex, session: run.session, connection: connection(t), phase: phase(t), running: run.running, control: run.control });
+  const lifecycle = (t) => lifecycleLine({ session: run.session, phase: phase(t) });
+  const catalog = () => catalogLine({ session: run.session, strategyId: workstation.strategyId, peer: peers[run.peerIndex] });
 
   function ladderStatus(t) {
     if (connection(t) === 'connecting') return 'disconnected';
-    if (t < s.awaitingUntil) return 'awaiting';
+    if (t < run.awaitingUntil) return 'awaiting';
     return onPretendPeer() ? 'stale' : 'live';
   }
 
   function ladderNow(t) {
-    return ladderSection(s.book, {
+    return ladderSection(run.book, {
       status: ladderStatus(t),
-      staleMs: Math.round(STALE_STARTS_AT_MS + t - s.awaitingUntil),
-      ticksEach: ticksPerBucket(s.book, grouping()),
+      staleMs: Math.round(STALE_STARTS_AT_MS + t - run.awaitingUntil),
+      ticksEach: ticksPerBucket(run.book, grouping()),
       rows: rowCount(),
-      unit: s.view.domUnit,
+      unit: run.view.domUnit,
       random,
     });
   }
 
   function accountNow(t) {
-    const word = (side) => (s.book.quotes[side].state === 'want' ? null : s.book.quotes[side].state);
+    const word = (side) => (run.book.quotes[side].state === 'want' ? null : run.book.quotes[side].state);
     return accountSection({
-      base: instrument().base, quote: instrument().quote, position: s.position, cash: s.cash, midPrice: midPrice(), orderQty: ORDER_QTY,
-      orders: { bid: word('bid'), ask: word('ask') }, elapsedMs: t - s.openedAt,
+      base: instrument().base, quote: instrument().quote, position: run.position, cash: run.cash, midPrice: midPrice(), orderQty: ORDER_QTY,
+      orders: { bid: word('bid'), ask: word('ask') }, elapsedMs: t - run.openedAt,
     });
   }
 
   const viewSection = () => ({
-    instrument: s.view.instrument,
-    chartMode: s.view.chartMode,
-    domUnit: s.view.domUnit,
+    instrument: run.view.instrument,
+    chartMode: run.view.chartMode,
+    domUnit: run.view.domUnit,
     domGrouping: grouping(),
-    domLevels: s.view.domLevels,
-    riskSeries: s.view.riskSeries,
+    domLevels: run.view.domLevels,
+    riskSeries: run.view.riskSeries,
   });
 
   function recordFill(at, side, tick) {
-    s.channels.add('fills', fillRow(at, side, priceText(tick), FILL_QTY.toFixed(5)));
-    s.chart.addFill(at, tick * 2, side.toLowerCase());
+    run.channels.add('fills', fillRow(at, side, priceText(tick), FILL_QTY.toFixed(5)));
+    run.chart.addFill(at, tick * 2, side.toLowerCase());
   }
 
   /** The book, the quotes, the chart and the rows start over, as when an engine is attached. */
   function rebuild(t) {
     const { startBid, position, cash, base } = instrument();
-    s.book = newBook(startBid, t);
-    s.position = position;
-    s.cash = cash;
-    s.pnl = s.chart.backfill({ nowMs: t, midHalf: midHalf(s.book), position, random });
-    s.channels.clear();
-    SYSTEM_BACKFILL.forEach((text, n) => s.channels.add('system', systemRow(t - (SYSTEM_BACKFILL.length + 1 - n) * 1500, text)));
-    s.channels.add('system', systemRow(t, 'engine ready', 'positive', 'engine ready for ' + base));
+    run.book = newBook(startBid, t);
+    run.position = position;
+    run.cash = cash;
+    run.pnl = run.chart.backfill({ nowMs: t, midHalf: midHalf(run.book), position, random });
+    run.channels.clear();
+    SYSTEM_BACKFILL.forEach((text, n) => run.channels.add('system', systemRow(t - (SYSTEM_BACKFILL.length + 1 - n) * 1500, text)));
+    run.channels.add('system', systemRow(t, 'engine ready', 'positive', 'engine ready for ' + base));
     for (let n = 0; n < BACKFILL_ROWS; n += 1) {
       const ago = BACKFILL_ROWS - n;
       const side = random() < 0.5 ? 'BUY' : 'SELL';
-      const tick = s.book.bid - (side === 'BUY' ? 1 : -2) + Math.round((random() - 0.5) * 6);
-      s.channels.add('orders', orderRow(t - ago * 1100, side, 'resting #' + (1000 + n).toString(16) + '  ' + ORDER_QTY_TEXT + ' @ ' + priceText(tick)));
-      s.channels.add('trades', tradeRow(t - ago * 700, side, priceText(tick), (FILL_QTY * (1 + Math.floor(random() * 5))).toFixed(5)));
+      const tick = run.book.bid - (side === 'BUY' ? 1 : -2) + Math.round((random() - 0.5) * 6);
+      run.channels.add('orders', orderRow(t - ago * 1100, side, 'resting #' + (1000 + n).toString(16) + '  ' + ORDER_QTY_TEXT + ' @ ' + priceText(tick)));
+      run.channels.add('trades', tradeRow(t - ago * 700, side, priceText(tick), (FILL_QTY * (1 + Math.floor(random() * 5))).toFixed(5)));
       recordFill(t - ago * 11000, side, tick);
     }
   }
@@ -119,7 +119,7 @@ export function createFakeMarket({ now, random, workstation }) {
       openedAt: t, sessionAt: t, session: 1, generation: 1, seq: 0, peerIndex: 0, awaitingUntil: t + AWAITING_MS,
       view: { instrument: 0, chartMode: 'line', domUnit: 'bps', domLevels: LEVELS.default, riskSeries: 'exposure' },
       groupings: { bps: withUnit(BPS_GROUPINGS[1], 'bps'), ticks: withUnit(TICK_GROUPINGS[0], 'ticks') },
-      fit: null, axisCount: { mid: 0, risk: 0 }, paused: false, everything: true, running: true, control: null,
+      fit: null, axisCount: { mid: 0, risk: 0 }, paused: false, everything: true, running: true, control: null, nextGapAt: t + GAP_EVERY_MS,
       book: null, position: 0, cash: 0, pnl: 0, fillNumber: 0, nextFillAt: t + FILL_EVERY_MS,
       lastTickAt: t, lastSpin: Math.floor((t * 1000) / SPIN_US), latency: null, lastLatencyAt: -Infinity,
       channels: createChannels(), features: createFeatures(FEATURE_NAMES, t, random), chart: createChartBook(SPIN_US), sent: {},
@@ -129,23 +129,23 @@ export function createFakeMarket({ now, random, workstation }) {
   function orderEvent(t) {
     return (side, quote, word, tone) => {
       const text = word + ' #' + quote.id.toString(16).padStart(4, '0') + '  ' + ORDER_QTY_TEXT + ' @ ' + priceText(quote.tick);
-      s.channels.add('orders', orderRow(t, side === 'bid' ? 'BUY' : 'SELL', text, tone));
+      run.channels.add('orders', orderRow(t, side === 'bid' ? 'BUY' : 'SELL', text, tone));
     };
   }
 
   function trade(t, dt) {
     if (random() < dt * TRADES_PER_MS) {
       const side = random() < 0.5 ? 'BUY' : 'SELL';
-      const tick = side === 'BUY' ? s.book.ask : s.book.bid;
-      s.channels.add('trades', tradeRow(t, side, priceText(tick), (FILL_QTY * (1 + Math.floor(random() * 9))).toFixed(5)));
+      const tick = side === 'BUY' ? run.book.ask : run.book.bid;
+      run.channels.add('trades', tradeRow(t, side, priceText(tick), (FILL_QTY * (1 + Math.floor(random() * 9))).toFixed(5)));
     }
-    if (t >= s.nextFillAt) {
-      const side = s.fillNumber % 2 === 0 ? 'BUY' : 'SELL';
-      const tick = s.book.quotes[side === 'BUY' ? 'bid' : 'ask'].tick;
-      s.fillNumber += 1;
-      s.nextFillAt = t + FILL_EVERY_MS;
-      s.position += side === 'BUY' ? FILL_QTY : -FILL_QTY;
-      s.cash += (side === 'BUY' ? -FILL_QTY : FILL_QTY) * tick * 0.01;
+    if (t >= run.nextFillAt) {
+      const side = run.fillNumber % 2 === 0 ? 'BUY' : 'SELL';
+      const tick = run.book.quotes[side === 'BUY' ? 'bid' : 'ask'].tick;
+      run.fillNumber += 1;
+      run.nextFillAt = t + FILL_EVERY_MS;
+      run.position += side === 'BUY' ? FILL_QTY : -FILL_QTY;
+      run.cash += (side === 'BUY' ? -FILL_QTY : FILL_QTY) * tick * PRICE_PER_TICK;
       recordFill(t, side, tick);
     }
   }
@@ -153,81 +153,90 @@ export function createFakeMarket({ now, random, workstation }) {
   /** A full snapshot goes out only when it differs from the last one sent, or when everything is resent. */
   function snapshot(name, value) {
     const key = JSON.stringify(value);
-    if (!s.everything && s.sent[name] === key) return undefined;
-    s.sent[name] = key;
+    if (!run.everything && run.sent[name] === key) return undefined;
+    run.sent[name] = key;
     return value;
   }
 
-  function stepWorld(t) {
-    const dt = t - s.lastTickAt;
-    s.lastTickAt = t;
-    if (s.control && !s.control.applied && (s.control.ticksLeft -= 1) <= 0) {
-      s.control.applied = true;
-      s.running = s.control.state === 'running';
+  function advanceChart(t) {
+    if (t >= run.nextGapAt) {
+      run.nextGapAt = t + GAP_EVERY_MS;
+      run.chart.markGap();
     }
-    s.pnl += s.position * moveBook(s.book, dt, random) * PRICE_PER_HALF_TICK;
-    moveQuotes(s.book, { now: t, dt, rows: rowCount(), ticksEach: ticksPerBucket(s.book, grouping()), random, onOrder: orderEvent(t) });
+    run.chart.advance({ nowMs: t, midHalf: midHalf(run.book), exposure: run.position * midPrice(), pnl: run.pnl });
+  }
+
+  function stepWorld(t) {
+    const dt = t - run.lastTickAt;
+    run.lastTickAt = t;
+    if (run.control && !run.control.applied && (run.control.ticksLeft -= 1) <= 0) {
+      run.control.applied = true;
+      run.running = run.control.state === 'running';
+    }
+    run.pnl += run.position * moveBook(run.book, dt, random) * PRICE_PER_HALF_TICK;
+    moveQuotes(run.book, { now: t, dt, rows: rowCount(), ticksEach: ticksPerBucket(run.book, grouping()), random, onOrder: orderEvent(t) });
     if (ladderStatus(t) === 'live') trade(t, dt);
     const spin = Math.floor((t * 1000) / SPIN_US);
-    if (spin !== s.lastSpin) {
-      s.lastSpin = spin;
-      s.features.spin(t);
+    if (spin !== run.lastSpin) {
+      run.lastSpin = spin;
+      run.features.spin(t);
     }
-    if (t - s.lastLatencyAt >= LATENCY_EVERY_MS) {
-      s.lastLatencyAt = t;
-      s.latency = latencySection(random);
+    if (t - run.lastLatencyAt >= LATENCY_EVERY_MS) {
+      run.lastLatencyAt = t;
+      run.latency = latencySection(random);
     }
-    s.chart.advance({ nowMs: t, midHalf: midHalf(s.book), exposure: s.position * midPrice(), pnl: s.pnl, gap: ladderStatus(t) === 'stale' });
+    // A stale engine sends nothing new, so the chart holds still until the next engine.
+    if (ladderStatus(t) !== 'stale') advanceChart(t);
   }
 
   function tickLines(t) {
     const lines = [];
-    for (const line of [link(t), lifecycle(t)]) if (JSON.stringify(line) !== s.sent[line.kind]) lines.push(remember(line));
-    const everything = s.everything;
+    for (const line of [link(t), lifecycle(t)]) if (JSON.stringify(line) !== run.sent[line.kind]) lines.push(remember(line));
+    const everything = run.everything;
     const sections = {
       view: snapshot('view', viewSection()),
       ladder: snapshot('ladder', ladderNow(t)),
-      summary: snapshot('summary', summarySection(s.book, { unit: s.view.domUnit, live: ladderStatus(t) === 'live' })),
+      summary: snapshot('summary', summarySection(run.book, { unit: run.view.domUnit, live: ladderStatus(t) === 'live' })),
       account: snapshot('account', accountNow(t)),
-      features: snapshot('features', s.features.section(t)),
-      channels: s.channels.section(everything),
-      latency: snapshot('latency', s.latency),
-      chart: s.chart.chart({ generation: s.generation, full: everything, axisCount: s.axisCount.mid }),
-      risk: s.chart.risk({ generation: s.generation, full: everything, series: s.view.riskSeries, axisCount: s.axisCount.risk }),
+      features: snapshot('features', run.features.section(t)),
+      channels: run.channels.section(everything),
+      latency: snapshot('latency', run.latency),
+      chart: run.chart.chart({ generation: run.generation, full: everything, axisCount: run.axisCount.mid }),
+      risk: run.chart.risk({ generation: run.generation, full: everything, series: run.view.riskSeries, axisCount: run.axisCount.risk }),
       gaps: snapshot('gaps', { books: 0, events: 0 }),
     };
     const present = Object.entries(sections).filter(([, section]) => section !== undefined);
     if (present.length > 0) {
-      s.seq += 1;
-      s.everything = false;
-      lines.push({ kind: 'tick', session: s.session, seq: s.seq, ...Object.fromEntries(present) });
+      run.seq += 1;
+      run.everything = false;
+      lines.push({ kind: 'tick', session: run.session, seq: run.seq, ...Object.fromEntries(present) });
     }
     return lines;
   }
 
   const bump = () => {
-    s.generation += 1;
-    s.everything = true;
+    run.generation += 1;
+    run.everything = true;
   };
 
   /** Each command returns the lines to send at once, or null when the bridge would ignore it. */
   const commands = {
     select({ instrument: id }, t) {
       if (!INSTRUMENTS[id]) return null;
-      s.view.instrument = id;
-      s.awaitingUntil = t + AWAITING_MS;
+      run.view.instrument = id;
+      run.awaitingUntil = t + AWAITING_MS;
       rebuild(t);
       bump();
       return [];
     },
     chart_mode({ mode }) {
       if (mode !== 'line' && mode !== 'candles') return null;
-      s.view.chartMode = mode;
+      run.view.chartMode = mode;
       return [];
     },
     dom_unit({ unit }) {
       if (unit !== 'ticks' && unit !== 'bps') return null;
-      s.view.domUnit = unit;
+      run.view.domUnit = unit;
       return [];
     },
     dom_grouping(command) {
@@ -235,42 +244,42 @@ export function createFakeMarket({ now, random, workstation }) {
         ? BPS_GROUPINGS.find((g) => g.numerator === command.numerator && g.denominator === command.denominator)
         : command.unit === 'ticks' && TICK_GROUPINGS.find((g) => g.perBucket === command.perBucket);
       if (!found) return null;
-      s.groupings[command.unit] = withUnit(found, command.unit);
-      s.view.domUnit = command.unit;
+      run.groupings[command.unit] = withUnit(found, command.unit);
+      run.view.domUnit = command.unit;
       return [];
     },
     dom_levels({ levels }) {
       if (!Number.isFinite(levels)) return null;
-      s.view.domLevels = clamp(Math.round(levels), LEVELS.min, LEVELS.max);
+      run.view.domLevels = clamp(Math.round(levels), LEVELS.min, LEVELS.max);
       return [];
     },
     dom_fit({ rows }) {
       if (!Number.isFinite(rows)) return null;
-      s.fit = Math.max(1, Math.round(rows));
+      run.fit = Math.max(1, Math.round(rows));
       return [];
     },
     chart_ticks({ mid, risk }) {
       if (!Number.isFinite(mid) || !Number.isFinite(risk)) return null;
-      s.axisCount = { mid: Math.max(0, Math.floor(mid)), risk: Math.max(0, Math.floor(risk)) };
+      run.axisCount = { mid: Math.max(0, Math.floor(mid)), risk: Math.max(0, Math.floor(risk)) };
       return [];
     },
     risk_series({ series }) {
       if (series !== 'exposure' && series !== 'pnl') return null;
-      s.view.riskSeries = series;
-      s.chart.resendRisk();
+      run.view.riskSeries = series;
+      run.chart.resendRisk();
       return [];
     },
     assert({ state }, t) {
       if (state !== 'running' && state !== 'idle') return null;
-      s.control = { state, ticksLeft: ASSERT_TICKS, applied: false };
+      run.control = { state, ticksLeft: ASSERT_TICKS, applied: false };
       return [remember(link(t))];
     },
     next_peer(_, t) {
-      s.peerIndex = (s.peerIndex + 1) % peers.length;
-      s.session += 1;
-      s.sessionAt = t;
-      s.awaitingUntil = t + AWAITING_MS;
-      s.control = null;
+      run.peerIndex = (run.peerIndex + 1) % peers.length;
+      run.session += 1;
+      run.sessionAt = t;
+      run.awaitingUntil = t + AWAITING_MS;
+      run.control = null;
       rebuild(t);
       bump();
       return [remember(link(t)), remember(lifecycle(t)), catalog()];
@@ -280,11 +289,11 @@ export function createFakeMarket({ now, random, workstation }) {
       return [catalog()];
     },
     pause() {
-      s.paused = true;
+      run.paused = true;
       return [];
     },
     resume() {
-      s.paused = false;
+      run.paused = false;
       bump();
       return [catalog()];
     },
@@ -293,13 +302,13 @@ export function createFakeMarket({ now, random, workstation }) {
   return {
     open() {
       const t = now();
-      s = newRun(t);
+      run = newRun(t);
       rebuild(t);
       return [helloLine(), remember(link(t)), remember(lifecycle(t)), catalog()];
     },
 
     tick() {
-      if (s.paused) return [];
+      if (run.paused) return [];
       const t = now();
       stepWorld(t);
       return tickLines(t);
@@ -311,7 +320,7 @@ export function createFakeMarket({ now, random, workstation }) {
       if (lines === null) return [];
       const { cmd, ...rest } = command;
       const detail = Object.entries(rest).map(([key, value]) => key + '=' + value).join(' ');
-      s.channels.add('system', systemRow(t, (cmd + ' ' + detail).trim(), 'text', JSON.stringify(command)));
+      run.channels.add('system', systemRow(t, (cmd + ' ' + detail).trim(), 'text', JSON.stringify(command)));
       return lines;
     },
   };

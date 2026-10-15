@@ -25,7 +25,11 @@ export function timeText(ms) {
   return two(at.getUTCHours()) + ':' + two(at.getUTCMinutes()) + ':' + two(at.getUTCSeconds()) + '.' + String(at.getUTCMilliseconds()).padStart(3, '0');
 }
 
-/** A price on the 0.01 grid from its tick index: 11800001 is "118000.01". */
+/** The price step of every pretend instrument. `priceText` and `midText` write prices on this grid. */
+export const PRICE_PER_TICK = 0.01;
+export const PRICE_PER_HALF_TICK = PRICE_PER_TICK / 2;
+
+/** A price from its tick index: 11800001 is "118000.01". */
 export function priceText(tick) {
   const sign = tick < 0 ? '-' : '';
   const magnitude = Math.abs(tick);

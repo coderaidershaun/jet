@@ -19,7 +19,7 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::settings;
-use error::BridgeError;
+pub(crate) use error::BridgeError;
 use review_timer::{ReviewTarget, ReviewTimer, review_now};
 
 /// Entries the page gets when it opens.

@@ -19,7 +19,7 @@ cargo run -p jet --example serve            # port 8787
 cargo run -p jet --example serve -- 9000    # another port
 ```
 
-It prints two addresses. `http://127.0.0.1:8787/` is the chat, running on a pretend agent that keeps its thread in the browser's storage. `http://127.0.0.1:8787/lab.html` is the lab, a page of buttons and dials for trying every clip. Edits to files in `ui/` show on reload.
+It prints three addresses. `http://127.0.0.1:8787/` is the chat, running on a pretend agent that keeps its thread in the browser's storage. `http://127.0.0.1:8787/lab.html` is the lab, a page of buttons and dials for trying every clip. `http://127.0.0.1:8787/workstation.html` is the workstation, running on a pretend feed; every area shows its raw sections until its own painter exists. Edits to files in `ui/` show on reload.
 
 The pretend agent answers from the words in your message. A word counts when a word of the message starts with it, in any case.
 
@@ -32,6 +32,14 @@ The pretend agent answers from the words in your message. A word counts when a w
 | `error` | the reply fails the way Claude Code does when it is not logged in |
 | `missing` | the reply fails as if Claude Code was not installed |
 | `timeout` | the reply fails with "Claude stopped responding after 2 minutes." |
+
+The pretend feed makes up the book, the quotes and every line polysim-bridge would send, from a clock and a source of chance, so a browser needs no engine. It trades BTCUSDT and ETHUSDT, and answers every command of the protocol:
+
+| Do | What happens |
+| --- | --- |
+| `select` an instrument | a new book for BTCUSDT or ETHUSDT, `AWAITING BOOK` for half a second, the whole chart and every row sent again |
+| `next_peer` (the link bar's engine chip) | the feed steps to a second, pretend engine that is stale: the ladder pill reads `STALE n ms` and the chart holds still, with no new buckets. The next step goes back to the live one |
+| any other command | the next tick shows its effect, and the System channel gets a row for it |
 
 Tests:
 
@@ -50,17 +58,29 @@ What they cover:
 | `src/rig.rs` `wrong_pose_size_is_reported` | a pose with the wrong number of values is refused, with the number found |
 | `src/settings.rs` `missing_file_means_defaults` | no settings file yet gives the defaults |
 | `src/settings.rs` `settings_survive_a_round_trip` | what is saved is what is loaded |
-| `src/settings.rs` `new_fields_round_trip` | the persona, body colour, model, the five thinking levels (xhigh and max included) and the other chat fields are saved and loaded |
+| `src/settings.rs` `new_fields_round_trip` | the persona, body colour, model, the five thinking levels (xhigh and max included), the workstation setup (a token, two links) and the other chat fields are saved and loaded |
 | `src/settings.rs` `old_files_with_missing_fields_still_load` | an older file gets defaults for the fields it lacks, and keeps what it saved: a 1.00 budget stays 1.00 although the default is now 10.00 |
 | `src/settings.rs` `broken_file_names_the_path` | a file that cannot be read fails with its path in the message |
 | `src/settings.rs` `default_settings_match_the_ui_fixture` | `ui/bridge/default-settings.json` is exactly the defaults Rust writes |
 | `src/settings.rs` `json_uses_camel_case_for_the_frontend` | the page reads `reducedMotion`, not `reduced_motion` |
 | `src/chat/error.rs` `bridge_error_serialises_as_kind_and_message` | every command error reaches the page as `{ kind, message }` |
+| `crates/agent/tests/workstation_feed.rs` `feed_passes_bridge_lines_and_commands_until_stopped` | polysim-bridge gets the strategy, every link in order and the token; Jet's `starting` line comes first and never shows the token; the bridge's lines pass unchanged while plain text, broken JSON, arrays and an object with script after it are dropped; commands come back echoed in order; a second sink that takes the running bridge over (a page reload) gets Jet's newest `bridge` line, then the bridge's own `hello` and `link` word for word, then the echo of a `resync`, while the first sink hears nothing more; after a stop the process is gone, no line follows and nothing can take the feed over |
+| `crates/agent/tests/workstation_feed.rs` `a_crashed_bridge_restarts_after_each_delay` | a bridge that crashes is started again after each delay and the last delay repeats; the `restarting` line names the exit code and the last error line, its quotes escaped |
+| `crates/agent/tests/workstation_feed.rs` `a_bridge_on_another_protocol_is_stopped_and_not_restarted` | the hello passes, then `exited` names both protocols; a bridge that ignores its input closing is killed, and nothing starts it again |
+| `crates/agent/tests/workstation_feed.rs` `a_missing_bridge_is_reported_once` | a program that is not there gives `starting`, then one `missing` naming the path, and no restart; a command then fails with "not running" |
+| `crates/agent/tests/workstation_feed.rs` `a_bridge_that_rejects_its_arguments_is_stopped_after_two_tries` | a bridge that exits with an error within a second of starting, before any `hello`, is tried once more and then given up: `starting`, `restarting`, `starting`, `exited` naming the exit code and the error line, and no third try |
 | `src/chat/mod.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
 | `rig/poses.rs` `generator_prints_the_committed_rig` | the generator prints exactly `rig/jet.json` |
 | `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps |
 | `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; merge fills gaps from them; `defaults_match_the_rust_fixture`: the page's defaults are exactly `ui/bridge/default-settings.json` |
 | `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method calls its command with the right argument keys and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
+| `ui/bridge/tauri-workstation.test.mjs` | with Tauri the workstation calls its three commands one after another with the right keys, lines of a replaced or stopped channel are dropped, and failures reach the page as `{ kind, message }`; without Tauri the pretend feed is used |
+| `ui/bridge/fake-market.test.mjs` `the market opens with hello, link, lifecycle and catalog…` | every line and tick section of the pretend market has the shape, keys and value words of the protocol, and survives JSON unchanged |
+| `ui/bridge/fake-market.test.mjs` `ticks walk the mid, keep the ladder full…` | the mid moves at most one tick a frame, the ladder keeps its rows, channels send only new rows, chart and risk buckets are only appended, every bucket has all its prices, and a `gap` bucket turns up about every 45 s |
+| `ui/bridge/fake-workstation.test.mjs` `each command changes what the market sends next` | every command of the protocol changes the next tick as it should, including a new session, a resync and a pause; a stale engine adds no chart bucket |
+| `ui/bridge/fake-workstation.test.mjs` `the pretend feed runs on its clock…` | the feed says `starting`, opens, ticks on its clock, takes a command sent from inside its first lines, and is silent after a stop |
+| `ui/workstation/store.test.mjs` `lines land in the store by name…` | each line lands under its kind or section name, listeners hear sections in the protocol's order, every painter runs every frame, a broken listener or painter does not stop the others, and a gap in `seq` is reported |
+| `ui/workstation/store.test.mjs` `view commands and the latest pause or resume are remembered…` | the commands that make the view are repeated after a restart, each unit keeps its own grouping, and the latest pause or resume comes last |
 | `ui/chat/composer/state.test.mjs` | centred until the first send, Send becomes Stop, Enter and Escape |
 | `ui/chat/drawer/cache.test.mjs` | the cache chip is warm until the TTL ends, then cold with the tokens to re-read |
 | `ui/chat/drawer/caption.test.mjs` | the gear caption reads the model word and the thinking level |
@@ -118,7 +138,8 @@ crates/jet
 │   ├── main.rs                     desktop entry point
 │   ├── lib.rs                      checks the rig, opens the window, registers the commands
 │   ├── rig.rs                      the character definition, embedded and checked at start-up
-│   ├── settings.rs                 remembers the dials and the chat settings between launches (app config folder)
+│   ├── settings.rs                 remembers the dials, the chat settings and the workstation setup between launches (app config folder)
+│   ├── workstation.rs              the commands the workstation page calls: start polysim-bridge from the settings, stream its lines, pass it commands, stop it
 │   └── chat/
 │       ├── mod.rs                  the commands the chat page calls, and the channel that streams a reply to it
 │       ├── error.rs                the error every chat command fails with, sent as `{ kind, message }`
@@ -127,6 +148,7 @@ crates/jet
     ├── index.html                  the chat page: header, drawer, thread, composer, settings dialog
     ├── chat.css                    the chat page's tokens, layout and header
     ├── lab.html                    the lab page: Jet, a button for every clip, and the dials
+    ├── workstation.html            the workstation on a page of its own, for a browser (pretend feed) or the window (polysim-bridge)
     ├── styles.css                  the lab's look, and the ground colour of Jet's eyes and ring
     ├── package.json                the `node --test` script, nothing to install
     ├── assets/
@@ -141,8 +163,26 @@ crates/jet
     │   ├── tauri-agent.test.mjs    each method calls its command with the right keys; failures arrive as { kind, message }
     │   ├── fake-agent.js           the pretend Claude the chat runs on in a browser
     │   ├── fake-agent.test.mjs     a reply's events in order incl. the live stream lines and usage, a fresh session, the three failures, stop, storage
+    │   ├── workstation.js          connectWorkstation: the one way to polysim-bridge, and the types of every line and command
+    │   ├── tauri-workstation.js    the real feed: each method calls a Rust command, and the bridge's lines stream back over a channel
+    │   ├── tauri-workstation.test.mjs  the three commands in order with the right keys; lines of an old channel are dropped; failures arrive as { kind, message }
+    │   ├── fake-workstation.js     the pretend feed: runs the pretend market on a clock and hands its lines on
+    │   ├── fake-workstation.test.mjs  every command of the pretend market, and the feed's clock
+    │   ├── fake-market.js          the pretend market: opening lines, one tick at a time, and the commands (pure, no timers)
+    │   ├── fake-market.test.mjs    the pretend market's lines and sections, and how its ticks move
+    │   ├── fake-market-testing.mjs what the tests of the pretend market and feed share: a repeatable clock and chance, shape checks
+    │   ├── fake-market-book.js     the pretend book, the quotes on it, and the ladder and summary they make
+    │   ├── fake-market-chart.js    the one-second buckets of the chart and risk sections: backfill, append-only sending, axis labels
+    │   ├── fake-market-lines.js    hello, link, lifecycle and catalog, and the groupings and instruments they list
+    │   ├── fake-market-rows.js     text formats, the four channels of rows, the account, the features and the latency table
     │   ├── fake-script.js          what the pretend Claude says and the stream lines it writes: message_start, message_delta, a result with timing fields, real model ids
     │   └── markdown.js             a small, safe Markdown renderer for the browser fallback
+    ├── workstation/                the workstation page; each area is a folder with `mount.js` exporting `mount({ root, store })`
+    │   ├── page.js                 the grid and its mount points, the store every area is handed, and the loading of the areas
+    │   ├── store.js                the newest value of every line and section, listeners, painters, and the commands to repeat after a restart (pure)
+    │   ├── store.test.mjs          lines by name and in order, painters every frame, seq gaps; the remembered view commands
+    │   ├── dev.js                  boot for workstation.html
+    │   └── workstation.css         the colour and size tokens, the three panels over the link bar, and the raw-section text
     ├── chat/                       the chat page
     │   ├── main.js                 boot: loads the rig, settings and history, builds every part, hands each its parts
     │   ├── turn.js                 one turn: a send, each event of the reply, the end of the reply
@@ -260,7 +300,7 @@ The settings sheet's "This session" block reads the same totals, so the two plac
 
 ## Commands the window can call
 
-The settings commands reject with a message string. The chat commands, from `agent_status` down, reject with `{ kind, message }`, where `kind` is `busy`, `claudeMissing`, `io` or `badLink`.
+The settings commands reject with a message string. The chat commands, from `agent_status` down, and the workstation commands reject with `{ kind, message }`, where `kind` is `busy`, `claudeMissing`, `io` or `badLink`; a workstation command only ever fails with `io`.
 
 | Command | Takes | Returns | Notes |
 | --- | --- | --- | --- |
@@ -276,6 +316,30 @@ The settings commands reject with a message string. The chat commands, from `age
 | `save_memory` | `{ notes }` | the notes as saved, cut to their limits | the next message starts a fresh session so Claude sees them |
 | `render_markdown` | `{ text }` | the text as HTML | the page asks while a reply streams |
 | `open_link` | `{ url }` | nothing | opens `http`, `https` and `mailto` links in the user's own apps; any other scheme fails with `badLink` |
+| `workstation_start` | `{ workstation, events }` | nothing | starts polysim-bridge from the workstation settings; its lines stream over the `events` channel, each as the JSON object it is. When the bridge is still kept running from the same settings (a page reload), it is not restarted, so the link to the engine stays up: the new channel gets Jet's newest `bridge` line and the bridge's newest `hello`, `link`, `lifecycle` and `catalog`, and a `resync` is sent to the bridge. With different settings, or when the bridge was given up on, the running one is stopped and a new one started |
+| `workstation_command` | `{ command }` | nothing | sends one command object to the bridge; fails with `io` when the bridge is not running |
+| `workstation_stop` | nothing | nothing | stops polysim-bridge; nothing happens when it is not running |
+
+## The workstation feed
+
+The workstation page reads one stream of lines. Inside the app they come from polysim-bridge, which Jet runs and starts again when it fails; in a browser they come from the pretend feed. Every line is one JSON object with a `kind`: `hello`, `link`, `lifecycle`, `catalog`, `tick` (whose sections are `view`, `ladder`, `summary`, `account`, `features`, `channels`, `latency`, `chart`, `risk` and `gaps`, present only when they changed) and `bye` come from the bridge. `ui/bridge/workstation.js` holds the type of each.
+
+Jet adds its own `{ "kind": "bridge", "status", "detail" }` line, and `detail` is a plain sentence for the user:
+
+| `status` | When |
+| --- | --- |
+| `starting` | a run is about to start, the first one or one after a failure |
+| `restarting` | a run ended on its own; the detail names the exit code, the last error line and the wait |
+| `exited` | the bridge speaks another protocol, or it stopped twice in a row within a second of starting and before its `hello`; either way it is not started again |
+| `missing` | the program or its folder is not there, or no path is set; nothing more happens until the next `workstation_start` |
+
+A stop that Jet asked for sends no line. Only a line that is one whole JSON object with a string `kind` reaches the page, because the webview runs what a channel sends as script; plain text and broken lines are dropped, and the first one of a run is printed on Jet's own error output. A failed run is started again after 1 s, then 2 s, then 5 s, then every 10 s, and the waits start over after a run of 30 s. A bridge that stops twice in a row within a second of starting, before it says `hello`, failed on its arguments or its start-up, so a third try would fail the same way: Jet sends `exited` with the exit code and the last error line, and asks you to check the settings (strategy, links, token). A bridge that crashes after its `hello` is still started again. The link token is never printed or logged by Jet, but polysim-bridge takes it as an argument, so it shows in the process list.
+
+The page folds every line into its store and paints once per animation frame. It sends `resync` when a tick's `seq` jumps inside one session, and after each `hello` it sends its view commands again (the last `select`, `chart_mode`, `dom_unit`, `dom_grouping` for each unit, `dom_levels`, `dom_fit`, `chart_ticks` and `risk_series`, and the latest `pause` or `resume`), so a restarted bridge shows the same view.
+
+Where the protocol leaves a choice, the pretend feed makes this one. A chart bucket's `cl` is a mid with the extra decimal, such as `118000.005`. A chart bucket always has all its prices; `gap` is true on the first bucket after the book lost snapshots, and the pretend feed marks one about every 45 s. Prices in the ladder, the trades and the fills are decimal strings. A ticks grouping is `{ unit: "ticks", perBucket, label }`.
+
+Each part of the workstation is an area: a folder `ui/workstation/<area>/` whose `mount.js` exports `mount({ root, store })`. `root` is the area's mount point. The `store` has `onFrame(name, fn)` for every line kind and section name, `register(name, painter)` with `painter(nowMs)` called every animation frame, `send(command)`, `latest(name)` and `leave()`. Adding an area changes no shared file. Mount every area before calling `store.start()`: an area that folds the append-only sections (`chart`, `risk` and `channels`) needs the `catalog` and the full window that arrive right after the start. The areas are `toolbar`, `latency`, `chart`, `monitor`, `ladder`, `linkbar` and `lifecycle`; one that is missing or fails to mount shows its raw sections instead.
 
 ## Adding a clip
 
