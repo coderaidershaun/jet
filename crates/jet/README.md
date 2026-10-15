@@ -185,7 +185,7 @@ crates/jet
     │   │       ├── cite.js         how `[n]` in Jet's text finds its source: split at each citation, matched to the nearest card above (pure)
     │   │       ├── cite.test.mjs   `[n]` links to the nearest earlier card that holds source n
     │   │       ├── view.js         draws the cards, keeps finished ones across redraws, turns `[n]` into chips and opens a source when its chip is pressed
-    │   │       ├── show.js         draws one hit or page piece: Markdown, a formula, a table, a figure with its picture, code
+    │   │       ├── show.js         draws one hit or page piece, and typesets its formulas with KaTeX: Markdown, a formula, a table, a figure with its picture, code with its label
     │   │       ├── registry.js     how a finished call is drawn, by `server/tool`; a tool not named gets the default card
     │   │       └── cards.css       the cards, their source rows, the spinner, the citation chips
     │   ├── composer/               the field and the Send/Stop button
