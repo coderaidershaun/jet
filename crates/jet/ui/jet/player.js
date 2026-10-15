@@ -152,7 +152,7 @@ export function createPlayer(rig, { random = Math.random } = {}) {
     tick(now) {
       if (!clip) {
         const seconds = (now - idleStart) / 1000;
-        state.scale = 1 + breathDepth * Math.sin((seconds * 2 * Math.PI * 1000) / IDLE_BREATH_PERIOD_MS);
+        state.scale = reduced ? 1 : 1 + breathDepth * Math.sin((seconds * 2 * Math.PI * 1000) / IDLE_BREATH_PERIOD_MS);
         if (!atRest) {
           eyesMoved = false;
           return null;

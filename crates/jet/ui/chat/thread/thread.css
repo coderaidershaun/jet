@@ -7,7 +7,9 @@
   padding: calc(.7 * 200px * var(--lane-scale)) var(--gutter) 48px;
 }
 
-.row { display: flex; align-items: flex-end; gap: 8px; margin-top: 12px; animation: rise 160ms ease-out; }
+.row { display: flex; align-items: flex-end; gap: 8px; margin-top: 12px; }
+/* The bubble rises in, not the lane: the live Jet stands in the lane and must not fade while it reacts to the send. */
+.row > :not(.lane) { animation: rise 160ms ease-out; }
 .row:not(.first) { margin-top: 2px; }
 .row-user { justify-content: flex-end; }
 .row-lane { min-height: 44px; }
@@ -56,7 +58,7 @@
 .still { margin-left: 8px; font-size: 12px; color: var(--muted); opacity: 0; visibility: hidden; animation: reveal 300ms 20s forwards; }
 @keyframes reveal { to { opacity: 1; visibility: visible; } }
 .reduced .dots i { animation: none; opacity: .7; }
-.reduced .row { animation: fade 120ms ease-out; }
+.reduced .row > :not(.lane) { animation: fade 120ms ease-out; }
 @keyframes fade { from { opacity: 0; } }
 
 .is-error { padding-left: 10px; border-left: 2px solid var(--danger); }
