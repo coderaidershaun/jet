@@ -1,13 +1,16 @@
 /* The thread: rows of bubbles with the lane beside each Jet message, pills for
    days and notices, the waiting dots, and the Markdown inside Jet's bubbles. */
-.thread { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
+/* No scroll anchoring: a source row fills in after it opens, and the browser would scroll the row away to keep the rows below it still. */
+.thread { position: absolute; inset: 0; overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
 .thread:focus-visible { outline-offset: -2px; }
 .column {
   max-width: calc(820px + 2 * var(--gutter)); margin: 0 auto;
   padding: calc(.7 * 200px * var(--lane-scale)) var(--gutter) 48px;
 }
 
-.row { display: flex; align-items: flex-end; gap: 8px; margin-top: 12px; animation: rise 160ms ease-out; }
+.row { display: flex; align-items: flex-end; gap: 8px; margin-top: 12px; }
+/* The bubble rises in, not the lane: the live Jet stands in the lane and must not fade while it reacts to the send. */
+.row > :not(.lane) { animation: rise 160ms ease-out; }
 .row:not(.first) { margin-top: 2px; }
 .row-user { justify-content: flex-end; }
 .row-lane { min-height: 44px; }
@@ -22,11 +25,12 @@
   font-size: var(--text-size); line-height: var(--text-line);
   overflow-wrap: anywhere;
 }
-/* A Jet row is the lane and then the reply: the cards of its tool calls above the bubble. */
+/* A Jet reply is its cards above its bubble, in one column no wider than a bubble may be. */
 .reply { display: flex; flex: 1 1 auto; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; max-width: min(560px, calc(100% - var(--lane) - 8px)); }
 .reply > .bubble { max-width: 100%; }
 .cards { display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
 .cards:empty { display: none; }
+
 .row-jet .bubble { background: var(--bubble-jet); }
 .row-user .bubble { background: var(--bubble-user); color: var(--on-user); max-width: min(560px, 78%, calc(100% - var(--lane) - 8px)); }
 .row-user .body { white-space: pre-wrap; }
@@ -61,7 +65,7 @@
 .still { margin-left: 8px; font-size: 12px; color: var(--muted); opacity: 0; visibility: hidden; animation: reveal 300ms 20s forwards; }
 @keyframes reveal { to { opacity: 1; visibility: visible; } }
 .reduced .dots i { animation: none; opacity: .7; }
-.reduced .row { animation: fade 120ms ease-out; }
+.reduced .row > :not(.lane) { animation: fade 120ms ease-out; }
 @keyframes fade { from { opacity: 0; } }
 
 .is-error { padding-left: 10px; border-left: 2px solid var(--danger); }
@@ -91,7 +95,18 @@
 .copy::after { content: ""; position: absolute; inset: -8px; }
 .copy:hover, .copy:focus-visible { opacity: 1; }
 .body table { display: block; max-width: 100%; margin: 8px 0; overflow-x: auto; border-collapse: collapse; }
-.body th, .body td { padding: 4px 10px; border: 1px solid var(--line); text-align: left; }
+.body th, .body td { padding: 4px 10px; border: 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.body thead th { font-weight: 600; border-bottom-color: rgba(255, 255, 255, .18); }
+.body .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Math sits on its own classes, not under .body, so a formula outside a bubble looks the same.
+   KaTeX's own size (1.21em) makes a line with a formula taller than a plain line. */
+.math { font-family: var(--mono); }
+.math .katex { font-size: 1.1em; }
+.math-display { display: block; margin: 8px 0; overflow-x: auto; overflow-y: hidden; text-align: center; }
+.math-display:last-child { margin-bottom: 0; }
+.math-display .katex-display { margin: 0; }
+.math-error { color: var(--danger); }
 
 .jump {
   position: absolute; left: 50%; bottom: 16px; z-index: 4; transform: translateX(-50%);

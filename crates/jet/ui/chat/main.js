@@ -93,6 +93,8 @@ async function start() {
       retry: () => turn.retry(),
       openSettings: (section) => sheet.open(section),
       openLink: (url) => agent.openLink(url).catch(warn('the link could not be opened')),
+      render: (text) => agent.renderMarkdown(text),
+      readImage: (path) => agent.readLibraryImage(path),
     },
   });
 

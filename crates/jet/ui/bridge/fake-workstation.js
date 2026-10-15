@@ -38,10 +38,12 @@ export function createFakeWorkstation({ now = Date.now, wait = sleep, random = M
   return {
     async start(workstation, onLine) {
       const run = { market: createFakeMarket({ now, random, workstation }), onLine };
-      // The run counts as started before any line goes out, so the page can answer the hello with commands.
+      // The run counts as started, and its market is open, before any line goes out, so the page
+      // can answer any of these lines with commands.
+      const opening = run.market.open();
       current = run;
       emit(run, { kind: 'bridge', status: 'starting', detail: 'the pretend feed' });
-      for (const line of run.market.open()) emit(run, line);
+      for (const line of opening) emit(run, line);
       loop(run);
     },
 

@@ -1,20 +1,27 @@
 // Draws the thread's rows: bubbles with their grouping and tails, day and
-// notice pills, the lane beside each Jet message, the cards of tool calls above a
-// reply, the waiting dots, the error and stopped bubbles, code blocks with Copy, and
-// links. A row's node is kept for as long as the row lives, so the live Jet standing
-// in a lane is never thrown away by a redraw.
+// notice pills, the lane beside each Jet message, the cards of tool calls above
+// a reply and the citation chips in its text, the waiting dots, the error and
+// stopped bubbles, code blocks with Copy, and links. A row's node is kept for as
+// long as the row lives, so the live Jet standing in a lane is never thrown away
+// by a redraw.
 
 import { clockTime } from '../clock.js';
 import { h } from '../dom.js';
-import { createCardList } from './cards/list.js';
+import { typeset } from './math.js';
+import { callState } from './cards/model.js';
+import { createCardList, linkCitations, openSource } from './cards/view.js';
 
 const LOGIN_HINT = /log ?in/i;
+const doneCalls = (calls) => calls.filter((call) => callState(call) === 'done');
 
 /**
  * @param {{
  *   scroller: HTMLElement, rowsEl: HTMLElement, bannerEl: HTMLElement, jumpButton: HTMLElement,
  *   follow: ReturnType<typeof import('./scroll.js').createFollow>,
- *   handlers: { retry: () => void, openSettings: (section: string) => void, openLink: (url: string) => void },
+ *   handlers: {
+ *     retry: () => void, openSettings: (section: string) => void, openLink: (url: string) => void,
+ *     render: (text: string) => Promise<string>, readImage: (path: string) => Promise<string>,
+ *   },
  * }} options
  */
 export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follow, handlers }) {
@@ -51,11 +58,16 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     return box;
   }
 
-  function fillBubble(bubble, row, isFinal) {
+  const isWaiting = (entry) => entry.status === 'waiting' || (entry.status === 'streaming' && entry.html === '');
+
+  // `known` holds the finished calls up to this row, so a chip can find its card.
+  function fillBubble(bubble, row, isFinal, known) {
     const { entry } = row;
     bubble.replaceChildren();
     bubble.removeAttribute('aria-busy');
     bubble.classList.remove('time-below', 'is-waiting', 'is-error');
+    // While a call runs and no text has come, its card's spinner is the only sign of work.
+    bubble.hidden = row.type === 'jet' && isWaiting(entry) && (entry.tools ?? []).some((call) => callState(call) === 'running');
     const body = h('div', { class: 'body' });
     bubble.append(body);
 
@@ -64,7 +76,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     } else if (entry.status === 'failed') {
       bubble.classList.add('is-error');
       body.append(errorBody(row, isFinal));
-    } else if (entry.status === 'waiting' || (entry.status === 'streaming' && entry.html === '')) {
+    } else if (isWaiting(entry)) {
       bubble.classList.add('is-waiting');
       bubble.setAttribute('aria-busy', 'true');
       body.append(
@@ -74,7 +86,9 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
       return;
     } else {
       body.innerHTML = entry.html;
+      linkCitations(body, known);
       sealCode(body);
+      typeset(body);
       if (entry.status === 'streaming') bubble.setAttribute('aria-busy', 'true');
       if (entry.status === 'stopped') body.append(h('p', { class: 'stopped', text: entry.text ? 'Stopped' : 'Stopped before replying' }));
     }
@@ -83,12 +97,13 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     leaveRoomForTime(bubble, body);
   }
 
-  function fillRow(record, row, isFinal) {
+  function fillRow(record, row, isFinal, earlier) {
     const { el } = record;
     el.className = 'row row-' + row.type + (row.first ? ' first' : '') + (row.last ? ' last' : '');
     if (row.type === 'lane') return;
-    if (record.cards) record.cards.sync(row.type === 'jet' ? row.entry.tools ?? [] : []);
-    fillBubble(el.querySelector('.bubble'), row, isFinal);
+    const calls = row.type === 'jet' ? row.entry.tools ?? [] : [];
+    if (record.cards) record.cards.sync(calls, earlier);
+    fillBubble(el.querySelector('.bubble'), row, isFinal, [...earlier, ...doneCalls(calls)]);
   }
 
   function create(row) {
@@ -96,22 +111,17 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     if (row.type === 'notice') return { el: h('div', { class: 'pill pill-notice', role: 'status', text: row.message }), lane: null, cards: null, signature: '' };
     const lane = row.type === 'user' ? null : h('div', { class: 'lane' });
     if (row.type !== 'jet') {
-      const el = h('div', {}, lane, row.type === 'lane' ? null : h('div', { class: 'bubble' }));
-      return { el, lane, cards: null, signature: '' };
+      return { el: h('div', {}, lane, row.type === 'lane' ? null : h('div', { class: 'bubble' })), lane, cards: null, signature: '' };
     }
     const cardsEl = h('div', { class: 'cards' });
-    const el = h('div', {}, lane, h('div', { class: 'reply' }, cardsEl, h('div', { class: 'bubble' })));
-    return { el, lane, cards: createCardList(cardsEl), signature: '' };
+    const cards = createCardList(cardsEl, { render: handlers.render, readImage: handlers.readImage, seal: sealCode });
+    return { el: h('div', {}, lane, h('div', { class: 'reply' }, cardsEl, h('div', { class: 'bubble' }))), lane, cards, signature: '' };
   }
-
-  // What the cards need to know about each call: which ones there are and how each stands.
-  const callStates = (entry) => (entry.tools ?? [])
-    .map((call) => call.id + ':' + (call.unfinished ? 'unfinished' : call.ok === undefined ? 'running' : call.ok ? 'done' : 'failed'))
-    .join(' ');
 
   const signatureOf = (row, isFinal) => {
     const { entry, failure } = row;
-    const shown = entry && [entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at, callStates(entry)];
+    const calls = entry ? (entry.tools ?? []).map((call) => call.id + ':' + callState(call)).join(' ') : '';
+    const shown = entry && [entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at, calls];
     return JSON.stringify([row.type, row.label, row.message, row.first, row.last, isFinal, shown, failure && failure.kind]);
   };
 
@@ -132,6 +142,12 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     if (link) {
       event.preventDefault();
       handlers.openLink(link.getAttribute('href'));
+    } else if (target.closest('.cite')) {
+      const chip = /** @type {HTMLElement} */ (target.closest('.cite'));
+      if (openSource(rowsEl, chip.dataset.call, Number(chip.dataset.n))) {
+        follow.onScroll(scroller);
+        jumpButton.hidden = !follow.jumpVisible;
+      }
     } else if (target.closest('.retry')) {
       handlers.retry();
     } else if (target.closest('.open-settings')) {
@@ -154,6 +170,8 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     render(rows) {
       const lastMessage = rows.findLastIndex((row) => row.type === 'user' || row.type === 'jet');
       const seen = new Set();
+      // The finished calls of the Jet rows drawn so far. A reply's chips look here for their source, and a page's card for its document's title.
+      const earlier = [];
       liveKey = null;
       rows.forEach((row, i) => {
         seen.add(row.key);
@@ -165,9 +183,10 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
         if (row.live) liveKey = row.key;
         const signature = signatureOf(row, i === lastMessage);
         if (signature !== record.signature && (row.type === 'user' || row.type === 'jet' || row.type === 'lane')) {
-          fillRow(record, row, i === lastMessage);
+          fillRow(record, row, i === lastMessage, earlier);
         }
         record.signature = signature;
+        if (row.type === 'jet') earlier.push(...doneCalls(row.entry.tools ?? []));
         if (rowsEl.children[i] !== record.el) rowsEl.insertBefore(record.el, rowsEl.children[i] ?? null);
       });
       for (const [key, record] of nodes) {

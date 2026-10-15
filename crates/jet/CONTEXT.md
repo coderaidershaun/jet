@@ -11,7 +11,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Ring** — the one stroked element beside the body: the working loop, and the spin grooves when Jet rolls. (policy §2)
 - **Pip** — a dot on the foot. The body shrinks to it under the working loop and when Jet is interrupted. (policy §2)
 - **Tint** — how far an eye has gone from the ground colour, 0, to the body colour lightened toward white, 1. A face is drawn at tint 0. (policy §2)
-- **Faint eyes** — the circle's rest state: small light eyes at tint 1 that blink now and then. Hidden eyes are faint eyes with no size. (policy §2)
+- **Faint eyes** — the circle's rest state: small light eyes at tint 1 that blink now and then. Hidden eyes are faint eyes with no size. A send reaction such as the nod or the hop may keep them on the moving body. (policy §2)
 - **Prop** — a thing Jet holds or uses, such as an umbrella. There are two slots on a track of their own, the clip names the kind in each, and a prop never outlives its clip. (policy §2)
 
 - **State** — Jet at one moment: body, eyes, colour, scale, ring, speed and props. The only meaning of "state". _Avoid_: using it for idle, working or done.
@@ -41,7 +41,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Catalogue** — the one list of every clip, each with its label, its builder and whether it is a hold. The lab and the director both read it. (policy §7)
 - **Director** — decides which clip plays for each chat event: typing, a stall, a send, a mood, done, a failure, a stop. It only orders clips; the player plays them. (policy §7)
 - **Mood** — the one word at the start of a reply that says how Jet should react: neutral, happy, excited, thinking, curious, sorry, alert, annoyed or hello. An unknown word is neutral. _Avoid_: emotion, status. (policy §8)
-- **Reaction** — the clip the director plays for a mood, or for done. _Avoid_: animation. (policy §8)
+- **Reaction** — the clip the director plays for a mood, for done, or as a message goes out (a send reaction: a salute, a nod, a blink or a hop, before the travel). _Avoid_: animation. (policy §8)
 
 - **Player** — owns the state and moves it through a clip, starting from wherever Jet is. (policy §3)
 - **View** — draws a state.
@@ -50,16 +50,19 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Scenery** — what rushes past during a zoom. Not part of the character: it reads the speed and nothing else. (policy §3)
 - **Host** — the page that shows Jet and decides when a clip plays and how long a job lasts. The chat page and the lab are both hosts.
 - **Lab** — the page of controls around Jet.
-- **Bridge** — `ui/bridge/`: the pages' way to the Rust side (the rig, the settings, the agent), with browser fallbacks.
+- **Bridge** — `ui/bridge/`: the pages' way to the Rust side (the rig, the settings, the agent, the workstation feed), with browser fallbacks. Not polysim-bridge, the program behind the workstation.
 
 - **Turn** — one exchange: the user's message and Jet's reply, from the send to the finished, failed or stopped end.
 - **Session** — the Claude Code conversation the app resumes (`session.json`). A fresh one starts when the prompt inputs change, after a long idle with a big context, or when the old one vanished. _Avoid_: thread, history.
 - **Transcript** — the app's own record of the thread (`transcript.jsonl`). The chat page opens on its newest entries, which the code calls the history. _Avoid_: session.
-- **Usage** — the tokens and spend of the replies since the app started. It is counted from the stream while a reply runs and closed by the cost Claude Code reports; it is not saved. "Session totals" in the drawer means since the app started, not one Claude Code session. _Avoid_: session (that is the Claude Code conversation), cost alone (it leaves out tokens).
+- **Usage** — the tokens and spend of the replies since the app started. It is counted from the stream while a reply runs and closed by the cost Claude Code reports; it is not saved. The "Session" group of the drawer's usage panel means since the app started, not one Claude Code session. _Avoid_: session (that is the Claude Code conversation), cost alone (it leaves out tokens).
 - **Rate** — the published list price per million tokens for one model and one kind of token, with its date. It gives the live estimate while a reply runs. _Avoid_: price list, tariff.
 - **Notes** — MEMORY, USER and RECENT: the three short files in Jet's prompt that a background review keeps current. The memory commands and the memory section of the settings handle all three.
 - **Library** — quanty or polysim, an MCP server Jet's Claude reaches through tools (settings key `mcp`). _Avoid_: plugin.
 - **Tool call** — one use of a library tool during a reply: started, then finished with its result and a one-line summary; kept with the reply in the transcript.
+- **Card** — what the thread shows for one tool call, above the reply's text: a line with a spinner while the call runs, then a folded card of what came back, or of the failure. _Avoid_: widget, panel.
+- **Source** — one item a library search or answer gives back, numbered from 1, with its document, page and kind. _Avoid_: result (that is the whole reply of a tool), hit (that is what a source holds).
+- **Citation** — `[n]` in Jet's text, shown as a chip that opens source n of the nearest card above it. _Avoid_: reference, footnote.
 - **Shared server** — the one copy of a library's MCP server that the app keeps running for the whole session, over HTTP on a port of this machine. Claude's replies and the engine card both use it, so an engine either one starts outlives the reply. A library whose program does not take `--http` is not shared: Claude starts its own copy for each reply. _Avoid_: host (that is the page that shows Jet).
 - **Engine** — one polysim trading program, named `strategy · te`, such as `strat-micro-recorder · te-binance-spot-btcusdt`. It has a state (running, stopped, exited) and a mode (off, sim, live); live trades real money.
 - **Engine card** — the card above a reply that listed polysim's engines: one row for each engine with its state, its mode, Start or Stop and a mode choice. Every engine card shows the newest listing.
@@ -71,3 +74,10 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.
 - **Flight** — the live Jet's move from where it stood to the slot's lane on a send. _Avoid_: zoom (that is one travel clip; see **Travel**).
 - **Profile** — how the host flies Jet during a travel's cruise: `roll` turns toward the way Jet goes and mirrors going left, `drop` falls faster and faster and then slows to land, `abseil` goes down in three steps. Each travel clip names one. _Avoid_: path.
+- **Math** — TeX in a reply, between `\(` and `\)`, or for display between `\[` and `\]` or `$$` and `$$`. A single `$` is money, never math.
+- **Typeset** — turning a math element's TeX into KaTeX's drawing on the page. _Avoid_: render (that is Markdown to HTML).
+- **Workstation** — the polysim trading page: toolbar, latency, charts, monitor, ladder and link bar. It paints what the feed sends and decides no number itself. _Avoid_: dashboard.
+- **Feed** — the bridge lines the workstation reads: from polysim-bridge inside the app (restarted by Jet when it fails), from the pretend feed in a browser.
+- **Bridge line** — one JSON object on one line with `kind` first: `hello`, `link`, `lifecycle`, `catalog`, `tick` and `bye` from polysim-bridge, and Jet's own `bridge` status line. A line's `session` is the engine link's session, not the **Session** above. _Avoid_: message, event (those belong to the chat).
+- **Section** — one part of a tick, such as the ladder or the chart. A tick carries only the sections that changed.
+- **Area** — one part of the workstation with its own folder under `ui/workstation/` and its own mount point.

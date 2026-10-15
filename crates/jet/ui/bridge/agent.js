@@ -59,6 +59,7 @@ import { createTauriAgent } from './tauri-agent.js';
  * @property {() => Promise<Notes>} loadMemory
  * @property {(notes: { memory: string, user: string, recent: string }) => Promise<Notes>} saveMemory
  * @property {(text: string) => Promise<string>} renderMarkdown
+ * @property {(path: string) => Promise<string>} readLibraryImage   a picture of the quanty library as a data: address
  * @property {(url: string) => Promise<void>} openLink
  * @property {(server: string, tool: string, args: object) => Promise<any>} mcpCall   calls one of polysim's engine tools on the copy Jet keeps running; rejects with kind "library" when the server refused, is not running in Jet, or did not answer
  * @property {() => Promise<void>} reloadLibraries   brings the running library servers in line with the saved settings

@@ -1,6 +1,6 @@
-//! Serves the pages in `ui/` to a plain browser, so the chat (on its pretend agent), the workstation
-//! (on its pretend feed) and the lab can be tried and checked without the desktop window. Run it
-//! with `cargo run -p jet --example serve`, or pass a port after `--`.
+//! Serves the pages in `ui/` to a plain browser, so the chat (on its pretend agent), the
+//! workstation (on its pretend feed) and the lab can be tried and checked without the desktop
+//! window. Run it with `cargo run -p jet --example serve`, or pass a port after `--`.
 
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
@@ -64,6 +64,7 @@ fn content_type(path: &Path) -> &'static str {
         Some("json") => "application/json",
         Some("png") => "image/png",
         Some("svg") => "image/svg+xml",
+        Some("woff2") => "font/woff2",
         _ => "application/octet-stream",
     }
 }

@@ -1,0 +1,105 @@
+{
+  "about": "Shared cases for the Markdown renderers: the app renders with Rust and the browser fallback renders with JavaScript, and both must turn each markdown into the html given here. Both tests delete every newline that comes directly before \"<\" or directly after \">\" in the result before comparing, so the html is written without them. The cases avoid what the two renderers do differently on purpose: headings, links, block quotes, quote marks in prose, backslash escapes outside math, indented code, tilde fences and trailing spaces.",
+  "vectors": [
+    {
+      "name": "inline math in prose, TeX trimmed",
+      "markdown": "The volatility is \\( \\sigma \\) per year.",
+      "html": "<p>The volatility is <span class=\"math\" data-tex=\"\\sigma\">\\sigma</span> per year.</p>"
+    },
+    {
+      "name": "TeX with angle brackets, ampersand, quotes and a prime is escaped, the prime kept",
+      "markdown": "Take \\( a < b & c \"q\" f'(x) \\) here.",
+      "html": "<p>Take <span class=\"math\" data-tex=\"a &lt; b &amp; c &quot;q&quot; f'(x)\">a &lt; b &amp; c &quot;q&quot; f'(x)</span> here.</p>"
+    },
+    {
+      "name": "underscores and stars inside math are not Markdown",
+      "markdown": "Take \\( a_1 * b_2 * c \\) and *stress* it.",
+      "html": "<p>Take <span class=\"math\" data-tex=\"a_1 * b_2 * c\">a_1 * b_2 * c</span> and <em>stress</em> it.</p>"
+    },
+    {
+      "name": "bracket display math alone in its paragraph, over several lines",
+      "markdown": "Before.\n\n\\[\nx = \\frac{a}{b}\n\\]\n\nAfter.",
+      "html": "<p>Before.</p><div class=\"math math-display\" data-tex=\"x = \\frac{a}{b}\">x = \\frac{a}{b}</div><p>After.</p>"
+    },
+    {
+      "name": "dollar display math alone in its paragraph, over several lines",
+      "markdown": "$$\na &= b \\\\\nc &= d\n$$",
+      "html": "<div class=\"math math-display\" data-tex=\"a &amp;= b \\\\\nc &amp;= d\">a &amp;= b \\\\\nc &amp;= d</div>"
+    },
+    {
+      "name": "display math inside running text stays a span",
+      "markdown": "Then \\[ x = 1 \\] holds.",
+      "html": "<p>Then <span class=\"math math-display\" data-tex=\"x = 1\">x = 1</span> holds.</p>"
+    },
+    {
+      "name": "dollar display math after a line of text stays in the paragraph",
+      "markdown": "where\n$$\nd = 1\n$$",
+      "html": "<p>where<span class=\"math math-display\" data-tex=\"d = 1\">d = 1</span></p>"
+    },
+    {
+      "name": "inline math alone in a paragraph keeps its paragraph",
+      "markdown": "\\( x^2 \\)",
+      "html": "<p><span class=\"math\" data-tex=\"x^2\">x^2</span></p>"
+    },
+    {
+      "name": "a single dollar is money, never math",
+      "markdown": "a $100 call and a $5 put",
+      "html": "<p>a $100 call and a $5 put</p>"
+    },
+    {
+      "name": "an unclosed double dollar is shown as written",
+      "markdown": "Cost is $$ 5 and more",
+      "html": "<p>Cost is $$ 5 and more</p>"
+    },
+    {
+      "name": "an unclosed opener at the end, as in a cut stream, is shown as written",
+      "markdown": "The formula \\( x = 1",
+      "html": "<p>The formula \\( x = 1</p>"
+    },
+    {
+      "name": "a stray closer is shown as written",
+      "markdown": "Close \\) here.",
+      "html": "<p>Close \\) here.</p>"
+    },
+    {
+      "name": "a pair split by a blank line is not math",
+      "markdown": "Open \\( x\n\ny \\) close",
+      "html": "<p>Open \\( x</p><p>y \\) close</p>"
+    },
+    {
+      "name": "empty delimiters are shown as written",
+      "markdown": "Empty \\(\\) pair.",
+      "html": "<p>Empty \\(\\) pair.</p>"
+    },
+    {
+      "name": "a code span keeps its delimiters and math after it on the same line is typeset",
+      "markdown": "Use `\\(x\\)` literally, then \\( y \\) renders.",
+      "html": "<p>Use <code>\\(x\\)</code> literally, then <span class=\"math\" data-tex=\"y\">y</span> renders.</p>"
+    },
+    {
+      "name": "a fenced block keeps its delimiters",
+      "markdown": "Before.\n\n```\n\\(x\\) and \\[ y \\]\n```\n\nAfter.",
+      "html": "<p>Before.</p><pre><code>\\(x\\) and \\[ y \\]</code></pre><p>After.</p>"
+    },
+    {
+      "name": "an unclosed fence, as in a cut stream, keeps its delimiters to the end",
+      "markdown": "Before.\n\n```\n\\(x\\)\nmore \\[ y",
+      "html": "<p>Before.</p><pre><code>\\(x\\)\nmore \\[ y</code></pre>"
+    },
+    {
+      "name": "math in a list item",
+      "markdown": "- item \\( a \\) one\n- item two",
+      "html": "<ul><li>item <span class=\"math\" data-tex=\"a\">a</span> one</li><li>item two</li></ul>"
+    },
+    {
+      "name": "number columns get the num class on header and cells, a pipe inside math stays in its cell",
+      "markdown": "| Item | Value |\n|:--|--:|\n| \\( |x| \\) | 100 |\n| B | $5 |\n| C | -0.25 |\n| D | 5% |\n| E | |",
+      "html": "<table><thead><tr><th>Item</th><th class=\"num\">Value</th></tr></thead><tbody><tr><td><span class=\"math\" data-tex=\"|x|\">|x|</span></td><td class=\"num\">100</td></tr><tr><td>B</td><td class=\"num\">$5</td></tr><tr><td>C</td><td class=\"num\">-0.25</td></tr><tr><td>D</td><td class=\"num\">5%</td></tr><tr><td>E</td><td class=\"num\"></td></tr></tbody></table>"
+    },
+    {
+      "name": "a column that mixes numbers and words gets no class",
+      "markdown": "| Name | Score |\n| --- | --- |\n| A | 10 |\n| B | high |",
+      "html": "<table><thead><tr><th>Name</th><th>Score</th></tr></thead><tbody><tr><td>A</td><td>10</td></tr><tr><td>B</td><td>high</td></tr></tbody></table>"
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 //! channel that streams a reply to it, and the timer that keeps Jet's notes current.
 
 mod error;
+mod image;
 // Open to the crate because Tauri's list of commands must name each command where it is
 // defined; a re-export does not carry what the command macro generates.
 pub(crate) mod libraries;
@@ -22,7 +23,7 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::settings;
-use error::BridgeError;
+pub(crate) use error::BridgeError;
 use review_timer::{ReviewTarget, ReviewTimer, review_now};
 
 /// Entries the page gets when it opens.
@@ -286,6 +287,17 @@ pub fn save_memory(state: State<'_, ChatState>, notes: Notes) -> Result<Notes, B
 #[tauri::command]
 pub fn render_markdown(text: &str) -> String {
     agent::render_markdown(text)
+}
+
+/// A picture of the quanty library as a `data:` address. A relative path is read from the quanty
+/// folder in the saved settings.
+#[tauri::command]
+pub async fn read_library_image(app: AppHandle, path: String) -> Result<String, BridgeError> {
+    let settings = settings::read_from(&settings::settings_path(&app)?)?;
+    Ok(image::read_data_uri(
+        settings.mcp.quanty.cwd.as_deref(),
+        &path,
+    )?)
 }
 
 /// Opens a web or mail link in the user's own browser or mail app.

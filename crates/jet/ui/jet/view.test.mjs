@@ -103,7 +103,7 @@ test('a prop slot draws its kind where the track puts it and hides at opacity 0'
   for (const kind of PROP_KINDS) {
     draw(restingJet({ prop: propWith(1, [30, 70, -15, 1.5, 0.5]), propKinds: [null, kind] }));
     assert.ok(slots[1].children.length > 0, kind + ' draws a shape');
-    near(opacityOf(slots[1]), 0.32 * 0.5, kind + ' is drawn as faint as the spin grooves');
+    near(opacityOf(slots[1]), 0.5 * 0.5, kind + ' is drawn at half strength, so it reads on the dark page but stays unsaturated');
     const placed = slots[1].getAttribute('transform').match(/^translate\((\S+) (\S+)\) rotate\((\S+)\) scale\((\S+)\)$/);
     assert.ok(placed, kind + ' is moved, turned and sized');
     assert.deepEqual(placed.slice(1).map(Number), [30, 70, -15, 1.5]);

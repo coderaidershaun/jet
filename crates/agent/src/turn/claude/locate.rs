@@ -7,7 +7,8 @@ use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::{ClaudeCli, EXIT_POLL};
+use super::ClaudeCli;
+use crate::child::EXIT_POLL;
 use crate::turn::transport::TransportError;
 
 /// How long the login shell may take to say where Claude Code lives.

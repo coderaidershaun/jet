@@ -1,0 +1,65 @@
+/* The latency table: a header row over one line for each flow, its sizes those of the desktop app this
+   copies. The script sets the number of columns to match what the bridge sends. */
+
+.ws-latency {
+  display: grid;
+  grid-template-columns: 112px repeat(var(--ws-lat-columns, 7), minmax(0, 1fr));
+  grid-template-rows: 30px;
+  grid-auto-rows: minmax(0, 1fr);
+  height: 100%;
+  box-sizing: border-box;
+  background: var(--ws-panel);
+  border-bottom: var(--ws-hairline) solid var(--ws-border);
+  overflow: hidden;
+}
+
+.ws-latency > * {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ws-lat-title,
+.ws-lat-head {
+  background: var(--ws-panel-raised);
+  border-bottom: var(--ws-hairline) solid var(--ws-border);
+  font: 10px var(--font);
+  color: var(--ws-text-2);
+  white-space: pre;
+}
+
+.ws-lat-title {
+  padding-left: 8px;
+}
+
+.ws-lat-head {
+  justify-content: flex-end;
+  padding-right: 8px;
+}
+
+.ws-lat-label {
+  padding-left: 8px;
+  font: 11px var(--font);
+  color: var(--ws-text-2);
+}
+
+.ws-lat-cell {
+  justify-content: flex-end;
+  padding-right: 8px;
+  font: 12px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-text);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.ws-lat-later {
+  border-top: var(--ws-hairline) solid var(--ws-grid);
+}
+
+/* The last column is a queue depth, not a latency; the divider runs the full height, header included. */
+.ws-lat-slots {
+  border-left: var(--ws-hairline) solid var(--ws-border);
+}

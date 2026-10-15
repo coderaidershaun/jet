@@ -76,7 +76,6 @@ const BAT_CONTACT_ALONG = 24;
 const PICK_UP_MS = 320;
 const PICK_UP_DIP_MS = 90;
 const PROPS_APPEAR_MS = 120;
-const FAINT_OPEN = 2.4;
 const NOD_MS = 420;
 const SLUMP_MS = 520;
 const SWAY_MS = 2800;
@@ -138,13 +137,13 @@ function propKey({ grip, rotate, ball, opacity }) {
  */
 export function buildBatBall(rig, p, { loopMs = 10000, continued = false } = {}) {
   const dials = readDials(rig, p);
-  const { ks, km, x, rest, pose, eyes } = dials;
+  const { ks, km, x, rest, pose, eyes, faintEyes } = dials;
   const { clip, body, eye, colour, scale, ring, speed, prop, t } = createClip(1);
   const show = showsProps(dials);
   const swing = BAT_SWING * (1 + 0.5 * Math.min(0, x));
   const bounces = Math.max(1, Math.round(loopMs / BOUNCE_MS));
   const stance = pose('soft');
-  const stanceEyes = faint(eyes('soft', FAINT_OPEN, FAINT_OPEN));
+  const stanceEyes = faintEyes('soft');
   const landing = ballRestingOn(rightHand(stance), BAT_REST_ROTATE);
   const ballAt = (sinceLanding) => [landing[0], landing[1] - ballHeight(sinceLanding)];
 
@@ -171,7 +170,7 @@ export function buildBatBall(rig, p, { loopMs = 10000, continued = false } = {})
 
   if (show) {
     const squash = lerp(stance, pose('land'), SQUASH_SHARE);
-    const squashEyes = lerp(stanceEyes, faint(eyes('land', FAINT_OPEN, FAINT_OPEN)), SQUASH_SHARE);
+    const squashEyes = lerp(stanceEyes, faintEyes('land'), SQUASH_SHARE);
     const beats = [
       { at: BOUNCE_KEYS[0], pose: squash, eyes: squashEyes, rotate: BAT_REST_ROTATE - swing, e: ease.bounceLaunch },
       { at: BOUNCE_KEYS[1], pose: stance, eyes: stanceEyes, rotate: BAT_REST_ROTATE, e: ease.bounceRise },

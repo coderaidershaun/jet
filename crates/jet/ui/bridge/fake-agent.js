@@ -5,7 +5,7 @@
 // whenever the page runs outside Tauri.
 
 import { POLYSIM_ENGINES } from './fixtures/polysim-engines.js';
-import { QUANTY_SEARCH } from './fixtures/quanty-search.js';
+import { ADDED_HITS, QUANTY_DOWN, QUANTY_SEARCH } from './fixtures/quanty-search.js';
 import { renderMarkdown } from './markdown.js';
 import { BASE_CONTEXT_TOKENS, MESSAGES, MODEL_IDS, bodyFor, chunksOf, costFor, lines, moodFor, tokensIn, usageFor, wants, wireModelUsage, wireUsage } from './fake-script.js';
 
@@ -15,6 +15,10 @@ const CACHE_TTL_MINUTES = 60;
 const DELTAS_PER_MESSAGE_DELTA = 4;
 const NOTE_LIMITS = { memory: 2200, user: 1375, recent: 1500 };
 const NOT_FOUND_AT = ['~/.local/bin/claude', '/opt/homebrew/bin/claude', '/usr/local/bin/claude'];
+
+// The recorded search with the hits added by hand after it, and the search that failed.
+const SEARCH_REPLAYED = { ...QUANTY_SEARCH, result: { ...QUANTY_SEARCH.result, results: [...QUANTY_SEARCH.result.results, ...ADDED_HITS] }, ok: true };
+const SEARCH_DOWN = { ...QUANTY_DOWN, ok: false };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const bridgeError = (kind, message) => ({ kind, message });
@@ -172,18 +176,20 @@ export function createFakeAgent({
 
     const replyNumber = read('history', []).filter((entry) => entry.role === 'jet' && entry.status === 'complete').length + 1;
     const mood = moodFor(text, replyNumber);
-    const answer = asks.quanty ? QUANTY_SEARCH.reply : asks.engines ? POLYSIM_ENGINES.reply : bodyFor(text, replyNumber);
+    const libraryCall = asks.quantyDown
+      ? SEARCH_DOWN
+      : asks.quanty
+        ? SEARCH_REPLAYED
+        : asks.engines
+          ? { ...POLYSIM_ENGINES, use: { ...POLYSIM_ENGINES.use, id: POLYSIM_ENGINES.use.id + '_' + nextListing() }, result: { engines: structuredClone(fleet) }, ok: true }
+          : null;
+    const answer = libraryCall ? libraryCall.reply : bodyFor(text, replyNumber);
     // The preface is what the page told Claude about engine buttons; quoting it shows that it arrived.
     const body = request.preface ? 'Noted: ' + request.preface + '\n\n' + answer : answer;
     let received = '';
     const calls = [];
     const withCalls = (entry) => (calls.length ? { ...entry, tools: calls } : entry);
     // Known before streaming, so the first line of the stream can already carry the input and cache counts.
-    const library = asks.quanty
-      ? { use: QUANTY_SEARCH.use, result: QUANTY_SEARCH.result, ok: true }
-      : asks.engines
-        ? { use: { ...POLYSIM_ENGINES.use, id: POLYSIM_ENGINES.use.id + '_' + nextListing() }, result: { engines: structuredClone(fleet) }, ok: true }
-        : null;
     const { usage, outputTokens, contextAfter } = usageFor({ contextBefore, userText: text, replyText: body, warm });
 
     const stopped = () => {
@@ -210,7 +216,7 @@ export function createFakeAgent({
     if (control.stopped) return stopped();
 
     const ttftMs = now() - startedAt;
-    if (library && !(await callLibrary(library))) return stopped();
+    if (libraryCall && !(await callLibrary(libraryCall))) return stopped();
     emit({ kind: 'rawLine', line: lines.messageStart(sessionId, { model, usage, ttftMs }) });
     if (mood) {
       emit({ kind: 'rawLine', line: lines.delta(sessionId, 'mood: ' + mood + '\n') });
@@ -299,6 +305,10 @@ export function createFakeAgent({
 
     async renderMarkdown(text) {
       return renderMarkdown(text);
+    },
+
+    async readLibraryImage(path) {
+      throw bridgeError('io', 'Library pictures open only in the app, not in a browser: ' + path);
     },
 
     async mcpCall(server, tool, args) {

@@ -81,14 +81,6 @@ export function buildHello(rig, p, { brief = false } = {}) {
   speed(300, 0, ease.settle);
 
   // stand up
-  // SMELL: these three keys are at time 0, where a clip must not put a key
-  // because the player puts the live state there. They override it, so the
-  // eyes, the colour and the scale jump in the first millisecond: a hello from
-  // rest cuts the faint eyes and the breath, and a hello that interrupts a zoom
-  // cuts its eyes and colour.
-  eye(0, hiddenEyes('circle'));
-  colour(0, rest);
-  scale(0, 1);
   if (km > 0.2) {
     body(90, pose('squash', bounce), ease.drop);
     body(200, pose('stretch', Math.min(bounce, 1.15)), ease.pop);

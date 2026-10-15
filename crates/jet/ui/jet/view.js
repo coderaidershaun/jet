@@ -10,8 +10,8 @@ import { PROP, PROP_HIDDEN, PROP_SLOTS, PROP_STRIDE, RING, cssColour } from './s
 const SVG = 'http://www.w3.org/2000/svg';
 const WHITE = [255, 255, 255];
 const EYE_TINT_TOWARD_WHITE = 0.6;
-// Props are as faint as the spin grooves, so Jet stays the only saturated thing on the stage.
-const PROP_OPACITY = 0.32;
+// Props draw in the page's text colour at half strength: strong enough to read at lane size, never saturated, so Jet stays the only saturated thing on the stage.
+const PROP_OPACITY = 0.5;
 const MAX_HIDDEN_OPACITY = 0.005;
 
 function svgElement(name, attributes) {

@@ -1,10 +1,12 @@
 //! This crate is the desktop home of Jet, the first-mate character: it ships the character
 //! definition inside the binary, opens the window that animates it, remembers how the
-//! user dialled Jet in between launches, and connects the chat page to the agent crate.
+//! user dialled Jet in between launches, and connects the chat page and the workstation page to
+//! the agent crate.
 
 mod chat;
 mod rig;
 mod settings;
+mod workstation;
 
 use tauri::Manager;
 
@@ -26,6 +28,7 @@ pub fn run() -> Result<(), Error> {
             let data_dir = app.path().app_data_dir()?;
             app.manage(chat::ChatState::new(data_dir));
             app.manage(chat::libraries::start(app.handle()));
+            app.manage(workstation::WorkstationState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -40,17 +43,24 @@ pub fn run() -> Result<(), Error> {
             chat::load_memory,
             chat::save_memory,
             chat::render_markdown,
+            chat::read_library_image,
             chat::open_link,
             chat::libraries::mcp_call,
-            chat::libraries::mcp_reload
+            chat::libraries::mcp_reload,
+            workstation::workstation_start,
+            workstation::workstation_command,
+            workstation::workstation_stop
         ])
         .build(tauri::generate_context!())?;
     app.run(|handle, event| {
         if let tauri::RunEvent::Exit = event {
-            // The reply stops first, so Claude is not in the middle of a call when the servers go.
+            if let Some(state) = handle.try_state::<workstation::WorkstationState>() {
+                state.shutdown();
+            }
             if let Some(state) = handle.try_state::<chat::ChatState>() {
                 state.shutdown(handle);
             }
+            // The reply stops before the libraries go, so Claude is not in the middle of a call when they do.
             if let Some(libraries) = handle.try_state::<agent::SharedServers>() {
                 libraries.shutdown();
             }
