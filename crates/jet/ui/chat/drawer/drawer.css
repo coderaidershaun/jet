@@ -85,7 +85,7 @@
 .log-line { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-pretty { margin: 4px 0 6px; padding: 0; overflow-x: auto; white-space: pre; font: inherit; color: var(--muted); }
 
-.drawer-foot { display: flex; align-items: center; flex: none; gap: 4px; padding: 4px 8px calc(4px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+.drawer-foot { display: flex; align-items: center; flex: none; gap: 4px; margin-top: auto; padding: 4px 8px calc(4px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
 .gear { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; background: none; border: 0; border-radius: 12px; color: var(--muted); }
 .gear:hover { color: var(--fg); background: rgba(255, 255, 255, .06); }
 .model-caption { font-size: 12px; line-height: 16px; color: var(--muted); }
