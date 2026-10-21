@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use agent::{
     ClaudeCli, Conversation, DataDir, Effort, Event, McpServer, McpServers, McpStatus, Message,
-    Model, Mood, Persona, Request, SessionId, SessionMode, Step, Tone, Turn,
+    Model, Mood, Persona, Request, SessionId, SessionMode, Step, Turn,
 };
 use serde_json::json;
 
@@ -152,7 +152,6 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
     let message = Message {
         text: "fixture:quanty-search-reply".to_owned(),
         persona: Persona::default(),
-        tone: Tone::default(),
         model: Model::Sonnet,
         effort: Effort::Medium,
         budget_usd: 1.0,

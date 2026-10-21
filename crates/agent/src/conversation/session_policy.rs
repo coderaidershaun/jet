@@ -16,7 +16,8 @@ const COLD_CONTEXT_TOKENS: u64 = 30_000;
 pub(super) enum FreshReason {
     /// There was no conversation yet. Nothing to explain.
     First,
-    /// The user changed the persona, tone, model, effort or notes.
+    /// Something baked into the prompt changed, such as the persona, model, effort or libraries,
+    /// or the user edited the notes.
     Stale,
     Cold,
     /// Claude Code no longer has the saved conversation.

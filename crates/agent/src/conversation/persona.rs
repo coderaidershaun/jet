@@ -4,14 +4,12 @@
 
 use std::collections::BTreeSet;
 
-use crate::chat::{Effort, McpServers, Model, Notes, Persona, Tone};
+use crate::chat::{Effort, McpServers, Model, Notes, Persona};
 
 const TEMPLATE: &str = include_str!("persona.md");
 
 /// How much of the user's own notes about Jet goes into the prompt.
 const PERSONA_NOTES_LIMIT: usize = 600;
-
-const ANNOYED_LINE: &str = "- annoyed: the user keeps repeating a mistake or ignoring a risk you already raised. Say so kindly, once.\n";
 
 /// What the prompt says about a quanty import and a polysim engine. The `PER_REPLY` words
 /// are for a library that Claude Code starts for each reply and closes after it; the
@@ -22,39 +20,20 @@ const ENGINE_PER_REPLY: &str =
     "An engine you start stops when your reply ends, so say so before you start one.";
 const ENGINE_SHARED: &str = "An engine you or the user start keeps running after your reply ends, until it is stopped or Jet closes.";
 
-/// How far the behaviour wheel must move from the centre before Jet takes a side.
-const NEUTRAL_RADIUS: f64 = 0.2;
-const STRONG: f64 = 0.6;
-
 /// The whole system prompt: who Jet is, how to talk, and the three notes. `shared` names the
 /// libraries the app keeps running, which the prompt says outlive a reply. Names only, never
 /// addresses: an address changes at every launch and would end every conversation.
-pub(super) fn compose(
-    persona: &Persona,
-    tone: &Tone,
-    notes: &Notes,
-    shared: &BTreeSet<&str>,
-) -> String {
-    let annoyed = if tone.candid >= NEUTRAL_RADIUS {
-        ANNOYED_LINE
-    } else {
-        ""
-    };
+pub(super) fn compose(persona: &Persona, notes: &Notes, shared: &BTreeSet<&str>) -> String {
     let (ingest, engine) = lifetimes(shared);
     let mut prompt = fill(
         TEMPLATE,
         &[
             ("name", &persona.name),
             ("job_title", &persona.job_title),
-            ("annoyed_line", annoyed),
             ("ingest_lifetime", ingest),
             ("engine_lifetime", engine),
         ],
     );
-    for line in tone_lines(tone) {
-        prompt.push_str(line);
-        prompt.push('\n');
-    }
     let own_notes = persona_notes(persona);
     if !own_notes.is_empty() {
         prompt.push_str("\n## Notes from the user about how you should be\n");
@@ -95,14 +74,13 @@ fn lifetimes(shared: &BTreeSet<&str>) -> (&'static str, &'static str) {
 /// purpose: the review updates them all the time, and that must never end a session.
 pub(super) fn prompt_hash(
     persona: &Persona,
-    tone: &Tone,
     model: Model,
     effort: Effort,
     mcp: &McpServers,
     shared: &BTreeSet<&str>,
 ) -> String {
     let mut hash = Fnv1a::new();
-    let prompt = compose(persona, tone, &Notes::default(), shared);
+    let prompt = compose(persona, &Notes::default(), shared);
     let servers = mcp.enabled().map(|(name, _)| name);
     let parts = [prompt.as_str(), model.alias(), effort.alias()]
         .into_iter()
@@ -127,42 +105,6 @@ fn persona_notes(persona: &Persona) -> String {
         .chars()
         .take(PERSONA_NOTES_LIMIT)
         .collect()
-}
-
-fn tone_lines(tone: &Tone) -> Vec<&'static str> {
-    let (candid, playful) = (tone.candid, tone.playful);
-    if candid.hypot(playful) < NEUTRAL_RADIUS {
-        return vec![
-            "Be even and matter-of-fact, like a good tool: answer what was asked and keep opinions for when you are asked.",
-        ];
-    }
-    let mut lines = Vec::new();
-    if candid >= NEUTRAL_RADIUS {
-        lines.push("Be direct. Lead with your view, say plainly when an idea is weak or when you disagree, and don't hedge what you are sure of.");
-        if candid >= STRONG {
-            lines.push("Push back once, clearly, then go with the user's decision.");
-        }
-    } else if candid <= -NEUTRAL_RADIUS {
-        lines.push("Lead with what the user wants. Offer ideas as options, ask before changing course, and raise disagreement gently and only when it matters.");
-        if candid <= -STRONG {
-            lines.push("Never argue: flag a concern once and move on.");
-        }
-    } else {
-        lines.push("Balance directness with tact.");
-    }
-    if playful >= NEUTRAL_RADIUS {
-        lines.push("Keep it light: warmth and a playful turn of phrase are welcome, as long as the answer stays clear.");
-        if playful >= STRONG {
-            lines.push("A little wit in most replies is good.");
-        }
-    } else if playful <= -NEUTRAL_RADIUS {
-        lines.push(
-            "Keep it plain and focused: no jokes, no exclamation marks, precision over flourish.",
-        );
-    } else {
-        lines.push("Friendly and plain; humour only when it fits.");
-    }
-    lines
 }
 
 /// Replaces each `{key}` in one pass. Text that was put in is never scanned again, so a
@@ -220,33 +162,21 @@ mod tests {
     use super::*;
     use crate::chat::{McpServer, Mood};
 
-    fn prompt_for(candid: f64) -> String {
-        compose(
-            &Persona::default(),
-            &Tone {
-                candid,
-                playful: 0.0,
-            },
-            &Notes::default(),
-            &BTreeSet::new(),
-        )
+    fn default_prompt() -> String {
+        compose(&Persona::default(), &Notes::default(), &BTreeSet::new())
     }
 
     #[test]
-    fn prompt_lists_moods_and_hides_annoyed_unless_candid() {
-        for candid in [0.2, 0.55, 1.0] {
-            let prompt = prompt_for(candid);
-            for mood in Mood::ALL {
-                assert!(
-                    prompt.contains(&format!("- {}:", mood.word())),
-                    "{mood:?} at {candid}"
-                );
-            }
+    fn prompt_lists_every_mood_and_fixes_the_tone() {
+        let prompt = default_prompt();
+        for mood in Mood::ALL {
+            assert!(prompt.contains(&format!("- {}:", mood.word())), "{mood:?}");
         }
-        let gentle = prompt_for(0.19);
-        assert!(!gentle.contains("- annoyed:"));
-        for mood in Mood::ALL.into_iter().filter(|mood| *mood != Mood::Annoyed) {
-            assert!(gentle.contains(&format!("- {}:", mood.word())), "{mood:?}");
+        for sentence in [
+            "Be direct. Lead with your view, say plainly when an idea is weak or when you disagree, and don't hedge what you are sure of.",
+            "Keep it light: warmth and a playful turn of phrase are welcome, as long as the answer stays clear.",
+        ] {
+            assert!(prompt.contains(sentence), "the prompt lost: {sentence}");
         }
     }
 
@@ -255,25 +185,25 @@ mod tests {
         let persona = Persona {
             name: "{job_title}".into(),
             job_title: "{name}".into(),
-            notes: "call me {annoyed_line} and {memory}".into(),
+            notes: "call me {ingest_lifetime} and {memory}".into(),
         };
         let notes = Notes {
             memory: "- likes {name}".into(),
             ..Notes::default()
         };
-        let prompt = compose(&persona, &Tone::default(), &notes, &BTreeSet::new());
+        let prompt = compose(&persona, &notes, &BTreeSet::new());
         assert!(
             prompt.starts_with("You are {job_title}, the user's {name}. "),
             "{prompt}"
         );
-        assert!(prompt.contains("call me {annoyed_line} and {memory}"));
+        assert!(prompt.contains("call me {ingest_lifetime} and {memory}"));
         assert!(prompt.contains("<memory>\n- likes {name}\n</memory>"));
         assert!(prompt.contains("<user>\n(empty)\n</user>"));
     }
 
     #[test]
     fn the_prompt_teaches_the_libraries() {
-        let prompt = prompt_for(0.55);
+        let prompt = default_prompt();
         for rule in [
             "mcp__quanty__search",
             "mcp__quanty__read_page",
@@ -296,12 +226,7 @@ mod tests {
         // A library the app keeps running outlives the reply, and the prompt says so.
         let compose_with = |shared: &[&str]| {
             let shared: BTreeSet<&str> = shared.iter().copied().collect();
-            compose(
-                &Persona::default(),
-                &Tone::default(),
-                &Notes::default(),
-                &shared,
-            )
+            compose(&Persona::default(), &Notes::default(), &shared)
         };
         let both = compose_with(&["polysim", "quanty"]);
         assert!(both.contains("The job keeps running after your reply ends"));
@@ -319,7 +244,6 @@ mod tests {
         let hash = |mcp: &McpServers, shared: &[&str]| {
             prompt_hash(
                 &Persona::default(),
-                &Tone::default(),
                 Model::Sonnet,
                 Effort::Medium,
                 mcp,
@@ -327,7 +251,7 @@ mod tests {
             )
         };
         let none = McpServers::default();
-        assert_eq!(hash(&none, &[]), "a2240ff01ec6dc23");
+        assert_eq!(hash(&none, &[]), "994d3d530ed5af86");
         let quanty = McpServers {
             quanty: McpServer {
                 enabled: true,
@@ -344,18 +268,8 @@ mod tests {
     #[test]
     fn prompt_has_no_timestamp() {
         let none = BTreeSet::new();
-        let first = compose(
-            &Persona::default(),
-            &Tone::default(),
-            &Notes::default(),
-            &none,
-        );
-        let second = compose(
-            &Persona::default(),
-            &Tone::default(),
-            &Notes::default(),
-            &none,
-        );
+        let first = compose(&Persona::default(), &Notes::default(), &none);
+        let second = compose(&Persona::default(), &Notes::default(), &none);
         assert_eq!(first, second);
         assert!(!first.contains("[local time"));
     }

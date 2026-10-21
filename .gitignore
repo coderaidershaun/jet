@@ -6,3 +6,6 @@
 # rex:ignore claude
 .claude/skills/
 .claude/settings.local.json
+
+# Local secrets (the JEV key); never committed
+.env

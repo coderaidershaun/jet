@@ -11,8 +11,8 @@ mod workstation;
 
 pub use chat::{
     Effort, Entry, EntryId, EntryStatus, Event, Failure, MEMORY_LIMIT, McpServer, McpServers,
-    McpStatus, Model, Mood, Notes, Persona, RECENT_LIMIT, Role, SessionId, ShownEntry, Tone,
-    ToolCall, USER_LIMIT, Usage,
+    McpStatus, Model, Mood, Notes, Persona, RECENT_LIMIT, Role, SessionId, ShownEntry, ToolCall,
+    USER_LIMIT, Usage,
 };
 pub use conversation::{
     CacheStatus, Conversation, ConversationError, Message, Reply, ReviewError, ReviewOutcome,

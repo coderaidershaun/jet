@@ -41,9 +41,9 @@ import { createTauriAgent } from './tauri-agent.js';
  * @property {string} effort
  * @property {number} budgetUsd
  * @property {{ name: string, jobTitle: string, notes: string }} persona
- * @property {{ candid: number, playful: number }} behaviour
  * @property {string} localTime
  * @property {string | null} claudePath
+ * @property {string | null} codexPath
  * @property {import('./settings.js').Settings['mcp']} mcp
  * @property {string | null} preface   what the user did on an engine card since the last message, which Claude reads before the user's words
  */

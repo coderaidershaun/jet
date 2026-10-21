@@ -137,7 +137,6 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       effort: settings.effort,
       budgetUsd: settings.turnBudgetUsd,
       persona: { ...settings.persona },
-      behaviour: { ...settings.behaviour },
       localTime: localTimeLabel(Date.now()),
       claudePath: settings.claudePath,
       codexPath: settings.codexPath,

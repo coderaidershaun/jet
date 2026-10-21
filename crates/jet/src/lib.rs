@@ -35,7 +35,7 @@ pub fn run() -> Result<(), Error> {
             rig::rig,
             settings::load_settings,
             settings::save_settings,
-            chat::agent_status,
+            chat::provider::agent_status,
             chat::load_history,
             chat::send_message,
             chat::stop_reply,

@@ -16,7 +16,7 @@ pub use reply::Reply;
 pub use review::{ReviewError, ReviewOutcome};
 use session_policy::decide;
 
-use crate::chat::{Effort, Entry, McpServers, Model, Notes, Persona, Role, ShownEntry, Tone};
+use crate::chat::{Effort, Entry, McpServers, Model, Notes, Persona, Role, ShownEntry};
 use crate::markdown::render_markdown;
 use crate::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
 use crate::turn::{Request, SessionMode, Transport, Turn, mcp_config};
@@ -29,7 +29,6 @@ const CACHE_TTL_MINUTES: u64 = 60;
 pub struct Message {
     pub text: String,
     pub persona: Persona,
-    pub tone: Tone,
     pub model: Model,
     pub effort: Effort,
     /// The most one answer may cost.
@@ -116,7 +115,6 @@ impl Conversation {
         let shared = shared_names(&message);
         let prompt_hash = persona::prompt_hash(
             &message.persona,
-            &message.tone,
             message.model,
             message.effort,
             &message.mcp,
@@ -133,7 +131,7 @@ impl Conversation {
         };
         let request = Request {
             prompt,
-            system_prompt: persona::compose(&message.persona, &message.tone, &notes, &shared),
+            system_prompt: persona::compose(&message.persona, &notes, &shared),
             model: message.model,
             effort: message.effort,
             budget_usd: message.budget_usd,
@@ -235,7 +233,6 @@ mod test_support {
         Message {
             text: text.to_owned(),
             persona: Persona::default(),
-            tone: Tone::default(),
             model: Model::Sonnet,
             effort: Effort::Medium,
             budget_usd: 1.0,

@@ -6,16 +6,16 @@ mod image;
 // Open to the crate because Tauri's list of commands must name each command where it is
 // defined; a re-export does not carry what the command macro generates.
 pub(crate) mod libraries;
+pub(crate) mod provider;
 mod review_timer;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use agent::{
-    CacheStatus, ClaudeCli, CodexCli, Conversation, DataDir, Effort, Event, Lines, MEMORY_LIMIT,
-    McpServers, Message, Model, Notes, Persona, RECENT_LIMIT, Request, SharedServers, ShownEntry,
-    Stopper, Tone, Transport, TransportError, USER_LIMIT,
+    Conversation, DataDir, Effort, Event, MEMORY_LIMIT, McpServers, Message, Model, Notes, Persona,
+    RECENT_LIMIT, SharedServers, ShownEntry, Stopper, USER_LIMIT,
 };
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
@@ -24,6 +24,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::settings;
 pub(crate) use error::BridgeError;
+use provider::transport_for;
 use review_timer::{ReviewTarget, ReviewTimer, review_now};
 
 /// Entries the page gets when it opens.
@@ -92,113 +93,6 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// A missing provider reaches the page through the same failure path as a failed run.
-struct MissingAgent {
-    is_codex: bool,
-    searched: Vec<String>,
-}
-
-impl Transport for MissingAgent {
-    fn start(&self, _request: &Request) -> Result<Lines, TransportError> {
-        if self.is_codex {
-            Err(TransportError::CodexMissing {
-                searched: self.searched.clone(),
-            })
-        } else {
-            Err(TransportError::ClaudeMissing {
-                searched: self.searched.clone(),
-            })
-        }
-    }
-}
-
-fn transport_for(
-    model: Model,
-    claude_path: Option<&Path>,
-    codex_path: Option<&Path>,
-    data_dir: &Path,
-) -> Result<Arc<dyn Transport>, BridgeError> {
-    if model.is_codex() {
-        return match CodexCli::locate(codex_path, data_dir) {
-            Ok(codex) => Ok(Arc::new(codex)),
-            Err(TransportError::CodexMissing { searched }) => Ok(Arc::new(MissingAgent {
-                is_codex: true,
-                searched,
-            })),
-            Err(other) => Err(other.into()),
-        };
-    }
-    match ClaudeCli::locate(claude_path, data_dir) {
-        Ok(claude) => Ok(Arc::new(claude)),
-        Err(TransportError::ClaudeMissing { searched }) => Ok(Arc::new(MissingAgent {
-            is_codex: false,
-            searched,
-        })),
-        Err(other) => Err(other.into()),
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentStatus {
-    claude: ProgramStatus,
-    data_dir: String,
-    busy: bool,
-    cache: CacheStatus,
-}
-
-#[derive(Serialize)]
-struct ProgramStatus {
-    provider: &'static str,
-    found: bool,
-    path: Option<String>,
-    searched: Vec<String>,
-}
-
-/// Where the selected agent is, whether a reply is running, and whether the prompt cache is warm.
-#[tauri::command]
-pub async fn agent_status(
-    app: AppHandle,
-    state: State<'_, ChatState>,
-) -> Result<AgentStatus, BridgeError> {
-    let settings = settings::read_from(&settings::settings_path(&app)?)?;
-    let provider = if settings.model.is_codex() {
-        "Codex"
-    } else {
-        "Claude Code"
-    };
-    let located = if settings.model.is_codex() {
-        CodexCli::locate(settings.codex_path.as_deref(), &state.data_dir)
-            .map(|cli| cli.program().to_path_buf())
-    } else {
-        ClaudeCli::locate(settings.claude_path.as_deref(), &state.data_dir)
-            .map(|cli| cli.program().to_path_buf())
-    };
-    let program = match located {
-        Ok(path) => ProgramStatus {
-            provider,
-            found: true,
-            path: Some(path.display().to_string()),
-            searched: Vec::new(),
-        },
-        Err(
-            TransportError::ClaudeMissing { searched } | TransportError::CodexMissing { searched },
-        ) => ProgramStatus {
-            provider,
-            found: false,
-            path: None,
-            searched,
-        },
-        Err(other) => return Err(other.into()),
-    };
-    Ok(AgentStatus {
-        claude: program,
-        data_dir: state.data_dir.display().to_string(),
-        busy: state.conversation.is_busy(),
-        cache: state.conversation.cache_status()?,
-    })
-}
-
 #[tauri::command]
 pub fn load_history(state: State<'_, ChatState>) -> Result<Vec<ShownEntry>, BridgeError> {
     Ok(state.conversation.history(HISTORY_LIMIT)?)
@@ -215,7 +109,6 @@ pub struct SendRequest {
     effort: Effort,
     budget_usd: f64,
     persona: Persona,
-    behaviour: Tone,
     local_time: String,
     #[serde(default)]
     claude_path: Option<PathBuf>,
@@ -252,7 +145,6 @@ pub async fn send_message(
     let message = Message {
         text: request.text,
         persona: request.persona,
-        tone: request.behaviour,
         model: request.model,
         effort: request.effort,
         budget_usd: request.budget_usd,

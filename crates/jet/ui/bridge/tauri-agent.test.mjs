@@ -40,7 +40,6 @@ const request = {
   effort: 'medium',
   budgetUsd: 1,
   persona: { name: 'Jet', jobTitle: 'First-mate', notes: '' },
-  behaviour: { candid: 0.55, playful: 0.35 },
   localTime: 'Wed 14 Oct 2026, 09:00',
   claudePath: null,
 };
