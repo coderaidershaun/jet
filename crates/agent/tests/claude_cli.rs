@@ -53,6 +53,8 @@ fn fake_claude_streams_a_turn() {
                 std::env::remove_var(name);
             }
         }
+        // SMELL: other tests in this file start fake Claude programs at the same time, and one
+        // started as these values are set can inherit them. This test needs its own process.
         let session = [
             ("CLAUDECODE", "1"),
             ("CLAUDE_PID", "1"),
@@ -273,17 +275,19 @@ fn stop_kills_the_process_and_keeps_partial_text() {
     let (claude, cwd) = fake_claude("stops");
     let mut turn = Turn::start(&claude, &chat_request("hang", SessionMode::New)).unwrap();
     let stopper = turn.stopper();
-    let started = Instant::now();
 
     let mut steps = Vec::new();
     for step in turn.by_ref() {
         let partial_arrived = matches!(&step, Step::Text(text) if text == "Partial");
         steps.push(step);
         if partial_arrived {
-            stopper.stop();
             break;
         }
     }
+    // The clock starts at the stop, because macOS checks the fake Claude program each time it
+    // starts, and that check can be held up for half a minute while other programs go first.
+    let stop_requested = Instant::now();
+    stopper.stop();
     steps.extend(turn.by_ref());
 
     assert!(matches!(steps.last(), Some(Step::Stopped)), "{steps:?}");
@@ -297,7 +301,7 @@ fn stop_kills_the_process_and_keeps_partial_text() {
     }
     assert!(!is_alive(&pid), "the process {pid} is still running");
     assert!(
-        started.elapsed() < Duration::from_secs(20),
+        stop_requested.elapsed() < Duration::from_secs(20),
         "stop must not wait for the sleep"
     );
 }
