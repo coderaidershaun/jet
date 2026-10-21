@@ -1,11 +1,11 @@
 // Advances Jet through time. It owns the current state (body, eyes, colour,
-// scale, ring, speed, props) and plays clips from wherever Jet is at that
-// moment, so a new clip blends in instead of cutting. At rest Jet breathes and
-// shows faint eyes that blink now and then. It knows nothing about the DOM.
+// scale, ring, speed) and plays clips from wherever Jet is at that moment, so
+// a new clip blends in instead of cutting. At rest Jet breathes and shows
+// small dark eyes that blink now and then. It knows nothing about the DOM.
 
-import { eyeSizeFor, FAINT_EYE_SIZE } from './clip.js';
+import { eyeSizeFor, REST_EYE_SIZE } from './clip.js';
 import { cubicBezier } from './easing.js';
-import { PROP, PROP_HIDDEN, PROP_SLOTS, PROP_STRIDE, RING_HIDDEN, TRACKS } from './state.js';
+import { RING_HIDDEN, TRACKS } from './state.js';
 import { sample } from './track.js';
 
 /**
@@ -16,13 +16,12 @@ import { sample } from './track.js';
 
 const IDLE_BREATH_PERIOD_MS = 3400;
 const IDLE_BREATH_DEPTH = 0.018;
-const FAINT_EYES_IN_MS = 240;
+const REST_EYES_IN_MS = 240;
 const AT_REST_TOLERANCE = 1e-6;
 const BLINK_CLOSE_MS = 60;
 const BLINK_OPEN_MS = 80;
 const BLINK_GAP_MIN_MS = 4000;
 const BLINK_GAP_MAX_MS = 9000;
-const PROP_FADE_MS = 200;
 
 const easeOut = cubicBezier(0.2, 0.8, 0.4, 1);
 
@@ -34,13 +33,11 @@ export function createPlayer(rig, { random = Math.random } = {}) {
   /** @type {import('./state.js').JetState} */
   const state = {
     body: rig.poses.circle.slice(),
-    eyes: [...rig.eyes.circle, 0, 0, 1],
+    eyes: [...rig.eyes.circle, 0, 0],
     colour: rig.palette.rest.slice(),
     scale: 1,
     ring: RING_HIDDEN.slice(),
     speed: 0,
-    prop: PROP_HIDDEN.slice(),
-    propKinds: [null, null],
   };
   /** @type {import('./clip.js').Clip | null} */
   let clip = null;
@@ -49,7 +46,7 @@ export function createPlayer(rig, { random = Math.random } = {}) {
   let breathDepth = IDLE_BREATH_DEPTH;
   let eyesDial = 0;
   let reduced = false;
-  // Faint eyes belong to the circle alone. A hold such as the lean ends away
+  // Resting eyes belong to the circle alone. A hold such as the loop ends away
   // from the circle and keeps the eyes it ended with.
   let atRest = true;
   let eyesMoved = false;
@@ -59,18 +56,13 @@ export function createPlayer(rig, { random = Math.random } = {}) {
 
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
   const snapshot = (name) => (Array.isArray(state[name]) ? state[name].slice() : state[name]);
-  const propsFaded = () => {
-    const prop = state.prop.slice();
-    for (let slot = 0; slot < PROP_SLOTS; slot++) prop[slot * PROP_STRIDE + PROP.OPACITY] = 0;
-    return prop;
-  };
   function isAtRest() {
     const round = state.body.every((v, i) => Math.abs(v - rig.poses.circle[i]) <= AT_REST_TOLERANCE);
     const [, , , , radiusX, radiusY] = state.eyes;
     return round && radiusX <= AT_REST_TOLERANCE && radiusY <= AT_REST_TOLERANCE;
   }
 
-  /** How open the faint eyes are at `now`, from 0 (shut) to 1 (open). */
+  /** How open the resting eyes are at `now`, from 0 (shut) to 1 (open). */
   function blinkOpenness(now) {
     if (reduced) return 1;
     // A blink that is over, or that was missed because no tick came during it, plans the next one.
@@ -81,11 +73,11 @@ export function createPlayer(rig, { random = Math.random } = {}) {
     return (into - BLINK_CLOSE_MS) / BLINK_OPEN_MS;
   }
 
-  /** The faint eyes grow in place from nothing once Jet comes to rest, then blink now and then. */
+  /** The resting eyes grow in place from nothing once Jet comes to rest, then blink now and then. */
   function restEyes(now) {
-    const grown = easeOut(clamp01((now - idleStart) / FAINT_EYES_IN_MS));
-    const size = FAINT_EYE_SIZE * eyeSizeFor(eyesDial) * grown;
-    return [...rig.eyes.circle, size, size * blinkOpenness(now), 1];
+    const grown = easeOut(clamp01((now - idleStart) / REST_EYES_IN_MS));
+    const size = REST_EYE_SIZE * eyeSizeFor(eyesDial) * grown;
+    return [...rig.eyes.circle, size, size * blinkOpenness(now)];
   }
 
   return {
@@ -104,36 +96,31 @@ export function createPlayer(rig, { random = Math.random } = {}) {
       breathDepth = IDLE_BREATH_DEPTH * (motion0to10 / 10);
     },
 
-    /** How big the faint eyes are at rest; the eyes channel sets it, and below 1.5 there are none. */
+    /** How big the resting eyes are; the eyes channel sets it, and below 1.5 there are none. */
     set eyes(eyes0to10) {
       eyesDial = eyes0to10;
     },
 
-    /** With reduced motion the faint eyes never blink. */
+    /** With reduced motion the resting eyes never blink. */
     set reducedMotion(on) {
       reduced = on;
     },
 
-    /** True when the last tick moved the faint eyes, so a host that draws rarely while idle draws this frame. */
+    /** True when the last tick moved the resting eyes, so a host that draws rarely while idle draws this frame. */
     get eyesMoved() {
       return eyesMoved;
     },
 
     /**
      * Starts a clip now. Every track gets the current state as its first key,
-     * and a track the clip does not mention holds its current value. The props
-     * are the exception: a clip that does not move them fades them out within
-     * 200 ms, so a prop never outlives its clip.
+     * and a track the clip does not mention holds its current value.
      * @param {import('./clip.js').Clip} next
      * @param {number} now   performance.now()
      */
     play(next, now) {
       // SMELL: this changes the clip it is given. It adds a start key to every
-      // track, creates a missing track and gives a clip with no props a key
-      // that fades them out, so a clip object played twice has two start keys,
-      // and its second run jumps to where Jet was when the first run started.
-      state.propKinds = next.props ? next.props.slice() : [null, null];
-      if (!next.prop?.length) next.prop = [{ t: Math.min(PROP_FADE_MS, next.total), v: propsFaded() }];
+      // track and creates a missing track, so a clip object played twice has two
+      // start keys, and its second run jumps to where Jet was when the first run started.
       for (const name of TRACKS) {
         const keys = next[name] || (next[name] = []);
         keys.unshift({ t: 0, v: snapshot(name) });

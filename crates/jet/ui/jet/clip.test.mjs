@@ -18,13 +18,13 @@ test('a writer refuses t without its brackets and says how to write it', () => {
   });
 });
 
-test('a face is drawn in the ground colour and hidden eyes are faint', () => {
+test('a face is sized by the eyes dial and hidden eyes have no size', () => {
   const { eyes, hiddenEyes, eyeSize } = readDials(rig, shipmate);
   const face = eyes('soft', 4, 4);
-  assert.equal(face.length, 7);
-  assert.deepEqual(face.slice(4), [4 * eyeSize, 4 * eyeSize, 0], 'a face is sized by the eyes dial and has no tint');
+  assert.equal(face.length, 6);
+  assert.deepEqual(face.slice(4), [4 * eyeSize, 4 * eyeSize], 'a face is sized by the eyes dial');
   const hidden = hiddenEyes('soft');
-  assert.equal(hidden.length, 7);
-  assert.deepEqual(hidden.slice(4), [0, 0, 1], 'hidden eyes have no size and are fully faint');
+  assert.equal(hidden.length, 6);
+  assert.deepEqual(hidden.slice(4), [0, 0], 'hidden eyes have no size');
   assert.deepEqual(hidden.slice(0, 4), face.slice(0, 4), 'both sit where the pose puts its eyes');
 });

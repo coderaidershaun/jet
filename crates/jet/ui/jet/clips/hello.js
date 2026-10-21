@@ -6,7 +6,6 @@ import { createClip, onOff, readDials } from '../clip.js';
 import { cubicBezier } from '../easing.js';
 import { clamp, lerp } from '../maths.js';
 import { RING_HIDDEN } from '../state.js';
-import { EYE_BLINK, EYE_OPEN, EYE_POP, EYE_SQUINT } from './beats.js';
 
 /** @typedef {import('../clip.js').Clip & { info: HelloInfo }} HelloClip */
 
@@ -42,6 +41,11 @@ const ease = {
   settle: cubicBezier(0.2, 0.8, 0.4, 1),
   melt: cubicBezier(0.5, 0, 0.9, 0.6),
 };
+
+const EYE_OPEN = 4;
+const EYE_POP = 4.6;
+const EYE_SQUINT = [5, 1.6];
+const EYE_BLINK = 0.4;
 
 // Each beat of a brief hello takes this share of its time in the full hello.
 const BRIEF_PACE = 0.65;

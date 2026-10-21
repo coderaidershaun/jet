@@ -24,8 +24,6 @@ import { createThread } from './thread/store.js';
 import { createThreadView } from './thread/view.js';
 import { createTurn } from './turn.js';
 
-const LEAN_BACK_AFTER_MS = 1500;
-const STALL_AFTER_MS = 6000;
 const CACHE_CHECK_MS = 60 * 1000;
 const $ = (id) => document.getElementById(id);
 const warn = (what) => (error) => console.warn(what + ':', error);
@@ -74,8 +72,6 @@ async function start() {
   const composer = createComposer({ empty: history.length === 0 });
   const tracker = createUsageTracker();
   let cache = status.cache;
-  let leanTimer = 0;
-  let stallTimer = 0;
 
   const quickModel = modelPicker(settings, async () => {
     drawer.setModel(settings);
@@ -121,13 +117,6 @@ async function start() {
       hold: (text) => turn.hold(text),
       stop: () => turn.stop(),
       cancelHold: () => turn.cancelHold(),
-      typing: (text) => {
-        live.typing(text !== '', performance.now());
-        clearTimeout(leanTimer);
-        clearTimeout(stallTimer);
-        if (text !== '') leanTimer = setTimeout(() => live.typing(false, performance.now()), LEAN_BACK_AFTER_MS);
-        if (text !== '') stallTimer = setTimeout(() => live.stall(performance.now()), STALL_AFTER_MS);
-      },
     },
   });
 

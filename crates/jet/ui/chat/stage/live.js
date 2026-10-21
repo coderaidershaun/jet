@@ -72,7 +72,7 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
 
   function frame(now) {
     const { busy } = director.tick(now);
-    // Idle frames are skipped or drawn rarely, which would miss the faint eyes opening or blinking.
+    // Idle frames are skipped or drawn rarely, which would miss the resting eyes opening or blinking.
     if (player.eyesMoved) needsDraw = true;
     const label = name + ', ' + director.status;
     if (label !== lastLabel) {
@@ -162,17 +162,15 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
       const dx = last.x - first.x;
       const dy = last.y - first.y;
       const cruiseMs = cruiseMsFor(Math.hypot(dx, dy));
-      const { moveAt, moveMs, profile } = director.send({ cruiseMs, dx, dy }, now);
-      flight = createFlight({ from: first, to: last, fromScale, toScale, startAt: now + moveAt, durationMs: moveMs, profile });
+      const { moveAt, moveMs } = director.send({ cruiseMs }, now);
+      flight = createFlight({ from: first, to: last, fromScale, toScale, startAt: now + moveAt, durationMs: moveMs });
       applyFlight(now);
       needsDraw = true;
     },
 
-    typing: (active, now = performance.now()) => director.typing(active, now),
-    stall: (now = performance.now()) => director.stall(now),
     mood: (word, now = performance.now()) => director.mood(word, now),
     replying: (now = performance.now()) => director.replying(now),
-    done: (job, now = performance.now()) => director.done(job, now),
+    done: (now = performance.now()) => director.done(now),
     failed: (now = performance.now()) => director.failed(now),
     stopped: (now = performance.now()) => director.stopped(now),
 
@@ -182,7 +180,7 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
       needsDraw = true;
     },
 
-    /** Settings changed how Jet rests: its breathing, its faint eyes and their blinking. */
+    /** Settings changed how Jet rests: its breathing, its resting eyes and their blinking. */
     refresh() {
       tuneIdle();
       needsDraw = true;

@@ -19,40 +19,16 @@ const SAVE_AFTER_CHANGE_MS = 800;
 const REPEAT_GAP_MS = 1400;
 const FIRST_CLIP_MS = 700;
 
-const TYPING_HOLD_MS = 2000;
-const LOOP_BEFORE_STOP_MS = 1500;
-const ANTIC_SHOW_MS = 5600;
 const turnedNow = (state) => ({ rotate: state.ring[RING.ROTATE] });
 
 // Each button plays its steps in order. A step names a catalogue clip and may add the
 // options to build it with, or a function of Jet's state for a step that carries on
-// from the loop. It may also add a readout label, `holdMs` to wait after the clip
-// ends, or `runMs` to start the next step before the clip ends.
+// from the loop. It may also add a readout label.
 const BUTTONS = {
   hello: [{ clip: 'hello' }],
   helloBrief: [{ clip: 'hello', options: { brief: true }, label: 'Brief hello' }],
   zoom: [{ clip: 'zoom' }],
   working: [{ clip: 'working', options: { spinMs: 5000 } }, { clip: 'workingEnd', options: turnedNow }],
-  thinking: [{ clip: 'thinking' }],
-  excited: [{ clip: 'excited' }],
-  annoyed: [{ clip: 'annoyed' }],
-  done: [{ clip: 'done' }],
-  doneLong: [{ clip: 'done', options: { long: true }, label: 'Done (long)' }],
-  needsYou: [{ clip: 'needsYou' }],
-  error: [{ clip: 'error' }],
-  sorry: [{ clip: 'error', options: { exclaim: false }, label: 'Sorry' }],
-  typing: [{ clip: 'lean', holdMs: TYPING_HOLD_MS }, { clip: 'leanBack' }],
-  interrupted: [{ clip: 'working', options: { spinMs: 60000 }, runMs: LOOP_BEFORE_STOP_MS }, { clip: 'interrupted', options: turnedNow }],
-  peer: [{ clip: 'peer', holdMs: TYPING_HOLD_MS }, { clip: 'leanBack' }],
-  creep: [{ clip: 'creep', holdMs: TYPING_HOLD_MS }, { clip: 'leanBack' }],
-  batBall: [{ clip: 'batBall', options: { loopMs: ANTIC_SHOW_MS } }, { clip: 'batBallEnd' }],
-  doze: [{ clip: 'doze', options: { loopMs: ANTIC_SHOW_MS } }, { clip: 'dozeEnd' }],
-  drop: [{ clip: 'drop' }],
-  abseil: [{ clip: 'abseil' }],
-  salute: [{ clip: 'salute' }],
-  nod: [{ clip: 'nod' }],
-  blink: [{ clip: 'blink' }],
-  hop: [{ clip: 'hop' }],
 };
 
 async function start() {
@@ -81,7 +57,7 @@ async function start() {
     const clip = CLIPS[step.clip].build(rig, params(), options);
     renderReadout(step.label ?? CLIPS[step.clip].label, clip);
     player.play(clip, now);
-    sequence.until = now + (step.runMs ?? clip.total + (step.holdMs ?? 0));
+    sequence.until = now + clip.total;
   }
 
   function play(button = current) {

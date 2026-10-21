@@ -22,9 +22,9 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --drawer-w: clamp(240px, 22vw, 320px);
-  --lane: 80px;
-  --lane-scale: .32;
-  --empty-scale: .8;
+  --lane: 60px;
+  --lane-scale: .24;
+  --empty-scale: .6;
   /* The empty state centres Jet, the two greeting lines, the composer and the gaps between them as one block. */
   --empty-block: calc(200px * var(--empty-scale) + 135px);
   --gutter: 16px;
@@ -33,10 +33,10 @@
   color-scheme: dark;
 }
 @media (max-width: 759.98px) {
-  :root { --lane: 64px; --lane-scale: .28; --empty-scale: .72; --text-size: 16px; --text-line: 22px; }
+  :root { --lane: 48px; --lane-scale: .21; --empty-scale: .54; --text-size: 16px; --text-line: 22px; }
 }
 @media (max-width: 419.98px) {
-  :root { --empty-scale: .64; --gutter: 12px; }
+  :root { --empty-scale: .48; --gutter: 12px; }
 }
 
 * { box-sizing: border-box; }

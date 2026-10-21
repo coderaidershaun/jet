@@ -6,28 +6,23 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Pose** — one shape of the body: ten anchors, sixty numbers. Any two poses blend. (policy §6)
 - **Anchor** — one of the ten points of the closed path, stored with its two handles. (policy §2)
 - **Foot** — the anchor Jet stands on. It does not move unless a pose is airborne. (policy §2)
-- **Airborne** — a pose whose name starts with `zoom`: Jet is rolling, flying, falling or dangling, so the foot is off the ground. (policy §2)
-- **Circle** — the rest pose, round, with only faint eyes. Calm is always a return to it, and shape 0 never leaves it. (policy §1)
+- **Airborne** — a pose whose name starts with `zoom`: Jet is rolling, so the foot is off the ground. (policy §2)
+- **Circle** — the rest pose, round, with only its resting eyes. Calm is always a return to it, and shape 0 never leaves it. (policy §1)
 - **Ring** — the one stroked element beside the body: the working loop, and the spin grooves when Jet rolls. (policy §2)
-- **Pip** — a dot on the foot. The body shrinks to it under the working loop and when Jet is interrupted. (policy §2)
-- **Tint** — how far an eye has gone from the ground colour, 0, to the body colour lightened toward white, 1. A face is drawn at tint 0. (policy §2)
-- **Faint eyes** — the circle's rest state: small light eyes at tint 1 that blink now and then. Hidden eyes are faint eyes with no size. A send reaction such as the nod or the hop may keep them on the moving body. (policy §2)
-- **Prop** — a thing Jet holds or uses, such as an umbrella. There are two slots on a track of their own, the clip names the kind in each, and a prop never outlives its clip. (policy §2)
+- **Pip** — a dot on the foot. The body shrinks to it under the working loop. (policy §2)
+- **Resting eyes** — the circle's rest state: small eyes in the ground colour that blink now and then. Hidden eyes are eyes with no size. (policy §2)
 
-- **State** — Jet at one moment: body, eyes, colour, scale, ring, speed and props. The only meaning of "state". _Avoid_: using it for idle, working or done.
+- **State** — Jet at one moment: body, eyes, colour, scale, ring and speed. The only meaning of "state". _Avoid_: using it for idle, working or done.
 - **Speed** — how fast the scenery scrolls. Jet stays where it is; the world moves. _Avoid_: tempo. (policy §2)
-- **Status** — what Jet is telling the user about the job: idle, working, done, needs you, error and the rest of the table. _Avoid_: state, mode. (policy §8)
+- **Status** — what Jet is telling the user about the job: idle, travelling, working or reacting. _Avoid_: state, mode. (policy §8)
 
-- **Track** — how one part of the state changes during a clip: keys in time order. There are seven, named after the fields of the state. (policy §7)
+- **Track** — how one part of the state changes during a clip: keys in time order. There are six, named after the fields of the state. (policy §7)
 - **Key** — a value at a time, with the easing used while arriving at it. (policy §7)
 - **Easing** — a CSS cubic-bezier curve, named in the clip file. (policy §4)
-- **Clip** — one stretch of movement, written fresh from the dials each time: seven tracks, a total length, phases and a readout. _Avoid_: animation, asset (nothing is stored). (policy §7)
+- **Clip** — one stretch of movement, written fresh from the dials each time: six tracks, a total length, phases and a readout. _Avoid_: animation, asset (nothing is stored). (policy §7)
 - **Hello** — the reference clip: Jet stands up, waves and melts back to the circle. (policy §8)
 - **Zoom** — the clip for "jetting off": Jet winds up, rolls past the scenery and brakes. Its poses are the airborne ones. (policy §8)
-- **Travel** — the clip Jet plays while the host flies it to the reply: the zoom, the drop (an umbrella opens on the way down) or the abseil (down a rope in three kicks). Each has the zoom's three phases, launch, cruise and brake, and the same length, so the host's move fits any of them. The drop and the abseil are only for a move mostly straight down. (policy §8)
-- **Hold** — a clip that ends away from the circle on purpose, such as the lean while the user types, the working loop or an antic. Jet always gets back to the circle from one through a clip that ends there. (policy §7)
-- **Antic** — a hold Jet plays to pass the time when the user stalls: bat and ball, or a doze. It loops until something else plays or the dials no longer allow it, and its own end clip takes Jet back to the circle. (policy §8)
-- **Stall** — the user has stopped typing for 6 s with text still in the field. The director answers with an antic. _Avoid_: pause, idle. (policy §8)
+- **Hold** — a clip that ends away from the circle on purpose: the working loop. Jet always gets back to the circle from one through a clip that ends there. (policy §7)
 - **Phase** — a named part of a clip with an end time (stand up, hello, melt). (policy §7)
 - **Beat** — one move inside a phase, named with a verb (dip, swing, peak, tuck). (policy §7)
 - **Tempo** — how quickly a clip plays through its beats; the behaviour sets it. _Avoid_: speed. (policy §7)
@@ -39,9 +34,8 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 - **Settings** — the dials as saved between launches. Rust owns the file format.
 
 - **Catalogue** — the one list of every clip, each with its label, its builder and whether it is a hold. The lab and the director both read it. (policy §7)
-- **Director** — decides which clip plays for each chat event: typing, a stall, a send, a mood, done, a failure, a stop. It only orders clips; the player plays them. (policy §7)
-- **Mood** — the one word at the start of a reply that says how Jet should react: neutral, happy, excited, thinking, curious, sorry, alert, annoyed or hello. An unknown word is neutral. _Avoid_: emotion, status. (policy §8)
-- **Reaction** — the clip the director plays for a mood, for done, or as a message goes out (a send reaction: a salute, a nod, a blink or a hop, before the travel). _Avoid_: animation. (policy §8)
+- **Director** — decides which clip plays for each chat event: a send, a mood, the first text, done, a failure, a stop. It only orders clips; the player plays them. (policy §7)
+- **Mood** — the one word at the start of a reply: neutral, happy, excited, thinking, curious, sorry, alert, annoyed or hello. Only hello plays a clip; every other word, and an unknown one, only closes the loop. _Avoid_: emotion, status. (policy §8)
 
 - **Player** — owns the state and moves it through a clip, starting from wherever Jet is. (policy §3)
 - **View** — draws a state.
@@ -72,8 +66,7 @@ The domain words of the `jet` crate, each with one meaning; `character-policy.md
 
 - **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.
 - **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.
-- **Flight** — the live Jet's move from where it stood to the slot's lane on a send. _Avoid_: zoom (that is one travel clip; see **Travel**).
-- **Profile** — how the host flies Jet during a travel's cruise: `roll` turns toward the way Jet goes and mirrors going left, `drop` falls faster and faster and then slows to land, `abseil` goes down in three steps. Each travel clip names one. _Avoid_: path.
+- **Flight** — the live Jet's move from where it stood to the slot's lane on a send, during the zoom's cruise. It turns toward the way Jet goes and mirrors going left. _Avoid_: zoom (that is the clip Jet plays meanwhile).
 - **Math** — TeX in a reply, between `\(` and `\)`, or for display between `\[` and `\]` or `$$` and `$$`. A single `$` is money, never math.
 - **Typeset** — turning a math element's TeX into KaTeX's drawing on the page. _Avoid_: render (that is Markdown to HTML).
 - **Workstation** — the polysim trading page: toolbar, latency, charts, monitor, ladder and link bar. It paints what the feed sends and decides no number itself. _Avoid_: dashboard.

@@ -44,7 +44,6 @@ function parsedOrNull(line) {
 export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, tracker, page, afterReply, onToolFinished, takePreface, giveBackPreface }) {
   /** @type {ReturnType<typeof createReveal> | null} */
   let reveal = null;
-  let sentAt = 0;
 
   function paint() {
     view.render(thread.rows());
@@ -106,7 +105,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         showUsage();
         reveal.end();
         thread.finish(event.entry);
-        live.done({ elapsedMs: now - sentAt }, now);
+        live.done(now);
         page.announce.textContent = event.entry.text;
         break;
       case 'failed':
@@ -152,7 +151,6 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     /** Sends a message: the bubble, the new slot, the flight, then the agent. */
     send(text) {
       const now = performance.now();
-      sentAt = now;
       const preface = takePreface();
       const takeoff = live.measure();
       tracker.sent({ effort: settings.effort, at: Date.now() });
