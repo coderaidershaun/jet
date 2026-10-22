@@ -9,7 +9,6 @@ import { buildMemory } from './memory.js';
 import { buildModel } from './model.js';
 import { paintNames } from './names.js';
 import { buildPersona } from './persona.js';
-import { buildWorkstation } from './workstation.js';
 
 const SAVE_AFTER_EDIT_MS = 600;
 
@@ -60,7 +59,7 @@ export function createSheet({ dialog, context, onChange, save }) {
   const model = buildModel(ctx);
   const memory = buildMemory(ctx);
   const programs = buildClaude(ctx);
-  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, buildLibraries(ctx), buildWorkstation(ctx), ...programs.el);
+  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, buildLibraries(ctx), ...programs.el);
 
   const closeButton = h('button', { class: 'icon-button', type: 'button', 'aria-label': 'Close settings', onClick: () => sheet.close() }, icon('close'));
   dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), closeButton), body);

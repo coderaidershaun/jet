@@ -23,7 +23,7 @@ async function setup(t, options = {}) {
     composerView: { refresh: noop, setLayout: noop, setHeld: noop },
     live, drawer: { setUsage: noop, addLine: noop },
     tracker: { sent: noop, snapshot: noop, finished: noop, failed: noop, stopped: noop },
-    afterReply: noop, onToolFinished: noop, takePreface: options.takePreface ?? (() => null), giveBackPreface: options.giveBackPreface ?? noop,
+    afterReply: noop,
   });
   const advance = async (ms) => { now += ms; t.mock.timers.tick(ms); await Promise.resolve(); await Promise.resolve(); };
   const entry = { id: 2, role: 'jet', text: 'Hello', html: '<p>Hello final</p>', status: 'complete', at: 0 };
@@ -124,18 +124,13 @@ test('classification failure falls back to neutral and warns once across turns',
   assert.equal(s.requests[1].feeling, 'neutral');
 });
 
-test('stop before classification restores the preface, sends held text, and drops old results and events', async (t) => {
+test('stop before classification sends held text and drops old results and events', async (t) => {
   const resolvers = [];
-  const returned = [];
-  let preface = 'engine news';
   const s = await setup(t, { pending: true,
     feel: () => new Promise((done) => resolvers.push(done)),
-    takePreface: () => { const value = preface; preface = null; return value; },
-    giveBackPreface: (value) => { returned.push(value); preface = value; },
   });
   s.turn.hold('next');
   s.turn.stop();
-  assert.deepEqual(returned, ['engine news']);
   assert.equal(s.stops(), 0);
   resolvers[0]({ mood: 'insulted' });
   await s.sending;
@@ -143,7 +138,6 @@ test('stop before classification restores the preface, sends held text, and drop
   resolvers[1]({ mood: 'hello' });
   await s.advance(0);
   assert.equal(s.requests[0].text, 'next');
-  assert.equal(s.requests[0].preface, 'engine news');
   const oldEvent = s.captureEvent();
   s.turn.stop();
   s.event({ kind: 'stopped', entry: s.entry });

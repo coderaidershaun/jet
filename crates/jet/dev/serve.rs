@@ -1,4 +1,4 @@
-//! Serves the chat and workstation on their pretend feeds in a browser without the desktop window.
+//! Serves the chat on its pretend agent in a browser without the desktop window.
 //! Run with `cargo run -p jet --example serve`, or pass a port after `--`.
 
 use std::fs;
@@ -96,7 +96,6 @@ fn main() -> io::Result<()> {
     })?;
     let port = listener.local_addr()?.port();
     println!("chat (on the pretend agent): http://{HOST}:{port}/");
-    println!("workstation (on the pretend feed): http://{HOST}:{port}/workstation.html");
 
     // A browser opens several connections at once, so each one gets its own thread.
     thread::scope(|scope| {

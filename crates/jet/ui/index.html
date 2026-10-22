@@ -9,29 +9,22 @@
 <link rel="stylesheet" href="./vendor/katex/katex.min.css">
 <link rel="stylesheet" href="./chat.css">
 <link rel="stylesheet" href="./chat/drawer/drawer.css">
-<link rel="stylesheet" href="./chat/drawer/rail.css">
 <link rel="stylesheet" href="./chat/thread/thread.css">
 <link rel="stylesheet" href="./chat/thread/cards/cards.css">
-<link rel="stylesheet" href="./chat/thread/cards/engines.css">
 <link rel="stylesheet" href="./chat/stage/stage.css">
 <link rel="stylesheet" href="./chat/composer/composer.css">
 <link rel="stylesheet" href="./chat/settings/sheet.css">
-<link rel="stylesheet" href="./workstation/workstation.css">
-<link rel="stylesheet" href="./workstation/shell.css">
 <script type="module" src="./chat/main.js"></script>
 </head>
 <body>
-<div class="page" id="page" data-drawer="open" data-layout="centred" data-page="chat">
+<div class="page" id="page" data-drawer="open" data-layout="centred">
   <aside class="drawer" id="drawer" aria-label="Jet and the agent stream">
     <div class="drawer-inner">
       <div class="drawer-id">
-        <button class="rail-jet" id="rail-jet" type="button" aria-label="Back to Jet" inert><svg class="drawer-jet" id="drawer-jet" aria-hidden="true"></svg></button>
+        <svg class="drawer-jet" id="drawer-jet" aria-hidden="true"></svg>
         <p class="drawer-name" id="drawer-name">Jet</p>
         <p class="drawer-title" id="drawer-title">First-mate</p>
         <p class="cache-chip" id="cache-chip" data-warm="false" role="status">cold · nothing cached yet</p>
-      </div>
-      <div class="drawer-pages">
-        <button class="page-button" id="workstation-button" type="button" aria-pressed="false" aria-label="Workstation"><span class="page-button-label">Workstation</span></button>
       </div>
       <section class="usage" id="usage" aria-labelledby="usage-title">
         <h2 class="section-title" id="usage-title">Usage</h2>
@@ -133,19 +126,6 @@
       </div>
     </div>
 
-    <section class="workstation-page" id="workstation-page" aria-labelledby="workstation-title" hidden>
-      <header class="header workstation-header" id="workstation-header">
-        <button class="icon-button workstation-menu" id="workstation-menu" type="button" aria-label="Show or hide the sidebar" aria-controls="drawer" aria-expanded="false"></button>
-        <h1 class="title" id="workstation-title">Workstation</h1>
-        <span class="link-chip" id="workstation-link" hidden></span>
-      </header>
-      <div class="workstation-setup" id="workstation-setup" hidden>
-        <h2 class="workstation-setup-title">Workstation not set up</h2>
-        <p class="workstation-setup-detail" id="workstation-setup-detail"></p>
-        <button class="action" id="workstation-setup-open" type="button">Open Settings</button>
-      </div>
-      <div class="workstation-body" id="workstation-body"></div>
-    </section>
   </div>
 </div>
 

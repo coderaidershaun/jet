@@ -27,7 +27,7 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Spinner** — the body's C-shaped working form, with hidden eyes and the string reeled into the bow.
 - **Payout** — the multiplier of string segment lengths, normally 1; the J uses about 1.592.
 - **Written route** — the local polyline the string's free end traces, with a length, scale and tremor.
-- **Settings** — saved reduced motion, persona, model/provider, memory-related choices, libraries and workstation setup. Rust owns the file format in the app.
+- **Settings** — saved reduced motion, persona, model/provider, memory-related choices, libraries. Rust owns the file format in the app.
 - **Reduced motion** — app setting combined with the system preference: always grounded, no flight, blink, idle oscillation or spinner rotation; the form still morphs.
 - **Catalogue** — `ui/jet/clips/catalogue.js`, the builders and hold flags for all six clips.
 - **Director** — chooses and queues clips from chat events and feelings; reads only the time supplied by the host.
@@ -38,12 +38,12 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Reveal deadline** — `revealAt`, an absolute monotonic time consumed by `holdUntil(at)`; streamed and successfully completed text both wait until it.
 - **Player** — owns live state, samples clips and adds secondary motion, idle layers, blinks and the deterministic string chain.
 - **Host** — the page that places Jet, supplies time, measured scale and carry, and forwards chat events.
-- **Bridge** — `ui/bridge/`, the pages' way to settings, agent and workstation commands, with browser fallbacks. Not the polysim-bridge program.
+- **Bridge** — `ui/bridge/`, the chat page's way to settings and agent commands, with browser fallbacks.
 
 - **Turn** — one exchange: the user's message and Jet's reply, from the send to the finished, failed or stopped end.
-- **Event** — one step of a streamed reply as the chat page receives it: a raw line from the provider, started, a notice, a mood, text, or a tool call started or finished; exactly one of finished, failed or stopped ends the reply. _Avoid_: message (that is what the user sends), bridge line (that belongs to the workstation).
+- **Event** — one step of a streamed reply as the chat page receives it: a raw line from the provider, started, a notice, a mood, text, or a tool call started or finished; exactly one of finished, failed or stopped ends the reply. _Avoid_: message (that is what the user sends).
 - **Session** — the Claude Code conversation the app resumes (`session.json`). A fresh one starts when the prompt inputs change, after a long idle with a big context, or when the old one vanished. _Avoid_: thread, history.
-- **Provider** — the installed program that answers the chat and runs the notes review, Claude Code or Codex, chosen by the model setting; when it is missing, a stand-in fails each reply and names the places it looked. _Avoid_: transport (that is the agent crate's trait a provider satisfies), program alone (libraries and polysim-bridge are programs too).
+- **Provider** — the installed program that answers the chat and runs the notes review, Claude Code or Codex, chosen by the model setting; when it is missing, a stand-in fails each reply and names the places it looked. _Avoid_: transport (that is the agent crate's trait a provider satisfies), program alone (libraries are programs too).
 - **Transcript** — the app's own record of the thread (`transcript.jsonl`). The chat page opens on its newest entries, which the code calls the history. _Avoid_: session.
 - **Usage** — the tokens and spend of the replies since the app started. It is counted from the stream while a reply runs and closed by the cost Claude Code reports; it is not saved. The "Session" group of the drawer's usage panel means since the app started, not one Claude Code session. _Avoid_: session (that is the Claude Code conversation), cost alone (it leaves out tokens).
 - **Rate** — the published list price per million tokens for one model and one kind of token, with its date. It gives the live estimate while a reply runs. _Avoid_: price list, tariff.
@@ -53,21 +53,12 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Card** — what the thread shows for one tool call, above the reply's text: a line with a spinner while the call runs, then a folded card of what came back, or of the failure. _Avoid_: widget, panel.
 - **Source** — one item a library search or answer gives back, numbered from 1, with its document, page and kind. _Avoid_: result (that is the whole reply of a tool), hit (that is what a source holds).
 - **Citation** — `[n]` in Jet's text, shown as a chip that opens source n of the nearest card above it. _Avoid_: reference, footnote.
-- **Shared server** — the one copy of a library's MCP server that the app keeps running for the whole session, over HTTP on a port of this machine. Claude's replies and the engine card both use it, so an engine either one starts outlives the reply. A library whose program does not take `--http` is not shared: Claude starts its own copy for each reply. _Avoid_: host (that is the page that shows Jet).
+- **Shared server** — the one copy of a library's MCP server that the app keeps running for the whole session, over HTTP on a port of this machine. An engine the agent starts through a shared polysim server outlives the reply. A library whose program does not take `--http` is not shared: Claude starts its own copy for each reply. _Avoid_: host (that is the page that shows Jet).
 - **Engine** — one polysim trading program, named `strategy · te`, such as `strat-micro-recorder · te-binance-spot-btcusdt`. It has a state (running, stopped, exited) and a mode (off, sim, live); live trades real money.
-- **Engine card** — the card above a reply that listed polysim's engines: one row for each engine with its state, its mode, Start or Stop and a mode choice. Every engine card shows the newest listing.
-- **Preface** — the line in square brackets, such as `[Jet: the user started … at 22:41]`, that the page puts before the user's next message so Claude knows what they did on an engine card. The thread shows and saves only the user's words. _Avoid_: note (that is MEMORY, USER and RECENT).
 
-- **Rail** — the drawer narrowed to its icons beside the workstation: Jet at the top to go back to the chat, the workstation button, the gear. _Avoid_: collapsed drawer, mini drawer.
 
 - **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.
 - **Slot** — the row of the reply on its way; Jet lands in its lane. _Avoid_: placeholder.
 - **Flight** — the live Jet's move from where it stood to the slot's lane on a send, during the fly clip's cruise. The path bows right, overshoots by 5 px and lands; the host translates and scales the node, while the player supplies lean and string drag.
 - **Math** — TeX in a reply, between `\(` and `\)`, or for display between `\[` and `\]` or `$$` and `$$`. A single `$` is money, never math.
 - **Typeset** — turning a math element's TeX into KaTeX's drawing on the page. _Avoid_: render (that is Markdown to HTML).
-- **Workstation** — the polysim trading page: toolbar, latency, charts, monitor, ladder and link bar. It paints what the feed sends and decides no number itself. _Avoid_: dashboard.
-- **Feed** — the bridge lines the workstation reads: from polysim-bridge inside the app (restarted by Jet when it fails), from the pretend feed in a browser.
-- **Tape** — polysim-bridge's own output recorded from the sim engine (`ui/bridge/fixtures/polysim-tape.jsonl`); the pretend feed replays it on `workstation.html?tape=1`. _Avoid_: recording of the feed (the feed is what the page reads, live).
-- **Bridge line** — one JSON object on one line with `kind` first: `hello`, `link`, `lifecycle`, `catalog`, `tick` and `bye` from polysim-bridge, and Jet's own `bridge` status line. A line's `session` is the engine link's session, not the **Session** above. _Avoid_: message, event (those belong to the chat).
-- **Section** — one part of a tick, such as the ladder or the chart. A tick carries only the sections that changed.
-- **Area** — one part of the workstation with its own folder under `ui/workstation/` and its own mount point.

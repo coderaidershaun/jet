@@ -23,6 +23,8 @@ test('defaults mirror Rust and carry the chat fields, and merge fills gaps from 
     expressiveness: { master: 2.5 },
     bodyColour: [12, 200, 99],
     repeat: false,
+    page: 'workstation',
+    workstation: { bridgePath: '/tmp/polysim-bridge', token: 'old-secret' },
     reducedMotion: true,
     persona: { name: 'Ada' },
   });
@@ -38,7 +40,7 @@ test('defaults mirror Rust and carry the chat fields, and merge fills gaps from 
     assert.equal(loaded.model, 'gpt-6.1-sol');
     await saveSettings(loaded);
     assert.deepEqual(await loadSettings(), loaded);
-    for (const key of ['behaviour', 'expressiveness', 'bodyColour', 'repeat']) {
+    for (const key of ['behaviour', 'expressiveness', 'bodyColour', 'repeat', 'page', 'workstation']) {
       assert.equal(Object.hasOwn(loaded, key), false, `removed ${key} was loaded`);
       assert.equal(Object.hasOwn(JSON.parse(saved), key), false, `removed ${key} was saved`);
     }

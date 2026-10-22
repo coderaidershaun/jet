@@ -15,7 +15,7 @@ const STOP_POLL: Duration = Duration::from_millis(50);
 /// Held while a server program starts. On macOS a program started at the very moment a pipe
 /// is made can inherit it, so a quanty started beside polysim could keep polysim's input open
 /// after Jet ends.
-// SMELL: Claude Code and polysim-bridge start without this lock, so one of them can still
+// SMELL: Claude Code starts without this lock, so it can still
 // inherit polysim's input, and polysim then stops only once that program has ended too.
 static STARTING: Mutex<()> = Mutex::new(());
 

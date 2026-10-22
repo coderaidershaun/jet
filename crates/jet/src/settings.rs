@@ -19,52 +19,11 @@ pub struct Settings {
     /// The most one Claude answer may cost, in US dollars.
     pub turn_budget_usd: f64,
     pub drawer_open: bool,
-    /// The page shown last; the window opens on it again.
-    pub page: Page,
     /// Where Claude Code lives; `None` means look in the usual places.
     pub claude_path: Option<PathBuf>,
     pub codex_path: Option<PathBuf>,
     /// The library servers Jet's agent may use: the quanty library and the polysim engines.
     pub mcp: McpServers,
-    pub workstation: Workstation,
-}
-
-/// Where polysim-bridge is, which strategy it shows and which trading engines it may attach to.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Workstation {
-    /// `None` means not set up; the page then shows the setup card.
-    pub bridge_path: Option<PathBuf>,
-    /// The folder polysim-bridge runs in; `None` means the folder that holds the program.
-    pub polysim_dir: Option<PathBuf>,
-    pub strategy_id: String,
-    /// `host:port` of each engine, in the order the link bar steps through them.
-    pub links: Vec<String>,
-    /// The link token, kept in plain text in this file.
-    pub token: Option<String>,
-}
-
-// Written by hand so that logging the settings never prints the token.
-impl std::fmt::Debug for Workstation {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("Workstation")
-            .field("bridge_path", &self.bridge_path)
-            .field("polysim_dir", &self.polysim_dir)
-            .field("strategy_id", &self.strategy_id)
-            .field("links", &self.links)
-            .field("token", &self.token.as_ref().map(|_| "<hidden>"))
-            .finish()
-    }
-}
-
-/// What the main area of the window shows.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Page {
-    #[default]
-    Chat,
-    Workstation,
 }
 
 impl Default for Settings {
@@ -76,25 +35,9 @@ impl Default for Settings {
             effort: Effort::default(),
             turn_budget_usd: 10.0,
             drawer_open: true,
-            page: Page::default(),
             claude_path: None,
             codex_path: None,
             mcp: default_mcp(),
-            workstation: Workstation::default(),
-        }
-    }
-}
-
-impl Default for Workstation {
-    fn default() -> Self {
-        Workstation {
-            bridge_path: Some(PathBuf::from(
-                "/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-bridge",
-            )),
-            polysim_dir: Some(PathBuf::from("/Users/shaun/Code/DEVELOPMENT/polysim")),
-            strategy_id: "strat-micro-recorder".into(),
-            links: vec!["127.0.0.1:9310".into()],
-            token: None,
         }
     }
 }
@@ -199,7 +142,6 @@ mod tests {
         let path = scratch_file("roundtrip");
         let settings = Settings {
             reduced_motion: true,
-            page: Page::Workstation,
             ..Settings::default()
         };
         write_to(&path, &settings).unwrap();
@@ -207,7 +149,7 @@ mod tests {
 
         let saved: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(saved["page"], "workstation");
+        assert!(saved.get("page").is_none());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -222,6 +164,8 @@ mod tests {
                 "expressiveness":{"master":2.5},
                 "bodyColour":[12,200,99],
                 "repeat":false,
+                "page":"workstation",
+                "workstation":{"bridgePath":"/tmp/polysim-bridge","token":"old-secret"},
                 "reducedMotion":true,
                 "persona":{"name":"Ada"},
                 "turnBudgetUsd":1.0
@@ -247,7 +191,14 @@ mod tests {
         assert_eq!(read_from(&path).unwrap(), settings);
         let saved: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        for key in ["behaviour", "expressiveness", "bodyColour", "repeat"] {
+        for key in [
+            "behaviour",
+            "expressiveness",
+            "bodyColour",
+            "repeat",
+            "page",
+            "workstation",
+        ] {
             assert!(saved.get(key).is_none(), "removed {key} was saved");
         }
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -271,13 +222,6 @@ mod tests {
             drawer_open: false,
             claude_path: Some(PathBuf::from("/opt/tools/claude")),
             mcp,
-            workstation: Workstation {
-                bridge_path: Some(PathBuf::from("/opt/polysim/polysim-bridge")),
-                polysim_dir: None,
-                strategy_id: "strat-other".into(),
-                links: vec!["10.0.0.5:9310".into(), "10.0.0.6:9310".into()],
-                token: Some("s3cret".into()),
-            },
             ..Settings::default()
         };
         write_to(&path, &settings).unwrap();
@@ -290,9 +234,6 @@ mod tests {
             "drawerOpen",
             "claudePath",
             "mcp",
-            "bridgePath",
-            "polysimDir",
-            "strategyId",
         ] {
             assert!(
                 json.contains(&format!("\"{key}\"")),

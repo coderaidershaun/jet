@@ -6,7 +6,6 @@
 import { h } from '../../../dom.js';
 import { findSource, splitCitations } from './cite.js';
 import { callState, cardOf } from './model.js';
-import { RESULT_CARDS } from './registry.js';
 import { fillShow } from './show.js';
 
 const SKIPPED_BY_CITATIONS = 'code, pre, a, button, .math';
@@ -212,8 +211,7 @@ function defaultCard(card, parts) {
 
 /** The node of a call that has ended: done, failed or unfinished. */
 export function renderResultCard(card, parts) {
-  const custom = card.state === 'done' ? RESULT_CARDS[card.key] : undefined;
-  return custom ? custom(card, parts) : defaultCard(card, parts);
+  return defaultCard(card, parts);
 }
 
 function runningCard(card) {

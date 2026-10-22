@@ -9,16 +9,15 @@ Jet is a desktop chat app built around a front-end agent. You talk to Jet, a sma
 - **Chat window.** A Tauri 2 desktop app with a chat page, streamed replies, saved threads, and Markdown and math rendered safely.
 - **Front-end agent.** Jet is a persona on top of the installed Claude Code or Codex CLI. It keeps its own notes between sessions, so a conversation can carry on after a restart.
 - **Calls other agents and tools.** Jet can use the tools of any MCP server you enable in Settings. The app starts and watches each server as a child process.
-- **Workstation page.** A second page that shows a live feed from an outside program. It is specific to the author's own trading libraries, and you can ignore it.
 - **Character and feelings.** Jet stands beside its last reply, flies on a send, waves hello, reacts when insulted, and becomes a spinner while waiting. Optional JEV classification reads how each message makes Jet feel before the provider starts; without a key it immediately uses neutral.
-- **Browser mode.** The pages also run in a plain browser against a pretend agent, so you can work on the interface without installing anything else.
+- **Browser mode.** The chat page also runs in a plain browser against a pretend agent, so you can work on the interface without installing anything else.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
 | `crates/agent` | The agent side, with no window. It runs the provider programs, reads their output, keeps the saved thread and notes, and manages the MCP servers. |
-| `crates/jet` | The desktop app: the Tauri window, the animated character, and the chat and workstation pages in `ui/`. |
+| `crates/jet` | The desktop app: the Tauri window, the animated character, and the chat page in `ui/`. |
 
 [The app README](crates/jet/README.md) covers commands, settings, the pretend agent and page architecture. [The character policy](crates/jet/character-policy.md) defines the geometry, motion and emotion checklist.
 

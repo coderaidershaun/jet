@@ -96,7 +96,7 @@ On send the bubble and slot appear, flight starts and classification starts conc
 
 `feel()` and `mood()` return `revealAt`, an **absolute monotonic deadline** on the host clock. `holdUntil(at)` extends the hold for both streamed Markdown and final successful HTML/announcement, including an early `finished` event. `revealFrom` refers to the start of a named phase, not its end. A different supported reply mood queues another reaction after spinner closure and extends the deadline. Neutral or the same word already felt adds no reaction. Without a feeling, a no-clip mood uses the 300 ms hold.
 
-Successful completion preserves queued reactions and settles afterward. Failure and Stop discard waiting reactions, close the spinner if needed and settle; they cancel the text hold. A stopped classification cannot dispatch the model. Turn identity guards discard late classifier answers and old provider events, and restore a taken preface when stopped before dispatch. Reduced-motion fades also reject stale callbacks after stop/retry.
+Successful completion preserves queued reactions and settles afterward. Failure and Stop discard waiting reactions, close the spinner if needed and settle; they cancel the text hold. A stopped classification cannot dispatch the model. Turn identity guards discard late classifier answers and old provider events. Reduced-motion fades also reject stale callbacks after stop/retry.
 
 JEV's credentials, request, selection and fallback rules are documented in [Feelings and reply timing](README.md#feelings-and-reply-timing). Never use a live classifier call as part of default validation.
 

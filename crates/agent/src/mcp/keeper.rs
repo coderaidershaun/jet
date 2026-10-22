@@ -7,7 +7,6 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use super::client::McpClient;
 use super::process::{pass_on_stderr, spawn_http, terminate};
 use crate::chat::McpServer;
 
@@ -38,7 +37,6 @@ pub(super) struct Launch {
     pub(super) server: McpServer,
     pub(super) port: u16,
     pub(super) url: String,
-    pub(super) client: Arc<McpClient>,
 }
 
 /// How the first start of a server went.
@@ -158,8 +156,6 @@ fn keep(state: &Arc<KeeperState>, launch: &Launch) {
     let mut is_first_run = true;
     let mut failures = 0;
     while !state.stopping.load(Ordering::SeqCst) {
-        // A new process knows none of the old sessions.
-        launch.client.forget_session();
         let started = Instant::now();
         match spawn_http(launch.name, &launch.server, launch.port) {
             Ok(child) => match watch(state, launch, child, is_first_run) {

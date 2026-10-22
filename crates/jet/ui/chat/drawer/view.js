@@ -1,12 +1,10 @@
 // The drawer: the static Jet and name, the cache chip, the usage panel, the raw
 // stream log, and the gear that opens settings. It also opens and closes
-// itself, docked beside the thread on wide screens and over it on narrow ones;
-// beside the workstation page it narrows to the rail.
+// itself, docked beside the thread on wide screens and over it on narrow ones.
 
 import { h } from '../../dom.js';
 import { createPlayer } from '../../jet/player.js';
 import { mountJet } from '../../jet/draw/view.js';
-import { drawerLayout, drawerOpens } from '../page-state.js';
 import { captionFor } from './caption.js';
 import { NOTHING, compactCount, count, dollars, modelAndThinking, seconds, spendText, turnsText } from './format.js';
 import { RATES_DATE } from './rates.js';
@@ -20,14 +18,14 @@ const SESSION_ID_CHARS = 8;
 /**
  * @param {{
  *   page: HTMLElement, toggles: HTMLElement[], scrim: HTMLElement,
- *   jetButton: HTMLElement, workstationButton: HTMLElement, jetSvg: SVGSVGElement, nameEl: HTMLElement, titleEl: HTMLElement, chipEl: HTMLElement, modelEl: HTMLElement,
+ *   jetSvg: SVGSVGElement, nameEl: HTMLElement, titleEl: HTMLElement, chipEl: HTMLElement, modelEl: HTMLElement,
  *   usageEl: HTMLElement, logToggle: HTMLElement, logList: HTMLElement, copyButton: HTMLElement, clearButton: HTMLElement, gearButton: HTMLElement,
  *   log: ReturnType<typeof import('./log.js').createLog>,
- *   handlers: { openSettings: () => void, dockedChanged: (open: boolean) => void, showPage: (page: import('../page-state.js').Page) => void },
+ *   handlers: { openSettings: () => void, dockedChanged: (open: boolean) => void },
  * }} options
  */
 export function createDrawerView({
-  page, toggles, scrim, jetButton, workstationButton, jetSvg, nameEl, titleEl, chipEl, modelEl, usageEl, logToggle, logList, copyButton, clearButton, gearButton, log, handlers,
+  page, toggles, scrim, jetSvg, nameEl, titleEl, chipEl, modelEl, usageEl, logToggle, logList, copyButton, clearButton, gearButton, log, handlers,
 }) {
   const narrow = window.matchMedia(NARROW);
   jetSvg.setAttribute('viewBox', '0 70 200 170');
@@ -47,7 +45,6 @@ export function createDrawerView({
   let flushQueued = false;
   let latestUsage = null;
   let usageQueued = false;
-  let shownPage = 'chat';
 
   // SMELL: each row is its own Tab stop, so up to 500 rows stand between Clear and the gear. One Tab stop for
   // the whole list, with the arrow keys moving between rows, would fix it.
@@ -139,7 +136,7 @@ export function createDrawerView({
   }
 
   function applyOpen(open) {
-    page.dataset.drawer = drawerLayout({ page: shownPage, open, narrow: narrow.matches });
+    page.dataset.drawer = open ? 'open' : 'closed';
     for (const toggle of toggles) toggle.setAttribute('aria-expanded', String(open));
     scrim.hidden = !(open && narrow.matches);
   }
@@ -158,9 +155,7 @@ export function createDrawerView({
   for (const toggle of toggles) toggle.addEventListener('click', () => view.setOpen(page.dataset.drawer !== 'open'));
   scrim.addEventListener('click', () => view.setOpen(false));
   // A change of width is not the user's choice, so it saves nothing.
-  narrow.addEventListener('change', () => applyOpen(drawerOpens({ page: shownPage, dockedPreference: view.dockedPreference, narrow: narrow.matches })));
-  jetButton.addEventListener('click', () => handlers.showPage('chat'));
-  workstationButton.addEventListener('click', () => handlers.showPage(shownPage === 'workstation' ? 'chat' : 'workstation'));
+  narrow.addEventListener('change', () => applyOpen(view.dockedPreference && !narrow.matches));
 
   const view = {
     /** What the user last chose for the docked drawer. */
@@ -177,7 +172,7 @@ export function createDrawerView({
 
     setOpen(open) {
       applyOpen(open);
-      if (narrow.matches || shownPage !== 'chat') return;
+      if (narrow.matches) return;
       view.dockedPreference = open;
       handlers.dockedChanged(open);
     },
@@ -189,19 +184,9 @@ export function createDrawerView({
       drawStatic();
     },
 
-    /** Follows the page: the rail beside the workstation, the docked choice again on the chat page. */
-    setPage(next) {
-      shownPage = next;
-      workstationButton.setAttribute('aria-pressed', String(next === 'workstation'));
-      jetButton.inert = next === 'chat';
-      applyOpen(drawerOpens({ page: next, dockedPreference: view.dockedPreference, narrow: narrow.matches }));
-      drawStatic();
-    },
-
     setPersona({ name, jobTitle }) {
       nameEl.textContent = name;
       titleEl.textContent = jobTitle;
-      jetButton.setAttribute('aria-label', 'Back to ' + name);
     },
 
     setCache({ warm, text }) {

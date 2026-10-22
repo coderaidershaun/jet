@@ -117,10 +117,6 @@ pub struct SendRequest {
     codex_path: Option<PathBuf>,
     #[serde(default)]
     mcp: McpServers,
-    /// What the user did on an engine card since the last message; the model reads it before
-    /// the user's words.
-    #[serde(default)]
-    preface: Option<String>,
     #[serde(default)]
     feeling: Option<String>,
 }
@@ -154,7 +150,6 @@ pub async fn send_message(
         local_time: request.local_time,
         mcp: request.mcp,
         shared_mcp: libraries.urls(),
-        preface: request.preface,
         feeling: request.feeling,
     };
     let (user_entry, mut reply) = state.conversation.send(transport, message)?;

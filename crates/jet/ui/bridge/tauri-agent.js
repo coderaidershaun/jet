@@ -39,7 +39,6 @@ export function createTauriAgent({ core, event }) {
     renderMarkdown: (text) => call('render_markdown', { text }),
     readLibraryImage: (path) => call('read_library_image', { path }),
     openLink: (url) => call('open_link', { url }),
-    mcpCall: (server, tool, args) => call('mcp_call', { server, tool, args }),
     reloadLibraries: () => call('mcp_reload'),
 
     send(request, onEvent) {

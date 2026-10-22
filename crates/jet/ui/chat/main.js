@@ -5,19 +5,15 @@
 import { connectAgent } from '../bridge/agent.js';
 import { displayName, loadSettings, saveSettings } from '../bridge/settings.js';
 import { icon } from '../dom.js';
-import { createWorkstationShell } from '../workstation/shell.js';
 import { createComposer } from './composer/state.js';
 import { createComposerView } from './composer/view.js';
 import { describeCache } from './drawer/cache.js';
 import { createLog } from './drawer/log.js';
 import { createUsageTracker } from './drawer/usage.js';
 import { createDrawerView } from './drawer/view.js';
-import { PAGE_NAMES, createPageState } from './page-state.js';
 import { modelPicker } from './settings/model-picker.js';
 import { createSheet } from './settings/sheet.js';
 import { createLive } from './stage/live.js';
-import { createEngineCards } from './thread/cards/engines-view.js';
-import { RESULT_CARDS } from './thread/cards/registry.js';
 import { createFollow } from './thread/scroll.js';
 import { createThread } from './thread/store.js';
 import { createThreadView } from './thread/view.js';
@@ -40,22 +36,6 @@ async function start() {
 
   const thread = createThread();
   thread.load(history);
-  const engines = createEngineCards({
-    call: (tool, args) => agent.mcpCall('polysim', tool, args),
-    onAction: (line) => {
-      thread.addNotice(line);
-      turn.paint();
-    },
-    openWorkstation: (row) => {
-      settings.workstation.strategyId = row.strategyId;
-      settings.workstation.links = [row.linkBind];
-      saveSettings(settings);
-      workstation.settingsChanged();
-      pages.show('workstation');
-    },
-  });
-  engines.restore(history);
-  RESULT_CARDS['polysim/list_strategies'] = (card) => engines.card(card.call);
   const follow = createFollow();
   const composer = createComposer({ empty: history.length === 0 });
   const tracker = createUsageTracker();
@@ -71,8 +51,6 @@ async function start() {
 
   $('gear').append(icon('gear'));
   $('drawer-toggle').append(icon('menu'));
-  $('workstation-menu').append(icon('menu'));
-  $('workstation-button').prepend(icon('candles'));
   $('held-cancel').append(icon('close'));
   $('jump').prepend(icon('down'));
 
@@ -110,10 +88,8 @@ async function start() {
 
   const drawer = createDrawerView({
     page,
-    toggles: [$('drawer-toggle'), $('workstation-menu')],
+    toggles: [$('drawer-toggle')],
     scrim: $('scrim'),
-    jetButton: $('rail-jet'),
-    workstationButton: $('workstation-button'),
     jetSvg: $('drawer-jet'),
     nameEl: $('drawer-name'),
     titleEl: $('drawer-title'),
@@ -128,7 +104,6 @@ async function start() {
     log: createLog(),
     handlers: {
       openSettings: () => sheet.open(),
-      showPage: (next) => pages.show(next),
       dockedChanged: (open) => {
         settings.drawerOpen = open;
         saveSettings(settings);
@@ -175,9 +150,6 @@ async function start() {
     tracker,
     page: { headerStatus: $('header-status'), announce: $('announce') },
     afterReply: refreshStatus,
-    onToolFinished: (call) => engines.toolFinished(call),
-    takePreface: () => engines.takePreface(),
-    giveBackPreface: (text) => engines.giveBackPreface(text),
   });
 
   function paintPersona() {
@@ -220,55 +192,16 @@ async function start() {
       else if (kind === 'motion') {
         applyReduced();
         live.setReducedMotion(reducedMotion());
-      } else if (kind === 'workstation') workstation.settingsChanged();
+      }
     },
   });
-
-  const workstation = createWorkstationShell({
-    body: $('workstation-body'),
-    title: $('workstation-title'),
-    link: $('workstation-link'),
-    setup: $('workstation-setup'),
-    setupDetail: $('workstation-setup-detail'),
-    setupButton: $('workstation-setup-open'),
-    settings,
-    openSettings: () => sheet.open('workstation'),
-    onLeave: () => pages.show('chat'),
-  });
-  const pages = createPageState({
-    saved: settings.page,
-    save: (next) => {
-      settings.page = next;
-      saveSettings(settings);
-    },
-    onShow: paintPage,
-  });
-  let chatScrollTop = 0;
-  function paintPage(next) {
-    if (next !== 'chat') chatScrollTop = $('thread').scrollTop;
-    page.dataset.page = next;
-    $('workstation-page').hidden = next !== 'workstation';
-    drawer.setPage(next);
-    $('announce').textContent = PAGE_NAMES[next];
-    if (next === 'workstation') {
-      workstation.show();
-      return;
-    }
-    workstation.hide();
-    // A hidden thread forgets where it was scrolled; one that follows the newest text finds its own way back.
-    if (!follow.following) $('thread').scrollTop = chatScrollTop;
-    $('field').focus();
-  }
 
   document.addEventListener('keydown', (event) => {
-    // A part of the workstation that uses Esc itself marks the key as handled.
     if (event.key !== 'Escape' || event.defaultPrevented) return;
-    const first = pages.escape({ sheetOpen: sheet.isOpen });
-    const action = first === 'composer' ? composer.escape({ sheetOpen: false, overlayDrawerOpen: drawer.overlayOpen }) : first;
+    const action = composer.escape({ sheetOpen: sheet.isOpen, overlayDrawerOpen: drawer.overlayOpen });
     if (action === 'none') return;
     event.preventDefault();
     if (action === 'closeSheet') sheet.close();
-    else if (action === 'showChat') pages.show('chat');
     else if (action === 'closeDrawer') drawer.setOpen(false);
     else turn.stop();
   });
@@ -278,7 +211,6 @@ async function start() {
   });
 
   drawer.init(settings.drawerOpen);
-  if (pages.current === 'workstation') paintPage('workstation');
   drawer.setModel({ model: settings.model, effort: settings.effort });
   drawer.setUsage(tracker.snapshot());
   paintPersona();

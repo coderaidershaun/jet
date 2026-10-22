@@ -40,9 +40,6 @@ pub struct Message {
     /// The address of each library the app keeps running for the session, by name. Claude
     /// reaches those there; any other enabled library it starts itself for the reply.
     pub shared_mcp: BTreeMap<String, String>,
-    /// A line the app puts before the user's words in what Claude reads, such as
-    /// `[Jet: the user started ... at 22:41]`. The saved thread keeps only the user's words.
-    pub preface: Option<String>,
     /// A supported mood word supplied by the message classifier.
     pub feeling: Option<String>,
 }
@@ -237,7 +234,6 @@ mod test_support {
             local_time: "Tue 14 Oct 2026, 11:20".to_owned(),
             mcp: McpServers::default(),
             shared_mcp: BTreeMap::new(),
-            preface: None,
             feeling: None,
         }
     }

@@ -74,7 +74,6 @@ export function wants(text) {
     timeout: mentions(text, 'timeout'),
     fresh: mentions(text, 'fresh'),
     quanty: mentions(text, 'quanty'),
-    engines: mentions(text, 'engine'),
     quantyDown: mentions(text, 'quanty down'),
   };
 }

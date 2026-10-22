@@ -41,12 +41,9 @@ function parsedOrNull(line) {
  *   tracker: ReturnType<typeof import('./drawer/usage.js').createUsageTracker>,
  *   page: { headerStatus: HTMLElement, announce: HTMLElement },
  *   afterReply: () => void,
- *   onToolFinished: (call: any) => void,
- *   takePreface: () => string | null,
- *   giveBackPreface: (text: string) => void,
  * }} parts
  */
-export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, tracker, page, afterReply, onToolFinished, takePreface, giveBackPreface }) {
+export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, tracker, page, afterReply }) {
   /** @type {ReturnType<typeof createReveal> | null} */
   let reveal = null;
   let pendingEntry = null;
@@ -99,7 +96,6 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         break;
       case 'toolFinished':
         thread.finishTool(event);
-        onToolFinished(event);
         break;
       case 'mood':
         thread.setMood(event.mood);
@@ -142,10 +138,9 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     else paint();
   }
 
-  function request(text, preface) {
+  function request(text) {
     return {
       text,
-      preface,
       model: settings.model,
       effort: settings.effort,
       budgetUsd: settings.turnBudgetUsd,
@@ -162,12 +157,10 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
 
     /** Sends a message: the bubble, the new slot, the flight, then the agent. */
     async send(text) {
-      const mine = { dispatched: false, cancelFeeling: null, preface: null };
+      const mine = { dispatched: false, cancelFeeling: null };
       active = mine;
       const now = performance.now();
-      const preface = takePreface();
-      mine.preface = preface;
-      const message = request(text, preface);
+      const message = request(text);
       const takeoff = live.measure();
       tracker.sent({ effort: settings.effort, at: Date.now() });
       showUsage();
@@ -230,7 +223,6 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         await agent.send(message, receive);
       } catch (error) {
         if (active !== mine) return;
-        if (preface) giveBackPreface(preface);
         const failure = {
           kind: error && error.kind ? error.kind : 'io',
           message: error && error.message ? error.message : 'The message could not be sent.',
@@ -248,7 +240,6 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     stop() {
       const mine = active;
       if (!mine) return;
-      if (!mine.dispatched && mine.preface) giveBackPreface(mine.preface);
       if (mine.dispatched && !pendingEntry) {
         mine.stopping = true;
         reveal.end();

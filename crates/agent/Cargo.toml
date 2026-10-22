@@ -2,7 +2,7 @@
 name = "agent"
 version.workspace = true
 edition.workspace = true
-description = "Runs Jet's chat turns through Claude Code, keeps the thread and notes, and keeps the workstation's polysim-bridge running"
+description = "Runs Jet's chat turns through Claude Code and keeps the thread, notes, and library connections"
 
 [lib]
 name = "agent"
@@ -17,11 +17,6 @@ path = "src/bin/fake-claude.rs"
 [[bin]]
 name = "fake-mcp"
 path = "src/bin/fake-mcp.rs"
-
-# A stand-in for polysim-bridge: the workstation feed's contract tests spawn it instead of the real one.
-[[bin]]
-name = "fake-bridge"
-path = "src/bin/fake-bridge.rs"
 
 [dependencies]
 dotenvy = { workspace = true }

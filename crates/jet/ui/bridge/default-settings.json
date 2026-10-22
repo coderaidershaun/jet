@@ -8,7 +8,6 @@
   "model": "gpt-6.1-sol",
   "effort": "medium",
   "turnBudgetUsd": 10.0,
-  "page": "chat",
   "drawerOpen": true,
   "claudePath": null,
   "codexPath": null,
@@ -23,14 +22,5 @@
       "command": "/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-mcp",
       "cwd": "/Users/shaun/Code/DEVELOPMENT/polysim"
     }
-  },
-  "workstation": {
-    "bridgePath": "/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-bridge",
-    "polysimDir": "/Users/shaun/Code/DEVELOPMENT/polysim",
-    "strategyId": "strat-micro-recorder",
-    "links": [
-      "127.0.0.1:9310"
-    ],
-    "token": null
   }
 }
