@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-pub(super) const VARIABLE: &str = "CONVERTER_JEV_API_KEY";
+pub(super) const VARIABLE: &str = "JEV_API_KEY";
 
 pub(super) fn discover(environment: Option<String>, directory: &Path) -> Option<String> {
     if let Some(key) = environment.filter(|key| !key.trim().is_empty()) {
@@ -36,7 +36,7 @@ mod tests {
         assert!(discover(None, &child).is_none());
         std::fs::write(
             root.path().join(".env"),
-            "export CONVERTER_JEV_API_KEY='parent-test-value'\n",
+            "export JEV_API_KEY='parent-test-value'\n",
         )
         .unwrap();
         assert!(discover(None, &child).is_some_and(|key| key == "parent-test-value"));
@@ -44,11 +44,7 @@ mod tests {
             discover(Some("environment-test-value".into()), &child)
                 .is_some_and(|key| key == "environment-test-value")
         );
-        std::fs::write(
-            child.join(".env"),
-            "CONVERTER_JEV_API_KEY=nearest-test-value\n",
-        )
-        .unwrap();
+        std::fs::write(child.join(".env"), "JEV_API_KEY=nearest-test-value\n").unwrap();
         assert!(discover(None, &child).is_some_and(|key| key == "nearest-test-value"));
         std::fs::write(child.join(".env"), "OTHER=present\n").unwrap();
         assert!(discover(None, &child).is_none());

@@ -49,7 +49,7 @@ Then open `http://127.0.0.1:8787/`.
 
 ## Optional feelings
 
-On each message, the Rust side reads `CONVERTER_JEV_API_KEY` from the environment. If it is absent or blank, it searches from the process's current directory upward and reads the nearest `.env` file. That file owns the configuration even if it contains no key; it does not continue to a more distant file. `.env` is ignored by Git. There is no feelings setting in the app.
+On each message, the Rust side reads `JEV_API_KEY` from the environment. If it is absent or blank, it searches from the process's current directory upward and reads the nearest `.env` file. That file owns the configuration even if it contains no key; it does not continue to a more distant file. `.env` is ignored by Git. There is no feelings setting in the app.
 
 With a key, the user's message is sent to JEV at `api.typesafe.ai` for classification. This is a separate network service from the chat provider. The backend allows two seconds with no retry; the page falls back to neutral after 2.2 seconds or an error. See [the contract and timing](crates/jet/README.md#feelings-and-reply-timing).
 

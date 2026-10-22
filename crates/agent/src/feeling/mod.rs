@@ -52,7 +52,7 @@ impl Feeling {
 /// Failures contain no server body or credential-bearing transport error.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum JevError {
-    #[error("no JEV key found in CONVERTER_JEV_API_KEY or a parent .env")]
+    #[error("no JEV key found in JEV_API_KEY or a parent .env")]
     MissingKey,
     #[error("JEV request failed or exceeded its two-second timeout")]
     Http,
