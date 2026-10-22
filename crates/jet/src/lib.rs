@@ -1,10 +1,7 @@
-//! This crate is the desktop home of Jet, the first-mate character: it ships the character
-//! definition inside the binary, opens the window that animates it, remembers how the
-//! user dialled Jet in between launches, and connects the chat page and the workstation page to
-//! the agent crate.
+//! The desktop home of Jet: opens the window, remembers the user's settings, and connects
+//! the chat and workstation pages to the agent crate.
 
 mod chat;
-mod rig;
 mod settings;
 mod workstation;
 
@@ -13,15 +10,12 @@ use tauri::Manager;
 /// Why the app could not start.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error(transparent)]
-    Rig(#[from] rig::RigError),
     #[error("the window could not start: {0}")]
     Window(#[from] tauri::Error),
 }
 
-/// Checks the embedded character definition, then runs the window until it closes.
+/// Runs the window until it closes.
 pub fn run() -> Result<(), Error> {
-    rig::Rig::embedded()?;
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -32,7 +26,6 @@ pub fn run() -> Result<(), Error> {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            rig::rig,
             settings::load_settings,
             settings::save_settings,
             chat::provider::agent_status,

@@ -1,14 +1,10 @@
 {
-  "behaviour": { "candid": 0.55, "playful": 0.35 },
-  "expressiveness": {
-    "master": 6.0,
-    "channels": { "shape": 6.0, "eyes": 4.0, "colour": 6.0, "motion": 6.0 },
-    "follow": { "shape": true, "eyes": false, "colour": true, "motion": true }
-  },
   "reducedMotion": false,
-  "repeat": true,
-  "persona": { "name": "Jet", "jobTitle": "First-mate", "notes": "" },
-  "bodyColour": null,
+  "persona": {
+    "name": "Jet",
+    "jobTitle": "First-mate",
+    "notes": ""
+  },
   "model": "gpt-6.1-sol",
   "effort": "medium",
   "turnBudgetUsd": 10.0,
@@ -32,7 +28,9 @@
     "bridgePath": "/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-bridge",
     "polysimDir": "/Users/shaun/Code/DEVELOPMENT/polysim",
     "strategyId": "strat-micro-recorder",
-    "links": ["127.0.0.1:9310"],
+    "links": [
+      "127.0.0.1:9310"
+    ],
     "token": null
   }
 }

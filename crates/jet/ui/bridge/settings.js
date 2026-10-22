@@ -1,23 +1,11 @@
 import { MODELS, effortsFor } from './models.js';
 
-// What the settings look like, what they default to, and how they are saved.
-// Inside Tauri the Rust side owns the file; in a plain browser they go to
-// localStorage under the same key the lab uses, so both pages share them.
-
-/** @typedef {{ candid: number, playful: number }} Behaviour */
-/** @typedef {{ shape: number, eyes: number, colour: number, motion: number }} Channels */
-/** @typedef {{ shape: boolean, eyes: boolean, colour: boolean, motion: boolean }} Follow */
-/** @typedef {{ master: number, channels: Channels, follow: Follow }} Expressiveness */
 /** @typedef {{ name: string, jobTitle: string, notes: string }} Persona */
 /** @typedef {{ enabled: boolean, command: string, cwd: string | null }} McpServer */
 /**
  * @typedef {object} Settings
- * @property {Behaviour} behaviour
- * @property {Expressiveness} expressiveness
  * @property {boolean} reducedMotion
- * @property {boolean} repeat
  * @property {Persona} persona
- * @property {[number, number, number] | null} bodyColour   null = the rig's rest colour
  * @property {string} model
  * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'} effort
  * @property {number} turnBudgetUsd
@@ -31,28 +19,11 @@ import { MODELS, effortsFor } from './models.js';
 
 const STORAGE_KEY = 'jet.settings';
 
-/** The behaviour chips of the lab, as positions on the wheel. */
-export const PRESETS = Object.freeze([
-  { name: 'Neutral', candid: 0, playful: 0 },
-  { name: 'Butler', candid: -0.45, playful: -0.5 },
-  { name: 'Deckhand', candid: -0.5, playful: 0.45 },
-  { name: 'Shipmate', candid: 0.55, playful: 0.35 },
-  { name: 'Quartermaster', candid: 0.6, playful: -0.55 },
-]);
-
 /** Mirrors `Settings::default()` on the Rust side. @returns {Settings} */
 export function defaultSettings() {
   return {
-    behaviour: { candid: 0.55, playful: 0.35 },
-    expressiveness: {
-      master: 6,
-      channels: { shape: 6, eyes: 4, colour: 6, motion: 6 },
-      follow: { shape: true, eyes: false, colour: true, motion: true },
-    },
     reducedMotion: false,
-    repeat: true,
     persona: { name: 'Jet', jobTitle: 'First-mate', notes: '' },
-    bodyColour: null,
     model: 'gpt-6.1-sol',
     effort: 'medium',
     turnBudgetUsd: 10,

@@ -1,6 +1,5 @@
-//! Serves the pages in `ui/` to a plain browser, so the chat (on its pretend agent), the
-//! workstation (on its pretend feed) and the lab can be tried and checked without the desktop
-//! window. Run it with `cargo run -p jet --example serve`, or pass a port after `--`.
+//! Serves the chat and workstation on their pretend feeds in a browser without the desktop window.
+//! Run with `cargo run -p jet --example serve`, or pass a port after `--`.
 
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
@@ -17,13 +16,8 @@ const READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// policy, so a script or image that the app would block is blocked in the browser too.
 const APP_CONFIG: &str = include_str!("../tauri.conf.json");
 
-/// The rig sits outside `ui/`, but the pages ask for it as `../rig/jet.json` when they run
-/// outside the desktop window.
-const RIG_URL: &str = "/rig/jet.json";
-
 struct Site {
     ui_dir: PathBuf,
-    rig_file: PathBuf,
     csp: &'static str,
 }
 
@@ -91,7 +85,6 @@ fn main() -> io::Result<()> {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let site = Site {
         ui_dir: manifest_dir.join("ui"),
-        rig_file: manifest_dir.join("rig/jet.json"),
         csp,
     };
     let requested_port = port_from_args()?;
@@ -103,7 +96,6 @@ fn main() -> io::Result<()> {
     })?;
     let port = listener.local_addr()?.port();
     println!("chat (on the pretend agent): http://{HOST}:{port}/");
-    println!("lab:                         http://{HOST}:{port}/lab.html");
     println!("workstation (on the pretend feed): http://{HOST}:{port}/workstation.html");
 
     // A browser opens several connections at once, so each one gets its own thread.
@@ -196,9 +188,6 @@ fn answer(request_line: &str, site: &Site) -> Reply {
 
 /// The file a URL path names, or `None` when the path tries to leave `ui/`.
 fn file_for(url_path: &str, site: &Site) -> Option<PathBuf> {
-    if url_path == RIG_URL {
-        return Some(site.rig_file.clone());
-    }
     let relative = Path::new(url_path.trim_start_matches('/'));
     if !relative
         .components()

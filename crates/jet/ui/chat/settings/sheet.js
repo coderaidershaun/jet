@@ -4,7 +4,7 @@ import { displayName } from '../../bridge/settings.js';
 import { h, icon } from '../../dom.js';
 import { buildClaude } from './claude.js';
 import { buildLibraries } from './libraries.js';
-import { buildLook } from './look.js';
+import { buildMotion } from './motion.js';
 import { buildMemory } from './memory.js';
 import { buildModel } from './model.js';
 import { paintNames } from './names.js';
@@ -18,7 +18,6 @@ const SAVE_AFTER_EDIT_MS = 600;
  * @property {import('../../bridge/settings.js').Settings} settings   edited in place
  * @property {*} agent   what the page talks to the agent through
  * @property {(kind: string) => void} changed   tell the page what changed; saving follows
- * @property {number[]} defaultColour   the rig's own rest colour
  * @property {() => import('../drawer/usage.js').UsageTotals} totals   what the replies since the app started have used, read on each refresh
  * @property {() => boolean} systemReducesMotion   true when the system asks for less motion
  * @property {(claude: import('../../bridge/agent.js').ClaudeStatus) => void} onClaudeChecked   the page's banner follows each check
@@ -61,7 +60,7 @@ export function createSheet({ dialog, context, onChange, save }) {
   const model = buildModel(ctx);
   const memory = buildMemory(ctx);
   const programs = buildClaude(ctx);
-  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), ...buildLook(ctx), model.el, memory.el, buildLibraries(ctx), buildWorkstation(ctx), ...programs.el);
+  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, buildLibraries(ctx), buildWorkstation(ctx), ...programs.el);
 
   const closeButton = h('button', { class: 'icon-button', type: 'button', 'aria-label': 'Close settings', onClick: () => sheet.close() }, icon('close'));
   dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), closeButton), body);

@@ -2,7 +2,7 @@
 name = "jet"
 version.workspace = true
 edition.workspace = true
-description = "Jet, the first-mate character: desktop window, rig and settings"
+description = "Jet, the first-mate character: desktop window, chat and settings"
 
 [lib]
 name = "jet"
@@ -11,14 +11,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "jet"
 path = "src/main.rs"
-
-# The rig generator and the dev server are examples, not more binaries, because Tauri
-# treats a package with several binaries specially. `test = true` makes `cargo test` run
-# the generator's test.
-[[example]]
-name = "poses"
-path = "rig/poses.rs"
-test = true
 
 [[example]]
 name = "serve"

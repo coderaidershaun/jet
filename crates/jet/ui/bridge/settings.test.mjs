@@ -1,34 +1,53 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { PRESETS, defaultSettings, merge, displayName, loadSettings } from './settings.js';
+import { defaultSettings, merge, displayName, loadSettings, saveSettings } from './settings.js';
 
-test('defaults mirror Rust and carry the chat fields, and merge fills gaps from them', () => {
+test('defaults mirror Rust and carry the chat fields, and merge fills gaps from them', async () => {
   const defaults = defaultSettings();
-  assert.deepEqual(defaults.behaviour, { candid: 0.55, playful: 0.35 });
-  assert.equal(defaults.expressiveness.master, 6);
-  assert.deepEqual(defaults.expressiveness.follow, { shape: true, eyes: false, colour: true, motion: true });
-  assert.equal(defaults.repeat, true);
   assert.deepEqual(defaults.persona, { name: 'Jet', jobTitle: 'First-mate', notes: '' });
-  assert.equal(defaults.bodyColour, null);
   assert.equal(defaults.model, 'gpt-6.1-sol');
   assert.equal(defaults.effort, 'medium');
   assert.equal(defaults.turnBudgetUsd, 10);
   assert.equal(defaults.drawerOpen, true);
   assert.equal(defaults.claudePath, null);
-  assert.deepEqual(PRESETS.map((preset) => preset.name), ['Neutral', 'Butler', 'Deckhand', 'Shipmate', 'Quartermaster']);
 
-  const oldLabSave = { behaviour: { candid: 0.1 }, reducedMotion: true };
-  const merged = merge(defaults, oldLabSave);
-  assert.equal(merged.behaviour.candid, 0.1);
-  assert.equal(merged.behaviour.playful, 0.35);
-  assert.equal(merged.reducedMotion, true);
-  assert.deepEqual(merged.persona, defaults.persona);
-  assert.equal(merged.model, 'gpt-6.1-sol');
-
-  assert.deepEqual(merge(defaults, { bodyColour: [10, 20, 30] }).bodyColour, [10, 20, 30]);
+  assert.equal(defaults.reducedMotion, false);
   assert.deepEqual(merge(defaults, 'garbage'), defaults);
-  assert.equal(defaultSettings().behaviour !== defaults.behaviour, true, 'each call returns fresh objects');
+  assert.notEqual(defaultSettings().persona, defaults.persona, 'each call returns fresh objects');
+
+  const originalWindow = globalThis.window;
+  const originalStorage = globalThis.localStorage;
+  let saved = JSON.stringify({
+    behaviour: { candid: 0.1 },
+    expressiveness: { master: 2.5 },
+    bodyColour: [12, 200, 99],
+    repeat: false,
+    reducedMotion: true,
+    persona: { name: 'Ada' },
+  });
+  try {
+    globalThis.window = {};
+    globalThis.localStorage = {
+      getItem: () => saved,
+      setItem: (_key, value) => { saved = value; },
+    };
+    const loaded = await loadSettings();
+    assert.equal(loaded.reducedMotion, true);
+    assert.deepEqual(loaded.persona, { ...defaults.persona, name: 'Ada' });
+    assert.equal(loaded.model, 'gpt-6.1-sol');
+    await saveSettings(loaded);
+    assert.deepEqual(await loadSettings(), loaded);
+    for (const key of ['behaviour', 'expressiveness', 'bodyColour', 'repeat']) {
+      assert.equal(Object.hasOwn(loaded, key), false, `removed ${key} was loaded`);
+      assert.equal(Object.hasOwn(JSON.parse(saved), key), false, `removed ${key} was saved`);
+    }
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+    if (originalStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = originalStorage;
+  }
 });
 
 test('defaults_match_the_rust_fixture', () => {

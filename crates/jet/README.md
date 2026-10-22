@@ -1,6 +1,6 @@
 # jet
 
-Jet is the first-mate character: a circle that stands up, waves, spins while it works and melts back. This crate is Jet's desktop home, a Tauri 2 window around a small animation player and a chat page that Jet lives in. `CONTEXT.md` holds the words this crate uses, and `character-policy.md` holds the rules for how Jet looks and moves.
+Jet is the first-mate character: a blue kite that stands, flies, waves and becomes a spinner while it works. This crate is Jet's desktop home, a Tauri 2 window around a small animation player and a chat page that Jet lives in. `CONTEXT.md` holds the words this crate uses, and `character-policy.md` holds the rules for how Jet looks and moves.
 
 ## Models
 
@@ -39,7 +39,7 @@ cargo run -p jet --example serve            # port 8787
 cargo run -p jet --example serve -- 9000    # another port
 ```
 
-It prints three addresses. `http://127.0.0.1:8787/` is the chat, running on a pretend agent that keeps its thread in the browser's storage. `http://127.0.0.1:8787/lab.html` is the lab, a page of buttons and dials for trying every clip. `http://127.0.0.1:8787/workstation.html` is the whole workstation on a pretend feed, and its left panel (the toolbar, the latency table and the charts) is built in `ui/workstation/toolbar/`, `latency/` and `chart/`. `http://127.0.0.1:8787/workstation.html?tape=1` replays `ui/bridge/fixtures/polysim-tape.jsonl`, 21 s of real polysim-bridge output recorded from the sim engine, over and over, so the page shows real numbers; commands change nothing in a replay. Without the parameter, or when the tape cannot load, the pretend market runs. Edits to files in `ui/` show on reload. `http://127.0.0.1:8787/workstation/chart/dev.html` is the workstation's charts on their own, on a made-up feed; add `?mode=candles` or `?series=pnl` to start in candles or on PnL, and `?hover=0.6` to put the pointer over the chart.
+It prints two addresses. `http://127.0.0.1:8787/` is the chat, running on a pretend agent that keeps its thread in the browser's storage. `http://127.0.0.1:8787/workstation.html` is the whole workstation on a pretend feed, and its left panel (the toolbar, the latency table and the charts) is built in `ui/workstation/toolbar/`, `latency/` and `chart/`. `http://127.0.0.1:8787/workstation.html?tape=1` replays `ui/bridge/fixtures/polysim-tape.jsonl`, 21 s of real polysim-bridge output recorded from the sim engine, over and over, so the page shows real numbers; commands change nothing in a replay. Without the parameter, or when the tape cannot load, the pretend market runs. Edits to files in `ui/` show on reload. `http://127.0.0.1:8787/workstation/chart/dev.html` is the workstation's charts on their own, on a made-up feed; add `?mode=candles` or `?series=pnl` to start in candles or on PnL, and `?hover=0.6` to put the pointer over the chart.
 
 The pretend agent answers from the words in your message. A word counts when a word of the message starts with it, in any case.
 
@@ -76,14 +76,10 @@ What they cover:
 
 | Test | Covers |
 | --- | --- |
-| `src/rig.rs` `embedded_rig_is_complete` | the embedded rig has its version, a full pose set, the eye positions and the rest colour |
-| `src/rig.rs` `every_grounded_pose_shares_the_foot` | the foot stays planted in every pose that is not airborne |
-| `src/rig.rs` `airborne_poses_never_sink_below_the_ground` | a rolling, flying, falling or dangling pose never goes below the ground |
-| `src/rig.rs` `wrong_pose_size_is_reported` | a pose with the wrong number of values is refused, with the number found |
 | `src/settings.rs` `missing_file_means_defaults` | no settings file yet gives the defaults |
 | `src/settings.rs` `settings_survive_a_round_trip` | what is saved is what is loaded, including the page shown last, written as the word `workstation` |
-| `src/settings.rs` `new_fields_round_trip` | the persona, body colour, model, the five thinking levels (xhigh and max included), the MCP servers, the workstation and the other chat fields are saved and loaded |
-| `src/settings.rs` `old_files_with_missing_fields_still_load` | an older file gets defaults for the fields it lacks, and keeps what it saved: a 1.00 budget stays 1.00 although the default is now 10.00; the MCP servers come back as the defaults |
+| `src/settings.rs` `new_fields_round_trip` | the persona, model, the five thinking levels (xhigh and max included), the MCP servers, the workstation and the other chat fields are saved and loaded |
+| `src/settings.rs` `old_files_with_missing_fields_still_load` | an older file gets defaults for missing fields, keeps reduced motion, persona and budget, and drops obsolete customization fields when saved again |
 | `src/settings.rs` `broken_file_names_the_path` | a file that cannot be read fails with its path in the message |
 | `src/settings.rs` `default_settings_match_the_ui_fixture` | `ui/bridge/default-settings.json` is exactly the defaults Rust writes |
 | `src/settings.rs` `json_uses_camel_case_for_the_frontend` | the page reads `reducedMotion`, not `reduced_motion` |
@@ -98,10 +94,9 @@ What they cover:
 | `src/chat/mod.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
 | `src/chat/libraries.rs` `the_page_reaches_only_the_engine_tools` | the page may call polysim's four engine tools and nothing else, so a mistake in the page can never reach quanty's paid tools |
 | `../agent/src/markdown/mod.rs` `math_and_tables_match_the_shared_vectors` | the app's renderer gives the html of every case in `ui/bridge/fixtures/math-vectors.json`: math in prose, display math, money, delimiters that open nothing, code, lists, number columns; and never writes a `style` attribute |
-| `rig/poses.rs` `generator_prints_the_committed_rig` | the generator prints exactly `rig/jet.json` |
 | `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps; the `quanty` word replays the recorded library search as tool events before the answer; the `engines` word lists the pretend fleet as a tool call, `mcpCall` starts, stops and re-modes it and refuses what polysim would refuse, and a preface is quoted at the start of the reply |
 | `ui/bridge/markdown.test.mjs` | the browser fallback gives the same html as the app's renderer for every shared case, with no `style` attribute |
-| `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; merge fills gaps from them; `defaults_match_the_rust_fixture`: the page's defaults are exactly `ui/bridge/default-settings.json` |
+| `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; legacy saves keep reduced motion and persona while obsolete customization fields disappear on a load/save round trip; `defaults_match_the_rust_fixture`: the page's defaults are exactly `ui/bridge/default-settings.json` |
 | `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method (`readLibraryImage` too) calls its command with the right argument keys, `mcpCall` through `mcp_call` and `reloadLibraries` through `mcp_reload`, and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
 | `ui/bridge/tauri-workstation.test.mjs` | with Tauri the workstation calls its three commands one after another with the right keys, lines of a replaced or stopped channel are dropped, and failures reach the page as `{ kind, message }`; without Tauri the pretend feed is used |
 | `ui/bridge/fake-market.test.mjs` `the market opens with hello, link, lifecycle and catalog…` | every line and tick section of the pretend market has the shape, keys and value words of the protocol, and survives JSON unchanged; the hello carries the four channel words and the first tick's channel entries are `full` |
@@ -120,7 +115,7 @@ What they cover:
 | `ui/chat/drawer/rates.test.mjs` | the recorded Sonnet turn costs 0.007334 at list price; Haiku 5.5 moves to its long-prompt prices at 100 000 prompt tokens; a model with no price has no estimate |
 | `ui/chat/drawer/usage.test.mjs` | the recorded Sonnet turn read line by line (live counts, then the reported cost and timings, then the totals); a second reply at another thinking level gets its own row; a stopped reply keeps its tokens; stray lines change nothing |
 | `ui/chat/page-state.test.mjs` | the page switches between the chat and the workstation, and a page already shown or not known changes nothing; Esc closes the sheet first, then takes the workstation back to the chat, then is left to the composer; the page shown last is saved and opens again, and an unknown saved page opens the chat; a wide drawer becomes the rail beside the workstation and is docked as the user left it on the chat, and a narrow drawer is the overlay on both pages |
-| `ui/chat/settings/form.test.mjs` | hex and rgb both ways, code-point counts, the master moves only the channels that follow it |
+| `ui/chat/settings/form.test.mjs` | code-point counts |
 | `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; the cruise grows with distance |
 | `ui/chat/thread/cards/engines.test.mjs` | the rows, badges and detail lines of a polysim listing; the button follows the state and Start asks unless the fresh mode is off or sim; an action is pending until it settles and a failure stays on its row; each action makes a line for the thread and a preface for the next message |
 | `ui/chat/thread/cards/model.test.mjs` | each tool reads as what it is doing while it runs and sums up what came back; a failed call shows the server's advice with the health hint split off, and a call the reply outran says it stopped; each kind of hit (chunk, formula, table, figure, code, footnote, unknown) is shown its own way, with its row line and a page's breadcrumbs |
@@ -129,35 +124,23 @@ What they cover:
 | `ui/chat/thread/scroll.test.mjs` | the thread follows within 80 px of the bottom, and a send always follows |
 | `ui/chat/thread/store.test.mjs` | grouping and day pills, the slot's life from waiting to its end, the held message, a reply's tool calls as they start and finish, and one still running at the end kept as unfinished |
 | `ui/chat/thread/throttle.test.mjs` | markdown renders at most every 50 ms with a trailing call; the first reveal waits for the mood |
-| `ui/jet/clip.test.mjs` | a time writer refuses a bare `t`; a face is sized by the eyes dial and hidden eyes have no size |
-| `ui/jet/clips/catalogue.test.mjs` | in every clip: tracks run forward, shape 0 and eyes 0 hold, any interruption comes to rest |
-| `ui/jet/clips/hello.test.mjs` | tracks run forward, ends at the circle, each dial does its job, the brief hello |
-| `ui/jet/clips/working.test.mjs` | the loop opens top right, spins clockwise, slows after 8 s, continues, and closes after its turn |
-| `ui/jet/clips/zoom.test.mjs` | the ground moves only mid-cruise, the host sets the cruise, the dials and reduced motion, a hello after a zoom |
-| `ui/jet/director.test.mjs` | send, zoom and loop, with the zoom's own timing; a quick reply skips the loop; a hello mood plays a brief hello after the loop or the zoom; every other mood word only closes the loop; done, a failure and a stop close the loop and play nothing after it; a failure or a stop drops a queued hello and done keeps it; a stop during the zoom lets it land; hello waits while a reply runs; reduced motion |
-| `ui/jet/easing.test.mjs` | `cubicBezier` pins both ends |
-| `ui/jet/maths.test.mjs` | `lerp` blends and may run past 1 |
-| `ui/jet/player.test.mjs` | a clip starts from the live state and ends at rest; at rest the circle opens its dark eyes, a hold keeps its own and eyes below 1.5 show none; the resting eyes blink on a random gap of 4 to 9 s and never under reduced motion; breathing of 1.8% |
-| `ui/jet/rig.test.mjs` | `pathFrom` writes one closed path |
-| `ui/jet/view.test.mjs` | the eyes draw in one layer that the stylesheet fills with the ground colour; no inline styles |
-| `ui/jet/track.test.mjs` | the sampler holds the ends and applies the easing |
-| `ui/jet-next/easing.test.mjs` | `cubicBezier` pins both ends; the motion scripts' curves (ease in-out, out, in, out-back, smooth step, ramp, pulse) give their exact values |
-| `ui/jet-next/maths.test.mjs` | `lerp` blends numbers and arrays, and keeps going past 1 |
-| `ui/jet-next/parts/forms.test.mjs` | the resting kite's 52 points match the reference kite drawing to 0.05 and mirror about the centre line; a lifted corner rises along its pivot arc, stretch adds reach and the left corner mirrors the right; the spinner lies in its band with its opening at the top, and no blend of kite and spinner crosses itself |
-| `ui/jet-next/parts/hand.test.mjs` | the hand fades in between 3 and 13 degrees and its fold and crease share end points on the outline, bowed 3 units into the body; the speed lines appear above 35 degrees a second, trail the motion and mirror on the left |
-| `ui/jet-next/parts/eyes.test.mjs` | eyes A, B and C match the three eye drawings to 0.05 on the lid line (A's fourth corner sits on its slanted edge); a shut lid hides the shape and shows the arch; the lowest point of every kind is on the lid line |
-| `ui/jet-next/parts/string.test.mjs` | the string is 16 segments of 3.75 from the tip and each points 90 degrees plus the wind; a pose blends in base-first with lag and overshoot; payout scales the length and a pose keeps its chords; a written route grows with its length and ends inside the palm; a lying string never goes below the floor; drag leans the chain away from the motion; the points are the same at 30, 60 and 144 frames a second |
-| `ui/jet-next/draw/paint.test.mjs` | the painter's tree has the 52-segment body, the string, two hands and two eyes with the same shape every frame, and no `style` attribute; the right hand's fold is invisible at lift 0 and clear at 30; the spinner has no hands or eyes; every stroke stays at least 0.8 px wide at lane size |
-| `ui/jet-next/draw/view.test.mjs` | the view builds its elements once, only sets attributes afterwards and never writes a style |
-| `ui/jet-next/track.test.mjs` | `sample` holds the first and last values and applies the easing of the key it arrives at; `hold` gives the latest key at or before the time, so a step track never blends |
-| `ui/jet-next/clip.test.mjs` | a writer refuses a time written without its brackets and says how to write it, and `t()` follows the latest key; `finish` refuses a `revealFrom` that is not a phase |
-| `ui/jet-next/player.test.mjs` | a clip plays from the live state and is never changed; the body rolls a tenth of the lift 100 ms late across a clip change; stretch follows the lift speed on the moving corner only; the idle layers stay on during a clip and go off with `layers: false`; the foot stays put at y 0 and y never goes below 0; blinks come on a random gap of 4 to 9 s with a 40 ms hold and never under reduced motion; a keyed eye kind waits for shut lids and round returns on the first idle blink 3 s after a clip; carry adds no position, leans the body into the motion and trails the string behind it |
-| `ui/jet-next/clips/hello.test.mjs` | the played wave matches the wave drawing's roll, hand opacity and wink frame for frame (the golden, from `fixtures/wave.json`); the brief wave ends at 1650 ms with no wink, both reveal from the wag, their tracks run forward and the kite ends at rest |
-| `ui/jet-next/clips/fly.test.mjs` | the flight has its four phases and a cruise as long as asked (never under the 220 ms ease down), and y overshoots to 64 then settles at 58.8; from standing it crouches and the lying string lets go base-first during the launch, from a hover it dips 4 units |
-| `ui/jet-next/clips/settle.test.mjs` | the landing takes 1080 ms: it rises a touch, the eyes shut and turn round at contact, the body squashes at y 0 and the string lies out to the left |
-| `ui/jet-next/clips/working.test.mjs` | the eyes shut before the body melts and the spin starts 240 ms into the melt; the spinner turns clockwise at 1.1 s a turn, then 1.8 s after eight seconds, and a continuation keeps the angle and the slow spin; the end finishes the turn within 200 to 700 ms, never turns back and opens the eyes only after the form is back to the kite; reduced motion melts and holds the roll |
-| `ui/jet-next/clips/catalogue.test.mjs` | every clip's tracks and phases run forward from a standing and a hovering start; any clip interrupting any clip ends with the kite whole, upright in its squash and lift, eyes open and at rest height, unless it is the spinner |
-| `ui/jet-next/director.test.mjs` | a send flies then works until the reply arrives, with the flight's own timing; a quick reply skips the spinner; a hello mood waits for the brake and every other mood word only closes the spinner; done settles, after a hello that is playing, and a later hello plays before the settle; failed and stopped drop what waits, close the spinner and settle; reduced motion never flies; the text is revealed at the reaction's reveal phase, or after 300 ms with no reaction; status reads idle, flying, working and reacting |
+| `ui/jet/easing.test.mjs` | `cubicBezier` pins both ends; the motion scripts' curves (ease in-out, out, in, out-back, smooth step, ramp, pulse) give their exact values |
+| `ui/jet/maths.test.mjs` | `lerp` blends numbers and arrays, and keeps going past 1 |
+| `ui/jet/parts/forms.test.mjs` | the resting kite's 52 points match the reference kite drawing to 0.05 and mirror about the centre line; a lifted corner rises along its pivot arc, stretch adds reach and the left corner mirrors the right; the spinner lies in its band with its opening at the top, and no blend of kite and spinner crosses itself |
+| `ui/jet/parts/hand.test.mjs` | the hand fades in between 3 and 13 degrees and its fold and crease share end points on the outline, bowed 3 units into the body; the speed lines appear above 35 degrees a second, trail the motion and mirror on the left |
+| `ui/jet/parts/eyes.test.mjs` | eyes A, B and C match the three eye drawings to 0.05 on the lid line (A's fourth corner sits on its slanted edge); a shut lid hides the shape and shows the arch; the lowest point of every kind is on the lid line |
+| `ui/jet/parts/string.test.mjs` | the string is 16 segments of 3.75 from the tip and each points 90 degrees plus the wind; a pose blends in base-first with lag and overshoot; payout scales the length and a pose keeps its chords; a written route grows with its length and ends inside the palm; a lying string never goes below the floor; drag leans the chain away from the motion; the points are the same at 30, 60 and 144 frames a second |
+| `ui/jet/draw/paint.test.mjs` | the painter's tree has the 52-segment body, the string, two hands and two eyes with the same shape every frame, and no `style` attribute; the right hand's fold is invisible at lift 0 and clear at 30; the spinner has no hands or eyes; every stroke stays at least 0.8 px wide at lane size |
+| `ui/jet/draw/view.test.mjs` | the view builds its elements once, only sets attributes afterwards and never writes a style |
+| `ui/jet/track.test.mjs` | `sample` holds the first and last values and applies the easing of the key it arrives at; `hold` gives the latest key at or before the time, so a step track never blends |
+| `ui/jet/clip.test.mjs` | a writer refuses a time written without its brackets and says how to write it, and `t()` follows the latest key; `finish` refuses a `revealFrom` that is not a phase |
+| `ui/jet/player.test.mjs` | a clip plays from the live state and is never changed; the body rolls a tenth of the lift 100 ms late across a clip change; stretch follows the lift speed on the moving corner only; the idle layers stay on during a clip and go off with `layers: false`; the foot stays put at y 0 and y never goes below 0; blinks come on a random gap of 4 to 9 s with a 40 ms hold and never under reduced motion; a keyed eye kind waits for shut lids and round returns on the first idle blink 3 s after a clip; carry adds no position, leans the body into the motion and trails the string behind it |
+| `ui/jet/clips/hello.test.mjs` | the played wave matches the wave drawing's roll, hand opacity and wink frame for frame (the golden, from `fixtures/wave.json`); the brief wave ends at 1650 ms with no wink, both reveal from the wag, their tracks run forward and the kite ends at rest |
+| `ui/jet/clips/fly.test.mjs` | the flight has its four phases and a cruise as long as asked (never under the 220 ms ease down), and y overshoots to 64 then settles at 58.8; from standing it crouches and the lying string lets go base-first during the launch, from a hover it dips 4 units |
+| `ui/jet/clips/settle.test.mjs` | the landing takes 1080 ms: it rises a touch, the eyes shut and turn round at contact, the body squashes at y 0 and the string lies out to the left |
+| `ui/jet/clips/working.test.mjs` | the eyes shut before the body melts and the spin starts 240 ms into the melt; the spinner turns clockwise at 1.1 s a turn, then 1.8 s after eight seconds, and a continuation keeps the angle and the slow spin; the end finishes the turn within 200 to 700 ms, never turns back and opens the eyes only after the form is back to the kite; reduced motion melts and holds the roll |
+| `ui/jet/clips/catalogue.test.mjs` | every clip's tracks and phases run forward from a standing and a hovering start; any clip interrupting any clip ends with the kite whole, upright in its squash and lift, eyes open and at rest height, unless it is the spinner |
+| `ui/jet/director.test.mjs` | a send flies then works until the reply arrives, with the flight's own timing; a quick reply skips the spinner; a hello mood waits for the brake and every other mood word only closes the spinner; done settles, after a hello that is playing, and a later hello plays before the settle; failed and stopped drop what waits, close the spinner and settle; reduced motion never flies; the text is revealed at the reaction's reveal phase, or after 300 ms with no reaction; status reads idle, flying, working and reacting |
 | `ui/workstation/monitor/cells.test.mjs` | the account's status row (a halt takes the row with its reason, otherwise the last refusal beside ARMED or `--`); side counts (lost turns invalid above zero, a leak shows `+N`); a feature row (changed shows the bar, stale dims the name and greys the value, a value never sent is grey too) |
 | `ui/workstation/monitor/channels.test.mjs` | channel deltas go on top newest first and each ring keeps its newest 256; a full set, a new session, generation or instrument, and a new bridge start the rings over, while a tick without those sections does not |
 | `ui/workstation/monitor/following.test.mjs` | a list at the top counts nothing, scrolled away it counts what was appended since and the badge says so; the badge brings a list back, and each channel follows on its own |
@@ -171,7 +154,7 @@ What they cover:
 
 The frontend is plain ES modules with no bundler, so there is nothing to install for `ui/`. Tauri serves the folder as-is (`build.frontendDist` in `tauri.conf.json`), and so does the dev server.
 
-Before adding a pose, a clip or a status, read `character-policy.md`. It says how Jet is meant to move and why the rig is built the way it is.
+Before adding a clip or a status, read `character-policy.md` for the character rules.
 
 ## Where things live
 
@@ -180,12 +163,12 @@ crates/jet
 ├── README.md                       this file
 ├── CONTEXT.md                      the words this crate uses, each with one meaning
 ├── character-policy.md             how to animate Jet; read first
-├── Cargo.toml                      the library, the binary, and the poses and serve examples
+├── Cargo.toml                      the library, the binary, and the serve example
 ├── build.rs                        the Tauri build step
 ├── tauri.conf.json                 window, security policy, bundling
 ├── capabilities/
 │   └── default.json                what the window may ask of the Rust side
-├── icons/                          generated from the rig's standing pose
+├── icons/                          the desktop app icons
 │   ├── icon.png                    the full-size source icon, 1024 px
 │   ├── 128x128@2x.png              256 px bundle icon
 │   ├── 128x128.png                 128 px bundle icon
@@ -194,15 +177,10 @@ crates/jet
 │   └── icon.ico                    Windows bundle icon
 ├── dev/
 │   └── serve.rs                    the dev server: serves ui/ to a browser, std only (cargo run -p jet --example serve)
-├── rig/
-│   ├── poses.rs                    prints rig/jet.json; poses are constructed, not drawn
-│   ├── shape.rs                    the geometry a pose is built from: circles, ellipses, standing bodies
-│   └── jet.json                    the rig: every pose × 10 anchors, eye positions, palette
 ├── src/
 │   ├── main.rs                     desktop entry point
-│   ├── lib.rs                      checks the rig, opens the window, registers the commands
-│   ├── rig.rs                      the character definition, embedded and checked at start-up
-│   ├── settings.rs                 remembers the dials, the chat settings and the workstation setup between launches (app config folder)
+│   ├── lib.rs                      opens the window, registers the commands
+│   ├── settings.rs                 remembers reduced motion, the chat settings and the workstation setup between launches (app config folder)
 │   ├── workstation.rs              the commands the workstation page calls: start polysim-bridge from the settings, stream its lines, pass it commands, stop it
 │   └── chat/
 │       ├── mod.rs                  the commands the chat page calls, and the channel that streams a reply to it
@@ -214,16 +192,13 @@ crates/jet
 └── ui/
     ├── index.html                  the chat page: header, drawer, thread, composer, the workstation page, settings dialog
     ├── chat.css                    the chat page's tokens, layout and header
-    ├── lab.html                    the lab page: Jet, a button for every clip, and the dials
     ├── workstation.html            the workstation on a page of its own, for a browser (pretend feed, or the tape with ?tape=1) or the window (polysim-bridge)
-    ├── styles.css                  the lab's look, and the ground colour of Jet's eyes and ring
     ├── package.json                the `node --test` script, nothing to install
     ├── dom.js                      helpers that build elements without markup strings, for the chat and the workstation
     ├── assets/
     │   └── tile.png                the pattern behind the thread
     ├── bridge/                     the pages' way to the Rust side, with browser fallbacks
-    │   ├── rig.js                  loadRig: the rig from Rust, or rig/jet.json in a browser
-    │   ├── settings.js             the Settings shape, defaults, behaviour presets, merge, load and save
+    │   ├── settings.js             the Settings shape, defaults, merge, load and save
     │   ├── settings.test.mjs       the defaults carry the chat fields; merge fills gaps from them; the defaults equal the Rust fixture
     │   ├── default-settings.json   the defaults as Rust writes them, read by a test on each side so the two cannot drift
     │   ├── agent.js                connectAgent: the one way to talk to Claude, and the types of its events
@@ -252,7 +227,7 @@ crates/jet
     │   ├── markdown.js             a small, safe Markdown renderer for the browser fallback, with math and tables
     │   └── markdown.test.mjs       the shared math and table cases, with no style attribute
     ├── chat/                       the chat page
-    │   ├── main.js                 boot: loads the rig, settings and history, builds every part, hands each its parts
+    │   ├── main.js                 boot: loads settings and history, builds every part, hands each its parts
     │   ├── turn.js                 one turn: a send, each event of the reply, the end of the reply
     │   ├── clock.js                how the page writes times and days
     │   ├── page-state.js           which page shows, what Esc does first, and how the drawer looks beside each page (pure)
@@ -308,53 +283,34 @@ crates/jet
     │   │   ├── drawer.css          docked beside the thread on wide screens, over it on narrow ones
     │   │   └── rail.css            the rail beside the workstation, and the Jet and workstation buttons
     │   └── settings/               the settings sheet
-    │       ├── sheet.js            the dialog and its eleven sections; saves after the last edit
+    │       ├── sheet.js            the dialog and its sections; saves after the last edit
     │       ├── controls.js         the few form controls the sections are made of
     │       ├── persona.js          who Jet is: name, job title, how to talk
-    │       ├── look.js             body colour, behaviour presets, expressiveness, reduced motion
+    │       ├── motion.js           reduced motion
     │       ├── model.js            model, five thinking levels, the budget for one turn, usage since the app started
     │       ├── memory.js           the three notes as editors
     │       ├── libraries.js        whether quanty and polysim are on, their programs and their folders
     │       ├── workstation.js      where polysim-bridge and the polysim folder are, the strategy, the engine links and their token
     │       ├── claude.js           where Claude Code is, and Forget this conversation
-    │       ├── form.js             colour and counter arithmetic, the master's rules (pure)
-    │       ├── form.test.mjs       hex and rgb both ways; code-point counts; the master moves its followers
+    │       ├── form.js             code-point counts (pure)
+    │       ├── form.test.mjs       code-point counts
     │       └── sheet.css           the sheet's look
-    ├── jet/                        the engine
-    │   ├── rig.js                  the rig as the page sees it; turns a pose into an SVG path
-    │   ├── rig.test.mjs            pathFrom writes one closed path
-    │   ├── state.js                Jet at one moment: the six tracks, the ring's numbers, colour
-    │   ├── track.js                keyframe tracks and how to sample one
-    │   ├── track.test.mjs          the sampler holds the ends and applies the easing
-    │   ├── easing.js               cubic-bezier, same numbers as CSS
-    │   ├── easing.test.mjs         cubicBezier pins both ends
-    │   ├── maths.js                lerp and clamp
-    │   ├── maths.test.mjs          lerp blends and may run past 1
-    │   ├── clip.js                 what a clip is, and how the dials reach one (readDials, createClip, onOff)
-    │   ├── clip.test.mjs           a time writer refuses a bare t; faces sized by the eyes dial, hidden eyes with no size
-    │   ├── clips/                  one file per clip
-    │   │   ├── catalogue.js        the one list of every clip: label, builder, whether it is a hold
-    │   │   ├── catalogue.test.mjs  in every clip: tracks run forward, shape 0 and eyes 0 hold, any interruption comes to rest
-    │   │   ├── hello.js            stand up, wave, melt
-    │   │   ├── hello.test.mjs      tracks run forward, ends at the circle, each dial does its job
-    │   │   ├── zoom.js             wind up, roll past the scenery, brake
-    │   │   ├── zoom.test.mjs       the ground moves only mid-cruise; a hello after a zoom stops it
-    │   │   ├── working.js          the working loop and how it closes
-    │   │   └── working.test.mjs    the loop spins clockwise, slows after 8 s, continues, closes after its turn
-    │   ├── director.js             chooses and orders clips for each chat event; the MOODS list, of which only hello plays a clip
-    │   ├── director.test.mjs       send, zoom and loop; quick reply; the hello mood; other moods close the loop; done, failure and stop; reduced motion
-    │   ├── player.js               owns Jet's state, plays clips from wherever Jet is; breathes and blinks its dark eyes at rest; no DOM
-    │   ├── player.test.mjs         a clip starts from the live state and ends at rest; resting eyes and their blink; breathing
-    │   ├── view.js                 draws a state into an SVG: body, ring, eyes; the only code that draws Jet
-    │   ├── view.test.mjs           the eyes in one ground-coloured layer
-    │   └── scene.js                scenery in its own SVG layers, scrolled by the speed track; not part of Jet
+    ├── jet/                        the character and animation engine; tests live beside their modules
+    │   ├── state.js                the kite's animation tracks and rest state
+    │   ├── track.js                sampled and step keyframes
+    │   ├── easing.js               the motion curves
+    │   ├── maths.js                interpolation and clamping
+    │   ├── geometry.js             paths, curves and point transforms
+    │   ├── clip.js                 the track writers, phases and reveal point of a clip
+    │   ├── emotions.js             the emotions that have clips
+    │   ├── director.js             orders clips for chat events and moods
+    │   ├── player.js               plays from the live state, adds idle motion and blinks
+    │   ├── clips/                  hello, fly, settle, working and workingEnd; the catalogue
+    │   ├── parts/                  the kite and spinner forms, hands, eyes, string and written routes
+    │   ├── draw/                   the palette, pure painter and SVG view
+    │   └── fixtures/               reference wave and flip frames
     ├── vendor/
     │   └── katex/                  KaTeX 0.16.47 (MIT), copied unchanged from npm: katex.mjs, katex.min.css, fonts/ (20 .woff2), LICENSE and VERSION
-    ├── lab/                        the controls around Jet
-    │   ├── main.js                 boot, frame loop, a step list for each button, replay-on-change, save-on-change
-    │   ├── wheel.js                behaviour wheel, presets, axis sliders
-    │   ├── dial.js                 expressiveness dial and the four channels
-    │   └── readout.js              what the dials turned into, progress bar
     └── workstation/                the polysim workstation page, one folder for each area
         ├── shell.js                its header, the setup card and the workstation itself, built and its feed started the first time the page opens; the feed is paused while the chat shows
         ├── shell.css               the chat's header, thread and composer step aside; the page's header, link chip and setup card
@@ -424,9 +380,9 @@ crates/jet
 
 Three ideas carry the design:
 
-1. **The rig is data, the clips are code.** `rig/jet.json` holds poses as 60 numbers each (ten anchors, each a point with two handles). Every pose shares the same anchors, so any two poses blend. Each file in `ui/jet/clips/` writes keyframes from those poses using the dial values; nothing is a stored animation.
+1. **The character and clips are JavaScript.** `ui/jet/parts/` builds the kite, eyes and string. Each file in `ui/jet/clips/` writes tracks for the player; `ui/jet/draw/` turns the resulting frame into SVG.
 2. **The player blends from wherever Jet is.** `play()` puts the current state at the front of every track, so a new clip never cuts.
-3. **Rust owns what must be true on every platform.** The rig ships inside the binary and is checked at start-up (it has the `circle` and `soft` poses and a rest colour, every pose has 60 numbers, every eye position belongs to a pose). A test, not start-up, holds the foot in place. Settings are read and written by Rust so the file format has one definition, with `serde(default)` so older files still load.
+3. **Rust owns saved settings in the app.** Settings use `serde(default)` so older files still load; unsupported fields disappear when saved. The browser uses the same defaults and keeps settings in local storage.
 
 ## The usage panel
 
@@ -476,7 +432,6 @@ The settings commands reject with a message string. The chat commands, from `age
 
 | Command | Takes | Returns | Notes |
 | --- | --- | --- | --- |
-| `rig` | nothing | the rig JSON as a string | the frontend parses it; one copy of the character |
 | `load_settings` | nothing | `Settings` | defaults when no file exists yet |
 | `save_settings` | `{ settings }` | nothing | |
 | `agent_status` | nothing | where Claude Code is (`found`, `path`, `searched`), the data folder, whether a reply is running, and the prompt cache status | the page shows the missing-Claude banner and the cache chip from it |
@@ -562,8 +517,8 @@ The recording `crates/agent/tests/fixtures/quanty-search-reply.jsonl` is a real 
 
 ## Adding a clip
 
-Write a `buildX(rig, params)` in `ui/jet/clips/`, next to `hello.js`. It makes two calls to `ui/jet/clip.js`. The first is `readDials(rig, params)`. It returns the dials as the numbers that a clip's formulas read, the circle pose, the rest colour, and the helpers `pose`, `eyes` and `hiddenEyes`, which already apply the shape and eyes dials. The second is `createClip(tempo)`, which the clip calls when it has worked out its tempo. It returns the empty clip, one writer for each track (`body`, `eye`, `colour`, `scale`, `ring`, `speed`) and `t()`, the time that the body has reached. Write `t()` with its brackets: the five writers that take a time throw when they are given a bare `t`, but `total` and the end of a phase are written by hand and nothing checks them. The new file then holds only its own choreography: its easing table, its tempo, its phases, its `info` and its readout rows (`onOff` gives the value of a row that is on or off). Set `total`, `phases`, `info` and `readout` on the clip and return it. `zoom.js` shows a clip that uses the ring (spin grooves) and the speed track (scenery), and `working.js` shows one that opens a loop over the pip. The player and the view need no changes.
+Write a `buildX(start, options)` in `ui/jet/clips/`, next to `hello.js`. Use `createClip()` from `ui/jet/clip.js` for track writers, `t()`, `phase()` and `finish()`. Times are milliseconds; `finish({ revealFrom })` names the phase when text may appear. Bring tracks the clip does not own back to rest with `returnToRest(start, ownedTracks)`.
 
-Then list the clip in `ui/jet/clips/catalogue.js`. Every clip is listed there, with its label, its builder and whether it is a hold. The lab and the director both read that list. Give the clip a button in `ui/lab.html` and a step list in `BUTTONS` in `ui/lab/main.js` so it can be tried.
+List the builder in `ui/jet/clips/catalogue.js`. Mark a clip that deliberately ends away from rest as a hold. Preview it with `node dev/frames.mjs <clip>` from this crate; the player and view use the same character code as the app.
 
 The director (`ui/jet/director.js`) decides which catalogue clip plays for each chat event, and which one plays for each mood word. To play the new clip for a mood, add it to the director's mood table. A new mood word must be added on both sides: `agent::Mood` in `crates/agent/src/chat/mod.rs` and `MOODS` in `director.js`. The Rust test `every_mood_word_is_handled_by_the_director` fails until both agree.
