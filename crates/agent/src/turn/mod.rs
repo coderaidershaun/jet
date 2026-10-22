@@ -341,7 +341,7 @@ mod tests {
         let broken_pipe = || TransportError::Read {
             source: std::io::Error::other("pipe broke"),
         };
-        let mut lines = reply_lines("s1", "mood: happy\nHi there");
+        let mut lines = reply_lines("s1", "mood: hello\nHi there");
         let cases = [
             (
                 "success",
@@ -438,7 +438,7 @@ mod tests {
         assert!(
             steps
                 .iter()
-                .any(|step| matches!(step, Step::Mood(Mood::Happy)))
+                .any(|step| matches!(step, Step::Mood(Mood::Hello)))
         );
     }
 
@@ -455,11 +455,11 @@ mod tests {
                     call.clone(),
                     tool_result_line("a", "started"),
                     message_start_line(),
-                    delta_line("mood: happy\nThe engine runs."),
+                    delta_line("mood: hello\nThe engine runs."),
                     result_line("unused"),
                 ],
                 "Mode is sim. Starting it.\n\nThe engine runs.",
-                Mood::Happy,
+                Mood::Hello,
             ),
             (
                 "a mood line, then a call, then another mood line",
@@ -471,8 +471,8 @@ mod tests {
                     call,
                     tool_result_line("a", "started"),
                     message_start_line(),
-                    delta_line("mood: hap"),
-                    delta_line("py\nThe engine runs."),
+                    delta_line("mood: hel"),
+                    delta_line("lo\nThe engine runs."),
                     result_line("unused"),
                 ],
                 "Starting it.\n\nThe engine runs.",

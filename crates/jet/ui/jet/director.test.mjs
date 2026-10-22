@@ -68,7 +68,8 @@ test('a quick reply skips the spinner', () => {
   assert.ok(player.standing);
 });
 
-test('a hello mood queues after the brake and every other mood word only closes the spinner', () => {
+test('animated moods queue after the brake and unsupported moods only close the spinner', () => {
+  assert.deepEqual(MOODS, ['neutral', 'hello', 'insulted']);
   for (const word of MOODS) assert.ok(Object.hasOwn(EMOTIONS, word), `${word} has an entry in EMOTIONS`);
 
   const flying = setup();
@@ -90,7 +91,7 @@ test('a hello mood queues after the brake and every other mood word only closes 
   working.run(3010, 9000);
   assert.deepEqual(working.seen, ['fly', 'working', 'workingEnd', 'hello']);
 
-  for (const word of [...MOODS.filter((w) => w !== 'hello'), 'flabbergasted', '']) {
+  for (const word of ['neutral', 'happy', 'excited', 'thinking', 'curious', 'sorry', 'alert', 'annoyed', 'flabbergasted', '']) {
     const { director, seen, run } = setup();
     director.send({ cruiseMs: 800 }, 0);
     run(0, 3000);
@@ -174,6 +175,18 @@ test('reduced motion never flies', () => {
 });
 
 test('revealAt is the absolute deadline of the clip\'s reveal phase', () => {
+  const insulted = setup();
+  assert.deepEqual(insulted.director.mood('insulted', 1000), { revealAt: 3720 });
+  assert.equal(insulted.director.status, 'reacting');
+
+  const early = setup();
+  early.director.send({ cruiseMs: 800 }, 1000);
+  early.run(1000, 1100);
+  assert.deepEqual(early.director.mood('insulted', 1100), { revealAt: 1000 + FLY_DONE_MS + 2720 });
+  early.director.done(1120);
+  early.run(1120, 10000);
+  assert.deepEqual(early.seen, ['fly', 'insulted', 'settle'], 'early completion preserves the held reaction');
+
   const resting = setup();
   assert.deepEqual(resting.director.mood('hello', 0), { revealAt: 650 }, 'the wave shows its text from the first wag');
 
@@ -195,32 +208,36 @@ test('revealAt is the absolute deadline of the clip\'s reveal phase', () => {
 });
 
 test('status reads idle, flying, working and reacting', () => {
-  const { director, seen, run, runUntil } = setup();
-  assert.equal(director.status, 'idle');
-  director.send({ cruiseMs: 800 }, 0);
-  assert.equal(director.status, 'flying');
-  run(0, 3000);
-  assert.equal(director.status, 'working');
-  director.mood('hello', 3000);
-  assert.equal(director.status, 'working', 'while the spinner closes');
-  const helloAt = runUntil('hello', 3016);
-  assert.equal(director.status, 'reacting');
-  director.done(helloAt);
-  run(helloAt + FRAME_MS, helloAt + 6000);
-  assert.equal(seen.at(-1), 'settle');
-  assert.equal(director.status, 'idle');
+  for (const word of ['hello', 'insulted']) {
+    const { director, seen, run, runUntil } = setup();
+    assert.equal(director.status, 'idle');
+    director.send({ cruiseMs: 800 }, 0);
+    assert.equal(director.status, 'flying');
+    run(0, 3000);
+    assert.equal(director.status, 'working');
+    director.mood(word, 3000);
+    assert.equal(director.status, 'working', 'while the spinner closes');
+    const reactionAt = runUntil(word, 3016);
+    assert.equal(director.status, 'reacting');
+    director.done(reactionAt);
+    run(reactionAt + FRAME_MS, reactionAt + 6000);
+    assert.equal(seen.at(-1), 'settle');
+    assert.equal(director.status, 'idle');
+  }
 });
 
 test('a completed reduced motion reaction restores round eyes without blinking', () => {
-  const { director, player, run } = setup({ reducedMotion: true });
-  director.hello(0);
-  for (let now = 0; now < 3000; now += FRAME_MS) {
-    director.tick(now);
-    assert.deepEqual(player.frame.eyes.lids, [0, 0], 'reduced motion never blinks, including inside a reaction');
+  for (const word of ['hello', 'insulted']) {
+    const { director, player, run } = setup({ reducedMotion: true });
+    director.mood(word, 0);
+    for (let now = 0; now < 5000; now += FRAME_MS) {
+      director.tick(now);
+      assert.deepEqual(player.frame.eyes.lids, [0, 0], 'reduced motion never blinks, including inside a reaction');
+      assert.equal(player.frame.y, 0);
+    }
+    run(5000, 5100);
+    assert.equal(player.frame.eyes.kind, 'round');
+    assert.deepEqual(player.frame.eyes.lids, [0, 0]);
     assert.equal(player.frame.y, 0);
   }
-  run(3000, 3100);
-  assert.equal(player.frame.eyes.kind, 'round');
-  assert.deepEqual(player.frame.eyes.lids, [0, 0]);
-  assert.equal(player.frame.y, 0);
 });

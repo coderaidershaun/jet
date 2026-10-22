@@ -217,9 +217,10 @@ export function createPlayer({ random = Math.random, reducedMotion = false, laye
 
     const eyes = eyesAt(now);
     const body = { y: Math.max(0, y), roll, squash: state.squash, pivot: lerp(TIP_POINT, CENTRE, hoverWeight) };
-    const string = chain.points({
+    const activeChain = playing?.windHz ? createChain({ windHz: playing.windHz }) : chain;
+    const string = activeChain.points({
       tip: bodyPoint(body, TIP_POINT),
-      t: reduced ? 0 : now / 1000,
+      t: reduced ? 0 : (playing?.windHz ? now - clipStart : now) / 1000,
       pose: state.stringPose,
       payout: state.payout * (1 - state.form),
       drag: reduced ? 0 : carrySpeed,
@@ -283,7 +284,7 @@ export function createPlayer({ random = Math.random, reducedMotion = false, laye
      * @param {number} now   ms on the clock the host ticks with
      */
     play(clip, now) {
-      const copy = { total: clip.total, phases: [...clip.phases], revealFrom: clip.revealFrom ?? null };
+      const copy = { total: clip.total, phases: [...clip.phases], revealFrom: clip.revealFrom ?? null, windHz: clip.windHz };
       for (const name of TRACKS) {
         copy[name] = [{ t: 0, v: copyOf(state[name]) }, ...(clip[name] ?? [])].sort((a, b) => a.t - b.t);
       }

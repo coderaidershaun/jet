@@ -42,7 +42,7 @@ function stringTouchMs(yTrack) {
 /** @param {import('../clip.js').Start} start */
 export function buildSettle(start) {
   const { clip, y, squash, lids, eyeKind, anger, stringPose, phase, finish, returnToRest } = createClip();
-  returnToRest(start, ['y']);
+  returnToRest(start, ['y', 'anger', 'stringPose']);
 
   y(RISE_MS, RISE_Y, easeOut);
   phase('rise', RISE_MS);

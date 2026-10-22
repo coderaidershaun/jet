@@ -131,7 +131,7 @@ export function buildWorking(start, { spinMs = DEFAULT_SPIN_MS, continueFrom } =
  */
 export function buildWorkingEnd(start, { roll: angle = 0, elapsedMs = 0 } = {}) {
   const { roll, form, lids, phase, finish, returnToRest } = createClip();
-  returnToRest(start, ['form', 'lids']);
+  returnToRest(start, ['roll', 'form', 'lids']);
 
   // The spinner always finishes the turn it is on, so a turn is never cut short and never undone.
   // A roll of exactly 360 is already a whole turn: the first key aims at 360 and the second sets 0.

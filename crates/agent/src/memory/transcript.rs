@@ -188,7 +188,7 @@ mod tests {
         NewEntry {
             role: Role::Jet,
             text: text.to_owned(),
-            mood: Some(Mood::Happy),
+            mood: Some(Mood::Hello),
             status: EntryStatus::Complete,
             error: None,
             tools: Vec::new(),
@@ -212,6 +212,26 @@ mod tests {
         let entries = transcript.entries().unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[1].text, "two");
+        assert_eq!(Mood::ALL.map(Mood::word), ["neutral", "hello", "insulted"]);
+        for mood in Mood::ALL {
+            let mut entry = entries[1].clone();
+            entry.mood = Some(mood);
+            let json = serde_json::to_string(&entry).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Entry>(&json).unwrap().mood,
+                Some(mood)
+            );
+        }
+        for word in [
+            "happy", "excited", "thinking", "curious", "sorry", "alert", "annoyed", "unknown",
+        ] {
+            let mut json = serde_json::to_value(&entries[1]).unwrap();
+            json["mood"] = serde_json::json!(word);
+            assert_eq!(
+                serde_json::from_value::<Entry>(json).unwrap().mood,
+                Some(Mood::Neutral)
+            );
+        }
 
         // The next entry replaces the torn fragment instead of gluing onto it.
         let third = transcript.append(NewEntry::user("three"), 30).unwrap();

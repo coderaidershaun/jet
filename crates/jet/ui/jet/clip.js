@@ -4,11 +4,12 @@
 
 import { easeInOut, easeOut } from './easing.js';
 import { HOVER_Y } from './parts/forms.js';
-import { TRACKS } from './state.js';
+import { restState, TRACKS } from './state.js';
 
 /**
  * @typedef {object} Clip
  * @property {import('./track.js').Key[]} [y]  and one track for each other name in `TRACKS`; a track a clip never writes is empty and holds when played
+ * @property {number[]} [windHz]                  authored string wind speeds during the clip
  * @property {number} total                          clip length in ms
  * @property {{ name: string, end: number }[]} phases  in order, ends in ms
  * @property {string | null} revealFrom              the phase whose start is when a reply's text may show
@@ -78,6 +79,12 @@ export function createClip() {
     toRest('squash', [1, 1], easeInOut);
     toRest('lift', [0, 0], easeInOut);
     toRest('lids', [0, 0], easeOut);
+    toRest('roll', 0, easeOut);
+    toRest('anger', 0, easeOut);
+    toRest('squint', 0, easeOut);
+    toRest('payout', 1, easeOut);
+    toRest('written', null);
+    toRest('stringPose', restState({ standing }).stringPose);
   }
 
   const phase = (name, end = latest) => {

@@ -2,6 +2,7 @@
 // clip is added here and nowhere else.
 
 import { buildFly } from './fly.js';
+import { buildInsulted } from './insulted.js';
 import { buildHello } from './hello.js';
 import { buildSettle } from './settle.js';
 import { buildWorking, buildWorkingEnd } from './working.js';
@@ -14,6 +15,7 @@ import { buildWorking, buildWorkingEnd } from './working.js';
 
 /** @type {Record<string, CatalogueEntry>} */
 export const CLIPS = {
+  insulted: { build: buildInsulted, hold: false },
   hello: { build: buildHello, hold: false },
   fly: { build: buildFly, hold: false },
   settle: { build: buildSettle, hold: false },

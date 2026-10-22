@@ -7,6 +7,7 @@ import { CLIPS } from './catalogue.js';
 
 // The ways each clip can be asked for.
 const OPTIONS = {
+  insulted: [{}],
   hello: [{}, { brief: true }],
   fly: [{ cruiseMs: 800 }],
   settle: [{}],
@@ -58,6 +59,12 @@ test('any clip interrupting any clip ends at rest unless it is the hold', () => 
         const { state } = player;
         assert.equal(player.playing, false, `${title}: still playing after its total`);
         if (next.entry.hold) continue;
+        assert.equal(state.roll, 0, `${title}: ends rolled`);
+        assert.equal(state.anger, 0, `${title}: ends scowling`);
+        assert.equal(state.squint, 0, `${title}: ends squinting`);
+        assert.equal(state.payout, 1, `${title}: ends paid out`);
+        assert.equal(state.written, null, `${title}: ends writing`);
+        if (state.y === HOVER_Y) assert.equal(state.stringPose, null, `${title}: ends hovering with a posed string`);
         assert.equal(state.form, 0, `${title}: ends melted`);
         assert.deepEqual(state.squash, [1, 1], `${title}: ends squashed`);
         assert.deepEqual(state.lift, [0, 0], `${title}: ends with a corner lifted`);

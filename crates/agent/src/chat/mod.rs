@@ -25,42 +25,21 @@ pub const RECENT_LIMIT: usize = 1500;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mood {
-    Neutral,
-    Happy,
-    Excited,
-    Thinking,
-    Curious,
-    Sorry,
-    Alert,
-    Annoyed,
     Hello,
+    Insulted,
+    #[serde(other)]
+    Neutral,
 }
 
 impl Mood {
-    pub const ALL: [Mood; 9] = [
-        Mood::Neutral,
-        Mood::Happy,
-        Mood::Excited,
-        Mood::Thinking,
-        Mood::Curious,
-        Mood::Sorry,
-        Mood::Alert,
-        Mood::Annoyed,
-        Mood::Hello,
-    ];
+    pub const ALL: [Mood; 3] = [Mood::Neutral, Mood::Hello, Mood::Insulted];
 
     /// The word the model writes on the mood line.
     pub fn word(self) -> &'static str {
         match self {
             Mood::Neutral => "neutral",
-            Mood::Happy => "happy",
-            Mood::Excited => "excited",
-            Mood::Thinking => "thinking",
-            Mood::Curious => "curious",
-            Mood::Sorry => "sorry",
-            Mood::Alert => "alert",
-            Mood::Annoyed => "annoyed",
             Mood::Hello => "hello",
+            Mood::Insulted => "insulted",
         }
     }
 

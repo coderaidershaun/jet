@@ -8,7 +8,7 @@ import { CLIPS } from './clips/catalogue.js';
 import { EMOTIONS } from './emotions.js';
 
 /** Every mood word a reply may start with. */
-export const MOODS = ['neutral','happy','excited','thinking','curious','sorry','alert','annoyed','hello'];
+export const MOODS = ['neutral', 'hello', 'insulted'];
 
 // How long the text waits for a mood that plays no clip, in ms.
 const MOOD_HOLD_MS = 300;

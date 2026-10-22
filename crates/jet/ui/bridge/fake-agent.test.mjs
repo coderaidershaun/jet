@@ -39,11 +39,11 @@ const kinds = (events) => events.map((event) => event.kind);
 
 test('a reply emits raw lines, started, mood, text and finished with usage, in order', async () => {
   const { agent, clock } = fastAgent();
-  const first = await ask(agent, 'I am so happy about Friday');
+  const first = await ask(agent, 'hello about Friday');
 
   assert.equal(first.user.role, 'user');
   assert.equal(first.user.html, '');
-  assert.equal(first.user.text, 'I am so happy about Friday');
+  assert.equal(first.user.text, 'hello about Friday');
 
   const events = first.events;
   assert.equal(events[0].kind, 'rawLine');
@@ -58,7 +58,7 @@ test('a reply emits raw lines, started, mood, text and finished with usage, in o
   const moodAt = kinds(events).indexOf('mood');
   const firstText = kinds(events).indexOf('text');
   assert.ok(moodAt > 1 && moodAt < firstText, 'the mood comes before any text');
-  assert.equal(events[moodAt].mood, 'happy');
+  assert.equal(events[moodAt].mood, 'hello');
   assert.equal(kinds(events).filter((kind) => TERMINAL.has(kind)).length, 1);
   assert.equal(events.at(-1).kind, 'finished');
 
@@ -68,13 +68,13 @@ test('a reply emits raw lines, started, mood, text and finished with usage, in o
   const lines = events.filter((event) => event.kind === 'rawLine').map((event) => JSON.parse(event.line));
   assert.deepEqual([...new Set(lines.map((line) => line.type))], ['system', 'stream_event', 'assistant', 'result']);
   const streamed = lines.filter((line) => line.event?.type === 'content_block_delta').map((line) => line.event.delta.text).join('');
-  assert.equal(streamed, 'mood: happy\n' + text, 'the raw lines carry the mood line the text lost');
+  assert.equal(streamed, 'mood: hello\n' + text, 'the raw lines carry the mood line the text lost');
   assert.ok(kinds(events).lastIndexOf('rawLine') < events.length - 1, 'the result line comes before finished');
 
   const finished = events.at(-1);
   assert.equal(finished.entry.role, 'jet');
   assert.equal(finished.entry.status, 'complete');
-  assert.equal(finished.entry.mood, 'happy');
+  assert.equal(finished.entry.mood, 'hello');
   assert.equal(finished.entry.text, text);
   assert.ok(finished.entry.html.startsWith('<p>'));
   assert.ok(finished.usage.cacheCreation1hTokens > 0 && finished.usage.cacheReadTokens === 0, 'a new session writes the cache');

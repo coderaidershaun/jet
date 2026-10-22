@@ -159,8 +159,8 @@ mod tests {
 
     #[test]
     fn mood_line_split_across_deltas_is_removed() {
-        let (moods, text) = run(&["mo", "od: exc", "ited\n", "\n", "Hello", " there"]);
-        assert_eq!(moods, vec![Mood::Excited]);
+        let (moods, text) = run(&["mo", "od: ins", "ulted\n", "\n", "Hello", " there"]);
+        assert_eq!(moods, vec![Mood::Insulted]);
         assert_eq!(text, "Hello there");
     }
 

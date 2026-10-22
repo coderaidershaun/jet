@@ -34,7 +34,7 @@ const RELEASE = { to: 0, lagMs: 40, durationMs: 300, overshoot: 1.4, order: 'bas
  */
 export function buildFly(start, { cruiseMs } = {}) {
   const { y, squash, stringPose, phase, finish, returnToRest } = createClip();
-  returnToRest(start, ['y', 'squash']);
+  returnToRest(start, ['y', 'squash', 'stringPose']);
   const cruiseEnd = LAUNCH_END_MS + Math.max(cruiseMs, EASE_DOWN_MS);
 
   // From standing the whole body crouches; from a hover it only dips.

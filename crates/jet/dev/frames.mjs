@@ -43,6 +43,7 @@ const FRAME_MS = 40;
 const HELLO_SHEET_MS = [0, 180, 500, 1150, 2300];
 const WORKING_PLAY_MS = 3000;
 const CLIP_MODES = {
+  insulted: { steps: [{ clip: 'insulted' }], sheetMs: [0, 750, 1450, 2400, 3000] },
   hello: { steps: [{ clip: 'hello' }], sheetMs: HELLO_SHEET_MS },
   'hello-brief': { steps: [{ clip: 'hello', options: { brief: true } }], sheetMs: HELLO_SHEET_MS },
   fly: { steps: [{ clip: 'fly', options: { cruiseMs: 800 } }], carry: true },

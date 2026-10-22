@@ -28,7 +28,7 @@ export function buildHello(start, { brief = false } = {}) {
   const { lift, lids, eyeKind, anger, phase, finish, returnToRest } = createClip();
   // The eyes swap to the lid shape under a blink, unless they already are lid eyes.
   const blinks = start.eyeKind !== 'lid';
-  returnToRest(start, blinks ? ['lift', 'lids'] : ['lift']);
+  returnToRest(start, blinks ? ['lift', 'lids', 'anger'] : ['lift']);
 
   for (const [ms, degrees] of brief ? BRIEF_KEYS : KEYS) lift(ms, [0, degrees], ms === LIFT_PEAK_MS ? easeOut : easeInOut);
   if (blinks) {

@@ -2,7 +2,7 @@
 // the user's words, the moods, the stream-json lines of a turn, and token
 // counts that behave like a real prompt cache. Nothing here keeps state.
 
-const MOOD_WORDS = ['neutral', 'happy', 'excited', 'thinking', 'curious', 'sorry', 'alert', 'annoyed', 'hello'];
+import { MOODS as MOOD_WORDS } from '../jet/director.js';
 const SPOKEN_MOODS = MOOD_WORDS.filter((word) => word !== 'neutral');
 
 /** Tokens already in the prompt before the user says anything: Claude Code's own prompt, tools and Jet's notes. */

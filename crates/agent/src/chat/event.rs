@@ -134,9 +134,9 @@ mod tests {
     #[test]
     fn event_json_matches_the_ui_contract() {
         let text = || "m".to_owned();
-        let excited = Mood::Excited;
+        let insulted = Mood::Insulted;
         let mut complete = jet_entry(42, EntryStatus::Complete);
-        complete.entry.mood = Some(excited);
+        complete.entry.mood = Some(insulted);
         complete.entry.tools = vec![quanty_search()];
         let call = quanty_search();
         let stopped = jet_entry(44, EntryStatus::Stopped);
@@ -187,8 +187,8 @@ mod tests {
                 json!({"kind": "notice", "message": "m"}),
             ),
             (
-                Event::Mood { mood: excited },
-                json!({"kind": "mood", "mood": "excited"}),
+                Event::Mood { mood: insulted },
+                json!({"kind": "mood", "mood": "insulted"}),
             ),
             (
                 Event::Text { delta: text() },
@@ -212,7 +212,7 @@ mod tests {
                 json!({
                     "kind": "finished",
                     "entry": {"id": 42, "role": "jet", "text": "Friday looks fine",
-                              "html": "<p>Friday looks fine</p>", "mood": "excited",
+                              "html": "<p>Friday looks fine</p>", "mood": "insulted",
                               "status": "complete", "at": 1_760_433_360_000_u64,
                               "tools": [{"id": "toolu_1", "server": "quanty", "tool": "search",
                                          "input": {"question": "What is vega?"}, "ok": true,

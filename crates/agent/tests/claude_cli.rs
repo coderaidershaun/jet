@@ -82,7 +82,7 @@ fn fake_claude_streams_a_turn() {
     );
     let mood_at = steps
         .iter()
-        .position(|s| matches!(s, Step::Mood(Mood::Excited)))
+        .position(|s| matches!(s, Step::Mood(Mood::Neutral)))
         .unwrap();
     let text_at = steps
         .iter()
