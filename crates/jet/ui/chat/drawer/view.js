@@ -4,8 +4,8 @@
 // beside the workstation page it narrows to the rail.
 
 import { h } from '../../dom.js';
-import { RING_HIDDEN } from '../../jet/state.js';
-import { mountJet } from '../../jet/view.js';
+import { createPlayer } from '../../jet/player.js';
+import { mountJet } from '../../jet/draw/view.js';
 import { drawerLayout, drawerOpens } from '../page-state.js';
 import { captionFor } from './caption.js';
 import { NOTHING, compactCount, count, dollars, modelAndThinking, seconds, spendText, turnsText } from './format.js';
@@ -22,16 +22,19 @@ const SESSION_ID_CHARS = 8;
  *   page: HTMLElement, toggles: HTMLElement[], scrim: HTMLElement,
  *   jetButton: HTMLElement, workstationButton: HTMLElement, jetSvg: SVGSVGElement, nameEl: HTMLElement, titleEl: HTMLElement, chipEl: HTMLElement, modelEl: HTMLElement,
  *   usageEl: HTMLElement, logToggle: HTMLElement, logList: HTMLElement, copyButton: HTMLElement, clearButton: HTMLElement, gearButton: HTMLElement,
- *   rig: import('../../jet/rig.js').Rig,
  *   log: ReturnType<typeof import('./log.js').createLog>,
  *   handlers: { openSettings: () => void, dockedChanged: (open: boolean) => void, showPage: (page: import('../page-state.js').Page) => void },
  * }} options
  */
 export function createDrawerView({
-  page, toggles, scrim, jetButton, workstationButton, jetSvg, nameEl, titleEl, chipEl, modelEl, usageEl, logToggle, logList, copyButton, clearButton, gearButton, rig, log, handlers,
+  page, toggles, scrim, jetButton, workstationButton, jetSvg, nameEl, titleEl, chipEl, modelEl, usageEl, logToggle, logList, copyButton, clearButton, gearButton, log, handlers,
 }) {
   const narrow = window.matchMedia(NARROW);
-  const draw = mountJet(jetSvg, rig);
+  jetSvg.setAttribute('viewBox', '0 70 200 170');
+  const draw = mountJet(jetSvg);
+  const staticJet = createPlayer({ standing: true, reducedMotion: true });
+  staticJet.tick(0);
+  const drawStatic = () => draw(staticJet.frame, { unitPx: Math.max(jetSvg.getBoundingClientRect().width / 200, 0.001) });
   const logEl = logToggle.closest('.log');
   const usagePart = (id) => usageEl.querySelector('#usage-' + id);
   const sessionCopyButton = usagePart('copy');
@@ -45,15 +48,6 @@ export function createDrawerView({
   let latestUsage = null;
   let usageQueued = false;
   let shownPage = 'chat';
-
-  const staticJet = () => ({
-    body: rig.poses.soft,
-    eyes: [...rig.eyes.soft, 4, 4],
-    colour: rig.palette.rest,
-    scale: 1,
-    ring: RING_HIDDEN,
-    speed: 0,
-  });
 
   // SMELL: each row is its own Tab stop, so up to 500 rows stand between Clear and the gear. One Tab stop for
   // the whole list, with the arrow keys moving between rows, would fix it.
@@ -192,11 +186,7 @@ export function createDrawerView({
     init(openWhenDocked) {
       view.dockedPreference = openWhenDocked;
       applyOpen(openWhenDocked && !narrow.matches);
-      draw(staticJet());
-    },
-
-    recolour() {
-      draw(staticJet());
+      drawStatic();
     },
 
     /** Follows the page: the rail beside the workstation, the docked choice again on the chat page. */
@@ -205,6 +195,7 @@ export function createDrawerView({
       workstationButton.setAttribute('aria-pressed', String(next === 'workstation'));
       jetButton.inert = next === 'chat';
       applyOpen(drawerOpens({ page: next, dockedPreference: view.dockedPreference, narrow: narrow.matches }));
+      drawStatic();
     },
 
     setPersona({ name, jobTitle }) {

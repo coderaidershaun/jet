@@ -1,18 +1,18 @@
 /* The empty state, and the live Jet that stands either in its hero spot or in
-   the lane of the newest Jet message. Jet's node is always 200 px square and is
+   the lane of the newest Jet message. Jet's node is always 200 by 240 px and is
    scaled by the spot it stands in, so it is never scaled up and never blurs. */
 .empty {
   position: absolute; top: calc(45% - var(--empty-block) / 2); left: 0; right: 0;
   display: flex; flex-direction: column; align-items: center; padding: 0 var(--gutter); text-align: center;
   opacity: 1; transition: opacity 200ms;
-  --hero: calc(200px * var(--empty-scale));
+  --hero: calc(240px * var(--empty-scale));
 }
 .page[data-layout="bottom"] .empty { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 120ms, visibility 0s 120ms; }
 .hero { position: relative; width: 200px; height: var(--hero); }
 .greeting { margin: 16px 0 4px; font-size: 20px; line-height: 26px; font-weight: 600; }
 .greeting-sub { margin: 0; font-size: 15px; line-height: 21px; color: var(--muted); }
 
-.jet-live { position: absolute; z-index: 2; left: 50%; width: 200px; height: 200px; margin-left: -100px; transform-origin: 50% 56%; pointer-events: none; }
+.jet-live { position: absolute; z-index: 2; left: 50%; width: 200px; height: 240px; margin-left: -100px; transform-origin: 50% 100%; pointer-events: none; }
 .jet-svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.hero .jet-live { top: calc(112px * (var(--empty-scale) - 1)); transform: scale(var(--empty-scale)); }
-.lane .jet-live { bottom: calc(76px * var(--lane-scale) - 88px); transform: scale(var(--lane-scale)); }
+.hero .jet-live { bottom: calc(-2px * var(--empty-scale)); transform: scale(var(--empty-scale)); }
+.lane .jet-live { bottom: calc(-2px * var(--lane-scale)); transform: scale(var(--lane-scale)); }

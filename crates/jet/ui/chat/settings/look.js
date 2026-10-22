@@ -28,7 +28,7 @@ export function buildLook(ctx) {
 }
 
 /** @param {import('./sheet.js').SheetContext} ctx */
-function colourSection({ settings, changed, defaultColour }) {
+function colourSection({ settings, changed, defaultColour = [83, 150, 248] }) {
   const current = () => settings.bodyColour ?? defaultColour;
   const problem = h('p', { class: 'problem', role: 'status', hidden: true, text: 'Use six hex digits, like #ff6a3d' });
   const hex = textField({

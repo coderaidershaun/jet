@@ -1,7 +1,7 @@
 // Draws the kite for looking at, outside the app. Run it from crates/jet:
 //
 //   node dev/frames.mjs still (--standing | --hovering) [options] [out-dir]
-//   node dev/frames.mjs <clip mode> [--standing | --hovering] [--layers off] [out-dir]
+//   node dev/frames.mjs <clip mode> [--standing | --hovering] [--layers off] [--reduced-motion] [out-dir]
 //
 // A still is written as an SVG and as two PNGs (twice the size, and the size it
 // shows at in the chat lane), and all stills in a run are laid side by side on
@@ -14,13 +14,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { CLIPS } from '../ui/jet-next/clips/catalogue.js';
-import { KINDS } from '../ui/jet-next/parts/eyes.js';
-import { CENTRE, HOVER_Y, TIP, kite } from '../ui/jet-next/parts/forms.js';
-import { paint, restingFrame } from '../ui/jet-next/draw/paint.js';
-import { createPlayer, stretchFromSpeed } from '../ui/jet-next/player.js';
-import { fistRoute, HAND_SCALE } from '../ui/jet-next/parts/routes.js';
-import { REST_LENGTH, SEGMENTS, createChain, jPose, lyingPose } from '../ui/jet-next/parts/string.js';
+import { CLIPS } from '../ui/jet/clips/catalogue.js';
+import { createFlight } from '../ui/chat/stage/flight.js';
+import { KINDS } from '../ui/jet/parts/eyes.js';
+import { CENTRE, HOVER_Y, TIP, kite } from '../ui/jet/parts/forms.js';
+import { paint, restingFrame } from '../ui/jet/draw/paint.js';
+import { createPlayer, stretchFromSpeed } from '../ui/jet/player.js';
+import { fistRoute, HAND_SCALE } from '../ui/jet/parts/routes.js';
+import { REST_LENGTH, SEGMENTS, createChain, jPose, lyingPose } from '../ui/jet/parts/string.js';
 
 const RSVG = '/opt/homebrew/bin/rsvg-convert';
 const DEFAULT_OUT_FOLDER = join(tmpdir(), 'jet-renders');
@@ -44,7 +45,7 @@ const WORKING_PLAY_MS = 3000;
 const CLIP_MODES = {
   hello: { steps: [{ clip: 'hello' }], sheetMs: HELLO_SHEET_MS },
   'hello-brief': { steps: [{ clip: 'hello', options: { brief: true } }], sheetMs: HELLO_SHEET_MS },
-  fly: { steps: [{ clip: 'fly', options: { cruiseMs: 800 } }] },
+  fly: { steps: [{ clip: 'fly', options: { cruiseMs: 800 } }], carry: true },
   settle: { steps: [{ clip: 'settle' }] },
   working: {
     steps: [
@@ -56,7 +57,7 @@ const CLIP_MODES = {
 
 const USAGE = `usage: node dev/frames.mjs still (--standing | --hovering) [--lift L,R] [--form k] [--pose j]
          [--speed V] [--eyes round|lid|B|C] [--anger a] [--squint q] [--lids l,r] [--no-string] [out-dir]
-       node dev/frames.mjs ${Object.keys(CLIP_MODES).join('|')} [--standing | --hovering] [--layers off] [out-dir]
+       node dev/frames.mjs ${Object.keys(CLIP_MODES).join('|')} [--standing | --hovering] [--layers off] [--reduced-motion] [out-dir]
 
 A flag given more than once draws one still for each value.
   --lift L,R    corner lift in degrees, left then right
@@ -75,7 +76,7 @@ class UsageError extends Error {}
 const VALUE_FLAGS = ['lift', 'speed', 'form', 'pose', 'eyes', 'anger', 'squint', 'lids'];
 const CLIP_VALUE_FLAGS = ['layers'];
 const ALL_VALUE_FLAGS = [...VALUE_FLAGS, ...CLIP_VALUE_FLAGS];
-const SWITCHES = ['standing', 'hovering', 'no-string'];
+const SWITCHES = ['standing', 'hovering', 'no-string', 'reduced-motion'];
 
 function parseArguments(args) {
   const values = Object.fromEntries(ALL_VALUE_FLAGS.map((name) => [name, []]));
@@ -226,13 +227,27 @@ function stillsMode(args) {
 
 // Plays the mode's steps through a real player, one frame every 40 ms, and writes each frame as it is made.
 // `phaseEndsMs` are the moments the steps' phases end, for the contact sheet.
-function playFrames(mode, { standing, layers }, folder) {
-  const player = createPlayer({ random: () => 1, layers, standing });
+function playFrames(mode, { standing, layers, reducedMotion }, folder) {
+  const player = createPlayer({ random: () => 1, layers, standing, reducedMotion });
   const frames = [];
   const written = [];
   const phaseEndsMs = [0];
   let now = 0;
+  const flight = mode.carry ? createFlight({
+    from: { x: 0, y: 0 },
+    to: { x: 240, y: 120 },
+    fromScale: LANE_UNIT_PX,
+    toScale: LANE_UNIT_PX,
+    startAt: 500,
+    durationMs: 800,
+  }) : null;
+  let lastPoint = flight?.sample(0);
   const record = () => {
+    if (flight) {
+      const point = flight.sample(now);
+      player.carry((point.x - lastPoint.x) / LANE_UNIT_PX, (point.y - lastPoint.y) / LANE_UNIT_PX);
+      lastPoint = point;
+    }
     player.tick(now);
     const name = `frame-${String(frames.length).padStart(3, '0')}`;
     const still = writeStill(folder, name, player.frame);
@@ -240,7 +255,7 @@ function playFrames(mode, { standing, layers }, folder) {
     written.push(...still.written);
   };
   mode.steps.forEach((step, index) => {
-    const start = { standing, eyeKind: 'round', reducedMotion: false };
+    const start = { standing: player.standing, eyeKind: player.state.eyeKind, reducedMotion };
     const options = typeof step.options === 'function' ? step.options(player) : step.options;
     const began = now;
     const clip = CLIPS[step.clip].build(start, options);
@@ -260,17 +275,18 @@ function playFrames(mode, { standing, layers }, folder) {
 
 function clipMode(modeName, args) {
   const { values, switches, folder } = parseArguments(args);
-  if (VALUE_FLAGS.some((flag) => values[flag].length > 0) || switches.has('no-string')) throw new UsageError(`"${modeName}" takes only --standing, --hovering and --layers off`);
+  if (VALUE_FLAGS.some((flag) => values[flag].length > 0) || switches.has('no-string')) throw new UsageError(`"${modeName}" takes only --standing, --hovering, --layers off and --reduced-motion`);
   const [layersValue] = values.layers;
   if (layersValue !== undefined && !['on', 'off'].includes(layersValue)) throw new UsageError(`--layers must be on or off; got "${layersValue}"`);
   const layers = layersValue !== 'off';
-  const standing = switches.has('standing');
-  const name = `${modeName}-${standing ? 'standing' : 'hovering'}${layers ? '' : '-no-layers'}`;
+  const reducedMotion = switches.has('reduced-motion');
+  const standing = switches.has('standing') || reducedMotion;
+  const name = `${modeName}-${standing ? 'standing' : 'hovering'}${layers ? '' : '-no-layers'}${reducedMotion ? '-reduced' : ''}`;
   const outFolder = join(resolve(folder ?? DEFAULT_OUT_FOLDER), name);
   mkdirSync(outFolder, { recursive: true });
 
   const mode = CLIP_MODES[modeName];
-  const { frames, written, lastMs, phaseEndsMs } = playFrames(mode, { standing, layers }, outFolder);
+  const { frames, written, lastMs, phaseEndsMs } = playFrames(mode, { standing, layers, reducedMotion }, outFolder);
   const sheetMs = [...new Set(mode.sheetMs ?? phaseEndsMs)].sort((a, b) => a - b);
   // Each moment shows the last frame at or before it, as the reference contact sheets pick them.
   const sheetFrames = sheetMs.filter((ms) => ms <= lastMs).map((ms) => frames[Math.floor(ms / FRAME_MS + 1e-9)]);

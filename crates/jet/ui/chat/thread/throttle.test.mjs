@@ -78,12 +78,14 @@ test('renders at most every 50 ms with a trailing call and drops stale results',
   assert.equal(renderer.calls.length, 3, 'nothing renders after the reply ended');
 });
 
-test('the first reveal waits 300 ms after the mood', async () => {
+test('an absolute reveal hold reschedules pending text and delays successful completion', async () => {
   const clock = manualClock();
   const renderer = deferredRender();
-  const reveal = createReveal({ render: renderer.render, paint: () => {}, clock });
+  const painted = [];
+  const reveal = createReveal({ render: renderer.render, paint: (html) => painted.push(html), clock });
 
-  reveal.mood();
+  reveal.text('before mood');
+  reveal.holdUntil(300);
   await clock.advance(10);
   reveal.text('Hi');
   await clock.advance(289);
@@ -95,4 +97,19 @@ test('the first reveal waits 300 ms after the mood', async () => {
   reveal.text('Hi there');
   await clock.advance(0);
   assert.equal(renderer.calls.length, 2, 'later text is not held again');
+  reveal.holdUntil(500);
+  renderer.calls[1].resolve('<late>');
+  await flush();
+  assert.deepEqual(painted, [], 'a render in flight cannot bypass an extended hold');
+  let finished = false;
+  reveal.holdUntil(600);
+  reveal.finish(() => { finished = true; });
+  await clock.advance(239);
+  assert.equal(finished, false);
+  await clock.advance(1);
+  assert.equal(finished, true);
+  reveal.holdUntil(1000);
+  reveal.finish(() => { throw new Error('cancelled completion ran'); });
+  reveal.end();
+  await clock.advance(1000);
 });

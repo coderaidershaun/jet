@@ -1,39 +1,24 @@
-// The live Jet and the host that runs it: one node that stands in the empty
-// state's hero spot or in the lane of the newest Jet message, the director that
-// decides its clips, the flight that carries it down the thread on a send, and
-// the frame loop that draws it. The director advances the player itself, so this
-// file never ticks the player, and it hands the director the time on every call.
-
 import { createDirector } from '../../jet/director.js';
 import { createPlayer } from '../../jet/player.js';
-import { mountJet } from '../../jet/view.js';
+import { mountJet } from '../../jet/draw/view.js';
 import { createFlight, cruiseMsFor } from './flight.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const BODY_CENTRE = 0.56;
-const IDLE_FRAME_MS = 50;
+const IDLE_FRAME_MS = 1000 / 60;
 const HERO_FADE_IN_MS = 200;
 const HELLO_AFTER_FADE_IN_MS = 600;
 const FADE_OUT_MS = 120;
 const FADE_IN_MS = 160;
 
-/**
- * @param {{
- *   rig: import('../../jet/rig.js').Rig,
- *   params: () => import('../../jet/clip.js').Params,
- *   heroSlot: HTMLElement,
- *   scrollToBottom: () => void,
- *   motion: () => number,
- * }} options   `motion` is the motion channel, 0 to 10, which sets how much Jet breathes
- */
-export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
-  const player = createPlayer(rig);
-  const director = createDirector({ player, rig, params });
+/** One kite, carried between its hero spot and the newest reply's lane. */
+export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) {
+  const player = createPlayer({ reducedMotion });
+  const director = createDirector({ player });
 
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'jet-svg');
   svg.setAttribute('aria-hidden', 'true');
-  const draw = mountJet(svg, rig);
+  const draw = mountJet(svg);
   const node = document.createElement('div');
   node.className = 'jet-live';
   node.setAttribute('role', 'img');
@@ -48,47 +33,39 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
   let lastDrawAt = -Infinity;
   let needsDraw = true;
 
-  const reduced = () => params().reducedMotion;
-  const anchorOf = (rect) => ({ x: rect.left + rect.width / 2, y: rect.top + rect.height * BODY_CENTRE });
+  const reduced = () => player.reducedMotion;
+  const anchorOf = (rect) => ({ x: rect.left + rect.width / 2, y: rect.top + rect.height });
   const scaleOf = () => node.getBoundingClientRect().width / (node.offsetWidth || 1);
 
+  let lastFlightPoint = null;
+
   function applyFlight(now) {
-    const s = flight.sample(now);
-    const translate = 'translate(' + s.x.toFixed(2) + 'px,' + s.y.toFixed(2) + 'px)';
-    const scale = 'scale(' + (s.mirror ? -s.scale : s.scale).toFixed(4) + ',' + s.scale.toFixed(4) + ')';
-    node.style.transform = translate + ' ' + scale + ' rotate(' + s.rotate.toFixed(2) + 'deg)';
+    const point = flight.sample(now);
+    const unitPx = Math.max(point.scale, 0.001);
+    if (lastFlightPoint) player.carry((point.x - lastFlightPoint.x) / unitPx, (point.y - lastFlightPoint.y) / unitPx);
+    lastFlightPoint = point;
+    node.style.transform = `translate(${point.x.toFixed(2)}px,${point.y.toFixed(2)}px) scale(${point.scale.toFixed(4)})`;
   }
 
   function endFlight() {
     flight = null;
+    lastFlightPoint = null;
     node.style.transform = '';
   }
 
-  function tuneIdle() {
-    player.breathing = motion();
-    player.eyes = params().eyes;
-    player.reducedMotion = reduced();
-  }
-
   function frame(now) {
+    if (flight) {
+      applyFlight(now);
+      if (now >= flight.endsAt) endFlight();
+    }
     const { busy } = director.tick(now);
-    // Idle frames are skipped or drawn rarely, which would miss the resting eyes opening or blinking.
-    if (player.eyesMoved) needsDraw = true;
     const label = name + ', ' + director.status;
     if (label !== lastLabel) {
       lastLabel = label;
       node.setAttribute('aria-label', label);
     }
-    if (flight) {
-      applyFlight(now);
-      // Jet brakes after it lands, still facing the way it flew, so the mirror stays until the travel is over.
-      if (now >= flight.endsAt && director.status !== 'travelling') endFlight();
-    }
-    const stillIdle = !busy && !flight;
-    const sleeping = stillIdle && (reduced() || motion() === 0);
-    if (sleeping && !needsDraw) return;
-    if (stillIdle && !needsDraw && now - lastDrawAt < IDLE_FRAME_MS) return;
-    draw(player.state);
+    if (!busy && !flight && !needsDraw && now - lastDrawAt < IDLE_FRAME_MS) return;
+    draw(player.frame, { unitPx: Math.max(scaleOf(), 0.001) });
     lastDrawAt = now;
     needsDraw = false;
   }
@@ -114,13 +91,13 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
     },
 
     start() {
-      tuneIdle();
       requestAnimationFrame(loop);
     },
 
     /** Empty state: Jet fades in at the hero spot, then waves once. */
     showHero() {
       endFlight();
+      player.rest({ standing: false });
       heroSlot.append(node);
       node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: HERO_FADE_IN_MS });
       clearTimeout(helloTimer);
@@ -131,6 +108,7 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
     /** Relaunch: Jet stands in the newest Jet lane and gives a short hello. */
     showInLane(lane) {
       endFlight();
+      player.rest({ standing: true });
       lane.append(node);
       clearTimeout(helloTimer);
       director.hello(performance.now(), { brief: true });
@@ -174,15 +152,10 @@ export function createLive({ rig, params, heroSlot, scrollToBottom, motion }) {
     failed: (now = performance.now()) => director.failed(now),
     stopped: (now = performance.now()) => director.stopped(now),
 
-    /** The body colour changed: a resting Jet takes it at once. */
-    recolour() {
-      if (!player.playing) player.state.colour = rig.palette.rest.slice();
-      needsDraw = true;
-    },
-
-    /** Settings changed how Jet rests: its breathing, its resting eyes and their blinking. */
-    refresh() {
-      tuneIdle();
+    /** App setting and system preference have already been combined by the page. */
+    setReducedMotion(on) {
+      player.reducedMotion = on;
+      if (on) endFlight();
       needsDraw = true;
     },
   };

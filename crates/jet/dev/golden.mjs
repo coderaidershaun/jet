@@ -11,7 +11,7 @@ import { createReadStream, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
-const FIXTURES = new URL('../ui/jet-next/fixtures/', import.meta.url);
+const FIXTURES = new URL('../ui/jet/fixtures/', import.meta.url);
 const [waveFile = '/Users/shaun/Downloads/jet-wave.svg', flipFile = '/Users/shaun/Downloads/jet-flip.svg'] = process.argv.slice(2);
 
 const WAVE = { frames: 75, fps: 25 };

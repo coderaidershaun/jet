@@ -44,6 +44,7 @@ function parsedOrNull(line) {
 export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, tracker, page, afterReply, onToolFinished, takePreface, giveBackPreface }) {
   /** @type {ReturnType<typeof createReveal> | null} */
   let reveal = null;
+  let pendingEntry = null;
 
   function paint() {
     view.render(thread.rows());
@@ -56,6 +57,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
   function endReply() {
     if (reveal) reveal.end();
     reveal = null;
+    pendingEntry = null;
     composer.replying = false;
     paint();
     afterReply();
@@ -92,8 +94,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         break;
       case 'mood':
         thread.setMood(event.mood);
-        reveal.mood();
-        live.mood(event.mood, now);
+        reveal.holdUntil(live.mood(event.mood, now).revealAt);
         break;
       case 'text':
         if (thread.slot.text === '') live.replying(now);
@@ -101,13 +102,16 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         reveal.text(thread.slot.text);
         break;
       case 'finished':
+        pendingEntry = event.entry;
         tracker.finished(event);
         showUsage();
-        reveal.end();
-        thread.finish(event.entry);
         live.done(now);
-        page.announce.textContent = event.entry.text;
-        break;
+        reveal.finish(() => {
+          thread.finish(event.entry);
+          page.announce.textContent = event.entry.text;
+          endReply();
+        });
+        return;
       case 'failed':
         tracker.failed();
         showUsage();
@@ -192,6 +196,13 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     },
 
     stop() {
+      if (pendingEntry) {
+        reveal.end();
+        thread.stop({ ...pendingEntry, text: thread.slot.text, html: thread.slot.html, status: 'stopped' });
+        live.stopped(performance.now());
+        endReply();
+        return;
+      }
       agent.stop().catch((error) => console.warn('Stop could not be sent:', error));
     },
 

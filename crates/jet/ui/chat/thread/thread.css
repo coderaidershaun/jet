@@ -5,7 +5,7 @@
 .thread:focus-visible { outline-offset: -2px; }
 .column {
   max-width: calc(820px + 2 * var(--gutter)); margin: 0 auto;
-  padding: calc(.7 * 200px * var(--lane-scale)) var(--gutter) 48px;
+  padding: calc(.7 * 240px * var(--lane-scale)) var(--gutter) 48px;
 }
 
 .row { display: flex; align-items: flex-end; gap: 8px; margin-top: 12px; }

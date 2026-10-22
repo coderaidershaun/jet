@@ -1,169 +1,353 @@
-// Advances Jet through time. It owns the current state (body, eyes, colour,
-// scale, ring, speed) and plays clips from wherever Jet is at that moment, so
-// a new clip blends in instead of cutting. At rest Jet breathes and shows
-// small dark eyes that blink now and then. It knows nothing about the DOM.
+// Moves the kite through time. It owns the state and plays a clip from wherever
+// the kite is, so a new clip blends in instead of cutting. On top of the
+// state it adds what no clip should have to write: the body answering the
+// hand, the stretch of a fast corner, the idle bob and sway, blinks, eyes that
+// change kind only while shut, and the string. It knows nothing about the DOM.
 
-import { eyeSizeFor, REST_EYE_SIZE } from './clip.js';
-import { cubicBezier } from './easing.js';
-import { RING_HIDDEN, TRACKS } from './state.js';
-import { sample } from './track.js';
+import { bodyPoint, restingFrame } from './draw/paint.js';
+import { easeInOut, easeOut } from './easing.js';
+import { clamp, lerp } from './maths.js';
+import { CENTRE, HOVER_Y, kite, TIP } from './parts/forms.js';
+import { createChain, raiseBlend, SEGMENTS, wind } from './parts/string.js';
+import { restState, STEP_TRACKS, TRACKS } from './state.js';
+import { heldKey, hold, sample } from './track.js';
 
 /**
  * @typedef {object} Progress
- * @property {number} t                 ms into the clip
- * @property {number[]} phases          0..1 per phase, same order as clip.phases
+ * @property {number} t          ms into the clip
+ * @property {number[]} phases   0..1 per phase, in the order of `clip.phases`
  */
 
-const IDLE_BREATH_PERIOD_MS = 3400;
-const IDLE_BREATH_DEPTH = 0.018;
-const REST_EYES_IN_MS = 240;
-const AT_REST_TOLERANCE = 1e-6;
-const BLINK_CLOSE_MS = 60;
-const BLINK_OPEN_MS = 80;
-const BLINK_GAP_MIN_MS = 4000;
-const BLINK_GAP_MAX_MS = 9000;
+// The body answers the hand: it rolls a tenth of the lift, a little late.
+const ROLL_PER_LIFT = -0.1;
+const ROLL_LAG_MS = 100;
+// How far back the lift is remembered. It only has to cover the roll lag.
+const LIFT_HISTORY_MS = 250;
+const SPEED_HALF_WINDOW_MS = 20;
+const MAX_STRETCH = 2.5;
+const FULL_STRETCH_SPEED = 250;
+// An eye that is not closing squints this much in sympathy with the other one.
+const SYMPATHY = 0.18;
 
-const easeOut = cubicBezier(0.2, 0.8, 0.4, 1);
+const HOVER_FULL_Y = 8;
+const BOB_UNITS = 1.6;
+const BOB_PERIOD_MS = 3000;
+const HOVER_SWAY_PER_WIND = 0.12;
+const HOVER_SWAY_LAG_MS = 150;
+const STAND_SWAY_DEGREES = 0.6;
+const STAND_SWAY_PERIOD_MS = 6100;
+// The string lies to the left and holds the standing kite up, so the top leans that way.
+const STAND_LEAN_DEGREES = -2;
+
+const BLINK_GAP_MIN_MS = 4000;
+const BLINK_GAP_RANGE_MS = 5000;
+const BLINK_SHUT_MS = 60;
+const BLINK_HOLD_END_MS = 100;
+const BLINK_OPEN_END_MS = 200;
+const BLINK_END_MS = 340;
+// SMELL: the lid curve (shut, open 0.07 past, settle) is typed here and again in three clips;
+// one shared curve would keep them in step.
+const BLINK_OVERSHOOT = -0.07;
+const SHUT_ENOUGH = 0.9;
+const ROUND_AFTER_CLIP_MS = 3000;
+
+const CARRY_SMOOTHING_S = 0.08;
+const LEAN_PER_SPEED = 0.01;
+const MAX_LEAN_DEGREES = 10;
+
+const TIP_POINT = kite()[TIP];
+const NO_BLEND = Array(SEGMENTS).fill(0);
 
 /**
- * @param {import('./rig.js').Rig} rig
- * @param {{ random?: () => number }} [options]   `random` gives a number in [0, 1); a test passes its own to choose the blink times
+ * How much a corner stretches out at a given speed: up to 2.5 units at 250 degrees a second.
+ * @param {number} degreesPerSecond
  */
-export function createPlayer(rig, { random = Math.random } = {}) {
+export const stretchFromSpeed = (degreesPerSecond) => MAX_STRETCH * Math.min(1, Math.abs(degreesPerSecond) / FULL_STRETCH_SPEED);
+
+const copyOf = (value) => (Array.isArray(value) ? value.slice() : value);
+
+// The blink's closure: shut fast, held a moment, opened slower with a small overshoot, then settled.
+function blinkClosure(into) {
+  if (into < 0 || into >= BLINK_END_MS) return 0;
+  if (into < BLINK_SHUT_MS) return easeInOut(into / BLINK_SHUT_MS);
+  if (into < BLINK_HOLD_END_MS) return 1;
+  if (into < BLINK_OPEN_END_MS) return lerp(1, BLINK_OVERSHOOT, easeOut((into - BLINK_HOLD_END_MS) / (BLINK_OPEN_END_MS - BLINK_HOLD_END_MS)));
+  return lerp(BLINK_OVERSHOOT, 0, easeInOut((into - BLINK_OPEN_END_MS) / (BLINK_END_MS - BLINK_OPEN_END_MS)));
+}
+
+// One wind number for the whole string, the mean of its segments.
+function meanWind(ms) {
+  let sum = 0;
+  for (let i = 0; i < SEGMENTS; i++) sum += wind(i, ms / 1000);
+  return sum / SEGMENTS;
+}
+
+const squintWith = (own, other) => (own <= 0 && other > 0 ? Math.max(own, SYMPATHY * other) : own);
+
+/**
+ * @param {object} [options]
+ * @param {() => number} [options.random]  a number in [0, 1); a test passes its own to choose the blink times
+ * @param {boolean} [options.reducedMotion]
+ * @param {boolean} [options.layers]  false turns the idle bob and sway off, for tests and renders
+ * @param {boolean} [options.standing]  start standing instead of hovering
+ */
+export function createPlayer({ random = Math.random, reducedMotion = false, layers = true, standing = false } = {}) {
   /** @type {import('./state.js').JetState} */
-  const state = {
-    body: rig.poses.circle.slice(),
-    eyes: [...rig.eyes.circle, 0, 0],
-    colour: rig.palette.rest.slice(),
-    scale: 1,
-    ring: RING_HIDDEN.slice(),
-    speed: 0,
-  };
-  /** @type {import('./clip.js').Clip | null} */
-  let clip = null;
+  const state = restState({ standing: standing || reducedMotion });
+  const chain = createChain();
+  let reduced = reducedMotion;
+  let frame = standing ? { ...restingFrame(), y: 0, pivot: [...TIP_POINT] } : restingFrame();
+
+  /** The playing clip: a copy of the clip with the live state as the first key of every track. */
+  let playing = null;
   let clipStart = 0;
-  let idleStart = 0;
-  let breathDepth = IDLE_BREATH_DEPTH;
-  let eyesDial = 0;
-  let reduced = false;
-  // Resting eyes belong to the circle alone. A hold such as the loop ends away
-  // from the circle and keeps the eyes it ended with.
-  let atRest = true;
-  let eyesMoved = false;
-  // A random gap, so the blinks never fall into a rhythm you could count.
-  const blinkGap = () => BLINK_GAP_MIN_MS + random() * (BLINK_GAP_MAX_MS - BLINK_GAP_MIN_MS);
-  let blinkAt = blinkGap();
+  let lastClipEnd = -Infinity;
+  let lastTickAt = null;
 
-  const clamp01 = (v) => Math.max(0, Math.min(1, v));
-  const snapshot = (name) => (Array.isArray(state[name]) ? state[name].slice() : state[name]);
-  function isAtRest() {
-    const round = state.body.every((v, i) => Math.abs(v - rig.poses.circle[i]) <= AT_REST_TOLERANCE);
-    const [, , , , radiusX, radiusY] = state.eyes;
-    return round && radiusX <= AT_REST_TOLERANCE && radiusY <= AT_REST_TOLERANCE;
+  // Where the lift was at any moment of the last 250 ms, even across a clip change.
+  // Each source answers for the time from when it began; the first is the lift Jet had before any clip.
+  let liftBeforeAnyClip = null;
+  const liftSources = [{ since: -Infinity, liftAt: () => liftBeforeAnyClip ?? state.lift }];
+  const liftAt = (at) => {
+    const source = liftSources.findLast((candidate) => candidate.since <= at) ?? liftSources[0];
+    return source.liftAt(at);
+  };
+
+  // The string pose is resolved here because a raise runs on after its clip ends.
+  let poseTrack = null;
+  let heldPoseKey = null;
+  let raiseFrom = NO_BLEND;
+  let raiseSince = 0;
+
+  let nextBlinkAt = null;
+  let blink = null;
+  let shownKind = null;
+
+  let carriedX = 0;
+  let carrySpeed = 0;
+
+  function resolveStringPose(now) {
+    if (!poseTrack) return;
+    const key = heldKey(poseTrack, now - clipStart);
+    if (key !== heldPoseKey) {
+      heldPoseKey = key;
+      raiseFrom = state.stringPose ? state.stringPose.blend : NO_BLEND;
+      raiseSince = clipStart + key.t;
+    }
+    const pose = key.v;
+    if (!pose?.raise) {
+      state.stringPose = pose;
+      return;
+    }
+    const { to, lagMs, durationMs, overshoot, order } = pose.raise;
+    const timing = { start: 0, lag: lagMs / 1000, duration: durationMs / 1000, overshoot, order };
+    const seconds = (now - raiseSince) / 1000;
+    const blend = raiseFrom.map((from, i) => from + (to - from) * raiseBlend(i, seconds, timing));
+    state.stringPose = { angles: pose.angles, proportions: pose.proportions, blend };
   }
 
-  /** How open the resting eyes are at `now`, from 0 (shut) to 1 (open). */
-  function blinkOpenness(now) {
-    if (reduced) return 1;
-    // A blink that is over, or that was missed because no tick came during it, plans the next one.
-    if (now >= blinkAt + BLINK_CLOSE_MS + BLINK_OPEN_MS) blinkAt = now + blinkGap();
-    const into = now - blinkAt;
-    if (into < 0) return 1;
-    if (into < BLINK_CLOSE_MS) return 1 - into / BLINK_CLOSE_MS;
-    return (into - BLINK_CLOSE_MS) / BLINK_OPEN_MS;
+  // The next blink is a random 4 to 9 s after the one before, so blinks never fall into a rhythm.
+  const blinkGap = () => BLINK_GAP_MIN_MS + random() * BLINK_GAP_RANGE_MS;
+
+  // Starts, ends and schedules the idle blinks. A blink only starts while no clip plays; one that
+  // falls inside a clip is skipped.
+  function advanceBlinks(now) {
+    if (reduced) {
+      blink = null;
+      return;
+    }
+    nextBlinkAt ??= now + blinkGap();
+    if (now >= nextBlinkAt) {
+      if (!playing && now < nextBlinkAt + BLINK_END_MS) {
+        blink = { start: nextBlinkAt, returnsToRound: nextBlinkAt - lastClipEnd >= ROUND_AFTER_CLIP_MS };
+      }
+      nextBlinkAt += blinkGap();
+    }
+    if (!blink) return;
+    const into = now - blink.start;
+    if (into >= BLINK_END_MS) {
+      blink = null;
+      return;
+    }
+    // The first blink at least 3 s after a clip turns the eyes back to round while the lid is shut.
+    if (blink.returnsToRound && into >= BLINK_SHUT_MS && !playing) {
+      state.eyeKind = 'round';
+      state.anger = 0;
+      blink.returnsToRound = false;
+    }
   }
 
-  /** The resting eyes grow in place from nothing once Jet comes to rest, then blink now and then. */
-  function restEyes(now) {
-    const grown = easeOut(clamp01((now - idleStart) / REST_EYES_IN_MS));
-    const size = REST_EYE_SIZE * eyeSizeFor(eyesDial) * grown;
-    return [...rig.eyes.circle, size, size * blinkOpenness(now)];
+  function smoothCarry(now) {
+    const seconds = lastTickAt === null ? 0 : (now - lastTickAt) / 1000;
+    if (seconds <= 0) return;
+    carrySpeed += (carriedX / seconds - carrySpeed) * Math.min(1, seconds / CARRY_SMOOTHING_S);
+    carriedX = 0;
+  }
+
+  // The lids as drawn: the clip's, with the sympathy squint and the idle blink added. A new eye kind
+  // is taken up only under shut lids, so the shape never swaps in view.
+  function eyesAt(now) {
+    if (reduced) return { kind: 'round', anger: 0, squint: 0, lids: [0, 0] };
+    const closure = blink ? blinkClosure(now - blink.start) : 0;
+    const [leftLid, rightLid] = state.lids;
+    const lids = [squintWith(leftLid, rightLid) + closure, squintWith(rightLid, leftLid) + closure];
+    shownKind ??= state.eyeKind;
+    if (lids.every((lid) => lid >= SHUT_ENOUGH)) shownKind = state.eyeKind;
+    return { kind: shownKind, anger: state.anger, squint: state.squint, lids };
+  }
+
+  function composeFrame(now) {
+    const hoverWeight = clamp(state.y / HOVER_FULL_Y, 0, 1);
+    const standWeight = 1 - hoverWeight;
+    const layerOn = layers && !reduced;
+
+    const liftThen = liftAt(now - ROLL_LAG_MS);
+    const before = liftAt(now - SPEED_HALF_WINDOW_MS);
+    const after = liftAt(now + SPEED_HALF_WINDOW_MS);
+    const speeds = [0, 1].map((side) => (after[side] - before[side]) / ((2 * SPEED_HALF_WINDOW_MS) / 1000));
+
+    let roll = state.roll + ROLL_PER_LIFT * (liftThen[1] - liftThen[0]);
+    let y = state.y;
+    if (layerOn) {
+      y += BOB_UNITS * Math.sin((2 * Math.PI * now) / BOB_PERIOD_MS) * hoverWeight;
+      roll += HOVER_SWAY_PER_WIND * meanWind(now - HOVER_SWAY_LAG_MS) * hoverWeight;
+      roll += (STAND_SWAY_DEGREES * Math.sin((2 * Math.PI * now) / STAND_SWAY_PERIOD_MS) + STAND_LEAN_DEGREES) * standWeight;
+    }
+    if (!reduced) roll += clamp(LEAN_PER_SPEED * carrySpeed, -MAX_LEAN_DEGREES, MAX_LEAN_DEGREES);
+
+    const eyes = eyesAt(now);
+    const body = { y: Math.max(0, y), roll, squash: state.squash, pivot: lerp(TIP_POINT, CENTRE, hoverWeight) };
+    const string = chain.points({
+      tip: bodyPoint(body, TIP_POINT),
+      t: reduced ? 0 : now / 1000,
+      pose: state.stringPose,
+      payout: state.payout * (1 - state.form),
+      drag: reduced ? 0 : carrySpeed,
+      written: state.form > 0 ? null : state.written,
+    });
+    return {
+      ...body,
+      form: state.form,
+      lift: state.lift,
+      stretch: speeds.map(stretchFromSpeed),
+      liftSpeed: speeds,
+      eyes,
+      string,
+    };
   }
 
   return {
     state,
 
     get playing() {
-      return clip !== null;
+      return playing !== null;
     },
 
     get clip() {
-      return clip;
+      return playing;
     },
 
-    /** How much the idle breathing moves; the motion channel sets it. */
-    set breathing(motion0to10) {
-      breathDepth = IDLE_BREATH_DEPTH * (motion0to10 / 10);
+    get frame() {
+      return frame;
     },
 
-    /** How big the resting eyes are; the eyes channel sets it, and below 1.5 there are none. */
-    set eyes(eyes0to10) {
-      eyesDial = eyes0to10;
+    get standing() {
+      return reduced || state.y < HOVER_Y / 2;
     },
 
-    /** With reduced motion the resting eyes never blink. */
+    get reducedMotion() {
+      return reduced;
+    },
+
     set reducedMotion(on) {
       reduced = on;
     },
 
-    /** True when the last tick moved the resting eyes, so a host that draws rarely while idle draws this frame. */
-    get eyesMoved() {
-      return eyesMoved;
+    /** Place an idle kite in its hero spot or on the lane floor. */
+    rest({ standing }) {
+      Object.assign(state, restState({ standing: standing || reduced }));
+      playing = null;
+      poseTrack = null;
+      blink = null;
+      shownKind = 'round';
+      carriedX = 0;
+      carrySpeed = 0;
     },
 
+    stretchFromSpeed,
+
     /**
-     * Starts a clip now. Every track gets the current state as its first key,
-     * and a track the clip does not mention holds its current value.
-     * @param {import('./clip.js').Clip} next
-     * @param {number} now   performance.now()
+     * Starts a clip now. Every track gets the live state as its first key, so a
+     * track the clip does not write holds. The clip itself is copied, never changed.
+     * @param {import('./clip.js').Clip} clip
+     * @param {number} now   ms on the clock the host ticks with
      */
-    play(next, now) {
-      // SMELL: this changes the clip it is given. It adds a start key to every
-      // track and creates a missing track, so a clip object played twice has two
-      // start keys, and its second run jumps to where Jet was when the first run started.
+    play(clip, now) {
+      const copy = { total: clip.total, phases: [...clip.phases], revealFrom: clip.revealFrom ?? null };
       for (const name of TRACKS) {
-        const keys = next[name] || (next[name] = []);
-        keys.unshift({ t: 0, v: snapshot(name) });
-        keys.sort((a, b) => a.t - b.t);
+        copy[name] = [{ t: 0, v: copyOf(state[name]) }, ...(clip[name] ?? [])].sort((a, b) => a.t - b.t);
       }
-      clip = next;
+      liftBeforeAnyClip ??= copyOf(state.lift);
+      liftSources.push({ since: now, liftAt: (at) => sample(copy.lift, at - now) });
+      playing = copy;
+      poseTrack = copy.stringPose;
+      heldPoseKey = null;
       clipStart = now;
+      lastClipEnd = now + copy.total;
     },
 
     /**
-     * Moves the state to time `now`.
-     * @param {number} now   performance.now()
-     * @returns {Progress | null}   null while idle
+     * Moves the state to time `now` and works out the frame.
+     * @param {number} now   ms on the clock `play` was given
+     * @returns {Progress | null}   null while no clip plays
      */
     tick(now) {
-      if (!clip) {
-        const seconds = (now - idleStart) / 1000;
-        state.scale = reduced ? 1 : 1 + breathDepth * Math.sin((seconds * 2 * Math.PI * 1000) / IDLE_BREATH_PERIOD_MS);
-        if (!atRest) {
-          eyesMoved = false;
-          return null;
+      let progress = null;
+      if (playing) {
+        const t = now - clipStart;
+        for (const name of TRACKS) {
+          if (name === 'stringPose') continue;
+          state[name] = copyOf(STEP_TRACKS.includes(name) ? hold(playing[name], t) : sample(playing[name], t));
         }
-        const eyes = restEyes(now);
-        eyesMoved = eyes.some((v, i) => v !== state.eyes[i]);
-        state.eyes = eyes;
-        return null;
+        let start = 0;
+        const phases = playing.phases.map((phase) => {
+          const share = phase.end > start ? clamp((t - start) / (phase.end - start), 0, 1) : 1;
+          start = phase.end;
+          return share;
+        });
+        progress = { t, phases };
+        if (t >= playing.total) playing = null;
       }
-      eyesMoved = false;
-      const t = now - clipStart;
-      for (const name of TRACKS) state[name] = sample(clip[name], t);
-      let start = 0;
-      const phases = clip.phases.map((phase) => {
-        const value = clamp01((t - start) / (phase.end - start));
-        start = phase.end;
-        return value;
-      });
-      if (t >= clip.total) {
-        clip = null;
-        idleStart = now;
-        atRest = isAtRest();
-        blinkAt = now + blinkGap();
+      resolveStringPose(now);
+      if (reduced) {
+        const rest = restState({ standing: true });
+        state.y = 0;
+        state.roll = 0;
+        state.stringPose = rest.stringPose;
+        if (!playing) {
+          state.eyeKind = 'round';
+          state.anger = 0;
+          state.lids = [0, 0];
+          shownKind = 'round';
+        }
       }
-      return { t, phases };
+      smoothCarry(now);
+      advanceBlinks(now);
+      frame = composeFrame(now);
+      while (liftSources.length > 1 && now - liftSources[1].since > LIFT_HISTORY_MS) liftSources.shift();
+      lastTickAt = now;
+      return progress;
+    },
+
+    /**
+     * Tells the player how far the host moved the page node since the last
+     * frame, in units. The string trails the motion and the body leans into it.
+     * It adds no position: the host moves the node itself.
+     * @param {number} dx
+     * @param {number} [dy]  accepted and ignored
+     */
+    carry(dx, dy) {
+      carriedX += dx;
     },
   };
 }

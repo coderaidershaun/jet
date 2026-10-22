@@ -1,9 +1,8 @@
-// Starts the chat page: loads the rig, the saved settings and the history, builds
+// Starts the chat page: loads the saved settings and the history, builds
 // every part of the page and hands each the parts it needs. The agent is connected
 // here and nowhere else; every other part is handed it.
 
 import { connectAgent } from '../bridge/agent.js';
-import { loadRig } from '../bridge/rig.js';
 import { displayName, loadSettings, saveSettings } from '../bridge/settings.js';
 import { icon } from '../dom.js';
 import { createWorkstationShell } from '../workstation/shell.js';
@@ -29,26 +28,15 @@ const $ = (id) => document.getElementById(id);
 const warn = (what) => (error) => console.warn(what + ':', error);
 
 async function start() {
-  const [rig, settings] = await Promise.all([loadRig(), loadSettings()]);
-  const defaultColour = rig.palette.rest.slice();
+  const settings = await loadSettings();
   const agent = connectAgent();
   const [history, status] = await Promise.all([agent.history(), agent.status()]);
 
   const page = $('page');
   const systemReduces = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedMotion = () => settings.reducedMotion || systemReduces.matches;
-  const params = () => ({
-    candid: settings.behaviour.candid,
-    playful: settings.behaviour.playful,
-    ...settings.expressiveness.channels,
-    reducedMotion: reducedMotion(),
-  });
   const applyReduced = () => document.documentElement.classList.toggle('reduced', reducedMotion());
-  const applyColour = () => {
-    rig.palette.rest.splice(0, 3, ...(settings.bodyColour ?? defaultColour));
-  };
   applyReduced();
-  applyColour();
 
   const thread = createThread();
   thread.load(history);
@@ -137,7 +125,6 @@ async function start() {
     copyButton: $('log-copy'),
     clearButton: $('log-clear'),
     gearButton: $('gear'),
-    rig,
     log: createLog(),
     handlers: {
       openSettings: () => sheet.open(),
@@ -150,11 +137,9 @@ async function start() {
   });
 
   const live = createLive({
-    rig,
-    params,
+    reducedMotion: reducedMotion(),
     heroSlot: $('hero'),
     scrollToBottom: () => view.scrollToBottom(),
-    motion: () => settings.expressiveness.channels.motion,
   });
 
   const paintCache = () => drawer.setCache(describeCache(cache, Date.now()));
@@ -223,7 +208,6 @@ async function start() {
     context: {
       settings,
       agent,
-      defaultColour,
       totals: () => tracker.snapshot().total,
       systemReducesMotion: () => systemReduces.matches,
       onClaudeChecked: showProgramStatus,
@@ -232,16 +216,11 @@ async function start() {
     save: () => saveSettings(settings),
     onChange: (kind) => {
       if (kind === 'persona') paintPersona();
-      else if (kind === 'colour') {
-        applyColour();
-        drawer.recolour();
-        live.recolour();
-      } else if (kind === 'model') { drawer.setModel(settings); quickModel.refresh(); }
+      else if (kind === 'model') { drawer.setModel(settings); quickModel.refresh(); }
       else if (kind === 'motion') {
         applyReduced();
-        live.refresh();
-      } else if (kind === 'expressiveness') live.refresh();
-      else if (kind === 'workstation') workstation.settingsChanged();
+        live.setReducedMotion(reducedMotion());
+      } else if (kind === 'workstation') workstation.settingsChanged();
     },
   });
 
@@ -295,7 +274,7 @@ async function start() {
   });
   systemReduces.addEventListener('change', () => {
     applyReduced();
-    live.refresh();
+    live.setReducedMotion(reducedMotion());
   });
 
   drawer.init(settings.drawerOpen);

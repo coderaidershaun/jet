@@ -1,68 +1,92 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { paint } from '../draw/paint.js';
+import { createPlayer } from '../player.js';
+import { restState } from '../state.js';
 import { buildHello } from './hello.js';
 
-const rig = JSON.parse(readFileSync(fileURLToPath(new URL('../../../rig/jet.json', import.meta.url)), 'utf8'));
+const wave = JSON.parse(readFileSync(new URL('../fixtures/wave.json', import.meta.url), 'utf8'));
 
-const shipmate = { candid: 0.55, playful: 0.35, shape: 6, eyes: 4, colour: 6, motion: 6, reducedMotion: false };
-const tracks = ['body', 'eyes', 'colour', 'scale', 'ring', 'speed'];
+const FRAME_MS = 40;
+const HOVERING = { standing: false, eyeKind: 'lid', reducedMotion: false };
 
-const nearly = (a, b, eps = 1e-9) => a.every((v, i) => Math.abs(v - b[i]) < eps);
+const everyNode = (node) => [node, ...(node.children ?? []).flatMap(everyNode)];
+const only = (tree, name) => {
+  const found = everyNode(tree).filter((node) => node.attrs.class === name);
+  assert.equal(found.length, 1, `exactly one .${name}`);
+  return found[0];
+};
+const rollOf = (tree) => Number(/rotate\((-?[\d.]+)\)/.exec(only(tree, 'jet-body').attrs.transform)[1]);
+const foldOf = (tree) => Number(only(only(tree, 'jet-hand-right'), 'jet-fold').attrs.opacity);
+const winkOf = (tree) => Number(/scale\(1 ([\d.]+)\)/.exec(only(only(tree, 'jet-eye-right'), 'jet-eye-shape').attrs.transform)[1]);
+const squintOf = (tree) => Number(/scale\(1 ([\d.]+)\)/.exec(only(only(tree, 'jet-eye-left'), 'jet-eye-shape').attrs.transform)[1]);
+// The drawing's left eye squints 18% of the wink. The fixture keeps the right eye only, so the left is read off it.
+const squintFor = (winkScale) => 1 - Math.max(0, 0.18 * (1 - winkScale));
+// A shut eye is drawn no flatter than 0.04, so at that floor the wink's real closure, and the squint it causes, cannot be read.
+const LID_FLOOR = 0.04;
 
-test('every track runs forward in time and the clip ends back at the circle', () => {
-  const clip = buildHello(rig, shipmate);
-  for (const name of tracks) {
-    const times = clip[name].map((k) => k.t);
-    for (let i = 1; i < times.length; i++) assert.ok(times[i] >= times[i - 1], name + ' goes backwards at key ' + i);
+test('the played wave matches jet-wave.svg frame for frame', () => {
+  const player = createPlayer({ random: () => 1, layers: false });
+  player.state.eyeKind = 'lid';
+  player.play(buildHello(HOVERING), 0);
+
+  assert.equal(wave.frames.length, 75);
+  for (const [index, roll, handOpacity, winkScale] of wave.frames) {
+    player.tick(index * FRAME_MS);
+    const tree = paint(player.frame, { unitPx: 1 });
+    assert.ok(Math.abs(rollOf(tree) - roll) <= 0.05, `frame ${index}: roll ${rollOf(tree)} against ${roll}`);
+    assert.ok(Math.abs(player.frame.roll - roll) <= 0.05, `frame ${index}: frame roll ${player.frame.roll} against ${roll}`);
+    assert.ok(Math.abs(foldOf(tree) - handOpacity) <= 0.02, `frame ${index}: hand ${foldOf(tree)} against ${handOpacity}`);
+    assert.ok(Math.abs(winkOf(tree) - winkScale) <= 0.02, `frame ${index}: wink ${winkOf(tree)} against ${winkScale}`);
+    if (winkScale > LID_FLOOR) assert.ok(Math.abs(squintOf(tree) - squintFor(winkScale)) <= 0.02, `frame ${index}: left squint ${squintOf(tree)} against ${squintFor(winkScale)}`);
   }
-  assert.deepEqual(clip.phases.map((p) => p.name), ['stand up', 'hello', 'melt']);
-  assert.ok(clip.phases[0].end < clip.phases[1].end && clip.phases[1].end < clip.total);
-  assert.deepEqual(clip.body.at(-1).v, rig.poses.circle);
-  assert.equal(clip.eyes.at(-1).v[4], 0, 'eyes are gone before the melt');
-  assert.ok(clip.readout.length > 5);
 });
 
-test('playful adds wave cycles, serious removes them, reduced motion has none', () => {
-  assert.equal(buildHello(rig, { ...shipmate, playful: 1 }).info.cycles, 3);
-  assert.equal(buildHello(rig, { ...shipmate, playful: -1 }).info.cycles, 1);
-  assert.equal(buildHello(rig, { ...shipmate, reducedMotion: true }).info.cycles, 0);
-});
+// Plays a clip to its end on a fixed clock from the rest state and gives the player and the eyes it showed.
+function playToEnd(clip, { standing = false, eyeKind = 'round' } = {}) {
+  const player = createPlayer({ random: () => 1, layers: false, standing });
+  player.state.eyeKind = eyeKind;
+  player.play(clip, 0);
+  const shown = new Map();
+  for (let now = 0; now <= clip.total + FRAME_MS; now += FRAME_MS) {
+    player.tick(now);
+    shown.set(now, { kind: player.frame.eyes.kind, lids: player.frame.eyes.lids });
+  }
+  return { player, shown };
+}
 
-test('shape at zero never leaves the circle', () => {
-  const clip = buildHello(rig, { ...shipmate, shape: 0 });
-  for (const key of clip.body) assert.ok(nearly(key.v, rig.poses.circle), 'a body key left the circle');
-});
+test('brief ends at 1650 with no wink, revealFrom is wag, tracks and phases run forward, and the kite ends as it started', () => {
+  const full = buildHello(HOVERING);
+  const brief = buildHello(HOVERING, { brief: true });
+  assert.deepEqual(full.phases, [{ name: 'dip', end: 180 }, { name: 'lift', end: 650 }, { name: 'wag', end: 1900 }, { name: 'drop', end: 2300 }, { name: 'rest', end: 2550 }]);
+  assert.deepEqual(brief.phases.map((phase) => phase.end), [180, 650, 1150, 1450, 1650]);
+  assert.equal(brief.total, 1650);
+  assert.equal(full.revealFrom, 'wag');
+  assert.equal(brief.revealFrom, 'wag');
+  assert.ok(full.lids.some((key) => key.v[1] === 1), 'the full hello winks');
+  assert.ok(brief.lids.every((key) => key.v[1] === 0), 'the brief hello does not');
 
-test('eyes at zero never show a face', () => {
-  const clip = buildHello(rig, { ...shipmate, eyes: 0 });
-  for (const key of clip.eyes) assert.equal(key.v[4], 0);
-});
+  for (const clip of [full, brief, buildHello({ ...HOVERING, eyeKind: 'round', standing: true })]) {
+    const ends = clip.phases.map((phase) => phase.end);
+    assert.deepEqual(ends, [...ends].sort((a, b) => a - b), 'the phases run forward');
+    for (const name of ['lift', 'lids', 'y', 'squash', 'form']) {
+      const times = clip[name].map((key) => key.t);
+      assert.deepEqual(times, [...times].sort((a, b) => a - b), `the ${name} track runs forward`);
+      assert.ok(times.every((t) => t >= 0 && t <= clip.total), `the ${name} track stays inside the clip`);
+    }
+  }
 
-test('motion switches the extra beats off', () => {
-  const still = buildHello(rig, { ...shipmate, motion: 0 }).info;
-  const lively = buildHello(rig, { ...shipmate, motion: 10 }).info;
-  assert.deepEqual([still.dip, still.lag, still.tuck], [false, false, false]);
-  assert.deepEqual([lively.dip, lively.lag, lively.tuck], [true, true, true]);
-});
+  for (const standing of [false, true]) {
+    for (const brief of [false, true]) {
+      const { player } = playToEnd(buildHello({ standing, eyeKind: 'round', reducedMotion: false }, { brief }), { standing });
+      assert.deepEqual(player.state, { ...restState({ standing }), eyeKind: 'lid' }, `back at rest, standing ${standing}, brief ${brief}; only the eyes stay lid`);
+    }
+  }
 
-test('candid holds the arm up and deferential bows instead', () => {
-  const candid = buildHello(rig, { ...shipmate, candid: 0.8 });
-  const neutral = buildHello(rig, { ...shipmate, candid: 0 });
-  const deferential = buildHello(rig, { ...shipmate, candid: -0.8 });
-  assert.ok(candid.info.reach > neutral.info.reach && neutral.info.reach > deferential.info.reach);
-  assert.equal(neutral.info.bow, 0);
-  assert.ok(deferential.info.bow > 0.5);
-});
-
-test('a brief hello waves once and never bows', () => {
-  const dials = { ...shipmate, candid: -0.8 };
-  const full = buildHello(rig, dials);
-  const brief = buildHello(rig, dials, { brief: true });
-  assert.ok(full.info.bow > 0.5, 'the full hello bows for a deferential Jet');
-  assert.equal(brief.info.cycles, 1);
-  assert.equal(brief.info.bow, 0);
-  assert.ok(brief.total < full.total * 0.65, 'the brief hello is well under the full one: ' + brief.total + ' against ' + full.total);
-  assert.equal(buildHello(rig, { ...dials, reducedMotion: true }, { brief: true }).info.cycles, 0);
+  const blinking = playToEnd(buildHello({ ...HOVERING, eyeKind: 'round' }));
+  assert.equal(blinking.shown.get(40).kind, 'round');
+  assert.deepEqual(blinking.shown.get(80), { kind: 'lid', lids: [1, 1] }, 'the opening blink swaps the eyes under its shut lids');
+  const lidEyes = playToEnd(buildHello(HOVERING), { eyeKind: 'lid' });
+  assert.deepEqual(lidEyes.shown.get(80), { kind: 'lid', lids: [0, 0] }, 'eyes that are already lid eyes do not blink');
 });

@@ -5,7 +5,6 @@
 // until Jet has reacted to its mood.
 
 const RENDER_EVERY_MS = 50;
-const MOOD_HOLD_MS = 300;
 
 const realClock = {
   now: () => performance.now(),
@@ -30,10 +29,21 @@ export function createReveal({ render, paint, clock = realClock }) {
   let lastRenderAt = -Infinity;
   let notBefore = -Infinity;
   let cancelTimer = null;
+  let completion = null;
 
   function run() {
     cancelTimer = null;
-    if (ended || !dirty) return;
+    if (ended) return;
+    if (clock.now() < notBefore) { schedule(); return; }
+    if (completion) {
+      const finish = completion;
+      completion = null;
+      ended = true;
+      issued++;
+      finish();
+      return;
+    }
+    if (!dirty) return;
     dirty = false;
     lastRenderAt = clock.now();
     const mine = ++issued;
@@ -51,9 +61,23 @@ export function createReveal({ render, paint, clock = realClock }) {
   }
 
   return {
-    /** Jet's mood arrived: the first text waits while the clip starts. */
-    mood() {
-      notBefore = clock.now() + MOOD_HOLD_MS;
+    /** Hold text and successful completion until an absolute monotonic deadline. */
+    holdUntil(at) {
+      notBefore = Math.max(notBefore, at);
+      issued++;
+      if (latest !== '') dirty = true;
+      if (cancelTimer) cancelTimer();
+      cancelTimer = null;
+      if (dirty || completion) schedule();
+    },
+
+    /** Keep the final entry behind the same reveal hold as streamed text. */
+    finish(done) {
+      issued++;
+      completion = done;
+      if (cancelTimer) cancelTimer();
+      cancelTimer = null;
+      schedule();
     },
 
     /** @param {string} fullText   everything received so far */
@@ -66,6 +90,7 @@ export function createReveal({ render, paint, clock = realClock }) {
     /** The reply is over; the final HTML comes from the finished entry. */
     end() {
       ended = true;
+      completion = null;
       issued++;
       if (cancelTimer) cancelTimer();
       cancelTimer = null;

@@ -1,4 +1,4 @@
-// Small number helpers that several parts of the engine share: keeping a
+// Small number helpers that several parts of the character share: keeping a
 // value inside a range and blending two values.
 
 export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
