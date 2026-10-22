@@ -44,6 +44,7 @@ test('a send flies then works until the reply arrives, with fly\'s own timing', 
     { moveAt: 500, moveMs: 220 },
     'the cruise is never shorter than the ease down',
   );
+  director.feel('neutral', 0);
   assert.equal(director.status, 'flying');
   run(0, 3500);
   assert.equal(director.status, 'working');
@@ -59,6 +60,7 @@ test('a send flies then works until the reply arrives, with fly\'s own timing', 
 test('a quick reply skips the spinner', () => {
   const { director, player, seen, run } = setup();
   director.send({ cruiseMs: 800 }, 0);
+  director.feel('neutral', 0);
   run(0, 100);
   director.replying(100);
   director.done(150);
@@ -74,6 +76,7 @@ test('animated moods queue after the brake and unsupported moods only close the 
 
   const flying = setup();
   flying.director.send({ cruiseMs: 800 }, 0);
+  flying.director.feel('neutral', 0);
   flying.run(0, 100);
   flying.director.mood('  HELLO ', 100);
   flying.run(100, FLY_DONE_MS - FRAME_MS);
@@ -84,6 +87,7 @@ test('animated moods queue after the brake and unsupported moods only close the 
 
   const working = setup();
   working.director.send({ cruiseMs: 800 }, 0);
+  working.director.feel('neutral', 0);
   working.run(0, 3000);
   working.director.mood('hello', 3000);
   working.run(3000, 3010);
@@ -94,6 +98,7 @@ test('animated moods queue after the brake and unsupported moods only close the 
   for (const word of ['neutral', 'happy', 'excited', 'thinking', 'curious', 'sorry', 'alert', 'annoyed', 'flabbergasted', '']) {
     const { director, seen, run } = setup();
     director.send({ cruiseMs: 800 }, 0);
+    director.feel('neutral', 0);
     run(0, 3000);
     director.mood(word, 3000);
     run(3000, 6000);
@@ -123,6 +128,7 @@ test('done settles; a done during hello settles after it; a hello after done pla
 
   const late = setup();
   late.director.send({ cruiseMs: 800 }, 0);
+  late.director.feel('neutral', 0);
   late.run(0, 100);
   late.director.done(100);
   late.director.hello(116);
@@ -131,6 +137,7 @@ test('done settles; a done during hello settles after it; a hello after done pla
 
   const working = setup();
   working.director.send({ cruiseMs: 800 }, 0);
+  working.director.feel('neutral', 0);
   working.run(0, 3000);
   working.director.done(3000);
   working.run(3000, 8000);
@@ -141,6 +148,7 @@ test('failed and stopped drop the queue, close the spinner and settle', () => {
   for (const end of ['failed', 'stopped']) {
     const spinning = setup();
     spinning.director.send({ cruiseMs: 800 }, 0);
+    spinning.director.feel('neutral', 0);
     spinning.run(0, 3000);
     spinning.director[end](3000);
     spinning.run(3000, 8000);
@@ -148,14 +156,30 @@ test('failed and stopped drop the queue, close the spinner and settle', () => {
 
     const queued = setup();
     queued.director.send({ cruiseMs: 800 }, 0);
+    queued.director.feel('neutral', 0);
     queued.run(0, 3000);
     queued.director.mood('hello', 3000);
     queued.director[end](3016);
     queued.run(3016, 9000);
     assert.deepEqual(queued.seen, ['fly', 'working', 'workingEnd', 'settle'], `${end} drops the waiting hello`);
 
+    for (const reducedMotion of [false, true]) {
+      const active = setup({ reducedMotion });
+      active.director.send({ cruiseMs: 800 }, 0);
+      active.director.feel('insulted', 100);
+      const at = active.runUntil('insulted', 100);
+      active.run(at, at + 1000);
+      active.director[end](at + 1000);
+      assert.notEqual(active.director.tick(at + 1000).clip, 'insulted', `${end} interrupts the active reaction`);
+      active.run(at + 1000, at + 5000);
+      assert.equal(active.director.status, 'idle');
+      assert.ok(active.player.standing);
+      if (reducedMotion) assert.equal(active.player.frame.y, 0);
+    }
+
     const flying = setup();
     flying.director.send({ cruiseMs: 800 }, 0);
+    flying.director.feel('neutral', 0);
     flying.run(0, 100);
     flying.director[end](100);
     flying.run(100, 8000);
@@ -166,6 +190,7 @@ test('failed and stopped drop the queue, close the spinner and settle', () => {
 test('reduced motion never flies', () => {
   const { director, player, seen, run } = setup({ reducedMotion: true });
   assert.deepEqual(director.send({ cruiseMs: 2000 }, 0), { moveAt: 0, moveMs: 0 });
+  director.feel('neutral', 0);
   run(0, 3000);
   assert.equal(director.status, 'working');
   director.done(3000);
@@ -181,6 +206,7 @@ test('revealAt is the absolute deadline of the clip\'s reveal phase', () => {
 
   const early = setup();
   early.director.send({ cruiseMs: 800 }, 1000);
+  early.director.feel('neutral', 1000);
   early.run(1000, 1100);
   assert.deepEqual(early.director.mood('insulted', 1100), { revealAt: 1000 + FLY_DONE_MS + 2720 });
   early.director.done(1120);
@@ -196,11 +222,13 @@ test('revealAt is the absolute deadline of the clip\'s reveal phase', () => {
 
   const flying = setup();
   flying.director.send({ cruiseMs: 800 }, 0);
+  flying.director.feel('neutral', 0);
   flying.run(0, 100);
   assert.deepEqual(flying.director.mood('hello', 100), { revealAt: FLY_DONE_MS + 650 }, 'the rest of the flight, then up to the wag');
 
   const working = setup();
   working.director.send({ cruiseMs: 800 }, 0);
+  working.director.feel('neutral', 0);
   working.run(0, 3000);
   const { revealAt } = working.director.mood('hello', 3000);
   assert.equal(working.director.status, 'working');
@@ -212,6 +240,7 @@ test('status reads idle, flying, working and reacting', () => {
     const { director, seen, run, runUntil } = setup();
     assert.equal(director.status, 'idle');
     director.send({ cruiseMs: 800 }, 0);
+    director.feel('neutral', 0);
     assert.equal(director.status, 'flying');
     run(0, 3000);
     assert.equal(director.status, 'working');
@@ -240,4 +269,37 @@ test('a completed reduced motion reaction restores round eyes without blinking',
     assert.deepEqual(player.frame.eyes.lids, [0, 0]);
     assert.equal(player.frame.y, 0);
   }
+});
+
+
+test('feel queues behind flight, waits before spinning, and suppresses same or neutral reply mood', () => {
+  const { director, seen, run, runUntil } = setup();
+  director.send({ cruiseMs: 800 }, 0);
+  run(0, 2000);
+  assert.deepEqual(seen, ['fly'], 'classification is still pending, so no spinner');
+  const { revealAt } = director.feel('hello', 2000);
+  assert.equal(revealAt, 2650);
+  director.mood('hello', 2010);
+  director.mood('neutral', 2020);
+  run(2020, 5000);
+  assert.deepEqual(seen, ['fly', 'hello'], 'a fast reply and matching mood never add another reaction or spinner');
+  director.done(5000);
+  run(5000, 7000);
+  assert.equal(director.status, 'idle');
+
+  const early = setup();
+  early.director.send({ cruiseMs: 800 }, 0);
+  assert.deepEqual(early.director.feel('hello', 100), { revealAt: 2350 });
+  const next = early.director.mood('insulted', 200);
+  assert.equal(next.revealAt, 1700 + 2550 + 2720);
+  early.director.done(210);
+  early.run(210, 12000);
+  assert.deepEqual(early.seen, ['fly', 'hello', 'insulted', 'settle']);
+
+  const waiting = setup();
+  waiting.director.send({ cruiseMs: 800 }, 0);
+  waiting.director.feel('hello', 100);
+  const at = waiting.runUntil('working', 0);
+  assert.ok(at >= 1700 + 2550, 'the spinner waits for the whole feeling reaction');
+  assert.deepEqual(waiting.director.feel('insulted', at), { revealAt: at }, 'only one classification is accepted');
 });

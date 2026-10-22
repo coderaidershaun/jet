@@ -4,9 +4,13 @@
 // It is handed the agent and every part of the page instead of importing them,
 // so the agent is chosen in one place.
 
+import { MOODS } from '../jet/director.js';
 import { displayName } from '../bridge/settings.js';
 import { localTimeLabel } from './clock.js';
 import { createReveal } from './thread/throttle.js';
+
+const FEELING_CAP_MS = 2200;
+const SUPPORTED_MOODS = new Set(MOODS);
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped']);
 
@@ -21,6 +25,7 @@ function parsedOrNull(line) {
 /**
  * @param {{
  *   agent: {
+ *     feel: (text: string) => Promise<{ mood: string, scores: object }>,
  *     send: (request: object, onEvent: (event: any) => void) => Promise<object>,
  *     stop: () => Promise<void>,
  *     renderMarkdown: (text: string) => Promise<string>,
@@ -45,6 +50,8 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
   /** @type {ReturnType<typeof createReveal> | null} */
   let reveal = null;
   let pendingEntry = null;
+  let active = null;
+  let warned = false;
 
   function paint() {
     view.render(thread.rows());
@@ -55,6 +62,8 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
   }
 
   function endReply() {
+    active?.cancelFeeling?.();
+    active = null;
     if (reveal) reveal.end();
     reveal = null;
     pendingEntry = null;
@@ -152,9 +161,13 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     paint,
 
     /** Sends a message: the bubble, the new slot, the flight, then the agent. */
-    send(text) {
+    async send(text) {
+      const mine = { dispatched: false, cancelFeeling: null, preface: null };
+      active = mine;
       const now = performance.now();
       const preface = takePreface();
+      mine.preface = preface;
+      const message = request(text, preface);
       const takeoff = live.measure();
       tracker.sent({ effort: settings.effort, at: Date.now() });
       showUsage();
@@ -172,22 +185,59 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       reveal = createReveal({
         render: (partial) => agent.renderMarkdown(partial),
         paint: (html) => {
-          if (!thread.slot) return;
+          if (active !== mine || !thread.slot) return;
           thread.reveal(html);
           paint();
         },
       });
-      agent.send(request(text, preface), onEvent).catch((error) => {
-        // The model never read the message, so what the user did on the cards is still news to it.
+      const warn = () => {
+        if (warned) return;
+        warned = true;
+        console.warn('Feeling classification unavailable; continuing with neutral.');
+      };
+      const feeling = await new Promise((resolve) => {
+        let settled = false;
+        const finish = (word) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          mine.cancelFeeling = null;
+          resolve(SUPPORTED_MOODS.has(word) ? word : 'neutral');
+        };
+        const timer = setTimeout(() => { warn(); finish('neutral'); }, FEELING_CAP_MS);
+        mine.cancelFeeling = () => finish('neutral');
+        try {
+          Promise.resolve(agent.feel(text)).then(
+            (result) => finish(result?.mood),
+            () => { if (!settled && active === mine) warn(); finish('neutral'); },
+          );
+        } catch {
+          warn();
+          finish('neutral');
+        }
+      });
+      if (active !== mine) return;
+      reveal.holdUntil(live.feel(feeling, performance.now()).revealAt);
+      message.feeling = feeling;
+      mine.dispatched = true;
+      const receive = (event) => {
+        if (active !== mine) return;
+        if (mine.stopping) {
+          if (TERMINAL.has(event.kind)) onEvent({ kind: 'stopped', entry: { ...event.entry, text: thread.slot.text, html: thread.slot.html, status: 'stopped' } });
+        } else onEvent(event);
+      };
+      try {
+        await agent.send(message, receive);
+      } catch (error) {
+        if (active !== mine) return;
         if (preface) giveBackPreface(preface);
-        if (!thread.replying) return;
         const failure = {
           kind: error && error.kind ? error.kind : 'io',
           message: error && error.message ? error.message : 'The message could not be sent.',
         };
         const entry = { id: null, role: 'jet', text: '', html: '', status: 'failed', error: failure.message, at: Date.now() };
-        onEvent({ kind: 'failed', failure, entry });
-      });
+        receive({ kind: 'failed', failure, entry });
+      }
     },
 
     retry() {
@@ -196,14 +246,21 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     },
 
     stop() {
-      if (pendingEntry) {
+      const mine = active;
+      if (!mine) return;
+      if (!mine.dispatched && mine.preface) giveBackPreface(mine.preface);
+      if (mine.dispatched && !pendingEntry) {
+        mine.stopping = true;
         reveal.end();
-        thread.stop({ ...pendingEntry, text: thread.slot.text, html: thread.slot.html, status: 'stopped' });
         live.stopped(performance.now());
-        endReply();
+        agent.stop().catch((error) => console.warn('Stop could not be sent:', error));
         return;
       }
-      agent.stop().catch((error) => console.warn('Stop could not be sent:', error));
+      const entry = pendingEntry ?? { id: null, role: 'jet', at: Date.now() };
+      reveal.end();
+      thread.stop({ ...entry, text: thread.slot.text, html: thread.slot.html, status: 'stopped' });
+      live.stopped(performance.now());
+      endReply();
     },
 
     hold(text) {

@@ -43,6 +43,8 @@ export function createDirector({ player }) {
   let current = null;
   let running = false;
   let answered = false;
+  let feeling = null;
+  let revealAt = -Infinity;
   let workingStartedAt = 0;
 
   const startOf = () => ({ standing: player.standing, eyeKind: player.state.eyeKind, reducedMotion: player.reducedMotion });
@@ -113,6 +115,14 @@ export function createDirector({ player }) {
     enqueue({ clip: 'settle' }, now);
   }
 
+  function cancelReply(now) {
+    queue.length = 0;
+    if (player.playing && !['fly', 'working', 'workingEnd', 'settle'].includes(current.step.clip)) {
+      running = false;
+      start({ clip: 'settle' }, now);
+    } else endReply(now);
+  }
+
   return {
     /**
      * Plays hello, unless a reply is running.
@@ -125,7 +135,7 @@ export function createDirector({ player }) {
     },
 
     /**
-     * A message went out and a reply is on its way. Jet flies to the reply, then works.
+     * A message went out. Jet flies to the reply and waits for its feeling before working.
      * With reduced motion there is no flight, and the host moves nothing.
      * @param {{ cruiseMs: number }} job   how long the flight's cruise lasts
      * @param {number} now
@@ -134,14 +144,31 @@ export function createDirector({ player }) {
     send({ cruiseMs }, now) {
       running = true;
       answered = false;
+      feeling = null;
+      revealAt = now;
       queue.length = 0;
       if (player.reducedMotion) {
-        startSpinner(now);
+        player.rest({ standing: true });
         return { moveAt: 0, moveMs: 0 };
       }
       const flight = start({ clip: 'fly', options: { cruiseMs } }, now);
       const launchEnd = phaseEnd(flight, 'launch');
       return { moveAt: launchEnd, moveMs: phaseEnd(flight, 'cruise') - launchEnd };
+    },
+
+    /** Queues the first classification after the flight and reports its reveal deadline. */
+    feel(word, now) {
+      if (!running || feeling !== null || answered) return { revealAt: Math.max(now, revealAt) };
+      feeling = String(word ?? '').trim().toLowerCase();
+      const emotion = Object.hasOwn(EMOTIONS, feeling) ? EMOTIONS[feeling] : null;
+      if (emotion) {
+        const step = { clip: emotion.clip, options: emotion.options };
+        enqueue(step, now);
+        revealAt = Math.max(revealAt, now + msUntilReveal(step, now));
+      } else if (!player.playing) {
+        startSpinner(now);
+      }
+      return { revealAt };
     },
 
     /**
@@ -156,10 +183,14 @@ export function createDirector({ player }) {
       const key = String(word ?? '').trim().toLowerCase();
       const emotion = Object.hasOwn(EMOTIONS, key) ? EMOTIONS[key] : null;
       closeSpinner(now);
-      if (!emotion) return { revealAt: now + MOOD_HOLD_MS };
+      if (!emotion || key === feeling) {
+        revealAt = Math.max(revealAt, feeling === null ? now + MOOD_HOLD_MS : now);
+        return { revealAt };
+      }
       const step = { clip: emotion.clip, options: emotion.options };
       enqueue(step, now);
-      return { revealAt: now + msUntilReveal(step, now) };
+      revealAt = Math.max(revealAt, now + msUntilReveal(step, now));
+      return { revealAt };
     },
 
     /**
@@ -181,21 +212,14 @@ export function createDirector({ player }) {
     },
 
     /** The reply failed: whatever waited is dropped, and Jet settles. @param {number} now */
-    failed(now) {
-      queue.length = 0;
-      endReply(now);
-    },
+    failed: cancelReply,
 
     /** The user stopped the reply: whatever waited is dropped, and Jet settles. @param {number} now */
-    stopped(now) {
-      queue.length = 0;
-      endReply(now);
-    },
+    stopped: cancelReply,
 
     /**
-     * Moves Jet to time `now`. Call it once per frame, before drawing. When a clip ends, the next
-     * one starts: the spinner goes on while the reply runs with no answer yet, else the next
-     * waiting step plays, else after a flight the spinner starts if the reply has no answer yet.
+     * Moves Jet to time `now`. Call it once per frame, before drawing.
+     * Queued reactions play before the spinner, which waits for classification and stops when text arrives.
      * @param {number} now
      * @returns {{ clip: string | null, busy: boolean }}
      *   `clip` is the catalogue name of the clip playing after this tick, or null;
@@ -206,10 +230,10 @@ export function createDirector({ player }) {
       player.tick(now);
       if (wasPlaying && !player.playing) {
         const ended = current.step.clip;
-        const spinnerWanted = running && !answered;
+        const spinnerWanted = running && !answered && feeling !== null;
         if (ended === 'working' && spinnerWanted) {
           start({ clip: 'working', options: { continueFrom: { roll: player.state.roll, elapsedMs: now - workingStartedAt } } }, now);
-        } else if (!startNext(now) && ended === 'fly' && spinnerWanted) {
+        } else if (!startNext(now) && spinnerWanted) {
           startSpinner(now);
         }
       }

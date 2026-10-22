@@ -86,3 +86,57 @@ test('the host uses measured scale for strokes and carries flight until its own 
   assert.ok(strokes.length > 0);
   assert.ok(strokes.every((el) => Number(el.attrs['stroke-width']) * 0.24 >= 0.8 - 1e-6));
 });
+
+const settle = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
+
+test('an old reduced-motion fade never reparents or cancels a new send after rapid stop and retry', async (t) => {
+  const animations = [];
+  t.mock.method(Element.prototype, 'animate', function () {
+    let finish;
+    const animation = { finished: new Promise((resolve) => { finish = resolve; }), cancel() { this.cancelled = true; }, finish: () => finish() };
+    animations.push(animation);
+    return animation;
+  });
+  t.mock.method(Element.prototype, 'getAnimations', () => animations.filter((animation) => !animation.cancelled));
+  const { live, hero } = surface(t);
+  live.setReducedMotion(true);
+  live.showHero();
+  const oldLane = new Element();
+  const newLane = new Element();
+  const node = hero.children[0];
+  live.send(oldLane, 0, live.measure());
+  const oldFade = animations.at(-1);
+  oldFade.finish();
+  await settle();
+  assert.equal(node.parent, oldLane);
+  const oldFadeIn = animations.at(-1);
+  live.stopped(10);
+  live.send(newLane, 20, live.measure());
+  const newFade = animations.at(-1);
+  oldFadeIn.finish();
+  await settle();
+  assert.ok(!newFade.cancelled, 'old cleanup must not cancel the new fade');
+  newFade.finish();
+  await settle();
+  assert.equal(node.parent, newLane);
+  const newFadeIn = animations.at(-1);
+  newFadeIn.finish();
+  await settle();
+
+  live.send(oldLane, 40, live.measure());
+  const delayedOldFade = animations.at(-1);
+  live.stopped(50);
+  assert.equal(node.parent, oldLane, 'a stop before fade-out completes still moves to its reply lane');
+  live.send(newLane, 60, live.measure());
+  const latestFade = animations.at(-1);
+  latestFade.finish();
+  await settle();
+  const latestFadeIn = animations.at(-1);
+  assert.equal(node.parent, newLane);
+  delayedOldFade.finish();
+  await settle();
+  assert.equal(node.parent, newLane, 'an old fade finishing cannot move Jet back');
+  assert.ok(!latestFadeIn.cancelled);
+  latestFadeIn.finish();
+  await settle();
+});

@@ -164,6 +164,7 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
         },
         shared_mcp: BTreeMap::new(),
         preface: None,
+        feeling: None,
     };
     let (_, reply) = conversation.send(Arc::new(claude), message).unwrap();
     let events: Vec<Event> = reply.collect();

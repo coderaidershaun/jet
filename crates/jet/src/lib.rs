@@ -31,6 +31,7 @@ pub fn run() -> Result<(), Error> {
             chat::provider::agent_status,
             chat::load_history,
             chat::send_message,
+            chat::feel::feel_message,
             chat::stop_reply,
             chat::forget_conversation,
             chat::load_memory,

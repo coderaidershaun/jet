@@ -35,7 +35,7 @@ function stubTauri() {
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 const request = {
-  text: 'hello',
+  text: 'hello', feeling: 'hello',
   model: 'sonnet',
   effort: 'medium',
   budgetUsd: 1,
@@ -78,6 +78,7 @@ test('with window.__TAURI__ the agent calls each command with its argument keys 
   stub.replies.set('read_library_image', 'data:image/png;base64,AAAA');
   await agent.status();
   await agent.history();
+  await agent.feel("hi");
   await agent.stop();
   await agent.forget();
   await agent.loadMemory();
@@ -91,7 +92,7 @@ test('with window.__TAURI__ the agent calls each command with its argument keys 
 
   const commands = stub.calls.map(([command]) => command);
   assert.deepEqual(commands, [
-    'send_message', 'agent_status', 'load_history', 'stop_reply', 'forget_conversation',
+    'send_message', 'agent_status', 'load_history', 'feel_message', 'stop_reply', 'forget_conversation',
     'load_memory', 'save_memory', 'render_markdown', 'open_link', 'read_library_image', 'mcp_call', 'mcp_reload',
   ]);
   const argsOf = (command) => stub.calls.find(([name]) => name === command)[1];
@@ -99,6 +100,7 @@ test('with window.__TAURI__ the agent calls each command with its argument keys 
   assert.equal(argsOf('send_message').request, request);
   assert.ok(argsOf('send_message').events instanceof stub.Channel);
   assert.deepEqual(argsOf('save_memory'), { notes: { memory: 'm', user: 'u', recent: 'r' } });
+  assert.deepEqual(argsOf('feel_message'), { text: 'hi' });
   assert.deepEqual(argsOf('render_markdown'), { text: '*x*' });
   assert.deepEqual(argsOf('open_link'), { url: 'https://example.com' });
   assert.deepEqual(argsOf('read_library_image'), { path: 'content/a.png' });

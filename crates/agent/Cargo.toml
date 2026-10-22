@@ -24,6 +24,7 @@ name = "fake-bridge"
 path = "src/bin/fake-bridge.rs"
 
 [dependencies]
+dotenvy = { workspace = true }
 pulldown-cmark = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -32,6 +32,17 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
   let lastLabel = 'idle';
   let lastDrawAt = -Infinity;
   let needsDraw = true;
+  let generation = 0;
+  const fades = new Set();
+  let pendingMove = null;
+
+  function cancelFades({ finishMove = false } = {}) {
+    if (finishMove) pendingMove?.();
+    pendingMove = null;
+    generation++;
+    for (const animation of fades) animation.cancel();
+    fades.clear();
+  }
 
   const reduced = () => player.reducedMotion;
   const anchorOf = (rect) => ({ x: rect.left + rect.width / 2, y: rect.top + rect.height });
@@ -75,11 +86,28 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
     requestAnimationFrame(loop);
   }
 
-  async function fadeOver(move) {
-    await node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FADE_OUT_MS, fill: 'forwards' }).finished;
-    move();
-    await node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_IN_MS, fill: 'forwards' }).finished;
-    for (const animation of node.getAnimations()) animation.cancel();
+  async function fadeOver(move, mine) {
+    async function fade(from, to, duration) {
+      const animation = node.animate([{ opacity: from }, { opacity: to }], { duration, fill: 'forwards' });
+      fades.add(animation);
+      try { await animation.finished; } finally {
+        if (mine !== generation) animation.cancel();
+      }
+      return animation;
+    }
+    try {
+      await fade(1, 0, FADE_OUT_MS);
+      if (mine !== generation) return;
+      move();
+      await fade(0, 1, FADE_IN_MS);
+    } catch (error) {
+      if (mine === generation) console.warn('the fade to the new lane failed:', error);
+    } finally {
+      if (mine === generation) {
+        for (const animation of fades) animation.cancel();
+        fades.clear();
+      }
+    }
   }
 
   return {
@@ -96,17 +124,20 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
 
     /** Empty state: Jet fades in at the hero spot, then waves once. */
     showHero() {
+      cancelFades();
+      const mine = generation;
       endFlight();
       player.rest({ standing: false });
       heroSlot.append(node);
       node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: HERO_FADE_IN_MS });
       clearTimeout(helloTimer);
-      helloTimer = setTimeout(() => director.hello(performance.now()), HERO_FADE_IN_MS + HELLO_AFTER_FADE_IN_MS);
+      helloTimer = setTimeout(() => { if (mine === generation) director.hello(performance.now()); }, HERO_FADE_IN_MS + HELLO_AFTER_FADE_IN_MS);
       needsDraw = true;
     },
 
     /** Relaunch: Jet stands in the newest Jet lane and gives a short hello. */
     showInLane(lane) {
+      cancelFades();
       endFlight();
       player.rest({ standing: true });
       lane.append(node);
@@ -123,14 +154,18 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
 
     /** The send: Jet leaves where it stood and flies to the new lane. */
     send(lane, now, { first, fromScale }) {
+      cancelFades();
+      const mine = generation;
       clearTimeout(helloTimer);
       if (reduced()) {
         director.send({ cruiseMs: 0 }, now);
         const moveToLane = () => {
+          pendingMove = null;
           lane.append(node);
           scrollToBottom();
         };
-        fadeOver(moveToLane).catch((error) => console.warn('the fade to the new lane failed:', error));
+        pendingMove = moveToLane;
+        fadeOver(moveToLane, mine);
         return;
       }
       lane.append(node);
@@ -146,14 +181,16 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
       needsDraw = true;
     },
 
+    feel: (word, now = performance.now()) => director.feel(word, now),
     mood: (word, now = performance.now()) => director.mood(word, now),
     replying: (now = performance.now()) => director.replying(now),
     done: (now = performance.now()) => director.done(now),
-    failed: (now = performance.now()) => director.failed(now),
-    stopped: (now = performance.now()) => director.stopped(now),
+    failed(now = performance.now()) { cancelFades({ finishMove: true }); clearTimeout(helloTimer); director.failed(now); },
+    stopped(now = performance.now()) { cancelFades({ finishMove: true }); clearTimeout(helloTimer); director.stopped(now); },
 
     /** App setting and system preference have already been combined by the page. */
     setReducedMotion(on) {
+      cancelFades({ finishMove: true });
       player.reducedMotion = on;
       if (on) endFlight();
       needsDraw = true;

@@ -280,3 +280,30 @@ test('history, notes and the cache status persist in the given storage', async (
   assert.equal((await relaunched.loadMemory()).user, 'b', 'forgetting keeps the notes');
   assert.equal((await relaunched.status()).cache.lastRequestAt, null);
 });
+
+
+test('feel waits 400 ms and classifies greetings insults and ordinary messages; replies follow it', async () => {
+  const waits = [];
+  let release;
+  let blocked = true;
+  const { agent } = fastAgent({ wait: (ms) => {
+    waits.push(ms);
+    if (blocked) return new Promise((resolve) => { release = resolve; });
+    return Promise.resolve();
+  } });
+  let resolved = false;
+  const first = agent.feel('hi').then((value) => { resolved = true; return value; });
+  await Promise.resolve();
+  assert.equal(resolved, false, 'classification waits for its 400 ms pause');
+  assert.equal(waits.at(-1), 400);
+  blocked = false;
+  release();
+  assert.equal((await first).mood, 'hello');
+  for (const [text, mood] of [['hi', 'hello'], ['you useless thing', 'insulted'], ['explain this', 'neutral']]) {
+    const feeling = await agent.feel(text);
+    assert.equal(waits.at(-1), 400);
+    assert.equal(feeling.mood, mood);
+    const { events } = await ask(agent, text, () => {}, { feeling: mood });
+    assert.equal(events.find((event) => event.kind === 'mood').mood, mood);
+  }
+});

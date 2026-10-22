@@ -36,6 +36,7 @@ import { createTauriAgent } from './tauri-agent.js';
 
 /**
  * @typedef {object} SendRequest
+ * @property {string | null} [feeling]
  * @property {string} text
  * @property {string} model
  * @property {string} effort
@@ -51,6 +52,7 @@ import { createTauriAgent } from './tauri-agent.js';
 /**
  * @typedef {object} Agent
  * @property {() => Promise<{ claude: ClaudeStatus, dataDir: string, busy: boolean, cache: CacheStatus }>} status
+ * @property {(text: string) => Promise<{ mood: string, scores: object }>} feel
  * @property {() => Promise<ShownEntry[]>} history
  * @property {(request: SendRequest, onEvent: (event: AgentEvent) => void) => Promise<ShownEntry>} send
  *   resolves with the saved user entry; the reply streams to `onEvent`

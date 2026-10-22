@@ -31,6 +31,7 @@ export function createTauriAgent({ core, event }) {
   return {
     status: () => call('agent_status'),
     history: () => call('load_history'),
+    feel: (text) => call('feel_message', { text }),
     stop: () => call('stop_reply'),
     forget: () => call('forget_conversation'),
     loadMemory: () => call('load_memory'),

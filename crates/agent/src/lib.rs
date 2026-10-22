@@ -3,6 +3,7 @@
 mod chat;
 mod child;
 mod conversation;
+mod feeling;
 mod markdown;
 mod mcp;
 mod memory;
@@ -25,3 +26,5 @@ pub use turn::{
     TransportError, Turn, TurnError,
 };
 pub use workstation::{BridgeFeed, BridgeLaunch, BridgeStatus, FeedError, RESTART_DELAYS};
+
+pub use feeling::{Feeling, FeelingSource, Jev, JevError, classify, feel_message};

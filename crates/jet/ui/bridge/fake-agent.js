@@ -7,6 +7,7 @@
 import { POLYSIM_ENGINES } from './fixtures/polysim-engines.js';
 import { ADDED_HITS, QUANTY_DOWN, QUANTY_SEARCH } from './fixtures/quanty-search.js';
 import { renderMarkdown } from './markdown.js';
+import { MOODS } from '../jet/director.js';
 import { BASE_CONTEXT_TOKENS, MESSAGES, MODEL_IDS, bodyFor, chunksOf, costFor, lines, moodFor, tokensIn, usageFor, wants, wireModelUsage, wireUsage } from './fake-script.js';
 
 const KEY = 'jet.fake.';
@@ -175,7 +176,7 @@ export function createFakeAgent({
     }
 
     const replyNumber = read('history', []).filter((entry) => entry.role === 'jet' && entry.status === 'complete').length + 1;
-    const mood = moodFor(text, replyNumber);
+    const mood = MOODS.includes(request.feeling) ? request.feeling : moodFor(text, replyNumber);
     const libraryCall = asks.quantyDown
       ? SEARCH_DOWN
       : asks.quanty
@@ -250,6 +251,13 @@ export function createFakeAgent({
   }
 
   return {
+    async feel(text) {
+      await wait(400);
+      const mood = /\b(useless|idiot|stupid|moron|shut up)\b/i.test(text) ? 'insulted'
+        : /\b(hi|hello|hey|bye|goodbye)\b/i.test(text) ? 'hello' : 'neutral';
+      return { mood, scores: { hello: mood === 'hello' ? 1 : 0, insulted: mood === 'insulted' ? 1 : 0 } };
+    },
+
     async status() {
       return {
         claude: claudeFound ? { found: true, path: '~/.local/bin/claude', searched: [] } : { found: false, path: null, searched: NOT_FOUND_AT },

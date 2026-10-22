@@ -43,6 +43,8 @@ pub struct Message {
     /// A line the app puts before the user's words in what Claude reads, such as
     /// `[Jet: the user started ... at 22:41]`. The saved thread keeps only the user's words.
     pub preface: Option<String>,
+    /// A supported mood word supplied by the message classifier.
+    pub feeling: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -206,12 +208,8 @@ fn shared_names(message: &Message) -> BTreeSet<&'static str> {
         .collect()
 }
 
-/// What Claude reads of the message: the preface, if there is one, then the user's words.
 fn what_claude_reads(message: &Message) -> String {
-    match message.preface.as_deref().map(str::trim) {
-        Some(preface) if !preface.is_empty() => format!("{preface}\n{}", message.text),
-        _ => message.text.clone(),
-    }
+    persona::message_words(message)
 }
 
 /// An entry with its text rendered for display.
@@ -240,6 +238,7 @@ mod test_support {
             mcp: McpServers::default(),
             shared_mcp: BTreeMap::new(),
             preface: None,
+            feeling: None,
         }
     }
 

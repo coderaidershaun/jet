@@ -2,6 +2,7 @@
 //! channel that streams a reply to it, and the timer that keeps Jet's notes current.
 
 mod error;
+pub(crate) mod feel;
 mod image;
 // Open to the crate because Tauri's list of commands must name each command where it is
 // defined; a re-export does not carry what the command macro generates.
@@ -120,6 +121,8 @@ pub struct SendRequest {
     /// the user's words.
     #[serde(default)]
     preface: Option<String>,
+    #[serde(default)]
+    feeling: Option<String>,
 }
 
 /// Saves the user's message, starts the answer on its own thread and returns the saved
@@ -152,6 +155,7 @@ pub async fn send_message(
         mcp: request.mcp,
         shared_mcp: libraries.urls(),
         preface: request.preface,
+        feeling: request.feeling,
     };
     let (user_entry, mut reply) = state.conversation.send(transport, message)?;
     state.review.note_activity();
