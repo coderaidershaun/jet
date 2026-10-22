@@ -1,135 +1,142 @@
-# Character policy: how to animate Jet
+# Character policy: Jet the kite
 
-For anyone, human or agent, adding a pose, a clip or a status to Jet. Read this before touching `rig/jet.json`, `rig/poses.rs` or `ui/jet/`. It records how the existing work was reasoned about, so the next piece feels like the same character.
+Read this before changing `ui/jet/` or adding an emotion. [CONTEXT.md](CONTEXT.md) defines the vocabulary; [README.md](README.md) covers the host, commands and checks.
 
-## 1. What Jet is
+## What Jet is
 
-Jet is a circle that borrows other shapes when it has something to say.
+Jet is a small blue kite with round eyes at rest, a bow at its bottom tip and a pale string. Its body, eyes and string move together as one character. The string is also a limb: it can hang, lie on the floor or write an authored gesture.
 
-- **The circle means nothing is happening.** Every departure from round is information. The further from a circle, the more is going on. Calm is always a return to the circle.
-- **Jet is one body, not a set of icons.** Every state is a deformation of the same path. Morphs tween; nothing cuts or crossfades.
-- **Three channels, one leading at a time.** Shape says what Jet is doing. Eyes say whether Jet is with you. Colour says how Jet feels. Fire all three together only for a celebration.
-- **The user sets the ceiling.** The behaviour wheel decides how far Jet may go and in what flavour; the expressiveness dial decides how much of that shows. Nothing in a clip is allowed to ignore them.
+Jet stands beside its last reply with the string lying left, away from the bubble. On a send it lifts off, flies to the new reply's lane and hovers while reacting, waiting or streaming. It settles after the reply ends. In the empty page's hero spot it hovers and waves. The drawer uses a static standing kite with round eyes and a lying string; the desktop icon uses the standing kite without the string.
 
-## 2. The rig, in facts
+An emotion exists only when it has an animation. Today those are **hello** and **insulted**, with **neutral** for no reaction. Colour stays fixed. The default speaking tone lives in `../agent/src/conversation/persona.md`; motion does not choose the wording.
 
-- One closed path of **ten anchors**, each stored as point, outgoing handle, incoming handle: sixty numbers per pose, in a 100-unit box.
-- Anchor order: head, right shoulder, right hand, right armpit, right hip, **foot**, left hip, left armpit, left hand, left shoulder.
-- The four corners (head, two hands, foot) are the identity. The other six **sleep on the edges** in the circle and the diamond, and wake as a limb when needed. That is why a hand can be round: it is a smooth anchor with handles across the arm, never a corner.
-- **The foot is at (50, 88) in every pose.** A test enforces it. Jet stands on that point; it does not slide.
-- Stroke 12, round join, same colour as the fill. That is where the soft corners come from; do not round them in the geometry.
-- Eyes are two ellipses in the ground colour, placed per pose, stored as six numbers: the two centres and the two radii. Sizes carry expression: rest 2.8, open 4, pop-in 4.6, squint 5 × 1.6, blink 0.4. A face opens out of hidden eyes and closes back to them. Hidden is size 0, never `display: none`, so they can tween.
-- At rest the circle shows **resting eyes**: small dark eyes in the ground colour at the circle's eye positions, size 2.8 scaled like the eyes dial. They blink every 4–9 s at random, and never under reduced motion. They come back only when a clip ends at the circle with no face, so a hold keeps its own eyes. The pip has no eyes of its own.
-- **The ring** is the one stroked element beside the body, stored as eleven numbers so it tweens (centre, radii, rotation, width, dash on/off, dash offset, opacity, colour mix). It is the working loop and, in the ground colour, the spin grooves when Jet rolls. The disc is radius 19 with stroke 38, so it covers the circle exactly. The loop is radius 25 with stroke 14, and its centre is raised to y 48 so that its hole stays clear of the pip. The gap is a dash: 22% of the way round, starting at 3 o'clock and running clockwise, so at rotate 0 the gap lies between 12 and 3 o'clock. A disc is just a stroked circle whose stroke is as wide as its radius.
-- **The pip** is a dot on the foot. The body shrinks to it while the disc covers it, and sits under the loop while Jet works. It is a circle of radius 5 at y 83. It tucks under the lower edge of the loop, on purpose, so that the two read as one body. A smaller circle draws a ring inside its own stroke.
-- **Speed** is a track like any other: units per second that scenery may scroll by. Jet itself stays where it is; the world moves.
-- **Airborne poses** are named with the `zoom` prefix. They are rolling, so the foot anchor is not on the ground, but their lowest point never sinks below it. Everything else keeps its foot planted. A test checks both.
+## The reference frame and parts
 
-## 3. Rules that do not bend
+All geometry uses SVG `viewBox="0 0 200 240"`. Ground is y 238. `y` is height above the standing place, not a screen coordinate: 0 standing, 58.8 hovering. The untransformed reference kite hovers at centre (100, 88), tip (100, 173). Standing moves it down 58.8 units: centre (100, 146.8), tip (100, 231.8); the bow reaches the ground.
 
-1. The foot never moves unless Jet is airborne, and airborne poses say so in their name.
-2. **The circle never has a full face.** Its small resting eyes are its rest state. Open eyes appear only once Jet is standing, and are hidden again before the melt. Below eyes 1.5 even the resting eyes are gone.
-3. Every edge bows at least 8% off its chord. Straight edges read as a crystal, not a body.
-4. Hands are round. If a limb ends in a point, the rig is being used wrong.
-5. Every clip starts from wherever Jet currently is. The player prepends the live state to every track; a clip never assumes it begins at the circle.
-6. Expressions are short, under about 1.5 s of peak, then back to the circle.
-7. A clip must degrade honestly: shape 0 never leaves the circle, eyes 0 never shows a face, motion 0 drops every extra beat, reduced motion holds instead of oscillating.
-8. Scenery is not the character. It reads the speed track and nothing else, draws in the ink colour at low opacity, scrolls in layers at different rates, and fades away at rest. Jet is the only saturated thing on the stage.
-9. Colour shifts stay small. Coral blended far toward blue turns mauve; a mood is a tint, not a new colour.
-
-## 4. The motion grammar
-
-This is what separates alive from robotic. The first wave was robotic because it broke all of these at once.
-
-- **Squash and stretch keep volume.** Wider as it gets lower, thinner as it gets taller. Standing up is squash, then stretch past the target, then land with an impact squash.
-- **Anticipate.** Before a limb moves, the body goes 10–15% the other way (the shoulder dips before the arm swings).
-- **Arcs.** Hands travel arcs, not lines. The hand leads on the way up and lags on the way down.
-- **The body answers the limb.** When an arm goes up, the head tilts toward it, the far shoulder drops, the back lengthens. Shoulders moving in opposite directions is what reads as a twist in two dimensions.
-- **Follow-through.** Come down past rest (the tuck), then settle. Blink when the beat is over.
-- **Timing is never symmetric.** Out 180 ms, in 220 ms. Fast leaving a pose, slow arriving. No two anchors should share an easing at the same moment if you can help it.
-- **Hold the peak one extra beat** before leaving it.
-- **The return melts.** Relax, puddle wider than the circle, rebound taller, settle. Never rewind the stand-up.
-- **Idle is never still.** Breathing of about 2% and a blink of the resting eyes every 4–9 s at random, never a loop you can count. Both are built.
-- **Easings are CSS cubic-beziers**, named in the clip file, so a curve tuned in a browser can be copied over unchanged.
-- **Travel is stretch along the direction of motion.** Rolling, Jet is an oval with its long axis along the way it is going, nose up a little, bobbing gently; it crouches back before it goes, launches past its cruising shape, piles forward when it brakes, and wobbles back to round. The camera follows Jet, so the ground moves and Jet does not.
-- **A hold needs a key.** The sampler eases between neighbouring keys, so a value that should stay put during a long phase needs a key at the start of the next phase too, or it will drift across the whole phase. This bit the zoom's speed and colour tracks on the first pass.
-
-## 5. How the dials reach a clip
-
-Every clip is built from the same parameters, so new clips must map them the same way:
-
-| Control | What it does inside a clip |
+| Part | Current facts |
 | --- | --- |
-| Shape (0–10) | `lerp(circle, pose, k)` on every pose. At 0 nothing leaves round. |
-| Eyes (0–10) | Eye size, and the size of the resting eyes; below 1.5 no face and no resting eyes; squint allowed above 3.5. |
-| Colour (0–10) | How far the body shifts toward a mood colour at the peak. |
-| Motion (0–10) | Switches the extras: anticipation, lag, tuck, size of the landing pop, idle breathing. |
-| Playful ↔ serious | Cycles, squash, tempo, whether eyes squint. Serious keeps the eyes round and steady. |
-| Deferential ↔ candid | Reach and hold of a gesture; deferential shortens it and adds a bow. |
-| Distance from centre | How much of the wheel's flavour applies. The centre is a tool with no opinions. |
+| Body | Half width 73, height above centre 71 and below 85. Superellipse exponents 1.30 above and 1.20 below. Four quadrants of 14 cosine-spaced samples, last sample omitted in each: 52 clockwise points, top 0, right corner 13, tip 26, left corner 39. Closed Catmull–Rom path, fill only. |
+| Lifted corner | Swings around a pivot 22 units from the centre toward its side. At 33° lift, upper exponent is 1.06 and lower 1.38. Stretch adds up to 2.5 units of reach at 250°/s. |
+| Folded hand | Walks 26 units along each edge from the lifted corner, then resamples that outline to 16 points. Fold and crease share their ends; crease bows 3 units inward. Strength is smoothstep((lift − 3)/10): absent below 3°, full above 13°. Crease opacity is 0.55 × strength. |
+| Speed lines | Two arcs at corner reach + 6 and + 12; they trail the direction of motion. Strength rises above 35°/s and saturates 90°/s later. |
+| Bow | The flip script's `BOW_D`, attached to the tip. |
+| String | Deterministic kinematic chain: 16 segments, each 3.75 units at rest, total 60. Angles blend from 90° + wind + drag into a pose angle + 0.3 × wind, with authored lag and overshoot. Pose chord proportions preserve uneven lengths. `payout` scales lengths. Open Catmull–Rom path. |
+| String floor | Lying pose curves down then left from the standing tip. Every string point, including a written route, is clamped to y ≤ 237.5. Landing blends from the free end first (28 ms per segment, 450 ms duration, out-back 0.9); launch releases from the base first (40 ms per segment). |
+| J and written route | The authored J measures about **95.54 units**, payout about **1.592**, not 106 units. Its free end traces a dense local fist/finger polyline, resampled by written length, scaled and tilted 25% toward the last segment. Tremor is authored separately. |
+| Drag | Host carry gives sideways speed, smoothed over 80 ms. Angle offset is 0.08 × speed × distance along the chain, capped ±60°. Carry adds no position; the host moves the node. |
+| Eyes | Origins (100 ± 15.5, **89.9**) in the reference pose, on the lower lid line. Round radius 7.5. `lid` at anger 0 is eye A; anger and squint morph its polygon. B and C are reserved for scripts that use them. |
+| Closure | Open shape scales about the lid line with scaleY at least 0.04, fading above closure 0.9. The shallow arch `M-8.5 0 Q0 -3.2 8.5 0`, stroke 3.2, fades in above 0.6. Both lids must be ≥0.9 before a new eye kind appears. |
+| Spinner | Same 52 points, blended point by point to a C band: radius 52, thickness 22, 79° gap at twelve o'clock. Points 6–46 form the outer arc; the remaining points close the caps and inner arc. The top folds into the hole. |
+| Palette | Body `#5396F8`; string, bow and speed lines `#8FBBFA`; fold `#6DA7FA`; crease `#3F79CC`; eyes `#000`. |
+| Drawing | SVG presentation attributes, no `style` attribute. Every stroke is widened to at least 0.8 screen px using measured `unitPx`. |
 
-Exaggeration is allowed to pass 1: `lerp(soft, pose, 1.3)` is how candid raises the arm higher than it was drawn.
+The lane uses scale .24 (about 35 px body width), the hero .6 (about 88 px). The host's full box is 200 × 240 with transform origin at its bottom centre; drawer crop is `0 70 200 170`. Check the narrow-screen sizes as well as the defaults.
 
-## 6. Making a pose
+## Architecture and state
 
-**Construct it; do not hand-place anchors.** Hand-placed points on a free-form outline come out lumpy, because sleepers that are not on a smooth curve put kinks in it. The generator builds every pose from a few decisions. The geometry that turns them into numbers lives in `rig/shape.rs`. The table of decisions is in `rig/poses.rs`. Each decision is:
+The character is JavaScript geometry. `parts/` owns forms, eyes, hand, string and route data; `geometry.js` owns geometric primitives. `draw/paint.js` is pure frame → SVG tree; `draw/view.js` mounts that fixed tree once and updates attributes. The host owns DOM placement and screen travel.
 
-- a body: head, two hand corners, the fixed foot, and four edge bows;
-- for an arm: the arm base (the right corner), an angle, a length, and the mitten width. The shoulder flows out of the top edge, the mitten is a semicircle, the armpit is a crease;
-- for travel: a tilted ellipse (centre, radii, tilt), with its lowest point on or just above the ground line. Eyes on a tilted body are placed in the body's own frame, then rotated with it.
+`state.js` names twelve tracks: `y`, `roll`, `lift`, `squash`, `form`, `lids`, `eyeKind`, `anger`, `squint`, `payout`, `stringPose`, `written`. `eyeKind`, `stringPose` and `written` are step tracks. A resolved string pose has angles, optional chord proportions and per-segment blend; a clip key may instead request a timed raise. A written value holds route points/length, written length, scale and tremor.
 
-Then:
+`clip.js` supplies track writers, `t()`, `phase()`, `returnToRest()` and `finish()`. Keys are `{ t, v, e }`, in milliseconds, with easing on the key being arrived at. `player.play()` copies the clip and prepends live state at t 0; it never changes catalogue keys. Unmentioned tracks hold. Builders use `returnToRest(start, ownedTracks)` to reset the tracks they do not own, including string payout/pose and scowl, so interruption cannot leave a previous gesture behind. Every hold needs keys at both ends.
 
-1. Add the pose to the `poses()` table in `rig/poses.rs`, using the primitives from `rig/shape.rs`, and run `cargo run -p jet --example poses > rig/jet.json` from `crates/jet`.
-2. If the pose can show a face, add its eye positions to `eyes()`. Put them in the upper third of the body, following the head.
-3. **Render it and look.** Draw the pose sheet to a PNG (any browser or Playwright will do) at 150 px and again at 20, 36 and 56 px. A Bézier you have only imagined is wrong more often than not; the first ten-anchor attempt was a potato with a thumb until it was looked at.
-4. Check the tween: render the midpoints between the new pose and its neighbours in the clip. Linear blends can cut corners on long arcs; add an intermediate pose if the hand swings through the body.
-5. `cargo test -p jet` confirms sixty numbers and the foot, and that `rig/jet.json` is what the generator prints.
+The player composes a frame from authored state plus derived roll, lift speed/stretch, pivot, eyes and string points. Idle layers never become part of the next clip's start state. `clips/catalogue.js` lists six builders; `emotions.js` maps emotions to them; `director.js` orders them from events without timers or DOM.
 
-## 7. Making a clip
+## Rules that apply to every clip
 
-A clip is a function `buildX(rig, params, options)` beside `ui/jet/clips/hello.js` that returns the same shape: `body`, `eyes`, `colour`, `scale`, `ring` and `speed` tracks, `total`, `phases` (named, with end times), `readout` rows for the lab, and an `info` object saying what the dials turned into. `hello.js` and `zoom.js` are the two references.
+- Roll answers lift at −10% of (right − left), **100 ms late**; the 250 ms history survives clip changes.
+- Lift speed is sampled across a 40 ms window; stretch and speed lines use that same speed. A wink gives the other eye an 18% sympathy squint.
+- Hover bob is 1.6 units over 3 s. Hover sway uses mean wind delayed 150 ms at 0.12° per wind unit. Standing sway is ±0.6° over 6.1 s with a −2° lean toward the lying string. Their weights blend with clamp(y/8, 0, 1).
+- The pivot blends from tip when standing to centre when hovering, so a grounded contact does not slide under roll and squash. Height never goes below zero.
+- Idle blinks are scheduled 4–9 s apart and skipped during clips: shut 60 ms, hold 40 ms, reopen to −0.07 overshoot by 200 ms, settle by 340 ms. The first idle blink at least 3 s after a clip returns eyes to round and anger to zero. A clip's eye-kind change waits for both lids to shut.
+- Eyes fade as form goes from .1 to .4. The string reels in with payout × (1 − form); written routes are hidden during the morph. The bow stays attached.
+- Reduced motion combines the saved setting with the system preference: Jet stays grounded with round open eyes, no idle oscillation, blink, flight or spinner rotation. The form still morphs; the host fades between places. Do not require a blink to restore round eyes under this setting.
+- Draw idle at 30 fps or more, and active clips every animation frame. The host passes measured scale for strokes and node movement for carry. Flight lifetime follows `moveAt`/`moveMs`, not status: settle also reports `flying`.
 
-- Write times as durations, scaled by tempo; keep the numbers in constants at the top so they can be tuned without reading the logic.
-- Put the easing on the key being arrived at. Do not put keys at time 0; the player supplies the live state there.
-- A track the clip does not mention holds its current value. A track it does mention should also say where it ends, so an interrupted zoom does not leave the ground moving under a hello.
-- Give every beat a name that is a verb (dip, swing, peak, tuck, melt, launch, cruise, brake). Names already used are the vocabulary; reuse them.
-- Add the clip to `clips/catalogue.js`. `catalogue.test.mjs` holds every clip in it to the shared contract: time runs forward in every track, shape 0 never leaves the circle, eyes 0 never show a face, and any clip that interrupts any clip comes to rest with no ground speed and no grooves. So a clip's own test file covers only its own choices.
-- A clip may take options. Hello takes `brief`, zoom takes `cruiseMs`, working takes `spinMs` and `continueFrom`, and workingEnd takes `rotate`.
-- **A hold ends away from the circle on purpose.** `working` is the one hold. Jet stays in it until something else plays, so the director always gets Jet back to the circle through a clip that ends there (`workingEnd`, the zoom or a hello).
-- **Rotate stays below one turn.** End every whole turn of the ring with two keys at the same time, 360 and then 0. They look the same, and any clip that hides the ring turns it back by less than a turn.
-- The working loop turns clockwise, one turn in 1.1 s for its first 8 s, then one turn that slows to 1.8 s, then one turn in 1.8 s. `working` and `workingEnd` ignore the tempo: the loop is a status, not a mood.
-- The director (`ui/jet/director.js`) decides which clip plays for each chat event and mood. It never builds a clip by hand: it reads `clips/catalogue.js`.
-- The player and the view need no changes for a new clip. Only a new kind of element would, and the rig has had one of those in its whole life: the ring.
+## Motion grammar and authored references
 
-## 8. The status vocabulary
+Shaun's motion scripts are the authority for new gestures. The current references are `jet-wave-motion.py`, `jet-wave.svg`/`.html`, `jet-flip-motion.py`, `jet-flip.svg`/`.html`, `character-kite.svg` and `jet-eyes-A/B/C.svg`, supplied in `/Users/shaun/Downloads/`. They are source references, not files shipped with the app. `dev/golden.mjs` extracts compact wave/flip fixtures into `ui/jet/fixtures/`.
 
-Shapes already chosen for statuses, so new work stays consistent:
+The wave anticipates with a dip, lifts past the target, settles, wags three times, drops past rest, recovers and holds. Its folded hand leads the body; delayed roll, stretch and trailing lines answer the lift. The wink shuts faster than it opens. The string lags while wind and hover bob continue.
 
-| Status | Shape | Eyes | Notes |
-| --- | --- | --- | --- |
-| Idle | circle, breathing | small and dark, blinking every 4–9 s | built |
-| Hello | stand, wave, melt | open, squint at peak, blink at end | built: the reference clip; the brief hello plays on relaunch and for the `hello` mood |
-| Jetting off | crouch back, launch, roll as a tilted oval with spin grooves, brake, settle | slits into the wind above eyes 6, else none | built: `zoom`, on every send except under reduced motion; scenery scrolls by the speed track; the cruise lasts as long as the flight |
-| Working | loop, spinning clockwise | none | built: `working`, `workingEnd`; the hole opens from the centre; the gap opens top-right; never cut a turn short |
-| Progress known | loop whose gap closes in proportion | none | |
-| Heads-up | pennant (raised flag) | none | |
-| Asleep | flat on a side | closed | long idle |
-| Offline | hollow ring, muted colour | none | |
+The flip prepares a scowl, shivers with irritation and leans. The string raises base-first into a J, pays out, then **writes the fist and raised middle finger as one continuous cursive stroke**. It clenches, hops, trembles at 9 Hz, unwinds along the same stroke and drops before the eyes soften. Preserve the order and authored pauses; a substituted hand icon loses the gesture.
 
-The reply starts with a mood word. Only `hello` plays a clip, `hello` with `brief: true`, after the zoom or once the loop has closed. Every other word, and an unknown one, only closes the loop. Done, a failure and a stop play nothing either: each closes the loop if it is running, and a failure or a stop also drops a hello that was waiting.
+Anticipation, arcs, overshoot, follow-through and slower returns give movement weight. Squash and stretch usually preserve volume, with deliberate exceptions such as the spinner's swell. A peak needs a readable hold. Idle motion stays small. New motion must remain welcome on the fiftieth viewing, and readable at lane size.
 
-A reply that answers before the zoom lands skips the loop entirely, so quick work does not flicker. Past about 8 s the loop slows rather than speeds up.
+| Clip | Timing and endpoint |
+| --- | --- |
+| `hello` | 2550 ms; `dip`, `lift`, `wag`, `drop`, `rest`. Reveal at start of wag, **650 ms**. Brief ends at 1650 ms with one wag and no wink; the same reveal point. Uses lid eyes, swapping under an opening blink only if needed. |
+| `insulted` | **4800 ms**; prepare 0–420, scowl 420–560, J raise from 800, palm 1860–2400, finger 2490–2720, hold to 3400, unwind/drop, anger softens 4400–4680. Reveal at start of `hold`, **2720 ms**. Ends hovering, lid eyes/anger 0. A standing start lifts during the initial 420 ms; reduced motion stays grounded. |
+| `fly` | Anticipate to 180 ms, launch to **500 ms**, cruise for host `cruiseMs` (at least 220), brake 400 ms. Launch overshoots height to 64 then returns to 58.8. Host cruise is 520–1400 ms based on distance, bows right by 15% of distance (cap 40 px), overshoots 5 px, then lands. |
+| `settle` | **1080 ms**: rise 160, contact 680, round eyes under shut lids at contact, squash/rebound and open, string laid left. Ends standing. |
+| `working` | Shut 80 ms, hold 40, morph 360; spin starts 240 ms into morph (**360 ms from start**). First turn takes 1.5 × 1.1 s; then 1.1 s turns until the eight-second region, one slowing turn, then 1.8 s. Continuations keep angle and elapsed working time. The sole hold. |
+| `workingEnd` | Finish the current turn in **200–700 ms**, then unmorph over 360 and reopen over 300. Whole-turn keys are 360 then 0 at the same time; never rewind or cut the turn. Reduced motion holds roll. |
 
-## 9. Before you show it
+Wave goldens compare roll within 0.05° and hand opacity/wink scale within 0.02. Flip goldens compare roll, dy and eye corners every fifth frame within 0.05. The **string golden applies only to fully blended J frames, about 2.0–3.74 s**, using wind frequencies `[2/4.8, 3/4.8]`; the authored reference keeps unequal J chords even before blending, while the runtime's hanging chain starts with equal lengths. Do not claim a full-duration string match.
 
-- `node --test` from `ui/`, `cargo test -p jet`.
-- Render frames offline and look at them. Do not describe motion you have not seen.
-- Watch it at avatar size. Eyes vanish at 20 px on every shape, which is why the silhouette must carry the status on its own.
-- Ask two questions of any new motion: does it read as the same being as the circle it came from, and would it still be welcome the fiftieth time today? If the answer to the second is no, shorten it or make it rarer.
+## Status, emotion and reply timing
 
-## 10. Why it is built this way
+| Director status | Meaning and drawing |
+| --- | --- |
+| `idle` | No clip playing; standing in a lane or hovering in the hero, with normal-motion idle layers. Also possible while streaming after a reaction. |
+| `flying` | `fly` or `settle`; host movement occurs only in fly's cruise. |
+| `reacting` | `hello` or `insulted`. |
+| `working` | `working` or `workingEnd`: waiting spinner or its closure. |
 
-- **Data, not clips.** Poses are numbers; clips are code that writes keyframes from the dials. There is no asset per setting, and any state can blend into any other, which baked animation formats cannot do.
-- **One source of truth.** The rig ships inside the Rust binary and is checked at start-up. Every platform that draws Jet reads the same file.
-- **Small enough to reason about.** Ten anchors, two eyes, one ring, a palette of three, and a speed number for the world outside. If a new idea needs more than that, question the idea before growing the rig. The zoom needed scenery and got it, but the scenery lives outside the character and reads one number from it.
+| Word | Animation | Classifier question |
+| --- | --- | --- |
+| `neutral` | none | no question; fallback when no supported score qualifies |
+| `hello` | wave | Is the user greeting you or saying goodbye in this message? |
+| `insulted` | flip | Is this message insulting you or expressing contempt for you? |
+
+`MOODS`, `EMOTIONS`, `agent::Mood::ALL`, persona mood descriptions and JEV questions share this vocabulary. Unknown saved mood words read as neutral. The reply's mood is distinct from the feeling classified from the user's message.
+
+On send the bubble and slot appear, flight starts and classification starts concurrently. The model request waits for the feeling or neutral fallback; it does **not** wait for the flight or reaction. The director queues the feeling reaction after the flight's brake, or starts it immediately if nothing is playing. A spinner starts only after classification and any reaction, if no text/mood has arrived; quick replies skip it.
+
+`feel()` and `mood()` return `revealAt`, an **absolute monotonic deadline** on the host clock. `holdUntil(at)` extends the hold for both streamed Markdown and final successful HTML/announcement, including an early `finished` event. `revealFrom` refers to the start of a named phase, not its end. A different supported reply mood queues another reaction after spinner closure and extends the deadline. Neutral or the same word already felt adds no reaction. Without a feeling, a no-clip mood uses the 300 ms hold.
+
+Successful completion preserves queued reactions and settles afterward. Failure and Stop discard waiting reactions, close the spinner if needed and settle; they cancel the text hold. A stopped classification cannot dispatch the model. Turn identity guards discard late classifier answers and old provider events, and restore a taken preface when stopped before dispatch. Reduced-motion fades also reject stale callbacks after stop/retry.
+
+JEV's credentials, request, selection and fallback rules are documented in [Feelings and reply timing](README.md#feelings-and-reply-timing). Never use a live classifier call as part of default validation.
+
+## Adding an emotion
+
+Each supplied animation is one future feature; do not invent extra mood words first.
+
+1. Read the supplied script and its SVG/HTML; record timing, frame, eye kinds, route data and reveal beat. Resolve differences against the actual script before implementing.
+2. Add a `buildX(start, options)` clip using `createClip()`. Use named phases, duration constants, keys on both sides of holds, exact script curves, and `returnToRest` with owned tracks excluded. Handle standing, hovering, interruption and reduced motion.
+3. Add the builder/hold flag in `clips/catalogue.js`, and the emotion → clip mapping in `emotions.js`. Add the word to the single-line `MOODS` export in `director.js`.
+4. Add the Rust `Mood` variant, `ALL` entry, `word()` mapping, persona mood description and JEV question in `../agent/src/feeling/mod.rs`. Keep neutral as the no-animation fallback. Update the pinned persona fingerprint when prompt content changes.
+5. Add the clip's compact golden fixture and public-behavior coverage; extend catalogue interruption and director timing coverage where needed. Keep Rust's vocabulary agreement test. Add its coverage row to the README test table and update this policy's emotion table.
+6. Preview through the real player and painter, inspect contact sheets beside the authored reference at key times, and complete the visual checks below. Update fake classification only when useful to exercise the new feature in a browser.
+
+A new clip should not require player or drawing changes unless it introduces a new part or state capability. Question that extra complexity before expanding the model.
+
+## Before you show it
+
+Run the local build/tests/lints in [README.md](README.md#local-checks). No tests or renders replace looking at the result.
+
+From `crates/jet`, with `/opt/homebrew/bin/rsvg-convert` installed:
+
+```sh
+node dev/frames.mjs still --standing /tmp/jet-standing
+node dev/frames.mjs still --hovering --lift 0,0 --lift 0,10 --lift 0,20 --lift 0,30 /tmp/jet-lifts
+node dev/frames.mjs still --hovering --form 0.25 --form 0.5 --form 0.75 --form 1 /tmp/jet-forms
+node dev/frames.mjs still --hovering --pose j /tmp/jet-j
+node dev/frames.mjs hello /tmp/jet-motion
+node dev/frames.mjs insulted /tmp/jet-motion
+node dev/frames.mjs insulted --layers off /tmp/jet-reference
+node dev/frames.mjs working --reduced-motion /tmp/jet-reduced
+```
+
+The preview writes SVGs, 2× PNGs and lane-size PNGs (96 × 115 device pixels at 2×; 48 × 57.6 CSS px, rounded for PNG output) plus contact sheets. Clip clocks sample every 40 ms (25 fps) and disable random blinks; idle layers are on unless `--layers off`. Keep output outside the repository. Golden comparison disables idle layers; inspect the production-layer variant too.
+
+- [ ] Compare wave at 0, .18, .50, 1.15 and 2.30 s; flip at 0, .75, 1.45, 2.40 and 3.0 s. Contact sheets choose the last 40 ms frame at or before each requested time.
+- [ ] Inspect standing/hovering, lifts, J/written route, spinner and morph midpoints at 2× and actual lane size. Check contact, floor, bow attachment, hand creases, line direction and eye legibility.
+- [ ] In browser mode, send “hi”, “you useless thing” and a neutral message: flight, reaction, held text, spinner only if needed, streaming, settle. Try a quick reply, Stop during classification/reaction, early completion, held next message and rapid retry.
+- [ ] Check hero, relaunch wave, narrow screens, scroll-follow and reduced motion; round eyes stay open and grounded, spinner does not rotate, stale fades do not move a new turn.
+- [ ] In the native Tauri app, inspect drawer at 96 and 44 px, lane character, installed icon and system reduced motion. Opening that window remains a manual check.
+- [ ] Only with explicit paid/network opt-in, check live JEV classifications and measured latency. Local fixtures do not prove service quality or latency.
+
+Browser whole-page sequences, native Tauri appearance and live JEV quality/latency are still outstanding manual QA. Offline renders and local tests establish only their own geometry and timing checks; do not report unobserved runtime behavior as verified.

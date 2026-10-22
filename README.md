@@ -1,6 +1,6 @@
 # Jet
 
-Jet is a desktop chat app built around a front-end agent. You talk to Jet, a small animated character, and Jet hands work to other agents and tools: it runs the Claude Code or Codex command-line program as a child process, and it can call tools that other programs expose over MCP.
+Jet is a desktop chat app built around a front-end agent. You talk to Jet, a small blue kite with round resting eyes, and Jet hands work to other agents and tools: it runs the Claude Code or Codex command-line program as a child process, and it can call tools that other programs expose over MCP.
 
 > **Work in progress.** This is not plug and play. Expect rough edges, missing pieces and changes without notice. It is a decent starting point for a chat interface that fronts other agents, not a finished product.
 
@@ -10,6 +10,7 @@ Jet is a desktop chat app built around a front-end agent. You talk to Jet, a sma
 - **Front-end agent.** Jet is a persona on top of the installed Claude Code or Codex CLI. It keeps its own notes between sessions, so a conversation can carry on after a restart.
 - **Calls other agents and tools.** Jet can use the tools of any MCP server you enable in Settings. The app starts and watches each server as a child process.
 - **Workstation page.** A second page that shows a live feed from an outside program. It is specific to the author's own trading libraries, and you can ignore it.
+- **Character and feelings.** Jet stands beside its last reply, flies on a send, waves hello, reacts when insulted, and becomes a spinner while waiting. Optional JEV classification reads how each message makes Jet feel before the provider starts; without a key it immediately uses neutral.
 - **Browser mode.** The pages also run in a plain browser against a pretend agent, so you can work on the interface without installing anything else.
 
 ## Layout
@@ -19,7 +20,7 @@ Jet is a desktop chat app built around a front-end agent. You talk to Jet, a sma
 | `crates/agent` | The agent side, with no window. It runs the provider programs, reads their output, keeps the saved thread and notes, and manages the MCP servers. |
 | `crates/jet` | The desktop app: the Tauri window, the animated character, and the chat and workstation pages in `ui/`. |
 
-`crates/jet/README.md` goes into detail on commands, settings, the pretend agent and how the pages fit together.
+[The app README](crates/jet/README.md) covers commands, settings, the pretend agent and page architecture. [The character policy](crates/jet/character-policy.md) defines the geometry, motion and emotion checklist.
 
 ## Requirements
 
@@ -46,13 +47,31 @@ cargo run -p jet --example serve
 
 Then open `http://127.0.0.1:8787/`.
 
-## Tests
+## Optional feelings
+
+On each message, the Rust side reads `CONVERTER_JEV_API_KEY` from the environment. If it is absent or blank, it searches from the process's current directory upward and reads the nearest `.env` file. That file owns the configuration even if it contains no key; it does not continue to a more distant file. `.env` is ignored by Git. There is no feelings setting in the app.
+
+With a key, the user's message is sent to JEV at `api.typesafe.ai` for classification. This is a separate network service from the chat provider. The backend allows two seconds with no retry; the page falls back to neutral after 2.2 seconds or an error. See [the contract and timing](crates/jet/README.md#feelings-and-reply-timing).
+
+## Local checks
+
+Run from the repository root:
 
 ```sh
-cargo test
+cargo build --workspace
+REX_PROD_API=false cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all -- --check
+(cd crates/jet/ui && node --test)
 ```
 
-The tests use stand-in programs for Claude Code, Codex and the MCP servers, so they need no accounts or network.
+These checks use stand-in provider/MCP programs and local HTTP fixtures; they need no account or external service. The live JEV test returns without making a request unless `REX_PROD_API=true`. Deliberately enabling it with a configured key contacts the paid/network service and prints measured latency:
+
+```sh
+REX_PROD_API=true cargo test -p agent --test feeling_live -- --nocapture
+```
+
+Browser sequences, native Tauri appearance, and live JEV quality and latency remain manual checks; passing local tests does not establish those results.
 
 ## Status
 

@@ -1,6 +1,6 @@
 # jet
 
-Jet is the first-mate character: a blue kite that stands, flies, waves and becomes a spinner while it works. This crate is Jet's desktop home, a Tauri 2 window around a small animation player and a chat page that Jet lives in. `CONTEXT.md` holds the words this crate uses, and `character-policy.md` holds the rules for how Jet looks and moves.
+Jet is the first-mate character: a blue kite that stands, flies, waves and becomes a spinner while it works. This crate is Jet's desktop home, a Tauri 2 window around a small animation player and a chat page that Jet lives in. [CONTEXT.md](CONTEXT.md) holds the vocabulary; [character-policy.md](character-policy.md) holds the geometry, motion and emotion rules. Jet reacts to `hello` and `insulted`; `neutral` has no animation.
 
 ## Models
 
@@ -41,11 +41,13 @@ cargo run -p jet --example serve -- 9000    # another port
 
 It prints two addresses. `http://127.0.0.1:8787/` is the chat, running on a pretend agent that keeps its thread in the browser's storage. `http://127.0.0.1:8787/workstation.html` is the whole workstation on a pretend feed, and its left panel (the toolbar, the latency table and the charts) is built in `ui/workstation/toolbar/`, `latency/` and `chart/`. `http://127.0.0.1:8787/workstation.html?tape=1` replays `ui/bridge/fixtures/polysim-tape.jsonl`, 21 s of real polysim-bridge output recorded from the sim engine, over and over, so the page shows real numbers; commands change nothing in a replay. Without the parameter, or when the tape cannot load, the pretend market runs. Edits to files in `ui/` show on reload. `http://127.0.0.1:8787/workstation/chart/dev.html` is the workstation's charts on their own, on a made-up feed; add `?mode=candles` or `?series=pnl` to start in candles or on PnL, and `?hover=0.6` to put the pointer over the chart.
 
-The pretend agent answers from the words in your message. A word counts when a word of the message starts with it, in any case.
+The pretend agent classifies messages locally and answers from trigger words. Feeling triggers match whole words; the other scenario triggers match a word prefix, ignoring case.
 
 | Write | What happens |
 | --- | --- |
-| a mood word: `neutral`, `happy`, `excited`, `thinking`, `curious`, `sorry`, `alert`, `annoyed` or `hello` | the reply starts with that mood; with no mood word, every third reply gets one anyway |
+| `hi`, `hello`, `hey`, `bye` or `goodbye` | pretend classification resolves `hello` after 400 ms; the reply follows that feeling and Jet waves |
+| `useless`, `idiot`, `stupid`, `moron` or `shut up` | pretend classification resolves `insulted` after 400 ms (takes precedence over a greeting); Jet plays the flip and holds the text until the finger is raised |
+| other words | pretend classification resolves `neutral` after 400 ms; the reply follows it, with no reaction |
 | `slow` | the first word comes after 12 s instead of 2.6 s, so the working loop has time to spin and Stop has time to be pressed |
 | `code` | the reply holds a code block |
 | `math` | the reply holds inline and display math, a dollar amount, a table of numbers and a code block |
@@ -65,11 +67,24 @@ The pretend feed makes up the book, the quotes and every line polysim-bridge wou
 | `next_peer` (the link bar's engine chip) | the feed steps to a second, pretend engine that is stale: the ladder pill reads `STALE 850 ms` and from one second `STALE 1.2 s`, as polysim writes it, and the chart holds still, with no new buckets. The next step goes back to the live one |
 | any other command | the next tick shows its effect, and the System channel gets a row for it |
 
-Tests:
+## Local checks
+
+From the repository root:
 
 ```sh
-cargo test --workspace && cargo clippy --workspace --all-targets
-cd crates/jet/ui && node --test
+cargo build --workspace
+REX_PROD_API=false cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all -- --check
+(cd crates/jet/ui && node --test)
+```
+
+The current suite has 157 Node tests and 65 local Rust tests, plus the live JEV test that returns without a request unless explicitly opted in. Local checks use stand-in programs and local HTTP fixtures; they do not call the live classifier.
+
+The deliberate live check below requires a configured key, contacts the paid/network JEV service and prints latency. Do not put it in default validation:
+
+```sh
+REX_PROD_API=true cargo test -p agent --test feeling_live -- --nocapture
 ```
 
 What they cover:
@@ -84,20 +99,25 @@ What they cover:
 | `src/settings.rs` `default_settings_match_the_ui_fixture` | `ui/bridge/default-settings.json` is exactly the defaults Rust writes |
 | `src/settings.rs` `json_uses_camel_case_for_the_frontend` | the page reads `reducedMotion`, not `reduced_motion` |
 | `src/chat/error.rs` `bridge_error_serialises_as_kind_and_message` | every command error reaches the page as `{ kind, message }`, a library call that failed as the kind `library` with the server's own sentence |
-| `crates/agent/tests/workstation_feed.rs` `feed_passes_bridge_lines_and_commands_until_stopped` | polysim-bridge gets the strategy, every link in order and the token; Jet's `starting` line comes first and never shows the token; the bridge's lines pass unchanged while plain text, broken JSON, arrays and an object with script after it are dropped; commands come back echoed in order; a second sink that takes the running bridge over (a page reload) gets Jet's newest `bridge` line, then the bridge's own `hello` and `link` word for word, then the echo of a `resync`, while the first sink hears nothing more; after a stop the process is gone, no line follows and nothing can take the feed over |
-| `crates/agent/tests/workstation_feed.rs` `a_crashed_bridge_restarts_after_each_delay` | a bridge that crashes is started again after each delay and the last delay repeats; the `restarting` line names the exit code and the last error line, its quotes escaped |
-| `crates/agent/tests/workstation_feed.rs` `a_bridge_on_another_protocol_is_stopped_and_not_restarted` | the hello passes, then `exited` names both protocols; a bridge that ignores its input closing is killed, and nothing starts it again |
-| `crates/agent/tests/workstation_feed.rs` `a_missing_bridge_is_reported_once` | a program that is not there gives `starting`, then one `missing` naming the path, and no restart; a command then fails with "not running" |
-| `crates/agent/tests/workstation_feed.rs` `a_bridge_that_rejects_its_arguments_is_stopped_after_two_tries` | a bridge that exits with an error within a second of starting, before any `hello`, is tried once more and then given up: `starting`, `restarting`, `starting`, `exited` naming the exit code and the error line, and no third try |
+| `../agent/tests/workstation_feed.rs` `feed_passes_bridge_lines_and_commands_until_stopped` | polysim-bridge gets the strategy, every link in order and the token; Jet's `starting` line comes first and never shows the token; the bridge's lines pass unchanged while plain text, broken JSON, arrays and an object with script after it are dropped; commands come back echoed in order; a second sink that takes the running bridge over (a page reload) gets Jet's newest `bridge` line, then the bridge's own `hello` and `link` word for word, then the echo of a `resync`, while the first sink hears nothing more; after a stop the process is gone, no line follows and nothing can take the feed over |
+| `../agent/tests/workstation_feed.rs` `a_crashed_bridge_restarts_after_each_delay` | a bridge that crashes is started again after each delay and the last delay repeats; the `restarting` line names the exit code and the last error line, its quotes escaped |
+| `../agent/tests/workstation_feed.rs` `a_bridge_on_another_protocol_is_stopped_and_not_restarted` | the hello passes, then `exited` names both protocols; a bridge that ignores its input closing is killed, and nothing starts it again |
+| `../agent/tests/workstation_feed.rs` `a_missing_bridge_is_reported_once` | a program that is not there gives `starting`, then one `missing` naming the path, and no restart; a command then fails with "not running" |
+| `../agent/tests/workstation_feed.rs` `a_bridge_that_rejects_its_arguments_is_stopped_after_two_tries` | a bridge that exits with an error within a second of starting, before any `hello`, is tried once more and then given up: `starting`, `restarting`, `starting`, `exited` naming the exit code and the error line, and no third try |
 | `src/chat/image.rs` `a_picture_in_the_library_comes_back_as_a_data_address` | a relative and an absolute path, a PNG, a `.JPG` and a `.jpeg` come back as a `data:` address whose bytes equal the file |
 | `src/chat/image.rs` `pictures_outside_the_library_of_another_kind_or_too_large_are_refused` | no quanty folder, a folder that does not exist, a path that leaves the folder, a link that points out of it, a GIF, a folder named `dir.png`, a file over 8 MB and a missing file are each refused with their own error |
+| `../agent/src/feeling/mod.rs` | supported finite scores in [0.5, 1] select the highest, ties follow vocabulary order; one question per animated mood; classifier errors propagate safely |
+| `../agent/src/feeling/key.rs` | environment wins, then nearest parent `.env`, no process-environment mutation; a nearer file without the key blocks farther files |
+| `../agent/src/feeling/jev.rs` | local HTTP checks exact questions/body, complete numeric answer decoding, secret-safe errors and Debug, two-second timeout without retry |
+| `../agent/src/conversation/persona.rs` | supported feeling context precedes preface and user words, unknown context cannot inject prompt lines; prompt fingerprint is pinned |
+| `../agent/tests/feeling_live.rs` | explicit `REX_PROD_API=true` only: live response scores and latency; otherwise no request |
 | `src/chat/mod.rs` `every_mood_word_is_handled_by_the_director` | the words of `agent::Mood` and `MOODS` in `ui/jet/director.js` are the same set |
 | `src/chat/libraries.rs` `the_page_reaches_only_the_engine_tools` | the page may call polysim's four engine tools and nothing else, so a mistake in the page can never reach quanty's paid tools |
 | `../agent/src/markdown/mod.rs` `math_and_tables_match_the_shared_vectors` | the app's renderer gives the html of every case in `ui/bridge/fixtures/math-vectors.json`: math in prose, display math, money, delimiters that open nothing, code, lists, number columns; and never writes a `style` attribute |
-| `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps; the `quanty` word replays the recorded library search as tool events before the answer; the `engines` word lists the pretend fleet as a tool call, `mcpCall` starts, stops and re-modes it and refuses what polysim would refuse, and a preface is quoted at the start of the reply |
+| `ui/bridge/fake-agent.test.mjs` | a reply's events in order with one `message_start`, climbing `message_delta` lines and a result with timing fields; `finished` carries output tokens, thinking tokens and the model; a fresh session, the three failures, stop, and what the storage keeps; 400 ms pretend feelings and matching reply mood; the `quanty` word replays the recorded library search as tool events before the answer; the `engines` word lists the pretend fleet as a tool call, `mcpCall` starts, stops and re-modes it and refuses what polysim would refuse, and a preface is quoted at the start of the reply |
 | `ui/bridge/markdown.test.mjs` | the browser fallback gives the same html as the app's renderer for every shared case, with no `style` attribute |
 | `ui/bridge/settings.test.mjs` | the defaults carry the chat fields; legacy saves keep reduced motion and persona while obsolete customization fields disappear on a load/save round trip; `defaults_match_the_rust_fixture`: the page's defaults are exactly `ui/bridge/default-settings.json` |
-| `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method (`readLibraryImage` too) calls its command with the right argument keys, `mcpCall` through `mcp_call` and `reloadLibraries` through `mcp_reload`, and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
+| `ui/bridge/tauri-agent.test.mjs` | with Tauri each agent method (`feel` and `readLibraryImage` too) calls its command with the right argument keys, `mcpCall` through `mcp_call` and `reloadLibraries` through `mcp_reload`, and failures reach the page as `{ kind, message }`; without Tauri the pretend agent is used |
 | `ui/bridge/tauri-workstation.test.mjs` | with Tauri the workstation calls its three commands one after another with the right keys, lines of a replaced or stopped channel are dropped, and failures reach the page as `{ kind, message }`; without Tauri the pretend feed is used |
 | `ui/bridge/fake-market.test.mjs` `the market opens with hello, link, lifecycle and catalog…` | every line and tick section of the pretend market has the shape, keys and value words of the protocol, and survives JSON unchanged; the hello carries the four channel words and the first tick's channel entries are `full` |
 | `ui/bridge/fake-market.test.mjs` `ticks walk the mid, keep the ladder full…` | the mid moves at most one tick a frame, the ladder keeps its rows, channels send only new rows (never `full` after the first tick), chart and risk buckets are only appended, every bucket has all its prices, and a `gap` bucket turns up about every 45 s |
@@ -116,14 +136,16 @@ What they cover:
 | `ui/chat/drawer/usage.test.mjs` | the recorded Sonnet turn read line by line (live counts, then the reported cost and timings, then the totals); a second reply at another thinking level gets its own row; a stopped reply keeps its tokens; stray lines change nothing |
 | `ui/chat/page-state.test.mjs` | the page switches between the chat and the workstation, and a page already shown or not known changes nothing; Esc closes the sheet first, then takes the workstation back to the chat, then is left to the composer; the page shown last is saved and opens again, and an unknown saved page opens the chat; a wide drawer becomes the rail beside the workstation and is docked as the user left it on the chat, and a narrow drawer is the overlay on both pages |
 | `ui/chat/settings/form.test.mjs` | code-point counts |
-| `ui/chat/stage/flight.test.mjs` | the flight holds, lands on the slot, turns toward travel (never more than 25°) and mirrors going left; the cruise grows with distance |
+| `ui/chat/stage/flight.test.mjs` | holds before cruise, bows right, overshoots by 5 px and lands on the slot; scale never exceeds 1 and cruise grows with distance |
+| `ui/chat/stage/live.test.mjs` | hero hovers, lanes/reduced motion stay grounded, idle draws at least 30 fps; measured scale widens strokes, carry follows flight timing even during settle, stale reduced-motion fades cannot reparent a newer turn |
+| `ui/chat/turn.test.mjs` | flight and classification start together; dispatch waits for feeling/fallback, 2200 ms timeout and failures use neutral with one warning; early successful HTML and announcement obey the reveal deadline; Stop cancels classification/held completion, restores preface, and stale results/events cannot affect the next turn |
 | `ui/chat/thread/cards/engines.test.mjs` | the rows, badges and detail lines of a polysim listing; the button follows the state and Start asks unless the fresh mode is off or sim; an action is pending until it settles and a failure stays on its row; each action makes a line for the thread and a preface for the next message |
 | `ui/chat/thread/cards/model.test.mjs` | each tool reads as what it is doing while it runs and sums up what came back; a failed call shows the server's advice with the health hint split off, and a call the reply outran says it stopped; each kind of hit (chunk, formula, table, figure, code, footnote, unknown) is shown its own way, with its row line and a page's breadcrumbs |
 | `ui/chat/thread/cards/cite.test.mjs` | `[n]` in Jet's text links to the nearest earlier card that holds source n; `[0]`, `[x]` and `[1234]` are not citations; a page's pieces are not sources |
 | `ui/chat/thread/math.test.mjs` | a formula is drawn once per mode and the newest are kept; each is labelled for screen readers; a formula KaTeX cannot read keeps its TeX and is tried again; KaTeX's drawings reach the page with no `style` attribute and keep their width |
 | `ui/chat/thread/scroll.test.mjs` | the thread follows within 80 px of the bottom, and a send always follows |
 | `ui/chat/thread/store.test.mjs` | grouping and day pills, the slot's life from waiting to its end, the held message, a reply's tool calls as they start and finish, and one still running at the end kept as unfinished |
-| `ui/chat/thread/throttle.test.mjs` | markdown renders at most every 50 ms with a trailing call; the first reveal waits for the mood |
+| `ui/chat/thread/throttle.test.mjs` | Markdown renders at most every 50 ms with a trailing call; absolute reveal holds also delay early successful completion, extensions discard stale HTML, cancellation drops delayed work |
 | `ui/jet/easing.test.mjs` | `cubicBezier` pins both ends; the motion scripts' curves (ease in-out, out, in, out-back, smooth step, ramp, pulse) give their exact values |
 | `ui/jet/maths.test.mjs` | `lerp` blends numbers and arrays, and keeps going past 1 |
 | `ui/jet/parts/forms.test.mjs` | the resting kite's 52 points match the reference kite drawing to 0.05 and mirror about the centre line; a lifted corner rises along its pivot arc, stretch adds reach and the left corner mirrors the right; the spinner lies in its band with its opening at the top, and no blend of kite and spinner crosses itself |
@@ -135,12 +157,13 @@ What they cover:
 | `ui/jet/track.test.mjs` | `sample` holds the first and last values and applies the easing of the key it arrives at; `hold` gives the latest key at or before the time, so a step track never blends |
 | `ui/jet/clip.test.mjs` | a writer refuses a time written without its brackets and says how to write it, and `t()` follows the latest key; `finish` refuses a `revealFrom` that is not a phase |
 | `ui/jet/player.test.mjs` | a clip plays from the live state and is never changed; the body rolls a tenth of the lift 100 ms late across a clip change; stretch follows the lift speed on the moving corner only; the idle layers stay on during a clip and go off with `layers: false`; the foot stays put at y 0 and y never goes below 0; blinks come on a random gap of 4 to 9 s with a 40 ms hold and never under reduced motion; a keyed eye kind waits for shut lids and round returns on the first idle blink 3 s after a clip; carry adds no position, leans the body into the motion and trails the string behind it |
-| `ui/jet/clips/hello.test.mjs` | the played wave matches the wave drawing's roll, hand opacity and wink frame for frame (the golden, from `fixtures/wave.json`); the brief wave ends at 1650 ms with no wink, both reveal from the wag, their tracks run forward and the kite ends at rest |
+| `ui/jet/clips/hello.test.mjs` | the played wave matches the sampled wave drawing's roll, hand opacity and wink (the golden, from `fixtures/wave.json`); the brief wave ends at 1650 ms with no wink, both reveal from the wag, their tracks run forward and the kite ends at rest |
+| `ui/jet/clips/insulted.test.mjs` | flip golden checks roll, height and eye corners every fifth frame within 0.05, string only during fully blended J (2.0–3.74 s); payout about 1.592, route writes/unwinds, reveal at 2720 ms, hovering endpoint and grounded reduced motion |
 | `ui/jet/clips/fly.test.mjs` | the flight has its four phases and a cruise as long as asked (never under the 220 ms ease down), and y overshoots to 64 then settles at 58.8; from standing it crouches and the lying string lets go base-first during the launch, from a hover it dips 4 units |
 | `ui/jet/clips/settle.test.mjs` | the landing takes 1080 ms: it rises a touch, the eyes shut and turn round at contact, the body squashes at y 0 and the string lies out to the left |
 | `ui/jet/clips/working.test.mjs` | the eyes shut before the body melts and the spin starts 240 ms into the melt; the spinner turns clockwise at 1.1 s a turn, then 1.8 s after eight seconds, and a continuation keeps the angle and the slow spin; the end finishes the turn within 200 to 700 ms, never turns back and opens the eyes only after the form is back to the kite; reduced motion melts and holds the roll |
 | `ui/jet/clips/catalogue.test.mjs` | every clip's tracks and phases run forward from a standing and a hovering start; any clip interrupting any clip ends with the kite whole, upright in its squash and lift, eyes open and at rest height, unless it is the spinner |
-| `ui/jet/director.test.mjs` | a send flies then works until the reply arrives, with the flight's own timing; a quick reply skips the spinner; a hello mood waits for the brake and every other mood word only closes the spinner; done settles, after a hello that is playing, and a later hello plays before the settle; failed and stopped drop what waits, close the spinner and settle; reduced motion never flies; the text is revealed at the reaction's reveal phase, or after 300 ms with no reaction; status reads idle, flying, working and reacting |
+| `ui/jet/director.test.mjs` | send → flight → feeling reaction → spinner; fast replies skip spinner, late/duplicate feeling ignored, same reply mood adds no reaction, different mood extends absolute reveal; done keeps queued reactions then settles, failed/stopped drop them; reduced motion never flies; four status words |
 | `ui/workstation/monitor/cells.test.mjs` | the account's status row (a halt takes the row with its reason, otherwise the last refusal beside ARMED or `--`); side counts (lost turns invalid above zero, a leak shows `+N`); a feature row (changed shows the bar, stale dims the name and greys the value, a value never sent is grey too) |
 | `ui/workstation/monitor/channels.test.mjs` | channel deltas go on top newest first and each ring keeps its newest 256; a full set, a new session, generation or instrument, and a new bridge start the rings over, while a tick without those sections does not |
 | `ui/workstation/monitor/following.test.mjs` | a list at the top counts nothing, scrolled away it counts what was appended since and the badge says so; the badge brings a list back, and each channel follows on its own |
@@ -158,224 +181,57 @@ Before adding a clip or a status, read `character-policy.md` for the character r
 
 ## Where things live
 
-```
-crates/jet
-├── README.md                       this file
-├── CONTEXT.md                      the words this crate uses, each with one meaning
-├── character-policy.md             how to animate Jet; read first
-├── Cargo.toml                      the library, the binary, and the serve example
-├── build.rs                        the Tauri build step
-├── tauri.conf.json                 window, security policy, bundling
-├── capabilities/
-│   └── default.json                what the window may ask of the Rust side
-├── icons/                          the desktop app icons
-│   ├── icon.png                    the full-size source icon, 1024 px
-│   ├── 128x128@2x.png              256 px bundle icon
-│   ├── 128x128.png                 128 px bundle icon
-│   ├── 32x32.png                   32 px bundle icon
-│   ├── icon.icns                   macOS bundle icon
-│   └── icon.ico                    Windows bundle icon
-├── dev/
-│   └── serve.rs                    the dev server: serves ui/ to a browser, std only (cargo run -p jet --example serve)
-├── src/
-│   ├── main.rs                     desktop entry point
-│   ├── lib.rs                      opens the window, registers the commands
-│   ├── settings.rs                 remembers reduced motion, the chat settings and the workstation setup between launches (app config folder)
-│   ├── workstation.rs              the commands the workstation page calls: start polysim-bridge from the settings, stream its lines, pass it commands, stop it
-│   └── chat/
-│       ├── mod.rs                  the commands the chat page calls, and the channel that streams a reply to it
-│       ├── error.rs                the error every chat command fails with, sent as `{ kind, message }`
-│       ├── image.rs                reads a picture of the quanty library for the page as a `data:` address, only from inside that folder
-│       ├── libraries.rs            the page's way to the libraries' shared servers: `mcp_call` for polysim's engine tools, `mcp_reload` after a settings change
-│       ├── provider.rs             which provider answers, Claude Code or Codex: finds its program, stands in when it is missing, reports its status to the page
-│       └── review_timer.rs         the timer that keeps Jet's notes current once the chat goes quiet
-└── ui/
-    ├── index.html                  the chat page: header, drawer, thread, composer, the workstation page, settings dialog
-    ├── chat.css                    the chat page's tokens, layout and header
-    ├── workstation.html            the workstation on a page of its own, for a browser (pretend feed, or the tape with ?tape=1) or the window (polysim-bridge)
-    ├── package.json                the `node --test` script, nothing to install
-    ├── dom.js                      helpers that build elements without markup strings, for the chat and the workstation
-    ├── assets/
-    │   └── tile.png                the pattern behind the thread
-    ├── bridge/                     the pages' way to the Rust side, with browser fallbacks
-    │   ├── settings.js             the Settings shape, defaults, merge, load and save
-    │   ├── settings.test.mjs       the defaults carry the chat fields; merge fills gaps from them; the defaults equal the Rust fixture
-    │   ├── default-settings.json   the defaults as Rust writes them, read by a test on each side so the two cannot drift
-    │   ├── agent.js                connectAgent: the one way to talk to Claude, and the types of its events
-    │   ├── tauri-agent.js          the real agent: each method calls a Rust command, and a reply streams back over a channel
-    │   ├── tauri-agent.test.mjs    each method calls its command with the right keys; failures arrive as { kind, message }
-    │   ├── fake-agent.js           the pretend Claude the chat runs on in a browser
-    │   ├── fake-agent.test.mjs     a reply's events in order incl. the live stream lines and usage, a fresh session, the three failures, stop, storage
-    │   ├── workstation.js          connectWorkstation: the one way to polysim-bridge, and the types of every line and command
-    │   ├── tauri-workstation.js    the real feed: each method calls a Rust command, and the bridge's lines stream back over a channel
-    │   ├── tauri-workstation.test.mjs  the three commands in order with the right keys; lines of an old channel are dropped; failures arrive as { kind, message }
-    │   ├── fake-workstation.js     the pretend feed: runs the pretend market on a clock and hands its lines on, or replays the recorded tape
-    │   ├── fake-workstation.test.mjs  every command of the pretend market, the feed's clock, the replay and the tape itself
-    │   ├── fake-market.js          the pretend market: opening lines, one tick at a time, and the commands (pure, no timers)
-    │   ├── fake-market.test.mjs    the pretend market's lines and sections, and how its ticks move
-    │   ├── fake-market-testing.mjs what the tests of the pretend market and feed share: a repeatable clock and chance, the tick's section names, shape checks
-    │   ├── fake-market-book.js     the pretend book, the quotes on it, and the ladder and summary they make
-    │   ├── fake-market-chart.js    the one-second buckets of the chart and risk sections: backfill, append-only sending, axis labels
-    │   ├── fake-market-lines.js    hello, link, lifecycle and catalog, and the groupings and instruments they list
-    │   ├── fake-market-rows.js     text formats, the four channels of rows, the account, the features and the latency table
-    │   ├── fake-script.js          what the pretend Claude says and the stream lines it writes: message_start, message_delta, tool use and tool result, a result with timing fields, real model ids
-    │   ├── fixtures/
-    │   │   ├── math-vectors.json   the cases both Markdown renderers must agree on, run by a test on each side
-    │   │   ├── polysim-engines.js  a polysim engine listing in the shape polysim-mcp sends, four made-up engines, which the pretend agent lists and changes
-    │   │   ├── polysim-tape.jsonl  21 s of real polysim-bridge output from the sim engine, which workstation.html?tape=1 replays
-    │   │   └── quanty-search.js    a real quanty search recorded from Claude Code: the call, what the library gave back and the answer, which the pretend agent replays
-    │   ├── markdown.js             a small, safe Markdown renderer for the browser fallback, with math and tables
-    │   └── markdown.test.mjs       the shared math and table cases, with no style attribute
-    ├── chat/                       the chat page
-    │   ├── main.js                 boot: loads settings and history, builds every part, hands each its parts
-    │   ├── turn.js                 one turn: a send, each event of the reply, the end of the reply
-    │   ├── clock.js                how the page writes times and days
-    │   ├── page-state.js           which page shows, what Esc does first, and how the drawer looks beside each page (pure)
-    │   ├── page-state.test.mjs     the page switch, the Esc order, the saved page, the rail and the docked drawer
-    │   ├── stage/                  the live Jet
-    │   │   ├── live.js             the live Jet node, the director host, lane placement, the frame loop
-    │   │   ├── flight.js           the path of Jet from where it stood to the new lane, a roll (pure)
-    │   │   ├── flight.test.mjs     the flight holds, lands, turns (capped at 25°) and mirrors; the cruise grows with distance; it never turns back
-    │   │   └── stage.css           the empty state, the hero spot and the live Jet's place in a lane
-    │   ├── thread/                 the conversation
-    │   │   ├── store.js            messages, notices, the running reply with its tool calls, and the held message, as rows (pure)
-    │   │   ├── store.test.mjs      grouping and pills; the slot's life; the held message; a reply's tool calls
-    │   │   ├── view.js             draws the rows: bubbles, lanes, the cards above a reply, citation chips, dots, code blocks, links
-    │   │   ├── math.js             draws the formulas of a reply with KaTeX, keeps each drawing, moves KaTeX's style attributes onto the element
-    │   │   ├── math.test.mjs       once per mode, the newest kept, labelled; a bad formula is tried again; no style attribute
-    │   │   ├── scroll.js           when the thread follows new text (pure)
-    │   │   ├── scroll.test.mjs     follows within 80 px of the bottom; a send always follows
-    │   │   ├── throttle.js         when streamed text becomes HTML: at most every 50 ms, stale answers dropped
-    │   │   ├── throttle.test.mjs   the 50 ms rule with a trailing call; the first reveal waits for the mood
-    │   │   ├── thread.css          rows, bubbles, lanes, pills and the Markdown inside bubbles
-    │   │   └── cards/              what the thread shows for a tool call
-    │   │       ├── model.js        what one call's card says: the running line, the summary, the advice of a failure, the sources and how each kind of hit is shown (pure)
-    │   │       ├── model.test.mjs  the line and summary of each tool, failed and stopped calls, each kind of hit
-    │   │       ├── cite.js         how `[n]` in Jet's text finds its source: split at each citation, matched to the nearest card above (pure)
-    │   │       ├── cite.test.mjs   `[n]` links to the nearest earlier card that holds source n
-    │   │       ├── view.js         draws the cards, keeps finished ones across redraws, turns `[n]` into chips and opens a source when its chip is pressed
-    │   │       ├── show.js         draws one hit or page piece, and typesets its formulas with KaTeX: Markdown, a formula, a table, a figure with its picture, code with its label
-    │   │       ├── registry.js     how a finished call is drawn, by `server/tool`; a tool not named gets the default card
-    │   │       ├── engines.js      the engine card's rows, badges, confirm rule, fleet and preface (pure)
-    │   │       ├── engines.test.mjs  the rows, the confirm rule, pending and failed actions, the lines and the preface
-    │   │       ├── engines-view.js the engine card: Start, Stop, the mode choice, the live question, the calls
-    │   │       ├── cards.css       the cards, their source rows, the spinner, the citation chips
-    │   │       └── engines.css     the engine card and the question it asks
-    │   ├── composer/               the field and the Send/Stop button
-    │   │   ├── state.js            the composer's rules: where it sits, the button, Enter, Escape (pure)
-    │   │   ├── state.test.mjs      centred until the first send; Send becomes Stop; Enter and Escape
-    │   │   ├── view.js             the field, the button, the held chip, and the hop to the bottom
-    │   │   └── composer.css        the composer's look
-    │   ├── drawer/                 the side panel
-    │   │   ├── view.js             the static Jet and name, the cache chip, the usage panel, the stream log (it folds away), the gear
-    │   │   ├── usage.js            tokens, time and spend of the replies since the app started, read from the stream lines and the finished event (pure)
-    │   │   ├── usage.test.mjs      the recorded Sonnet turn line by line; a second row per thinking level; a stop keeps its tokens; stray lines change nothing
-    │   │   ├── rates.js            the list prices and their date, the estimate they give, and the model names (pure)
-    │   │   ├── rates.test.mjs      the recorded turn costs 0.007334; Haiku 5.5's tier edge; an unknown model has no estimate
-    │   │   ├── caption.js          the words under the gear, such as "Sonnet · medium" (pure)
-    │   │   ├── caption.test.mjs    the model word and the thinking level
-    │   │   ├── format.js           how the usage panel writes its numbers and words, with a dash for a value not known yet (pure)
-    │   │   ├── format.test.mjs     counts, dollars, seconds and turns; the four spend wordings; the model line
-    │   │   ├── log.js              the last 500 raw stream lines, tagged, ready to pretty-print (pure)
-    │   │   ├── log.test.mjs        the 500 cap, the tags, the pretty-print
-    │   │   ├── cache.js            warm or cold wording for the cache chip (pure)
-    │   │   ├── cache.test.mjs      warm until the TTL ends, then cold with the tokens to re-read
-    │   │   ├── drawer.css          docked beside the thread on wide screens, over it on narrow ones
-    │   │   └── rail.css            the rail beside the workstation, and the Jet and workstation buttons
-    │   └── settings/               the settings sheet
-    │       ├── sheet.js            the dialog and its sections; saves after the last edit
-    │       ├── controls.js         the few form controls the sections are made of
-    │       ├── persona.js          who Jet is: name, job title, how to talk
-    │       ├── motion.js           reduced motion
-    │       ├── model.js            model, five thinking levels, the budget for one turn, usage since the app started
-    │       ├── memory.js           the three notes as editors
-    │       ├── libraries.js        whether quanty and polysim are on, their programs and their folders
-    │       ├── workstation.js      where polysim-bridge and the polysim folder are, the strategy, the engine links and their token
-    │       ├── claude.js           where Claude Code is, and Forget this conversation
-    │       ├── form.js             code-point counts (pure)
-    │       ├── form.test.mjs       code-point counts
-    │       └── sheet.css           the sheet's look
-    ├── jet/                        the character and animation engine; tests live beside their modules
-    │   ├── state.js                the kite's animation tracks and rest state
-    │   ├── track.js                sampled and step keyframes
-    │   ├── easing.js               the motion curves
-    │   ├── maths.js                interpolation and clamping
-    │   ├── geometry.js             paths, curves and point transforms
-    │   ├── clip.js                 the track writers, phases and reveal point of a clip
-    │   ├── emotions.js             the emotions that have clips
-    │   ├── director.js             orders clips for chat events and moods
-    │   ├── player.js               plays from the live state, adds idle motion and blinks
-    │   ├── clips/                  hello, fly, settle, working and workingEnd; the catalogue
-    │   ├── parts/                  the kite and spinner forms, hands, eyes, string and written routes
-    │   ├── draw/                   the palette, pure painter and SVG view
-    │   └── fixtures/               reference wave and flip frames
-    ├── vendor/
-    │   └── katex/                  KaTeX 0.16.47 (MIT), copied unchanged from npm: katex.mjs, katex.min.css, fonts/ (20 .woff2), LICENSE and VERSION
-    └── workstation/                the polysim workstation page, one folder for each area
-        ├── shell.js                its header, the setup card and the workstation itself, built and its feed started the first time the page opens; the feed is paused while the chat shows
-        ├── shell.css               the chat's header, thread and composer step aside; the page's header, link chip and setup card
-        ├── page.js                 the grid and its mount points, the store every area is handed, and the loading of each area's mount.js
-        ├── store.js                the newest value of every line and section, listeners, painters, and the commands remembered for the replay after hello
-        ├── store.test.mjs          lines by name and in order, painters every frame, seq gaps; the remembered commands and their replay
-        ├── dev.js                  boot for workstation.html
-        ├── workstation.css         the colour and size tokens, the three panels over the link bar, and the rail of tones
-        ├── chart/                  the left panel's charts: the mid chart, the risk chart, the crosshair
-        │   ├── mount.js            builds the area and connects the bridge frames, the pointer, the size and the paint timing
-        │   ├── model.js            the frames folded by index; the window, the fractions, the runs, what lies under the pointer (pure)
-        │   ├── model.test.mjs      buckets append by index and a new generation starts over; the window; runs and candle colours; the crosshair's labels
-        │   ├── layout.js           the 70 / 30 split, the plots, the pointer fraction, the label count, where a pill goes (pure)
-        │   ├── layout.test.mjs     the split and the insets, a pill stays inside; the label count is floor(h / 22) in single precision
-        │   ├── view.js             paints the two charts and the crosshair on canvases, in the colours and fonts of the page's tokens
-        │   ├── chart.css           the stack, the size of the strip and the layer for the crosshair
-        │   ├── dev.html            the charts alone on a made-up feed (?mode=candles, ?series=pnl, ?hover=0.6)
-        │   ├── dev.js              boots that page on the workstation's frame store: the Line, Candles and Resync buttons, the hover
-        │   ├── dev-feed.js         the made-up bridge: a wandering price, fills, one hole and one gap flag in each window; dev only
-        │   └── dev.css             that page's layout; its colours and fonts come from the workstation's stylesheet
-        ├── controls/               what more than one area uses
-        │   ├── stylesheet.js       links an area's own stylesheet and waits for it to apply
-        │   ├── segmented.js        the one-of-a-few button strip of the toolbar and of the chart's strip; a click reports the pick, the frame shows it
-        │   ├── segmented.css       the strip's look: a fill and a bar on the chosen cell, hairlines between the cells
-        │   └── write.js            writes a text or an attribute only when it changed, for the painters that run every frame
-        ├── ladder/                 the right panel: the DOM ladder and its header
-        │   ├── mount.js            wires the ladder to the store: stylesheet, lines, resizing, the pointer, the painter
-        │   ├── rows.js             the body's rules: rows that fit, text sizes, the row under the pointer, the strategy cell, the readout, the chevrons (pure)
-        │   ├── rows.test.mjs       rows that fit and the text sizes; the order before the wanted quote; the hovered row and the readout; the chevrons
-        │   ├── controls.js         the header's rules: the level stepper and the grouping choices (pure)
-        │   ├── controls.test.mjs   the stepper steps and drags inside its range and reads (N) when fewer rows fit; the grouping list and its commands
-        │   ├── header.js           the 30 px header: unit toggle, grouping combo, level stepper
-        │   ├── view.js             the body: 30 rows a side, the separator, the status pill, the chevrons and the hover readout
-        │   └── ladder.css          the ladder's look
-        ├── latency/                the latency table above the charts
-        │   ├── mount.js            builds the grid and writes the bridge's numbers into it, rebuilding only when its shape changes
-        │   ├── model.js            the header, the columns and each row's cells with their tones, the last column marked as slots (pure)
-        │   ├── model.test.mjs      rows sit under their headers, tones are kept, the slot column is set apart
-        │   └── latency.css         the grid, the rule between rows and the divider before the slot column
-        ├── lifecycle/              the screen over the panels while the workstation is starting, draining or stopped
-        │   ├── mount.js            hands each lifecycle line to the view
-        │   ├── view.js             the title and the reason; hidden while the screen is live
-        │   └── lifecycle.css       the centred text over the canvas
-        ├── linkbar/                the strip about the engine link, under the three panels
-        │   ├── mount.js            wires the link bar to the store: stylesheet, the link line, the painter
-        │   ├── chips.js            what the bar says for the latest link line (pure)
-        │   ├── chips.test.mjs      no engine until a link line; the chips in order; the engine chip steps to the next engine only when allowed; the button asserts the next state
-        │   ├── view.js             the chips, the engine chip that is a button, and START/STOP
-        │   └── linkbar.css         the link bar's look
-        ├── monitor/                the centre panel: account, quote summary, features, and the four channels of rows
-        │   ├── mount.js            wires the store's lines to the rings and the view, a new set for each mount
-        │   ├── view.js             the account band, the summary band and the feature list, patched in place
-        │   ├── channel-view.js     the tabs, the four row lists and the "N new" badge; new rows go on top
-        │   ├── channels.js         the 256-row ring of each channel and how a tick folds into it (pure)
-        │   ├── channels.test.mjs   deltas go on top; a full set, session, generation, instrument or new bridge starts over
-        │   ├── following.js        which lists are at the newest rows and how many rows came in since (pure)
-        │   ├── following.test.mjs  the count and the badge; following again; each channel on its own
-        │   ├── cells.js            what the status row, the side counts and a feature row show (pure)
-        │   ├── cells.test.mjs      a halt takes the status row; lost warns above zero; changed and stale feature rows
-        │   └── monitor.css         the bands, the tabs, the rows and the badge
-        └── toolbar/                the strip above the left panel
-            ├── mount.js            builds Esc, the instrument menu, Line | Candles, the strategy name and the execution badge
-            ├── model.js            the instrument shown, the chart mode, the strategy and the badge's fill and ink, from the catalog and the view (pure)
-            ├── model.test.mjs      the instruments listed, the view followed, the badge coloured like the desktop app
-            └── toolbar.css         the cells of the strip, the instrument menu's caret and the badge's fills
+The main paths (tests live beside their JavaScript modules):
+
+```text
+crates/agent/src/
+  chat/                 Mood vocabulary and public chat types
+  conversation/         persona.md, prompt feeling context, sessions and reply lifecycle
+  feeling/              mod.rs selection/questions, jev.rs wire client, key.rs discovery
+  turn/                 provider processes and stream parsing
+crates/jet/
+  README.md, CONTEXT.md, character-policy.md
+  Cargo.toml, build.rs, tauri.conf.json, capabilities/default.json
+  icons/                32x32.png, 128x128.png, 128x128@2x.png,
+                        icon.png (512 px), icon.icns, icon.ico
+  dev/
+    serve.rs            browser server and security policy
+    frames.mjs          real-player SVG/PNG frames and contact sheets
+    golden.mjs          reference wave/flip fixture extraction
+  src/
+    lib.rs, main.rs     desktop startup and registered commands
+    settings.rs         persisted settings and defaults
+    workstation.rs      workstation commands
+    chat/
+      mod.rs            chat commands and streamed events
+      feel.rs           blocking classifier worker exposed as feel_message
+      error.rs, image.rs, libraries.rs, provider.rs, review_timer.rs
+  ui/
+    index.html, chat.css, dom.js, package.json, workstation.html
+    assets/tile.png     page background
+    bridge/             agent/settings/workstation contracts, Tauri and pretend implementations
+      default-settings.json, models.js, fixtures/, markdown.js
+    chat/
+      main.js, turn.js, clock.js, page-state.js
+      composer/         message field, Send/Stop and held message
+      drawer/           static kite, cache, usage and log
+      settings/         sheet, controls, persona, motion, model, memory,
+                        libraries, workstation and agent program sections
+      stage/            live.js host, flight.js screen path, stage.css
+      thread/           store/view, reveal throttle, math/scroll and cards/
+    jet/
+      state.js, track.js, clip.js, easing.js, maths.js, geometry.js
+      player.js         live state, secondary motion, idle layers and blinks
+      director.js       event/feeling queue, absolute reveal deadlines and statuses
+      emotions.js       neutral (none), hello, insulted
+      parts/            forms.js, eyes.js, hand.js, string.js, routes.js
+      draw/             palette.js, paint.js, view.js
+      clips/            catalogue.js, hello.js, insulted.js, fly.js,
+                        settle.js, working.js (working and workingEnd)
+      fixtures/         wave.json, flip.json
+    vendor/katex/       KaTeX, 20 fonts, license and version
+    workstation/        page/shell/store, controls/, chart/, latency/,
+                        monitor/, ladder/, linkbar/, lifecycle/, toolbar/
 ```
 
 Three ideas carry the design:
@@ -436,7 +292,8 @@ The settings commands reject with a message string. The chat commands, from `age
 | `save_settings` | `{ settings }` | nothing | |
 | `agent_status` | nothing | where Claude Code is (`found`, `path`, `searched`), the data folder, whether a reply is running, and the prompt cache status | the page shows the missing-Claude banner and the cache chip from it |
 | `load_history` | nothing | the last 200 entries of the transcript, ready to show | |
-| `send_message` | `{ request, events }` | the saved user entry, at once | the reply streams over the `events` channel; fails with `busy` while a reply is running |
+| `feel_message` | `{ text }` | `{ mood, scores }` | optional JEV classification; no key immediately returns neutral; failure uses a secret-safe `io` message |
+| `send_message` | `{ request, events }` | the saved user entry, at once | the reply streams over the `events` channel; optional `request.feeling` adds supported-word prompt context; fails with `busy` while a reply is running |
 | `stop_reply` | nothing | nothing | ends the running reply and keeps the text so far |
 | `forget_conversation` | nothing | nothing | the transcript is moved aside and the session is dropped; the notes stay; fails with `busy` while a reply is running |
 | `load_memory` | nothing | the three notes and their length limits | |
@@ -498,7 +355,7 @@ Shared servers. Jet keeps one copy of each enabled library running for the whole
 - The settings are read at launch and again after a change (`mcp_reload`). A server whose settings did not change is left alone. One that changed or was switched off is stopped first, and only then is a new copy started, so two copies of one library never run side by side. Sends and card calls wait while that happens.
 - A server is stopped with SIGTERM (polysim's pipe is closed just before) and given up to 25 seconds to put its affairs in order (polysim stops its engines), then it is killed. The same happens when the app closes. A shared server that dies is started again on the same port after 1, 2, 5 and then 10 seconds.
 - When Jet ends however it ends (a quit, SIGTERM, a force quit, a crash, `cargo tauri dev` restarting the app), the system closes polysim's pipe, and polysim stops its engines and exits. A quanty-mcp has no such pipe and outlives a Jet that is killed. Only a polysim-mcp that itself crashes leaves its engines running, and the next copy cannot see them.
-- The page calls the shared server with `mcp_call`, through a small MCP client over HTTP (`ureq`, no TLS). A library that is not shared fails the call with a plain message instead of starting a short-lived copy, because a short-lived polysim would stop what it started and could not see engines that run elsewhere.
+- The page calls the shared server with `mcp_call`, through a small MCP client over local HTTP (`ureq`; JEV uses the same crate with rustls for HTTPS). A library that is not shared fails the call with a plain message instead of starting a short-lived copy, because a short-lived polysim would stop what it started and could not see engines that run elsewhere.
 
 The engine card. When Claude's result for `polysim/list_strategies` arrives, the thread draws a card above the reply: a row for each engine with its state, its mode, `Start` or `Stop`, a mode choice and, where the listing has a link, `Open in workstation`. Every card in the thread shows the newest listing; a listing restored from the saved thread says it is from an earlier reply until the card lists again. Start always lists first and applies the live rule to that fresh row: it asks unless the mode is exactly `off` or `sim`, so a live engine, one whose config cannot be read and one with a mode nobody knows all ask. Setting a mode to `live` always asks, and Claude cannot change a mode at all. An action shows a spinner on its row, then a line in the thread (`You started … · 22:41`), and the next message carries a preface for Claude in front of the user's words (`[Jet: the user started … at 22:41]`); the saved thread keeps only the user's words. After each action the card lists again, and it lists quietly when Claude starts or stops an engine itself. A failed action leaves its message on its row.
 
@@ -515,10 +372,47 @@ What the page gets:
 
 The recording `crates/agent/tests/fixtures/quanty-search-reply.jsonl` is a real reply to "what is vega?". These tests of the agent crate cover the feature: `turn::stream::tests::parses_the_recorded_quanty_search`, `turn::tools::tests::calls_are_paired_summed_up_and_set_apart_from_text`, `turn::claude::args::tests::chat_and_review_args_are_exact_without_safe_mode_which_drops_mcp_servers`, `chat::event::tests::event_json_matches_the_ui_contract`, the two persona tests `the_prompt_teaches_the_libraries` and `the_fingerprint_of_the_defaults_is_pinned`, and the contract test `a_recorded_quanty_search_reaches_the_page_and_the_thread`, which runs the recording through `fake-claude`, `Conversation` and the saved thread. The shared servers have contract tests in `crates/agent/tests/shared_servers.rs`, with the `fake-mcp` program standing in for the library programs: `a_shared_server_gets_its_own_port_and_answers_over_one_session`, `an_event_stream_reply_gives_the_response_with_the_matching_id`, `a_crashed_server_is_unreachable_then_comes_back_on_the_same_address_and_a_lost_session_is_opened_again`, `a_program_without_http_is_left_to_claude`, `a_settings_change_stops_the_old_copy_first_restarts_only_that_server_and_switching_off_sends_sigterm` and `a_shared_polysim_watches_its_input_and_stops_when_it_closes`. The preface is covered by `vanished_session_retries_once_fresh_with_a_notice`.
 
-## Adding a clip
+## Feelings and reply timing
 
-Write a `buildX(start, options)` in `ui/jet/clips/`, next to `hello.js`. Use `createClip()` from `ui/jet/clip.js` for track writers, `t()`, `phase()` and `finish()`. Times are milliseconds; `finish({ revealFrom })` names the phase when text may appear. Bring tracks the clip does not own back to rest with `returnToRest(start, ownedTracks)`.
+`agent.feel(text)` calls the Tauri command `feel_message(text)`; its blocking worker returns `Feeling { mood, scores }`. On **each call**, Rust first reads a nonblank `CONVERTER_JEV_API_KEY` environment value. Otherwise it walks from the current working directory upward to the nearest `.env` file and reads that file only. A nearer file with no usable key prevents falling through to an ancestor. `.env` is ignored by Git; no key is stored in Settings and there is no feelings section. No key returns neutral immediately.
 
-List the builder in `ui/jet/clips/catalogue.js`. Mark a clip that deliberately ends away from rest as a hold. Preview it with `node dev/frames.mjs <clip>` from this crate; the player and view use the same character code as the app.
+With a key, JEV receives the user's message over HTTPS at `https://api.typesafe.ai/v1/systemone`, bearer authorization, model `jev-1.13.0`. The request is `{ state: {}, model, questions: { hello: { type: "noul", instructions: { line: text, question } }, insulted: { ... } } }`. There is one yes/no question per animated emotion, none for neutral. The answer is `{ answers: { hello: { noul: number }, insulted: { noul: number } } }`; missing, malformed or nonnumeric required answers fail decoding. Selection accepts only supported finite scores in [0.5, 1], chooses the highest, and breaks ties in `Mood::ALL` order (`hello` before `insulted`); otherwise neutral. Returned scores retain the received map.
 
-The director (`ui/jet/director.js`) decides which catalogue clip plays for each chat event, and which one plays for each mood word. To play the new clip for a mood, add it to the director's mood table. A new mood word must be added on both sides: `agent::Mood` in `crates/agent/src/chat/mod.rs` and `MOODS` in `director.js`. The Rust test `every_mood_word_is_handled_by_the_director` fails until both agree.
+The backend caps one request at **2 s**, with no retry or redirect. The page caps classification at **2200 ms**, falls back to neutral on timeout/error and warns once per page lifetime without server details. Client Debug hides the key; errors carry only `MissingKey`, `Http`, `Rejected { status }` or `Decode`, with no transport details or response body. The production no-key path returns neutral rather than a missing-key error. Local HTTP fixtures verify the wire contract; real service quality and latency remain unmeasured here.
+
+On send, flight and classification start together. Model dispatch waits only for classification/fallback. `SendRequest.feeling: Option<String>` becomes `Message.feeling`; only a supported word reaches the prompt as `[Jet: reading this, you feel insulted]`, before any engine preface and user words. The persona asks the provider to let this colour its answer and start with that mood unless the reply changes the feeling. This context applies to both providers.
+
+The director queues a feeling's clip after the flight brake. Text waits for `revealAt`, an **absolute monotonic deadline** consumed by `holdUntil(at)`: hello's wag starts at 650 ms, insulted's hold at 2720 ms, measured from the reaction's start. An early successful terminal waits too: final HTML, announcement and held-next-message dispatch stay behind that deadline. A reply mood equal to the feeling, or neutral, adds no reaction; a different animated mood queues after spinner closure and extends the hold. Spinner starts only after classification/reaction and only while no reply has arrived. A quick answer skips it.
+
+Done preserves queued reactions then settles. Failure and Stop discard queued reactions, cancel the reveal hold and settle after closing a spinner as needed. Stop during classification prevents model dispatch and returns a taken engine preface. Turn identity guards ignore stale classifier results and provider events; reduced-motion fade callbacks also check their generation. The actual fly launch ends at 500 ms; screen carry follows the returned cruise timing, not a fixed illustrative send timeline.
+
+## Settings
+
+The sheet has **eight sections**, in order, built by `ui/chat/settings/sheet.js`:
+
+| Section | Contents |
+| --- | --- |
+| Persona | Name, job title, notes on how to talk |
+| Motion | Reduced-motion switch; combined with system preference |
+| Model and thinking | Provider/model, supported effort choices, Claude budget and current usage |
+| Memory | MEMORY, USER and RECENT editors |
+| Libraries | quanty/polysim switches, programs and folders |
+| Workstation | Bridge path, folder, strategy, links and link token |
+| Agent programs | Codex/Claude paths and provider status |
+| Forget this conversation | Confirmation to clear the thread while keeping notes |
+
+Edits save after 600 ms without another edit. Library switches reload after saving; typed library paths wait until the sheet closes. Settings Rust/JavaScript defaults are checked against `ui/bridge/default-settings.json`; legacy fields are ignored and disappear on a save. The character palette and authored motion have no customization fields.
+
+## Adding a clip or emotion
+
+Use `buildX(start, options)` and `createClip()` track writers, `t()`, `phase()` and `finish({ revealFrom })`. Times are milliseconds and reveal names a phase's **start**. Bring tracks the clip does not own back to rest with `returnToRest(start, ownedTracks)`, so interruption resets the previous form, lift, scowl and string data. Add the builder to `clips/catalogue.js`; `working` is the sole hold.
+
+For an emotion, also add `EMOTIONS`, the single-line `MOODS` export, Rust `Mood`/`ALL`/word mapping, persona mood description, JEV question, golden coverage and a row in the test table. Follow the complete [emotion checklist and visual QA](character-policy.md#adding-an-emotion). No vocabulary entry comes before its authored animation.
+
+## Preview and icons
+
+From this crate, `node dev/frames.mjs hello /tmp/jet-preview` and `node dev/frames.mjs insulted /tmp/jet-preview` play the real player at 25 fps and write SVG frames, 2× and lane-size PNGs plus contact sheets. `--layers off` disables idle layers for reference comparisons; `--standing` and `--reduced-motion` exercise variants. The tool requires `/opt/homebrew/bin/rsvg-convert`. See [the policy's render commands](character-policy.md#before-you-show-it).
+
+The six checked-in desktop icons are generated from the real standing blue kite, round eyes, bow and no string. The source recipe is `node dev/frames.mjs still --standing --no-string <temporary-folder>`, then adapt the temporary SVG's preview background to the icon's square dark rounded background with transparent corners and centre the standing body/bow. Feed that SVG to `cargo tauri icon <svg> -o <temporary-icon-folder>` (tauri-cli 2.12.2 supports SVG). Copy only `32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.png`, `icon.icns`, `icon.ico`; the other generated desktop/mobile formats stay outside the repository. Inspect all sizes, especially 32 px and the bow's bottom margin.
+
+Offline frames and local tests do not verify whole-page or native behavior. Browser checks for greetings, insults, neutral sends, Stop/retry, early completion and reduced motion, native Tauri drawer/lane/icon appearance, and real JEV quality/latency remain outstanding manual QA. Do not open Tauri or make a live JEV call as part of the default checks.
