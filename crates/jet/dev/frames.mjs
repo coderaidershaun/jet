@@ -1,23 +1,29 @@
-// Draws stills of the kite for looking at, outside the app. Run it from crates/jet:
+// Draws the kite for looking at, outside the app. Run it from crates/jet:
 //
 //   node dev/frames.mjs still (--standing | --hovering) [options] [out-dir]
+//   node dev/frames.mjs <clip mode> [--standing | --hovering] [--layers off] [out-dir]
 //
-// Each still is written as an SVG and as two PNGs (twice the size, and the size
-// it shows at in the chat lane), and all stills in a run are laid side by side
-// on a contact sheet. The PNGs come from rsvg-convert. Nothing is written into
-// the repository unless you name a folder in it.
+// A still is written as an SVG and as two PNGs (twice the size, and the size it
+// shows at in the chat lane), and all stills in a run are laid side by side on
+// a contact sheet. A clip mode plays the real clip through the real player on
+// a fixed clock and writes every frame the same way, then a contact sheet of
+// the key moments. The PNGs come from rsvg-convert. Nothing is written into the
+// repository unless you name a folder in it.
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { CLIPS } from '../ui/jet-next/clips/catalogue.js';
 import { KINDS } from '../ui/jet-next/parts/eyes.js';
 import { CENTRE, HOVER_Y, TIP, kite } from '../ui/jet-next/parts/forms.js';
 import { paint, restingFrame } from '../ui/jet-next/draw/paint.js';
+import { createPlayer, stretchFromSpeed } from '../ui/jet-next/player.js';
 import { fistRoute, HAND_SCALE } from '../ui/jet-next/parts/routes.js';
 import { REST_LENGTH, SEGMENTS, createChain, jPose, lyingPose } from '../ui/jet-next/parts/string.js';
 
 const RSVG = '/opt/homebrew/bin/rsvg-convert';
+const DEFAULT_OUT_FOLDER = join(tmpdir(), 'jet-renders');
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const BACKGROUND = '#13191F';
 const WIDTH = 200;
@@ -28,37 +34,64 @@ const LANE_DEVICE_RATIO = 2;
 // The hovering kite is the reference pose; standing moves it down by the hover height.
 const REFERENCE_TIP = kite()[TIP];
 const STANDING_TIP = [REFERENCE_TIP[0], REFERENCE_TIP[1] + HOVER_Y];
+const FRAME_MS = 40;
+
+// A clip mode plays its steps in turn. A step's options may be a function of the
+// player, and `playMs` cuts the step short. The contact sheet shows the moments
+// in `sheetMs`, or else the start and the end of every phase.
+const HELLO_SHEET_MS = [0, 180, 500, 1150, 2300];
+const WORKING_PLAY_MS = 3000;
+const CLIP_MODES = {
+  hello: { steps: [{ clip: 'hello' }], sheetMs: HELLO_SHEET_MS },
+  'hello-brief': { steps: [{ clip: 'hello', options: { brief: true } }], sheetMs: HELLO_SHEET_MS },
+  fly: { steps: [{ clip: 'fly', options: { cruiseMs: 800 } }] },
+  settle: { steps: [{ clip: 'settle' }] },
+  working: {
+    steps: [
+      { clip: 'working', playMs: WORKING_PLAY_MS },
+      { clip: 'workingEnd', options: (player) => ({ roll: player.state.roll, elapsedMs: WORKING_PLAY_MS }) },
+    ],
+  },
+};
 
 const USAGE = `usage: node dev/frames.mjs still (--standing | --hovering) [--lift L,R] [--form k] [--pose j]
          [--speed V] [--eyes round|lid|B|C] [--anger a] [--squint q] [--lids l,r] [--no-string] [out-dir]
+       node dev/frames.mjs ${Object.keys(CLIP_MODES).join('|')} [--standing | --hovering] [--layers off] [out-dir]
 
 A flag given more than once draws one still for each value.
   --lift L,R    corner lift in degrees, left then right
   --speed V     speed in degrees per second of the more lifted corner (draws its speed lines and stretch)
   --form k      0 kite .. 1 spinner
   --pose j      the string raised in the J and writing the fist
-  --lids l,r    how shut each lid is, 0 open .. 1 shut`;
+  --lids l,r    how shut each lid is, 0 open .. 1 shut
+
+A clip mode plays at 25 frames a second with no blinks. It starts hovering unless you say --standing,
+and writes into <out-dir>/<mode>-<hovering|standing>[-no-layers] one SVG and two PNGs for every frame, and a contact sheet
+of the first frame and the end of each phase (hello: the wave's own key moments).
+  --layers off  leaves out the idle bob and sway, so only the clip moves the kite`;
 
 class UsageError extends Error {}
 
 const VALUE_FLAGS = ['lift', 'speed', 'form', 'pose', 'eyes', 'anger', 'squint', 'lids'];
+const CLIP_VALUE_FLAGS = ['layers'];
+const ALL_VALUE_FLAGS = [...VALUE_FLAGS, ...CLIP_VALUE_FLAGS];
 const SWITCHES = ['standing', 'hovering', 'no-string'];
 
 function parseArguments(args) {
-  const values = Object.fromEntries(VALUE_FLAGS.map((name) => [name, []]));
+  const values = Object.fromEntries(ALL_VALUE_FLAGS.map((name) => [name, []]));
   const switches = new Set();
   let folder = null;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     const name = arg.startsWith('--') ? arg.slice(2) : null;
     if (name && SWITCHES.includes(name)) switches.add(name);
-    else if (name && VALUE_FLAGS.includes(name)) {
+    else if (name && ALL_VALUE_FLAGS.includes(name)) {
       if (i + 1 >= args.length) throw new UsageError(`--${name} needs a value`);
       values[name].push(args[++i]);
     } else if (name) throw new UsageError(`unknown option ${arg}`);
     else folder = arg;
   }
-  if (switches.has('standing') === switches.has('hovering')) throw new UsageError('give exactly one of --standing and --hovering');
+  if (switches.has('standing') && switches.has('hovering')) throw new UsageError('give --standing or --hovering, not both');
   return { values, switches, folder };
 }
 
@@ -107,11 +140,10 @@ function buildFrame(standing, combo, switches) {
     const speed = numbersFrom(combo.speed, 1, 'speed')[0];
     // The corner that is lifted more is the one moving; the other stays still. A tie goes to the right.
     const moving = Math.abs(frame.lift[0]) > Math.abs(frame.lift[1]) ? 0 : 1;
-    const stretch = 2.5 * Math.min(1, Math.abs(speed) / 250);
     frame.liftSpeed = [0, 0];
     frame.liftSpeed[moving] = speed;
     frame.stretch = [0, 0];
-    frame.stretch[moving] = stretch;
+    frame.stretch[moving] = stretchFromSpeed(speed);
   }
   if (combo.pose && combo.pose !== 'j') throw new UsageError(`--pose must be j; got "${combo.pose}"`);
   if (!switches.has('no-string')) frame.string = stillString(standing, combo.pose);
@@ -177,20 +209,79 @@ function writeSheet(folder, stills) {
   return [join(folder, 'sheet.svg'), join(folder, 'sheet.png')];
 }
 
-function main(argv) {
-  const [mode, ...rest] = argv;
-  if (mode !== 'still') throw new UsageError(mode ? `"${mode}" is not built yet; only "still" works so far` : 'give a mode');
-  const { values, switches, folder } = parseArguments(rest);
+function stillsMode(args) {
+  const { values, switches, folder } = parseArguments(args);
+  if (switches.has('standing') === switches.has('hovering')) throw new UsageError('give exactly one of --standing and --hovering');
+  if (values.layers.length > 0) throw new UsageError('--layers works with the clip modes only');
   const standing = switches.has('standing');
-  const outFolder = resolve(folder ?? join(tmpdir(), 'jet-renders'));
+  const outFolder = resolve(folder ?? DEFAULT_OUT_FOLDER);
   mkdirSync(outFolder, { recursive: true });
 
   const stills = variants(values).map((combo) => {
     const name = stillName(standing ? 'standing' : 'hovering', combo, switches);
     return { name, ...writeStill(outFolder, name, buildFrame(standing, combo, switches)) };
   });
-  const paths = [...stills.flatMap((still) => still.written), ...writeSheet(outFolder, stills)];
-  console.log(paths.join('\n'));
+  return [...stills.flatMap((still) => still.written), ...writeSheet(outFolder, stills)];
+}
+
+// Plays the mode's steps through a real player, one frame every 40 ms, and writes each frame as it is made.
+// `phaseEndsMs` are the moments the steps' phases end, for the contact sheet.
+function playFrames(mode, { standing, layers }, folder) {
+  const player = createPlayer({ random: () => 1, layers, standing });
+  const frames = [];
+  const written = [];
+  const phaseEndsMs = [0];
+  let now = 0;
+  const record = () => {
+    player.tick(now);
+    const name = `frame-${String(frames.length).padStart(3, '0')}`;
+    const still = writeStill(folder, name, player.frame);
+    frames.push(still);
+    written.push(...still.written);
+  };
+  mode.steps.forEach((step, index) => {
+    const start = { standing, eyeKind: 'round', reducedMotion: false };
+    const options = typeof step.options === 'function' ? step.options(player) : step.options;
+    const began = now;
+    const clip = CLIPS[step.clip].build(start, options);
+    const playMs = step.playMs ?? Infinity;
+    phaseEndsMs.push(...clip.phases.map((phase) => began + phase.end).filter((ms) => ms - began <= playMs));
+    player.play(clip, now);
+    // The step's first frame is the last frame of the one before, so only the very first step draws it.
+    if (index === 0) record();
+    while (player.playing && now - began < playMs) {
+      now += FRAME_MS;
+      record();
+    }
+    if (playMs < Infinity) phaseEndsMs.push(now);
+  });
+  return { frames, written, lastMs: now, phaseEndsMs };
+}
+
+function clipMode(modeName, args) {
+  const { values, switches, folder } = parseArguments(args);
+  if (VALUE_FLAGS.some((flag) => values[flag].length > 0) || switches.has('no-string')) throw new UsageError(`"${modeName}" takes only --standing, --hovering and --layers off`);
+  const [layersValue] = values.layers;
+  if (layersValue !== undefined && !['on', 'off'].includes(layersValue)) throw new UsageError(`--layers must be on or off; got "${layersValue}"`);
+  const layers = layersValue !== 'off';
+  const standing = switches.has('standing');
+  const name = `${modeName}-${standing ? 'standing' : 'hovering'}${layers ? '' : '-no-layers'}`;
+  const outFolder = join(resolve(folder ?? DEFAULT_OUT_FOLDER), name);
+  mkdirSync(outFolder, { recursive: true });
+
+  const mode = CLIP_MODES[modeName];
+  const { frames, written, lastMs, phaseEndsMs } = playFrames(mode, { standing, layers }, outFolder);
+  const sheetMs = [...new Set(mode.sheetMs ?? phaseEndsMs)].sort((a, b) => a - b);
+  // Each moment shows the last frame at or before it, as the reference contact sheets pick them.
+  const sheetFrames = sheetMs.filter((ms) => ms <= lastMs).map((ms) => frames[Math.floor(ms / FRAME_MS + 1e-9)]);
+  return [...written, ...writeSheet(outFolder, sheetFrames)];
+}
+
+function main(argv) {
+  const [mode, ...rest] = argv;
+  if (mode === 'still') return console.log(stillsMode(rest).join('\n'));
+  if (!(mode in CLIP_MODES)) throw new UsageError(mode ? `"${mode}" is not a mode; give still or one of ${Object.keys(CLIP_MODES).join(', ')}` : 'give a mode');
+  console.log(clipMode(mode, rest).join('\n'));
 }
 
 try {

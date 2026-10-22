@@ -104,6 +104,22 @@ function bodyTransform({ y, roll, squash, pivot }) {
   );
 }
 
+/**
+ * Where a point of the kite, given in the reference pose, lands on the page
+ * after the same move, turn and squash that the body is drawn with.
+ * @param {Pick<Frame, 'y' | 'roll' | 'squash' | 'pivot'>} frame
+ * @param {number[]} point
+ * @returns {number[]}
+ */
+export function bodyPoint({ y, roll, squash, pivot }, point) {
+  const radians = (roll * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const dx = (point[0] - pivot[0]) * squash[0];
+  const dy = (point[1] - pivot[1]) * squash[1];
+  return [pivot[0] + dx * cos - dy * sin, pivot[1] + HOVER_Y - y + dx * sin + dy * cos];
+}
+
 // The hand and its speed lines fade out as the body turns into the spinner.
 function handNode(outline, side, { form, lift, liftSpeed }, unitPx) {
   const share = 1 - form;
