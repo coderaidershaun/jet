@@ -1,0 +1,8 @@
+.app-frame { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+.app-frame[hidden] { display: none; }
+.app-frame-page { flex: 1 1 auto; width: 100%; min-height: 0; border: 0; background: white; }
+.app-frame-status { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .35rem .65rem; font: 12px/1.4 system-ui, sans-serif; }
+.app-frame-status [role="status"] { flex: 1 1 16rem; }
+.app-frame-status a, .app-frame-status button { flex: 0 0 auto; font: inherit; }
+.app-frame[data-state="offline"] .app-frame-status, .app-frame[data-state="incompatible"] .app-frame-status { background: #fff0d4; color: #543900; }
+.app-frame-status a { color: inherit; text-decoration: underline; }

@@ -37,6 +37,7 @@ pub(super) fn router(host: Server) -> Router {
         .route("/api/feel", post(feel))
         .route("/api/image", post(image))
         .route("/api/apps", get(apps).post(update_apps))
+        .merge(crate::proxy::router())
         .fallback_service(ServeDir::new(&host.config.ui_dir))
         .with_state(host)
 }

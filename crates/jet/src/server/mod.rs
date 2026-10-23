@@ -28,16 +28,19 @@ pub enum ServerError {
 #[derive(Clone)]
 pub struct Server {
     pub(crate) chat: Arc<ChatState>,
+    pub(crate) proxy: crate::proxy::Proxy,
     pub registry: Arc<Mutex<Registry>>,
     pub config: ServerConfig,
 }
 
 impl Server {
     pub fn open(config: ServerConfig) -> Result<Self, ServerError> {
+        let proxy = crate::proxy::Proxy::new(&config)?;
         let registry = Registry::open(&config.data_dir)?;
         let chat = ChatState::open(config.data_dir.clone())?;
         Ok(Self {
             chat,
+            proxy,
             registry: Arc::new(Mutex::new(registry)),
             config,
         })

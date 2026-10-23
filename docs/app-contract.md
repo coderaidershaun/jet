@@ -91,6 +91,19 @@ For both HTTP and WebSocket upgrades, Jet:
    Unsupported absolute/external redirect targets produce an explicit error or
    external link; Jet does not silently follow them.
 
+Jet derives its public origin only from an actual concrete loopback listener.
+A wildcard or remote listener requires `--public-origin`; an ephemeral port uses
+the address selected by the operating system. Connection setup, including DNS and
+TLS, is bounded to two seconds; established uploads/downloads are not given a
+whole-transfer timeout. Redirects are not followed by Jet.
+
+`GET /api/apps/{id}/ui-status` reports runtime UI compatibility and a bounded HEAD
+check independently of MCP status. Any HTTP response, including 405, means only
+`reachable`. Other outcomes are `offline` and `incompatible`; neither a successful
+check nor an iframe load event is proof of rendering. Retry reloads only the chosen
+frame. A changed UI address or embedding setting takes effect on explicit reload;
+renaming and reopening keep the existing frame and its unsaved state.
+
 Apps may use these headers only in their explicitly trusted integration mode.
 Normal standalone protections remain intact. An HTTPS Jet may forward to a local
 HTTP upstream because the browser reaches only HTTPS Jet. Frame restrictions are

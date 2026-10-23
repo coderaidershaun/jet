@@ -21,9 +21,10 @@ async fn main() -> ExitCode {
 }
 
 async fn run(args: Vec<String>) -> Result<(), jet::ServerError> {
-    let config = jet::ServerConfig::from_args(args)?;
+    let mut config = jet::ServerConfig::from_args(args)?;
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
     let address = listener.local_addr()?;
+    config.listen = address;
     let host = jet::Server::open(config)?;
     println!("Jet listening on http://{address}");
     host.serve(listener).await

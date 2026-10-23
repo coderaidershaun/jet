@@ -9,13 +9,17 @@ edition = "2024"
 [workspace.dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
 dotenvy = { version = "0.15.7", default-features = false }
+hyper = { version = "1.12.0", default-features = false, features = ["client", "http1"] }
+hyper-rustls = { version = "0.27.10", default-features = false, features = ["http1", "ring", "webpki-tokio", "tls12"] }
+hyper-util = { version = "0.1.21", default-features = false, features = ["client-legacy", "http1", "tokio"] }
 pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 tempfile = { version = "3.27.0", default-features = false, features = ["getrandom"] }
 thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
-tokio = { version = "1.54.1", default-features = false, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.54.1", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { version = "0.1.19", default-features = false, features = ["sync"] }
+tower = { version = "0.5.3", default-features = false }
 tower-http = { version = "0.7.1", default-features = false, features = ["fs"] }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
 url = { version = "2.5.8", default-features = false, features = ["std", "serde"] }
