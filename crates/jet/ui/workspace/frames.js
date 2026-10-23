@@ -73,6 +73,15 @@ export function createFrameContainer(container) {
       entry.frame?.setAttribute('title', app.label);
       if (entry.frame) check(entry);
     }
+    update(app);
+  }
+
+  function update(app) {
+    const entry = entries.get(app.id);
+    if (!entry) return;
+    entry.app = app;
+    entry.panel.setAttribute('aria-label', app.label);
+    entry.frame?.setAttribute('title', app.label);
     try {
       const url = new URL(app.uiUrl);
       if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Invalid UI address');
@@ -95,5 +104,5 @@ export function createFrameContainer(container) {
     entries.delete(id);
   }
 
-  return { open, reload, remove };
+  return { open, reload, remove, update };
 }

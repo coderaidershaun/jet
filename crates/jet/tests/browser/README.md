@@ -84,8 +84,8 @@ remove only the container created for this check.
 ## Workspace shell
 
 The workspace harness starts its own Jet, two generic app fixtures and a temporary
-free CLI provider. It checks forms, retained iframe/chat state, explicit Stop,
-selected context capture before feeling classification, dock resizing/persistence,
+free CLI provider. It checks slash registration, retained iframe/chat state, explicit Stop,
+selected context capture before feeling classification, drawer/rail navigation, targeted endpoint reload,
 keyboard focus and responsive content. It never uses an installed paid provider.
 
 ```sh

@@ -1,4 +1,4 @@
-/* Usage and diagnostics inside the chat dock. */
+/* Usage and diagnostics in the persistent drawer. */
 .drawer {
   width: var(--drawer-w); overflow: hidden;
   background: var(--surface); border-right: 1px solid var(--line);

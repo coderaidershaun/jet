@@ -1,4 +1,4 @@
-// Usage and diagnostics inside the chat dock.
+// Usage and diagnostics in the persistent drawer.
 
 import { h } from '../../dom.js';
 import { createPlayer } from '../../jet/player.js';

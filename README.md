@@ -28,37 +28,41 @@ An authoritative history/current-turn snapshot and bounded event replay restore 
 
 ## Apps and workspace
 
-Start the app independently, then use **Add app** or `/app add 7878 "Research"`.
+Start the app independently, then use `/app add 7878 "Research"` or ask Jet to register it.
 A port means loopback on the Jet server; a full HTTP(S) URL can reach another host.
 Labels are editable and need not be unique; stable IDs identify registrations.
-Use the form for explicit UI/MCP endpoint overrides when an app has no descriptor.
+Ask Jet to change explicit UI/MCP endpoint overrides when an app has no descriptor.
 An unreachable app is saved with a discovery error so you can retry later.
 
-The app fills the workspace. The left navigation and right dock both hide fully;
-Chat and Tools share the right dock. Its default width is about 360 pixels, with
-resizing on desktop and an overlay on narrow screens. Switching apps preserves
-visited frames and unsaved input until explicit Reload, removal or a full browser
-reload. Hiding Chat does not stop a reply. One reply can run across all tabs;
-other sends receive a busy response.
+Jet chat fills the main content initially. One left drawer contains Jet, registered
+apps, usage and settings. Selecting an app fills the content and collapses the
+drawer to an icon rail. Jet returns to the preserved chat and desktop drawer;
+last selected app context remains available to Jet. Narrow screens default to the
+rail, with an expandable drawer and settings always available. `/tools` opens the
+tool browser in the main content. Switching views preserves drafts, visited frames
+and active replies. `/app reload` reloads only its target; a full browser reload
+clears live iframe state. One reply can run across all tabs; other sends receive a
+busy response.
 
 | Command | Action |
 | --- | --- |
-| `/app add <address> [label]` | Register an app; omit arguments to open the form. |
+| `/app add <address> [label]` | Register an app; missing address gives inline examples. |
 | `/app list` | Show every registration. |
 | `/app open <id-or-label>` | Show the app in this browser. |
-| `/app edit [id-or-label]` | Edit the target or selected app in a form. |
+| `/app edit [id-or-label]` | Show configuration and guidance to ask Jet for changes. |
+| `/app reload [id-or-label]` | Reload the target or last selected app with current endpoints. |
 | `/app remove <id-or-label>` | Forget the registration without stopping the app. |
 | `/app enable <id-or-label>` / `/app disable <id-or-label>` | Allow or prevent new MCP calls. |
 | `/tools [id-or-label]` | Browse the global tool catalogue or one app. |
 
 Quoted labels work. Missing or ambiguous targets offer a choice. Slash commands
-and forms run directly without a model request; unknown commands show help.
+run directly without a model request; unknown commands show help.
 Ordinary-language app management uses the same registry through the assistant.
 Complete explicit commands execute without a second confirmation.
 
 ## App tools
 
-Jet shares one HTTP MCP client between the assistant and tool browser. Forms, commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees only six stable tools: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, and `tools_call`. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
+Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees only six stable tools: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, and `tools_call`. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
 
 Tools shows searchable summaries, actual input/output schemas, annotations, server identity, capabilities and instructions. Refresh retries failed metadata; stale results remain visibly marked. Only explicitly marked free discovery operations can expand into a hierarchy. Inspect a leaf or use Ask Jet to draft a request; browsing never executes ordinary business tools. In particular, normal Quanty search can cost money.
 

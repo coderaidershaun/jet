@@ -6,10 +6,10 @@ import { createComposer } from '../chat/composer/state.js';
 import { createComposerView } from '../chat/composer/view.js';
 
 test('commands_route_before_chat_and_preserve_composer_keys', async () => {
-  const requests = [], reports = [], opened = [], forms = [], scopes = [];
+  const requests = [], reports = [], opened = [], scopes = [];
   const apps = [{ id: 'a', label: 'Same name' }, { id: 'b', label: 'Same name' }];
-  let sent = 0;
-  const workspace = { activeAppId: () => 'a', refresh: async () => {}, openApp: id => opened.push(id), showAppForm: app => forms.push(app), showTools: id => scopes.push(id) };
+  let sent = 0, selected = 'a';
+  const workspace = { activeAppId: () => selected, refresh: async () => {}, openApp: id => opened.push(id), reloadApp: async id => opened.push("reload:" + id), showTools: id => scopes.push(id) };
   const commands = createCommands({ workspace, report: text => reports.push(text), request: async (path, body) => {
     requests.push({ path, body });
     if (!body) return apps;
@@ -31,9 +31,18 @@ test('commands_route_before_chat_and_preserve_composer_keys', async () => {
     await commands.submit('/app ' + action + ' b', () => sent++);
     assert.deepEqual(requests.at(-1).body, { action, id: 'b' });
   }
-  await commands.submit('/app edit', () => sent++);
   await commands.submit('/app add', () => sent++);
-  assert.deepEqual(forms, [apps[0], undefined]);
+  assert.match(reports.at(-1), /app add <address>/);
+  assert.doesNotMatch(reports.at(-1), /form/i);
+  await commands.submit('/app edit', () => sent++);
+  assert.match(reports.at(-1), /Same name.*a[\s\S]*ask Jet/i);
+  await commands.submit('/app reload b', () => sent++);
+  await commands.submit('/app reload', () => sent++);
+  assert.deepEqual(opened, ['a', 'reload:b', 'reload:a']);
+  selected = null;
+  await commands.submit('/app reload', () => sent++);
+  assert.match(reports.at(-1), /Choose an app/);
+  selected = 'a';
   await commands.submit('/app list', () => sent++);
   assert.match(reports.at(-1), /Same name — a/);
   for (const text of ['/unknown', '/app add "unterminated', '/app open', '/app open missing', '/app list extra']) {

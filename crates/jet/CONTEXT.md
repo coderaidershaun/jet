@@ -57,8 +57,8 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Facade** — the six stable MCP tools exposed to each provider, routing by app ID and real tool name.
 - **Turn binding** — temporary server-issued correlation connecting facade actions to the initiating browser. It expires on completion, failure or Stop.
 - **Tool catalogue** — an app’s MCP tool definitions and server metadata, shared by the assistant and Tools browser.
-- **Workspace** — the selected app UI; its identity adds context without limiting available tools.
-- **Dock** — the collapsible right-hand space shared by Chat and Tools.
+- **Workspace** — the main content showing Jet chat, a selected app, or the tool browser. Last selected app identity adds context without limiting available tools.
+- **Drawer** — the persistent left navigation for Jet and apps, with usage information and settings. It collapses to icons while viewing an app.
 
 
 - **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.

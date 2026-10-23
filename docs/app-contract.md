@@ -114,7 +114,7 @@ app rendered successfully; UI needs separate loading/offline/incompatible states
 
 `agent::apps::Registry::open(data_directory)` loads `apps.json`. One server-owned
 registry instance serializes mutations. Call blocking discovery away from the
-async server event loop. HTTP, forms, slash commands and MCP facade adapters all
+async server event loop. HTTP, slash commands and MCP facade adapters all
 invoke `execute(RegistryCommand)`; they must not each implement registry rules.
 
 Commands use a JSON `action` tag: `add`, `list`, `edit`, `enable`, `disable`,
@@ -231,16 +231,19 @@ and 256 KiB of displayed raw data. Ancestor cycles use canonical arguments;
 cancellation prevents late responses from reopening an abandoned path. These are Jet conventions, not standard
 MCP discovery claims. The fixture provides two discovery levels and one leaf.
 
-## Frame and dock ownership
+## Frame and drawer ownership
 
-The reusable frame container owns `open(app)`, `reload(appId)` and `remove(appId)`;
+The reusable frame container owns `open(app)`, `update(app)`, `reload(appId)` and `remove(appId)`;
 opening an already visited stable ID shows its existing frame. Renaming, selected
 app changes and panel visibility changes never remount frames. Reload/remove affect
 only that ID. Live frame state is not persisted across full browser reload.
 
-The workspace shell owns one right dock with `showChat()`, `showTools(appId?)` and
-`hideDock()`; tools and chat use that same space. The explorer owns its contents,
-not shell or frame layout. Hiding the dock never cancels a server turn.
+The workspace shell owns one persistent drawer and exclusive chat, app and tools
+content. `showChat()` returns to the retained chat; `showTools(appId?)` opens the
+explorer. App navigation collapses the drawer into an accessible icon rail.
+Settings stay in the footer. The explorer owns its contents. Changing views never
+cancels a server turn. `/app reload [id-or-label]` refreshes descriptors and reloads
+only the target frame, preserving the visible view and all other frames.
 `apps_open` accepts only an app ID; the host binds facade connection context to the
 initiating server turn/client, invalidates it at completion/cancellation, and emits
 browser-local actions with both IDs. A model cannot choose a browser ID.
@@ -283,13 +286,14 @@ notification/reconnect behavior; this fixture alone does not prove those paths.
 ### Browser workspace interface
 
 `createWorkspace({agent, page})` from `ui/workspace/shell.js` moves the existing
-chat `page` into one dock and returns `showChat()`, `showTools(appId?)`,
-`hideDock()`, `toolsContent`, `activeAppId()` and `refresh()`. The explorer mounts
-its content once in `toolsContent`; tab changes only hide content. The selected
+chat `page` and drawer into one shell and returns `showChat()`, `showTools(appId?)`,
+`reloadApp(id)`, `toolsContent`, `activeAppId()` and `refresh()`. The explorer mounts
+its content once in `toolsContent`; view changes only hide content. The selected
 stable ID is captured by the chat turn before feeling classification and remains
 part of the same request across transport retries. It never filters the registry.
 
 The bridge exposes `onRegistryChanged(listener)`, returning an unsubscribe
 function. Registry notifications trigger a fresh list; browser focus and every
-reconnect snapshot also refresh the list. Dock width and visibility live only in
-browser local storage under `jet.workspace`.
+reconnect snapshot also refresh the list. Returning to Jet retains last selected
+app context. Removing that app clears context; removing the visible app returns
+to chat. Legacy dock preferences are ignored.

@@ -5,3 +5,4 @@
 .command-menu span { font-size: 12px; color: #aebcc5; }
 .command-result { flex: none; max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding: 8px 12px; font-size: 13px; border-bottom: 1px solid #293942; }
 .command-result:empty { display: none; }
+.page.has-command-result .empty { visibility: hidden; }

@@ -1,6 +1,4 @@
-// Starts the chat page: loads the saved settings and the history, builds
-// every part of the page and hands each the parts it needs. The agent is connected
-// here and nowhere else; every other part is handed it.
+// All chat components share one agent connection.
 
 import { createCommands } from '../workspace/commands.js';
 import { createCommandMenu } from '../workspace/completion.js';
@@ -33,14 +31,16 @@ async function start() {
   const [history, status] = await Promise.all([agent.history(), agent.status()]);
 
   const page = $('page');
-  const diagnostics = h('details', { class: 'diagnostics' }, h('summary', { text: 'Usage and diagnostics' }), $('drawer'));
-  page.prepend(diagnostics);
-  page.querySelector('.header').append($('gear'));
   let toolBrowser, commandMenu;
   const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId) });
   const commandResult = h('pre', { class: 'command-result', role: 'status', 'aria-label': 'App command result' });
-  page.prepend(commandResult);
-  const commands = createCommands({ workspace, report: text => { commandResult.textContent = text; } });
+  $('banner').before(commandResult);
+  function reportCommand(text) {
+    commandResult.textContent = text;
+    page.classList.toggle('has-command-result', Boolean(text));
+    if (text && !page.hidden) commandResult.scrollIntoView({ block: 'nearest' });
+  }
+  const commands = createCommands({ workspace, report: reportCommand });
   const systemReduces = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedMotion = () => settings.reducedMotion || systemReduces.matches;
   const applyReduced = () => document.documentElement.classList.toggle('reduced', reducedMotion());
@@ -105,7 +105,7 @@ async function start() {
     await workspace.refresh();
     if (!current()) return;
     try { workspace.openApp(action.appId); }
-    catch (error) { commandResult.textContent = error.message; }
+    catch (error) { reportCommand(error.message); }
   });
 
   const drawer = createDrawerView({
@@ -125,8 +125,6 @@ async function start() {
       openSettings: () => sheet.open(),
     },
   });
-
-  diagnostics.addEventListener('toggle', () => { if (diagnostics.open) drawer.init(); });
 
   const live = createLive({
     reducedMotion: reducedMotion(),
@@ -216,7 +214,6 @@ async function start() {
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
-    if (diagnostics.open && !sheet.isOpen) { event.preventDefault(); diagnostics.open = false; diagnostics.querySelector('summary').focus(); return; }
     const action = composer.escape({ sheetOpen: sheet.isOpen });
     if (action === 'none') return;
     event.preventDefault();

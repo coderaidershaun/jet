@@ -3,10 +3,13 @@
 `cargo run -p jet -- --listen 127.0.0.1:8787 --data-dir ./jet-data` serves the chat in a normal browser. `jet --help` lists deployment options. The data directory owns settings, transcript, session, notes and the app registry. `--ui-dir` points to the static `ui/` directory when the executable is copied elsewhere.
 
 The [root guide](../../README.md) covers registration, commands, Quanty launch and
-existing-data reuse. The workspace keeps one frame per visited app; both navigation
-and the shared Chat/Tools dock collapse completely. Tools are global regardless of
-the selected app. Browser-local layout survives reload, but live iframe state does
-not. App disable prevents new tool calls while retaining its UI and configuration.
+existing-data reuse. Chat starts in the main content beside one drawer. Selecting
+an app collapses that drawer to an icon rail; Jet returns to the preserved chat.
+`/tools` uses the main content, and settings stay at the drawer footer. The
+workspace retains visited frames and chat drafts across navigation. `/app reload`
+refreshes only its target with current registry endpoints. Live iframe state does
+not survive a full browser reload. App disable prevents new tool calls while
+retaining its UI and configuration.
 
 ## Browser bridge
 
