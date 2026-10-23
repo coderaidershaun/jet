@@ -6,8 +6,7 @@ mod provider;
 mod review_timer;
 
 use agent::{
-    Conversation, DataDir, Effort, Event, McpServers, Message, Model, Persona, ShownEntry,
-    TurnIdentity,
+    Conversation, DataDir, Effort, Event, Message, Model, Persona, ShownEntry, TurnIdentity,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -26,6 +25,7 @@ use review_timer::{ReviewTarget, ReviewTimer};
 
 pub(crate) struct ChatState {
     pub conversation: Conversation,
+    facade: Arc<crate::facade::Facade>,
     pub data_dir: PathBuf,
     runtime: Mutex<Runtime>,
     review: ReviewTimer,
@@ -46,6 +46,8 @@ pub(crate) struct SendRequest {
     pub local_time: String,
     #[serde(default)]
     pub feeling: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_app_id: Option<agent::apps::AppId>,
 }
 
 #[derive(Serialize)]
@@ -57,11 +59,15 @@ pub(crate) struct Accepted {
 }
 
 impl ChatState {
-    pub fn open(data_dir: PathBuf) -> Result<Arc<Self>, BridgeError> {
+    pub fn open(
+        data_dir: PathBuf,
+        facade: Arc<crate::facade::Facade>,
+    ) -> Result<Arc<Self>, BridgeError> {
         let conversation = Conversation::new(DataDir::new(data_dir.clone()));
         conversation.recover_interrupted()?;
         Ok(Arc::new(Self {
             conversation,
+            facade,
             data_dir,
             runtime: Mutex::new(Runtime::new()),
             review: ReviewTimer::new(),
@@ -141,13 +147,16 @@ impl ChatState {
             effort: request.effort,
             budget_usd: request.budget_usd,
             local_time: request.local_time,
-            mcp: McpServers::default(),
-            shared_mcp: Default::default(),
+            mcp: Some(self.facade.bind(&identity)),
+            active_app_id: request.active_app_id,
             feeling: request.feeling,
         };
-        let (user, mut reply) =
-            self.conversation
-                .send_identified(transport, message, Some(identity.clone()))?;
+        let (user, mut reply) = self
+            .conversation
+            .send_identified(transport, message, Some(identity.clone()))
+            .inspect_err(|_| {
+                self.facade.revoke(&identity.request_id);
+            })?;
         let identity = TurnContext::from(&identity);
         self.review.note_activity();
         runtime.active = Some(ActiveTurn {
@@ -188,10 +197,12 @@ impl ChatState {
                 }
                 runtime.publish(Some(identity.clone()), json!(event));
                 if terminal {
+                    host.facade.revoke(&identity.request_id);
                     runtime.active = None;
                     runtime.stopper = None;
                 }
             }
+            host.facade.revoke(&identity.request_id);
             drop(reply);
             let runtime = lock(&host.runtime);
             if !runtime.closing {
@@ -254,6 +265,7 @@ impl ChatState {
         }
         let mut runtime = lock(&self.runtime);
         runtime.cancel_request(request_id);
+        self.facade.revoke(request_id);
         if runtime
             .active
             .as_ref()
@@ -272,11 +284,41 @@ impl ChatState {
         Ok(())
     }
 
+    pub fn is_closing(&self) -> bool {
+        lock(&self.runtime).closing
+    }
+
+    pub fn registry_changed(&self, event: agent::apps::RegistryEvent) {
+        lock(&self.runtime).publish(
+            None,
+            json!({"kind":"registryChanged", "appId":event.app_id, "change":event.change}),
+        );
+    }
+    pub fn open_app(
+        &self,
+        binding: &crate::facade::Binding,
+        app_id: &agent::apps::AppId,
+    ) -> Result<(), BridgeError> {
+        let mut runtime = lock(&self.runtime);
+        if runtime.closing
+            || runtime.cancelled_requests.contains(&binding.request_id)
+            || !runtime.active.as_ref().is_some_and(|turn| {
+                turn.identity.turn_id == binding.turn_id
+                    && turn.identity.client_id == binding.client_id
+            })
+        {
+            return Err(BridgeError::Cancelled);
+        }
+        runtime.publish(None, json!({"kind":"appOpened","appId":app_id,"turnId":binding.turn_id,"requestId":binding.request_id,"clientId":binding.client_id}));
+        Ok(())
+    }
+
     pub fn memory_updated(&self, notes: agent::Notes) {
         lock(&self.runtime).publish(None, json!({"kind":"memoryUpdated", "notes":notes}));
     }
 
     pub fn shutdown(&self) {
+        self.facade.shutdown();
         {
             let mut runtime = lock(&self.runtime);
             runtime.closing = true;

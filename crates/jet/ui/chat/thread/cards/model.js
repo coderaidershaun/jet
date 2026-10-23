@@ -287,6 +287,22 @@ function readIngest(result, input, call) {
   return { outcome, tone, body: { kind: 'fields', fields } };
 }
 
+/** Numbered sources are a result format, independent of an app's registered ID. */
+export function citationSources(call) {
+  if (callState(call) !== 'done' || !isRecord(call.result)) return [];
+  const sources = call.tool === 'search' ? call.result.results : call.tool === 'answer' ? call.result.sources : null;
+  return Array.isArray(sources) ? sources.filter((source) => isRecord(source) && Number.isInteger(source.number) && typeof source.document === 'string') : [];
+}
+
+function readerFor(call) {
+  if (!isRecord(call.result)) return readGeneric;
+  const legacy = READERS[call.server + '/' + call.tool];
+  if (legacy) return legacy;
+  if (citationSources(call).length) return call.tool === 'search' ? readSearch : readAnswer;
+  if (call.tool === 'read_page' && Array.isArray(call.result.pieces) && typeof call.result.document_id === 'string') return readPage;
+  return readGeneric;
+}
+
 const READERS = {
   'quanty/search': readSearch,
   'quanty/answer': readAnswer,
@@ -321,7 +337,7 @@ export function cardOf(call, earlier = []) {
   }
 
   const input = recordOf(call.input);
-  const read = isRecord(call.result) && READERS[card.key] ? READERS[card.key] : readGeneric;
+  const read = readerFor(call);
   const { outcome, tone, body } = read(recordOf(call.result), input, call);
   return { ...ended(joined(outcome, time)), tone, body };
 }

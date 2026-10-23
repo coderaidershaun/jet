@@ -1,4 +1,5 @@
 //! Codex process stand-in for protocol and cancellation tests.
+mod support;
 use serde_json::{Value, json};
 use std::io::{Read, Write};
 fn main() {
@@ -6,6 +7,9 @@ fn main() {
     std::fs::write("fake-codex-args.json", json!(args).to_string()).unwrap();
     let mut prompt = String::new();
     std::io::stdin().read_to_string(&mut prompt).unwrap();
+    if support::run(&args, &prompt, true) {
+        return;
+    }
     if prompt == "exit" {
         eprintln!("Codex is not signed in");
         std::process::exit(1);

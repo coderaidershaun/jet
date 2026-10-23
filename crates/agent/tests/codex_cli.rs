@@ -25,8 +25,7 @@ fn codex_stream_resume_schema_usage_and_tool_results() {
     let cli = fake(dir.path());
     let mut req = request("hello");
     req.mcp_config = Some(
-        json!({"mcpServers":{"quanty":{"type":"http","url":"http://127.0.0.1:4321/mcp"}}})
-            .to_string(),
+        json!({"mcpServers":{"jet":{"type":"http","url":"http://127.0.0.1:4321/mcp"}}}).to_string(),
     );
     let mut turn = Turn::start(&cli, &req).unwrap();
     let steps: Vec<_> = turn.by_ref().collect();
@@ -45,8 +44,11 @@ fn codex_stream_resume_schema_usage_and_tool_results() {
             .unwrap();
     assert!(args.contains(&"model_reasoning_effort=\"high\"".into()));
     assert!(args.contains(&"features.shell_tool=false".into()));
-    assert!(!args.iter().any(|a| a.contains("enabled_tools=")));
-    assert!(args.contains(&"mcp_servers.quanty.default_tools_approval_mode=\"approve\"".into()));
+    assert!(args.contains(&format!(
+        "mcp_servers.jet.enabled_tools={}",
+        json!(agent::FACADE_TOOLS)
+    )));
+    assert!(args.contains(&"mcp_servers.jet.default_tools_approval_mode=\"approve\"".into()));
     let mut failed_tool = Turn::start(&cli, &request("tool-fail")).unwrap();
     assert!(matches!(
         failed_tool.by_ref().last(),
@@ -86,7 +88,7 @@ fn codex_errors_and_cancellation_are_terminal() {
     for config in [
         "not JSON",
         r#"{"mcpServers":[]}"#,
-        r#"{"mcpServers":{"quanty":{"command":{"bad":"value"}}}}"#,
+        r#"{"mcpServers":{"jet":{"headers":{"x-jet-turn":42}}}}"#,
         r#"{"mcpServers":{"quanty.extra":{"url":"http://localhost/mcp"}}}"#,
     ] {
         malformed.mcp_config = Some(config.into());
@@ -148,37 +150,14 @@ fn live_codex_chat_and_resume() {
 }
 
 #[test]
-#[ignore = "uses the locally signed-in Codex subscription and a local test MCP server"]
-fn live_codex_mcp_and_review_schema() {
+#[ignore = "uses the locally signed-in Codex subscription"]
+fn live_codex_review_schema() {
     let dir = tempfile::tempdir().unwrap();
-    let servers = agent::SharedServers::new();
-    servers.configure(&agent::McpServers {
-        quanty: agent::McpServer {
-            enabled: true,
-            command: env!("CARGO_BIN_EXE_fake-mcp").into(),
-            cwd: Some(dir.path().to_owned()),
-        },
-        ..Default::default()
-    });
     let cli = CodexCli::locate(None, dir.path()).unwrap();
-    let mut req = request(
-        "Call the quanty search tool with question marigold. Then briefly report the result.",
-    );
-    req.effort = Effort::Low;
-    req.mcp_config = Some(
-        json!({"mcpServers":{"quanty":{"type":"http","url":servers.urls()["quanty"]}}}).to_string(),
-    );
-    let mut turn = Turn::start(&cli, &req).unwrap();
-    let steps: Vec<_> = turn.by_ref().collect();
-    servers.shutdown();
-    assert!(matches!(steps.last(), Some(Step::Finished(_))), "{steps:?}");
-    assert!(!turn.tools().is_empty(), "{steps:?}");
-    assert_eq!(turn.tools()[0].tool, "search");
-    assert!(turn.tools()[0].ok, "{steps:?}");
-    req.mcp_config = None;
+    let mut req = request("Set changed to false and all three notes to empty strings.");
     req.session = SessionMode::Ephemeral;
     req.model = cli.review_model();
-    req.prompt = "Set changed to false and all three notes to empty strings.".into();
+    req.effort = Effort::Low;
     req.schema = Some(
         json!({"type":"object","additionalProperties":false,"required":["changed","memory","user","recent"],"properties":{"changed":{"type":"boolean"},"memory":{"type":"string","maxLength":2200},"user":{"type":"string","maxLength":1375},"recent":{"type":"string","maxLength":1500}}}),
     );

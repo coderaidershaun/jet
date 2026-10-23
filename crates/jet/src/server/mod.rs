@@ -2,8 +2,10 @@
 
 mod config;
 mod routes;
+mod tools;
 
-use agent::apps::Registry;
+use crate::facade::Facade;
+use agent::{apps::Registry, mcp::HttpMcpClient};
 use axum::Router;
 use std::{
     sync::{Arc, Mutex},
@@ -28,17 +30,43 @@ pub enum ServerError {
 #[derive(Clone)]
 pub struct Server {
     pub(crate) chat: Arc<ChatState>,
+    pub mcp: Arc<HttpMcpClient>,
+    pub(crate) facade: Arc<Facade>,
     pub registry: Arc<Mutex<Registry>>,
     pub config: ServerConfig,
 }
 
 impl Server {
     pub fn open(config: ServerConfig) -> Result<Self, ServerError> {
-        let registry = Registry::open(&config.data_dir)?;
-        let chat = ChatState::open(config.data_dir.clone())?;
+        let registry = Arc::new(Mutex::new(Registry::open(&config.data_dir)?));
+        let mcp = Arc::new(HttpMcpClient::new(registry.clone()));
+        let facade = Facade::new(
+            registry.clone(),
+            mcp.clone(),
+            format!("http://{}/mcp", config.listen),
+        );
+        let chat = ChatState::open(config.data_dir.clone(), facade.clone())?;
+        *crate::chat::lock(&facade.chat) = Arc::downgrade(&chat);
+        let events = crate::chat::lock(&registry).subscribe();
+        let weak = Arc::downgrade(&chat);
+        std::thread::spawn(move || {
+            loop {
+                let Some(chat) = weak.upgrade() else { break };
+                if chat.is_closing() {
+                    break;
+                }
+                match events.recv_timeout(Duration::from_millis(200)) {
+                    Ok(event) => chat.registry_changed(event),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(_) => break,
+                }
+            }
+        });
         Ok(Self {
             chat,
-            registry: Arc::new(Mutex::new(registry)),
+            registry,
+            mcp,
+            facade,
             config,
         })
     }
@@ -49,6 +77,8 @@ impl Server {
 
     /// Stops provider work and closes event streams within a fixed cleanup deadline.
     pub async fn shutdown(&self) {
+        self.facade.shutdown();
+        self.mcp.shutdown().await;
         let chat = self.chat.clone();
         if let Err(error) = tokio::task::spawn_blocking(move || chat.shutdown()).await {
             eprintln!("jet: shutdown worker failed: {error}");
@@ -56,6 +86,16 @@ impl Server {
     }
 
     pub async fn serve(self, listener: tokio::net::TcpListener) -> Result<(), ServerError> {
+        let address = listener.local_addr()?;
+        let ip = if address.ip().is_unspecified() {
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+        } else {
+            address.ip()
+        };
+        self.facade.set_url(format!(
+            "http://{}/mcp",
+            std::net::SocketAddr::new(ip, address.port())
+        ));
         let router = self.router();
         let (finish, finished) = tokio::sync::oneshot::channel::<()>();
         let mut running = tokio::spawn(async move {

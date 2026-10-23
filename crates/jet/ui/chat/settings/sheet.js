@@ -1,9 +1,8 @@
-// Delay saving until editing pauses, and wait for complete paths before restarting libraries.
+// Save after editing pauses.
 
 import { displayName } from '../../bridge/settings.js';
 import { h, icon } from '../../dom.js';
 import { buildClaude } from './claude.js';
-import { buildLibraries } from './libraries.js';
 import { buildMotion } from './motion.js';
 import { buildMemory } from './memory.js';
 import { buildModel } from './model.js';
@@ -29,26 +28,18 @@ const SAVE_AFTER_EDIT_MS = 600;
 export function createSheet({ dialog, context, onChange, save }) {
   let saveTimer = 0;
   let needsProgramCheck = false;
-  // A switch reloads the libraries after its save. A typed program or folder waits for the sheet to close, so a half-typed path never restarts polysim.
-  let reloadAfterSave = false;
-  let reloadAtClose = false;
   let opener = null;
   // The Rust side reads the saved model and program paths, so changes are checked only after saving.
   const saveEdits = async () => {
     const checkProgram = needsProgramCheck;
-    const reload = reloadAfterSave;
     needsProgramCheck = false;
-    reloadAfterSave = false;
     await save();
     if (checkProgram) programs.refresh();
-    if (reload) ctx.agent.reloadLibraries().catch((error) => console.warn('the libraries could not be reloaded:', error));
   };
   const changed = (kind) => {
     onChange(kind);
     if (kind === 'persona') paintNames(body, displayName(ctx.settings));
     if (kind === 'claude' || kind === 'model') needsProgramCheck = true;
-    if (kind === 'libraries') reloadAfterSave = true;
-    if (kind === 'library-path') reloadAtClose = true;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveEdits, SAVE_AFTER_EDIT_MS);
   };
@@ -59,7 +50,7 @@ export function createSheet({ dialog, context, onChange, save }) {
   const model = buildModel(ctx);
   const memory = buildMemory(ctx);
   const programs = buildClaude(ctx);
-  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, buildLibraries(ctx), ...programs.el);
+  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, ...programs.el);
 
   const closeButton = h('button', { class: 'icon-button', type: 'button', 'aria-label': 'Close settings', onClick: () => sheet.close() }, icon('close'));
   dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), closeButton), body);
@@ -93,12 +84,6 @@ export function createSheet({ dialog, context, onChange, save }) {
 
     close() {
       if (!dialog.open) return;
-      if (reloadAtClose) {
-        reloadAtClose = false;
-        reloadAfterSave = true;
-        clearTimeout(saveTimer);
-        saveEdits().catch((error) => console.warn('the settings could not be saved:', error));
-      }
       dialog.classList.remove('open');
       setTimeout(() => {
         dialog.close();

@@ -10,7 +10,6 @@ use std::process::{Command, Stdio};
 
 use super::process::launch;
 use super::transport::{Lines, Request, Transport, TransportError};
-pub(crate) use args::mcp_config;
 use args::{CACHE_TTL_ENV, ISOLATION_ENV, args};
 
 /// Whether a variable is one that a running Claude Code session sets for its own tools.

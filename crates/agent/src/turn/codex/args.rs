@@ -52,22 +52,22 @@ pub(super) fn args(
         let config: McpConfig =
             serde_json::from_str(raw).map_err(|source| TransportError::McpConfig { source })?;
         for (name, server) in config.servers {
-            if name.is_empty()
-                || !name
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-            {
+            if name != "jet" {
                 return Err(TransportError::McpServerName { name });
             }
-            for (key, value) in [
-                ("command", server.command.map(Value::String)),
-                ("args", server.args.map(|args| json!(args))),
-                ("url", server.url.map(Value::String)),
-            ] {
-                if let Some(value) = value {
-                    push_config_value(&mut args, &format!("mcp_servers.{name}.{key}"), value);
-                }
+            push_config_value(&mut args, "mcp_servers.jet.url", json!(server.url));
+            for (header, value) in server.headers {
+                push_config_value(
+                    &mut args,
+                    &format!("mcp_servers.{name}.http_headers.{}", json!(header)),
+                    json!(value),
+                );
             }
+            push_config_value(
+                &mut args,
+                &format!("mcp_servers.{name}.enabled_tools"),
+                json!(crate::FACADE_TOOLS),
+            );
             // Jet users authorize their configured servers; headless turns cannot prompt.
             push_config_value(
                 &mut args,
@@ -116,8 +116,17 @@ struct McpConfig {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct McpServer {
-    command: Option<String>,
-    args: Option<Vec<String>>,
-    url: Option<String>,
+    #[serde(rename = "type")]
+    _kind: HttpTransport,
+    #[serde(default)]
+    headers: BTreeMap<String, String>,
+    url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum HttpTransport {
+    Http,
 }

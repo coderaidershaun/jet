@@ -20,7 +20,6 @@ use serde_json::Value;
 
 use crate::chat::{McpStatus, Mood, SessionId, ToolCall, Usage};
 pub use claude::ClaudeCli;
-pub(crate) use claude::mcp_config;
 pub use codex::CodexCli;
 pub use error::TurnError;
 use mood::{MoodSplitter, Split};

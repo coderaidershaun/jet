@@ -17,6 +17,8 @@ test("[n] in Jet's text links to the nearest earlier card that holds source n", 
   const pieces = finished('c3', 'read_page', { page: 1, pages: 2, pieces: [{ number: 1, kind: 'text', section: [], content: 'x' }, { number: 4, kind: 'text', section: [], content: 'y' }] });
   const answer = finished('c4', 'answer', { answered: true, claims: [], sources: [item(2, 'Answer book, chapter 1', 7)] });
 
+  const registered = { ...second, server: 'b5e97310-4825-4b89-ace2-e330a4ed8509' };
+  assert.equal(findSource([first, registered], 1).callId, 'c2', 'registered app IDs retain citations');
   const found = findSource([first, second], 1);
   assert.equal(found.callId, 'c2', 'the nearest card above wins');
   assert.equal(found.item.document, 'Newer book, chapter 2');

@@ -2,3 +2,4 @@
 mod apps;
 mod descriptor;
 mod fixture;
+mod mcp;

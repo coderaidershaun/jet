@@ -42,6 +42,12 @@ pub enum McpError {
     UnknownTool { app_id: AppId, tool: String },
     #[error("invalid tool arguments: {message}")]
     InvalidArguments { message: String },
+    #[error("MCP protocol error {code}: {message}")]
+    Protocol {
+        code: i32,
+        message: String,
+        data: Option<Value>,
+    },
     #[error("MCP request failed: {message}")]
     Transport { message: String },
     #[error("MCP request {request_id} was cancelled")]
@@ -53,5 +59,7 @@ pub trait McpService: Send + Sync {
     fn catalogue<'a>(&'a self, app_id: &'a AppId) -> McpFuture<'a, ToolCatalogue>;
     fn refresh<'a>(&'a self, app_id: &'a AppId) -> McpFuture<'a, ToolCatalogue>;
     fn call(&self, request: ToolRequest) -> McpFuture<'_, ToolResult>;
+    /// Dispatch only tools whose current metadata promises free discovery.
+    fn discover(&self, request: ToolRequest) -> McpFuture<'_, ToolResult>;
     fn cancel<'a>(&'a self, request_id: &'a str) -> McpFuture<'a, ()>;
 }

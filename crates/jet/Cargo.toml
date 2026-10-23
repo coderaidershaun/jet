@@ -7,6 +7,8 @@ description = "Jet browser home and agent server"
 [dependencies]
 agent = { path = "../agent" }
 axum = { workspace = true }
+jsonschema = { workspace = true }
+rmcp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

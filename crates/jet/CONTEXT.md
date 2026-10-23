@@ -27,7 +27,7 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Spinner** — the body's C-shaped working form, with hidden eyes and the string reeled into the bow.
 - **Payout** — the multiplier of string segment lengths, normally 1; the J uses about 1.592.
 - **Written route** — the local polyline the string's free end traces, with a length, scale and tremor.
-- **Settings** — saved reduced motion, persona, model/provider, memory-related choices, libraries. Rust owns the file format in the app.
+- **Settings** — saved reduced motion, persona, model/provider, memory-related choices. App registrations live separately. Rust owns the file format in the app.
 - **Reduced motion** — app setting combined with the system preference: always grounded, no flight, blink, idle oscillation or spinner rotation; the form still morphs.
 - **Catalogue** — `ui/jet/clips/catalogue.js`, the builders and hold flags for all six clips.
 - **Director** — chooses and queues clips from chat events and feelings; reads only the time supplied by the host.
@@ -48,12 +48,14 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Usage** — the tokens and spend of the replies since the app started. It is counted from the stream while a reply runs and closed by the cost Claude Code reports; it is not saved. The "Session" group of the drawer's usage panel means since the app started, not one Claude Code session. _Avoid_: session (that is the Claude Code conversation), cost alone (it leaves out tokens).
 - **Rate** — the published list price per million tokens for one model and one kind of token, with its date. It gives the live estimate while a reply runs. _Avoid_: price list, tariff.
 - **Notes** — MEMORY, USER and RECENT: the three short files in Jet's prompt that a background review keeps current. The memory commands and the memory section of the settings handle all three.
-- **Library** — quanty or polysim, an MCP server Jet's Claude reaches through tools (settings key `mcp`). _Avoid_: plugin.
-- **Tool call** — one use of a library tool during a reply: started, then finished with its result and a one-line summary; kept with the reply in the transcript.
+- **App** — an independently running UI and optional HTTP MCP endpoint, registered by stable ID in `apps.json`.
+- **Tool call** — one use of a registered app tool during a reply: started, then finished with its result and a one-line summary; kept with the reply in the transcript.
 - **Card** — what the thread shows for one tool call, above the reply's text: a line with a spinner while the call runs, then a folded card of what came back, or of the failure. _Avoid_: widget, panel.
 - **Source** — one item a library search or answer gives back, numbered from 1, with its document, page and kind. _Avoid_: result (that is the whole reply of a tool), hit (that is what a source holds).
 - **Citation** — `[n]` in Jet's text, shown as a chip that opens source n of the nearest card above it. _Avoid_: reference, footnote.
-- **Shared server** — the one copy of a library's MCP server that the app keeps running for the whole session, over HTTP on a port of this machine. An engine the agent starts through a shared polysim server outlives the reply. A library whose program does not take `--http` is not shared: Claude starts its own copy for each reply. _Avoid_: host (that is the page that shows Jet).
+- **MCP client** — the shared host-owned HTTP service used by chat and tool browsing. It never starts app processes.
+- **Facade** — the six stable MCP tools exposed to each provider, routing by app ID and real tool name.
+- **Turn binding** — temporary server-issued correlation connecting facade actions to the initiating browser. It expires on completion, failure or Stop.
 - **Engine** — one polysim trading program, named `strategy · te`, such as `strat-micro-recorder · te-binance-spot-btcusdt`. It has a state (running, stopped, exited) and a mode (off, sim, live); live trades real money.
 
 
