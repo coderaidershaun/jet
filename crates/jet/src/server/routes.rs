@@ -4,11 +4,13 @@ use agent::{Notes, apps::RegistryCommand};
 use axum::{
     Json, Router,
     extract::{Query, State},
+    http::{HeaderValue, header::CACHE_CONTROL},
+    middleware,
     response::{
-        Sse,
+        Response, Sse,
         sse::{Event, KeepAlive},
     },
-    routing::{get, post},
+    routing::{get, get_service, post},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -25,6 +27,14 @@ use crate::{
 
 pub(super) fn router(host: Server) -> Router {
     let facade = host.facade.router();
+    let ui = get_service(ServeDir::new(&host.config.ui_dir)).layer(middleware::map_response(
+        |mut response: Response| async move {
+            response
+                .headers_mut()
+                .insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+            response
+        },
+    ));
     Router::new()
         .merge(super::tools::router())
         .route("/api/status", get(status))
@@ -39,7 +49,7 @@ pub(super) fn router(host: Server) -> Router {
         .route("/api/feel", post(feel))
         .route("/api/apps", get(apps).post(update_apps))
         .merge(crate::proxy::router())
-        .fallback_service(ServeDir::new(&host.config.ui_dir))
+        .fallback_service(ui)
         .with_state(host)
         .merge(facade)
 }
