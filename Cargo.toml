@@ -7,16 +7,16 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
 dotenvy = { version = "0.15.7", default-features = false }
 pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
-tauri = { version = "2.12.3", default-features = false, features = ["compression", "dynamic-acl", "wry"] }
-tauri-build = { version = "2.7.2", default-features = false, features = ["config-json"] }
-tauri-plugin-opener = { version = "2.7.1", default-features = false }
 tempfile = { version = "3.27.0", default-features = false, features = ["getrandom"] }
 thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
+tokio = { version = "1.54.1", default-features = false, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream = { version = "0.1.19", default-features = false, features = ["sync"] }
+tower-http = { version = "0.7.1", default-features = false, features = ["fs"] }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
 url = { version = "2.5.8", default-features = false, features = ["std", "serde"] }
 uuid = { version = "1.28.0", default-features = false, features = ["std", "v4", "serde"] }

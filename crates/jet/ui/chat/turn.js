@@ -6,6 +6,7 @@
 
 import { MOODS } from '../jet/director.js';
 import { displayName } from '../bridge/settings.js';
+import { randomId } from '../bridge/browser-agent.js';
 import { localTimeLabel } from './clock.js';
 import { createReveal } from './thread/throttle.js';
 
@@ -155,12 +156,54 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
   const turn = {
     paint,
 
+    restore(snapshot) {
+      if (active && !active.turnId && !snapshot.active && !snapshot.history.some((entry) => entry.turn?.requestId === active.requestId)) return;
+      active?.cancelFeeling?.();
+      reveal?.end();
+      const held = thread.held;
+      thread.load(snapshot.history);
+      if (held !== null) thread.hold(held);
+      active = null;
+      reveal = null;
+      pendingEntry = null;
+      if (snapshot.history.length) composer.sent();
+      const current = snapshot.active;
+      if (current) {
+        const mine = { dispatched: true, requestId: current.identity.requestId, turnId: current.identity.turnId };
+        active = mine;
+        thread.openSlot(current.user.at);
+        reveal = createReveal({ render: (text) => agent.renderMarkdown(text), paint: (html) => {
+          if (active !== mine || !thread.slot) return;
+          thread.reveal(html);
+          paint();
+        } });
+        if (current.started) tracker.started(current.started);
+        if (current.mood) thread.setMood(current.mood);
+        for (const tool of current.tools) {
+          thread.startTool(tool);
+          if (tool.kind === 'toolFinished') thread.finishTool(tool);
+        }
+        thread.appendText(current.text);
+        reveal.text(current.text);
+      }
+      composerView.setLayout(composer.layout);
+      paint();
+      if (snapshot.history.length) live.showInLane(view.liveLane());
+      if (current) live.replying(performance.now());
+    },
+
+    observe(envelope) {
+      if (envelope.event.kind === 'accepted') { turn.restore(envelope.event.snapshot); return; }
+      if (active && active.turnId === envelope.turn?.turnId && thread.slot) onEvent(envelope.event);
+    },
+
     /** Sends a message: the bubble, the new slot, the flight, then the agent. */
     async send(text) {
       const mine = { dispatched: false, cancelFeeling: null };
       active = mine;
       const now = performance.now();
       const message = request(text);
+      if (agent.serverEvents) { message.requestId = randomId(); mine.requestId = message.requestId; }
       const takeoff = live.measure();
       tracker.sent({ effort: settings.effort, at: Date.now() });
       showUsage();
@@ -244,7 +287,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         mine.stopping = true;
         reveal.end();
         live.stopped(performance.now());
-        agent.stop().catch((error) => console.warn('Stop could not be sent:', error));
+        agent.stop(mine.requestId).catch((error) => console.warn('Stop could not be sent:', error));
         return;
       }
       const entry = pendingEntry ?? { id: null, role: 'jet', at: Date.now() };

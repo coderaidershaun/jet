@@ -105,6 +105,7 @@ mod tests {
 
     fn jet_entry(id: u64, status: EntryStatus) -> ShownEntry {
         let entry = Entry {
+            turn: None,
             id: EntryId(id),
             role: Role::Jet,
             text: "Friday looks fine".into(),

@@ -2,28 +2,24 @@
 name = "jet"
 version.workspace = true
 edition.workspace = true
-description = "Jet, the first-mate character: desktop window, chat and settings"
-
-[lib]
-name = "jet"
-path = "src/lib.rs"
-
-[[bin]]
-name = "jet"
-path = "src/main.rs"
-
-[[example]]
-name = "serve"
-path = "dev/serve.rs"
-
-[build-dependencies]
-tauri-build = { workspace = true }
+description = "Jet browser home and agent server"
 
 [dependencies]
 agent = { path = "../agent" }
-base64 = { workspace = true }
+axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tauri = { workspace = true }
-tauri-plugin-opener = { workspace = true }
+tempfile = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tower-http = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+ureq = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"

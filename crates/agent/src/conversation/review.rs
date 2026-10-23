@@ -1,6 +1,7 @@
 //! Keeps the three notes current. Once the conversation has been quiet for a while, one
 //! cheap model call reads everything said since the last review and rewrites the notes.
 
+use std::sync::{PoisonError, atomic::Ordering};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -65,6 +66,19 @@ struct Verdict {
 }
 
 impl Conversation {
+    /// Prevents future reviews and cancels any provider review already running.
+    pub fn stop_review(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
+        if let Some(stopper) = self
+            .review_stop
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            stopper.stop();
+        }
+    }
+
     /// Whether it is time for a review: something new was said, the chat has been quiet
     /// for 90 seconds, and the last review was at least ten minutes ago.
     pub fn review_due(&self, now_ms: u64) -> bool {
@@ -102,7 +116,24 @@ impl Conversation {
             schema: Some(schema()),
             mcp_config: None,
         };
-        let summary = run(Turn::start_with_idle(transport, &request, IDLE_LIMIT)?)?;
+        let turn = {
+            let mut current = self
+                .review_stop
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if self.shutting_down.load(Ordering::SeqCst) {
+                return Ok(ReviewOutcome::Skipped);
+            }
+            let turn = Turn::start_with_idle(transport, &request, IDLE_LIMIT)?;
+            *current = Some(turn.stopper());
+            turn
+        };
+        let result = run(turn);
+        *self
+            .review_stop
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
+        let summary = result?;
         let verdict = read_verdict(summary)?;
 
         let Some(mut session) = Session::load(&self.dir)? else {
@@ -234,6 +265,7 @@ mod tests {
 
     fn jet_says(text: &str) -> NewEntry {
         NewEntry {
+            turn: None,
             role: Role::Jet,
             ..NewEntry::user(text)
         }

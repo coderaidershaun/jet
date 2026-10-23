@@ -1,0 +1,131 @@
+//! Run the actual host binary with a free provider stand-in and an isolated data directory.
+use serde_json::{Value, json};
+use std::{
+    io::{BufRead, BufReader, Write},
+    process::{Child, Command, Stdio},
+    time::{Duration, Instant},
+};
+
+pub struct Host {
+    pub child: Child,
+    pub url: String,
+    pub dir: tempfile::TempDir,
+}
+impl Host {
+    pub fn start() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("provider.py");
+        std::fs::write(&program, include_str!("provider.py")).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        std::fs::write(
+            dir.path().join("settings.json"),
+            json!({"model":"sonnet","claudePath":program}).to_string(),
+        )
+        .unwrap();
+        Self::launch(dir)
+    }
+    fn launch(dir: tempfile::TempDir) -> Self {
+        let config = jet::ServerConfig::from_args([
+            "--listen",
+            "127.0.0.1:0",
+            "--data-dir",
+            dir.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        assert!(config.listen.ip().is_loopback());
+        let mut child = Command::new(env!("CARGO_BIN_EXE_jet"))
+            .args(["--listen", "127.0.0.1:0", "--data-dir"])
+            .arg(dir.path())
+            .arg("--disable-feelings")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        assert!(
+            line.starts_with("Jet listening on "),
+            "server did not start: {line}"
+        );
+        Self {
+            child,
+            url: line
+                .trim()
+                .strip_prefix("Jet listening on ")
+                .unwrap()
+                .into(),
+            dir,
+        }
+    }
+    pub fn restart(mut self) -> Self {
+        self.child.kill().unwrap();
+        self.child.wait().unwrap();
+        let dir = std::mem::replace(&mut self.dir, tempfile::tempdir().unwrap());
+        Self::launch(dir)
+    }
+    pub fn get(&self, path: &str) -> Value {
+        let text = ureq::get(format!("{}{path}", self.url))
+            .call()
+            .unwrap()
+            .body_mut()
+            .read_to_string()
+            .unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+    pub fn post(&self, path: &str, value: Value) -> (u16, Value) {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .into();
+        let mut response = agent
+            .post(format!("{}{path}", self.url))
+            .header("content-type", "application/json")
+            .send(value.to_string())
+            .unwrap();
+        let status = response.status().as_u16();
+        (
+            status,
+            serde_json::from_str(&response.body_mut().read_to_string().unwrap()).unwrap(),
+        )
+    }
+    pub fn until(&self, condition: impl Fn(&Value) -> bool) -> Value {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            let snapshot = self.get("/api/snapshot");
+            if condition(&snapshot) {
+                return snapshot;
+            }
+            assert!(Instant::now() < deadline, "snapshot timed out: {snapshot}");
+            std::thread::sleep(Duration::from_millis(15));
+        }
+    }
+    pub fn send_without_ack(&self, request: &Value) -> std::net::TcpStream {
+        let mut socket =
+            std::net::TcpStream::connect(self.url.trim_start_matches("http://")).unwrap();
+        let body = request.to_string();
+        write!(socket, "POST /api/chat/send HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        socket
+    }
+    pub fn invocations(&self) -> usize {
+        std::fs::read_to_string(self.dir.path().join("calls"))
+            .unwrap_or_default()
+            .lines()
+            .count()
+    }
+}
+impl Drop for Host {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+pub fn request(id: &str) -> Value {
+    json!({"requestId":id,"clientId":"browser-a","text":"hang","model":"sonnet","effort":"medium","budgetUsd":1.0,"persona":{"name":"Jet","jobTitle":"First mate","notes":""},"localTime":"Friday","feeling":"neutral"})
+}

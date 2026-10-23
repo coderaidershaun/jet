@@ -1,14 +1,15 @@
 //! The chat as the app sees it: send a message and read the streamed answer, show and
 //! forget the thread, edit the notes, and let the review keep them current.
 
+mod accepted;
 mod persona;
 mod reply;
 mod review;
 mod session_policy;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
@@ -63,11 +64,13 @@ pub struct CacheStatus {
 }
 
 /// The saved thread and notes, and the right to run one answer and one review at a time.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Conversation {
     dir: DataDir,
     answering: Arc<AtomicBool>,
     reviewing: Arc<AtomicBool>,
+    review_stop: Arc<Mutex<Option<crate::Stopper>>>,
+    shutting_down: Arc<AtomicBool>,
 }
 
 /// Holds a flag raised until it is dropped.
@@ -93,6 +96,8 @@ impl Conversation {
             dir,
             answering: Arc::new(AtomicBool::new(false)),
             reviewing: Arc::new(AtomicBool::new(false)),
+            review_stop: Arc::new(Mutex::new(None)),
+            shutting_down: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -108,6 +113,16 @@ impl Conversation {
         transport: Arc<dyn Transport>,
         message: Message,
     ) -> Result<(ShownEntry, Reply), ConversationError> {
+        self.send_identified(transport, message, None)
+    }
+
+    /// Persists browser correlation before dispatching any provider work.
+    pub fn send_identified(
+        &self,
+        transport: Arc<dyn Transport>,
+        message: Message,
+        identity: Option<crate::TurnIdentity>,
+    ) -> Result<(ShownEntry, Reply), ConversationError> {
         let claim = Claim::take(&self.answering).ok_or(ConversationError::Busy)?;
         let now = now_ms();
         let notes = Notes::load(&self.dir)?;
@@ -122,7 +137,9 @@ impl Conversation {
         let saved = Session::load(&self.dir)?;
         let decision = decide(saved.as_ref(), &prompt_hash, now);
 
-        let user_entry = Transcript::open(&self.dir).append(NewEntry::user(&message.text), now)?;
+        let mut user = NewEntry::user(&message.text);
+        user.turn = identity.clone();
+        let user_entry = Transcript::open(&self.dir).append(user, now)?;
         let words = what_claude_reads(&message);
         let prompt = match decision.mode {
             SessionMode::New => reply::first_message(&message.local_time, &words),
@@ -140,6 +157,7 @@ impl Conversation {
         };
         let started = Turn::start(&*transport, &request);
         let context = reply::Context {
+            identity,
             dir: self.dir.clone(),
             transport,
             request,

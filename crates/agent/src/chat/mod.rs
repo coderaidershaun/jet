@@ -105,10 +105,22 @@ pub enum EntryStatus {
     Failed,
 }
 
+/// Keeps an accepted browser request identifiable after a lost response or restart.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnIdentity {
+    pub request_id: String,
+    pub client_id: String,
+    pub turn_id: String,
+    pub request: serde_json::Value,
+}
+
 /// One message in the saved thread. `at` is Unix milliseconds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<TurnIdentity>,
     pub id: EntryId,
     pub role: Role,
     pub text: String,

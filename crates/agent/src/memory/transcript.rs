@@ -4,12 +4,13 @@
 use std::io::{Seek, SeekFrom, Write};
 
 use super::{DataDir, MemoryError};
-use crate::chat::{Entry, EntryId, EntryStatus, Mood, Role, ToolCall};
+use crate::chat::{Entry, EntryId, EntryStatus, Mood, Role, ToolCall, TurnIdentity};
 
 const FILE_NAME: &str = "transcript.jsonl";
 
 /// An entry before it has an id and a time.
 pub(crate) struct NewEntry {
+    pub turn: Option<TurnIdentity>,
     pub role: Role,
     pub text: String,
     pub mood: Option<Mood>,
@@ -21,6 +22,7 @@ pub(crate) struct NewEntry {
 impl NewEntry {
     pub(crate) fn user(text: &str) -> NewEntry {
         NewEntry {
+            turn: None,
             role: Role::User,
             text: text.to_owned(),
             mood: None,
@@ -33,6 +35,7 @@ impl NewEntry {
     /// The entry as saved, once it has its place in the thread and its time.
     pub(crate) fn into_entry(self, id: EntryId, at: u64) -> Entry {
         Entry {
+            turn: self.turn,
             id,
             role: self.role,
             text: self.text,
@@ -87,6 +90,7 @@ impl Transcript {
         file.set_len(whole_lines as u64).map_err(write_failed)?;
         file.seek(SeekFrom::End(0)).map_err(write_failed)?;
         file.write_all(line.as_bytes()).map_err(write_failed)?;
+        file.sync_data().map_err(write_failed)?;
         Ok(entry)
     }
 
@@ -186,6 +190,7 @@ mod tests {
 
     fn jet(text: &str) -> NewEntry {
         NewEntry {
+            turn: None,
             role: Role::Jet,
             text: text.to_owned(),
             mood: Some(Mood::Hello),

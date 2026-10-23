@@ -1,7 +1,6 @@
 // A pretend Claude for the browser. It keeps its history, session and notes in
 // storage, streams a reply as real stream-json lines with the typed events
-// made from them, and fails on demand when the user's words ask for it. It stays the agent
-// whenever the page runs outside Tauri.
+// made from them, and fails on demand when the user's words ask for it. Enable it explicitly with globalThis.__JET_FAKE__.
 
 import { ADDED_HITS, QUANTY_DOWN, QUANTY_SEARCH } from './fixtures/quanty-search.js';
 import { renderMarkdown } from './markdown.js';

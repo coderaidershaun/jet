@@ -1,10 +1,7 @@
-// The page's one way to talk to Claude. Every other module is handed an Agent
-// and never asks which one it is. Inside Tauri it is the real agent, which calls
-// the Rust side; in a plain browser it is the pretend agent, which keeps
-// everything in the browser.
+// Choose the real server bridge unless development explicitly requests the local fixture.
 
 import { createFakeAgent } from './fake-agent.js';
-import { createTauriAgent } from './tauri-agent.js';
+import { createBrowserAgent } from './browser-agent.js';
 
 /** @typedef {{ found: boolean, path: string | null, searched: string[] }} ClaudeStatus */
 /** The state of one MCP server when a reply started. Only `failed` means offline; `pending` is still starting. @typedef {{ name: string, status: string }} McpStatus */
@@ -60,14 +57,13 @@ import { createTauriAgent } from './tauri-agent.js';
  * @property {() => Promise<Notes>} loadMemory
  * @property {(notes: { memory: string, user: string, recent: string }) => Promise<Notes>} saveMemory
  * @property {(text: string) => Promise<string>} renderMarkdown
- * @property {(path: string) => Promise<string>} readLibraryImage   a picture of the quanty library as a data: address
+ * @property {(path: string) => Promise<string>} readLibraryImage   rejects when no registered image route is available
  * @property {(url: string) => Promise<void>} openLink
- * @property {() => Promise<void>} reloadLibraries   brings the running library servers in line with the saved settings
+ * @property {() => Promise<void>} reloadLibraries   compatibility hook for the existing settings panel
  * @property {(listener: (notes: Notes) => void) => () => void} onMemoryUpdated   returns the way to stop listening
  */
 
 /** @returns {Agent} */
 export function connectAgent() {
-  const tauri = globalThis.window?.__TAURI__;
-  return tauri ? createTauriAgent(tauri) : createFakeAgent();
+  return globalThis.__JET_FAKE__ === true ? createFakeAgent() : createBrowserAgent();
 }

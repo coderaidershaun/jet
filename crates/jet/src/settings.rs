@@ -1,13 +1,12 @@
-//! Save Jet's settings in the app's config folder so each launch restores the user's choices.
+//! Keep user settings beside the server's conversation data.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use agent::{Effort, McpServers, Model, Persona};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
 
-const FILE_NAME: &str = "settings.json";
+pub(crate) const FILE_NAME: &str = "settings.json";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -44,8 +43,6 @@ impl Default for Settings {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
-    #[error("could not find the app config folder: {0}")]
-    ConfigDir(#[from] tauri::Error),
     #[error("could not read or write {path}: {source}")]
     Io {
         path: PathBuf,
@@ -87,25 +84,13 @@ pub fn write_to(path: &Path, settings: &Settings) -> Result<(), SettingsError> {
         path: path.to_path_buf(),
         source,
     })?;
-    std::fs::write(path, json).map_err(io)
-}
-
-pub fn settings_path(app: &AppHandle) -> Result<PathBuf, SettingsError> {
-    Ok(app.path().app_config_dir()?.join(FILE_NAME))
-}
-
-#[tauri::command]
-pub fn load_settings(app: AppHandle) -> Result<Settings, String> {
-    settings_path(&app)
-        .and_then(|path| read_from(&path))
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
-    settings_path(&app)
-        .and_then(|path| write_to(&path, &settings))
-        .map_err(|error| error.to_string())
+    use std::io::Write;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(io)?;
+    temporary.write_all(&json).map_err(io)?;
+    temporary.as_file().sync_all().map_err(io)?;
+    temporary.persist(path).map_err(|error| io(error.error))?;
+    Ok(())
 }
 
 #[cfg(test)]

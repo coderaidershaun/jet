@@ -6,11 +6,9 @@ use std::sync::Arc;
 
 use agent::{CacheStatus, ClaudeCli, CodexCli, Lines, Model, Request, Transport, TransportError};
 use serde::Serialize;
-use tauri::{AppHandle, State};
 
-use super::ChatState;
 use super::error::BridgeError;
-use crate::settings;
+use crate::settings::Settings;
 
 /// A missing provider reaches the page through the same failure path as a failed run.
 struct MissingAgent {
@@ -80,22 +78,21 @@ struct ProgramStatus {
 /// Where the selected agent is, whether a reply is running, and whether the prompt cache is warm.
 // SMELL: this makes the same choice between Claude Code and Codex as transport_for, so a new
 // provider must be added in both places.
-#[tauri::command]
-pub async fn agent_status(
-    app: AppHandle,
-    state: State<'_, ChatState>,
+pub(super) fn agent_status(
+    settings: &Settings,
+    data_dir: &Path,
+    conversation: &agent::Conversation,
 ) -> Result<AgentStatus, BridgeError> {
-    let settings = settings::read_from(&settings::settings_path(&app)?)?;
     let provider = if settings.model.is_codex() {
         "Codex"
     } else {
         "Claude Code"
     };
     let located = if settings.model.is_codex() {
-        CodexCli::locate(settings.codex_path.as_deref(), &state.data_dir)
+        CodexCli::locate(settings.codex_path.as_deref(), data_dir)
             .map(|cli| cli.program().to_path_buf())
     } else {
-        ClaudeCli::locate(settings.claude_path.as_deref(), &state.data_dir)
+        ClaudeCli::locate(settings.claude_path.as_deref(), data_dir)
             .map(|cli| cli.program().to_path_buf())
     };
     let program = match located {
@@ -117,8 +114,8 @@ pub async fn agent_status(
     };
     Ok(AgentStatus {
         claude: program,
-        data_dir: state.data_dir.display().to_string(),
-        busy: state.conversation.is_busy(),
-        cache: state.conversation.cache_status()?,
+        data_dir: data_dir.display().to_string(),
+        busy: conversation.is_busy(),
+        cache: conversation.cache_status()?,
     })
 }

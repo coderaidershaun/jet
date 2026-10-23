@@ -1,263 +1,307 @@
-//! The bridge between the chat page and the agent crate: the commands the page calls, the
-//! channel that streams a reply to it, and the timer that keeps Jet's notes current.
+//! Keep provider work alive independently of browser connections and expose recoverable turns.
 
 mod error;
-pub(crate) mod feel;
-mod image;
-// Open to the crate because Tauri's list of commands must name each command where it is
-// defined; a re-export does not carry what the command macro generates.
-pub(crate) mod libraries;
-pub(crate) mod provider;
+mod events;
+mod provider;
 mod review_timer;
 
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant};
-
 use agent::{
-    Conversation, DataDir, Effort, Event, MEMORY_LIMIT, McpServers, Message, Model, Notes, Persona,
-    RECENT_LIMIT, SharedServers, ShownEntry, Stopper, USER_LIMIT,
+    Conversation, DataDir, Effort, Event, McpServers, Message, Model, Persona, ShownEntry,
+    TurnIdentity,
 };
 use serde::{Deserialize, Serialize};
-use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State};
-use tauri_plugin_opener::OpenerExt;
+use serde_json::{Value, json};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
+    time::{Duration, Instant},
+};
+use tokio::sync::broadcast;
 
 use crate::settings;
-pub(crate) use error::BridgeError;
-use provider::transport_for;
-use review_timer::{ReviewTarget, ReviewTimer, review_now};
+pub use error::BridgeError;
+use events::{ActiveTurn, Runtime, TurnContext};
+pub(crate) use events::{Envelope, Snapshot};
+use review_timer::{ReviewTarget, ReviewTimer};
 
-/// Entries the page gets when it opens.
-const HISTORY_LIMIT: usize = 200;
-
-/// How long closing the app waits for a stopped reply to be saved.
-const EXIT_WAIT: Duration = Duration::from_secs(2);
-
-/// Links the page may ask to open.
-const OPENABLE_SCHEMES: [&str; 3] = ["http://", "https://", "mailto:"];
-
-/// What the commands share: the conversation, the reply that is running, and the review timer.
-pub struct ChatState {
-    conversation: Conversation,
-    data_dir: PathBuf,
-    active: Mutex<Option<Stopper>>,
+pub(crate) struct ChatState {
+    pub conversation: Conversation,
+    pub data_dir: PathBuf,
+    runtime: Mutex<Runtime>,
     review: ReviewTimer,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SendRequest {
+    pub request_id: String,
+    pub client_id: String,
+    pub text: String,
+    #[serde(default)]
+    pub model: Model,
+    #[serde(default)]
+    pub effort: Effort,
+    pub budget_usd: f64,
+    pub persona: Persona,
+    pub local_time: String,
+    #[serde(default)]
+    pub feeling: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Accepted {
+    pub turn_id: String,
+    pub request_id: String,
+    pub user: ShownEntry,
+}
+
 impl ChatState {
-    pub fn new(data_dir: PathBuf) -> ChatState {
-        ChatState {
-            conversation: Conversation::new(DataDir::new(data_dir.clone())),
+    pub fn open(data_dir: PathBuf) -> Result<Arc<Self>, BridgeError> {
+        let conversation = Conversation::new(DataDir::new(data_dir.clone()));
+        conversation.recover_interrupted()?;
+        Ok(Arc::new(Self {
+            conversation,
             data_dir,
-            active: Mutex::new(None),
+            runtime: Mutex::new(Runtime::new()),
             review: ReviewTimer::new(),
-        }
+        }))
     }
 
-    /// Called when the app closes: ends the running reply, then reads what was said since
-    /// the last review so the notes are up to date next time.
-    // SMELL: closing waits for that review, so a slow Claude keeps the app from quitting
-    // until the review ends.
-    pub fn shutdown(&self, app: &AppHandle) {
-        if let Some(stopper) = lock(&self.active).as_ref() {
-            stopper.stop();
-        }
-        let deadline = Instant::now() + EXIT_WAIT;
-        while self.conversation.is_busy() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        match self.exit_review_target(app) {
-            Ok(target) => review_now(&self.conversation, &target),
-            Err(error) => eprintln!("jet: the notes review at exit could not start: {error}"),
-        }
+    pub fn status(&self) -> Result<provider::AgentStatus, BridgeError> {
+        let settings = settings::read_from(&self.data_dir.join(settings::FILE_NAME))?;
+        provider::agent_status(&settings, &self.data_dir, &self.conversation)
     }
 
-    /// The review at exit follows the saved settings, because no reply may have run since
-    /// the app started.
-    fn exit_review_target(&self, app: &AppHandle) -> Result<ReviewTarget, BridgeError> {
-        let settings = settings::read_from(&settings::settings_path(app)?)?;
-        Ok(ReviewTarget {
-            transport: transport_for(
-                settings.model,
-                settings.claude_path.as_deref(),
-                settings.codex_path.as_deref(),
-                &self.data_dir,
-            )?,
-            name: settings.persona.name,
+    pub fn send(self: &Arc<Self>, request: SendRequest) -> Result<Accepted, BridgeError> {
+        if request.request_id.is_empty()
+            || request.client_id.is_empty()
+            || request.request_id.len() > 128
+            || request.client_id.len() > 128
+            || request.text.trim().is_empty()
+            || !request.budget_usd.is_finite()
+            || request.budget_usd <= 0.0
+        {
+            return Err(BridgeError::InvalidRequest(
+                "request ID, client ID, message and positive budget are required".into(),
+            ));
+        }
+        let payload = json!(&request);
+        let mut runtime = lock(&self.runtime);
+        if let Some(user) = self.conversation.accepted_request(&request.request_id)? {
+            let identity = user
+                .entry
+                .turn
+                .as_ref()
+                .expect("accepted requests carry identity");
+            if identity.request != payload {
+                return Err(BridgeError::Conflict);
+            }
+            return Ok(Accepted {
+                turn_id: identity.turn_id.clone(),
+                request_id: identity.request_id.clone(),
+                user,
+            });
+        }
+        if runtime.closing {
+            return Err(BridgeError::ShuttingDown);
+        }
+        if runtime
+            .cancelled_requests
+            .iter()
+            .any(|id| id == &request.request_id)
+        {
+            return Err(BridgeError::Cancelled);
+        }
+        if runtime.active.is_some() {
+            return Err(BridgeError::Busy);
+        }
+        let mut history = self.conversation.history(199)?;
+        let saved = settings::read_from(&self.data_dir.join(settings::FILE_NAME))?;
+        let transport = provider::transport_for(
+            request.model,
+            saved.claude_path.as_deref(),
+            saved.codex_path.as_deref(),
+            &self.data_dir,
+        )?;
+        let target = ReviewTarget {
+            transport: transport.clone(),
+            name: request.persona.name.clone(),
+        };
+        let identity = TurnIdentity {
+            request_id: request.request_id,
+            client_id: request.client_id,
+            turn_id: uuid::Uuid::new_v4().to_string(),
+            request: payload,
+        };
+        let message = Message {
+            text: request.text,
+            persona: request.persona,
+            model: request.model,
+            effort: request.effort,
+            budget_usd: request.budget_usd,
+            local_time: request.local_time,
+            mcp: McpServers::default(),
+            shared_mcp: Default::default(),
+            feeling: request.feeling,
+        };
+        let (user, mut reply) =
+            self.conversation
+                .send_identified(transport, message, Some(identity.clone()))?;
+        let identity = TurnContext::from(&identity);
+        self.review.note_activity();
+        runtime.active = Some(ActiveTurn {
+            identity: identity.clone(),
+            user: user.clone(),
+            text: String::new(),
+            mood: None,
+            tools: Vec::new(),
+            started: None,
+        });
+        runtime.stopper = Some(reply.stopper());
+        history.push(user.clone());
+        let snapshot = Snapshot {
+            epoch: runtime.epoch.clone(),
+            cursor: runtime.cursor + 1,
+            history,
+            active: runtime.active.clone(),
+        };
+        runtime.publish(
+            Some(identity.clone()),
+            json!({"kind":"accepted", "snapshot":snapshot}),
+        );
+        let host = self.clone();
+        let accepted = Accepted {
+            turn_id: identity.turn_id.clone(),
+            request_id: identity.request_id.clone(),
+            user,
+        };
+        std::thread::spawn(move || {
+            for event in reply.by_ref() {
+                let terminal = matches!(
+                    event,
+                    Event::Finished { .. } | Event::Failed { .. } | Event::Stopped { .. }
+                );
+                let mut runtime = lock(&host.runtime);
+                if let Some(active) = &mut runtime.active {
+                    active.apply(&event);
+                }
+                runtime.publish(Some(identity.clone()), json!(event));
+                if terminal {
+                    runtime.active = None;
+                    runtime.stopper = None;
+                }
+            }
+            drop(reply);
+            let runtime = lock(&host.runtime);
+            if !runtime.closing {
+                host.review.schedule(host.clone(), target);
+            }
+        });
+        Ok(accepted)
+    }
+
+    pub fn snapshot(&self) -> Result<Snapshot, BridgeError> {
+        let runtime = lock(&self.runtime);
+        self.snapshot_locked(&runtime)
+    }
+
+    fn snapshot_locked(&self, runtime: &Runtime) -> Result<Snapshot, BridgeError> {
+        let mut history = self.conversation.history(200)?;
+        if let Some(active) = &runtime.active {
+            history.retain(|entry| {
+                !(entry.entry.role == agent::Role::Jet
+                    && entry
+                        .entry
+                        .turn
+                        .as_ref()
+                        .is_some_and(|turn| turn.turn_id == active.identity.turn_id))
+            });
+        }
+        Ok(Snapshot {
+            epoch: runtime.epoch.clone(),
+            cursor: runtime.cursor,
+            history,
+            active: runtime.active.clone(),
         })
     }
+
+    pub fn subscribe(
+        &self,
+        epoch: Option<&str>,
+        cursor: Option<u64>,
+    ) -> Result<(Vec<Value>, broadcast::Receiver<Envelope>), BridgeError> {
+        let runtime = lock(&self.runtime);
+        if runtime.closing {
+            return Err(BridgeError::ShuttingDown);
+        }
+        let receiver = runtime.sender.subscribe();
+        let initial = match runtime.replay(epoch, cursor) {
+            Some(events) => events
+                .into_iter()
+                .map(|event| json!({"kind":"event", "data":event}))
+                .collect(),
+            None => vec![json!({"kind":"snapshot", "data":self.snapshot_locked(&runtime)?})],
+        };
+        Ok((initial, receiver))
+    }
+
+    pub fn stop(&self, request_id: &str) -> Result<(), BridgeError> {
+        if request_id.is_empty() || request_id.len() > 128 {
+            return Err(BridgeError::InvalidRequest(
+                "request ID is required and must be at most 128 bytes".into(),
+            ));
+        }
+        let mut runtime = lock(&self.runtime);
+        runtime.cancel_request(request_id);
+        if runtime
+            .active
+            .as_ref()
+            .is_some_and(|turn| turn.identity.request_id == request_id)
+            && let Some(stopper) = &runtime.stopper
+        {
+            stopper.stop();
+        }
+        Ok(())
+    }
+
+    pub fn forget(&self) -> Result<(), BridgeError> {
+        let mut runtime = lock(&self.runtime);
+        self.conversation.forget()?;
+        runtime.publish(None, json!({"kind":"historyChanged"}));
+        Ok(())
+    }
+
+    pub fn memory_updated(&self, notes: agent::Notes) {
+        lock(&self.runtime).publish(None, json!({"kind":"memoryUpdated", "notes":notes}));
+    }
+
+    pub fn shutdown(&self) {
+        {
+            let mut runtime = lock(&self.runtime);
+            runtime.closing = true;
+            self.review.note_activity();
+            if let Some(stopper) = &runtime.stopper {
+                stopper.stop();
+            }
+            runtime.publish(None, json!({"kind":"shutdown"}));
+        }
+        self.conversation.stop_review();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while self.conversation.is_busy() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if self.conversation.is_busy() {
+            eprintln!(
+                "jet: provider cleanup exceeded three seconds; request will be recovered on restart"
+            );
+        }
+    }
 }
 
-/// A lock that still opens after another thread panicked while holding it.
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
-
-#[tauri::command]
-pub fn load_history(state: State<'_, ChatState>) -> Result<Vec<ShownEntry>, BridgeError> {
-    Ok(state.conversation.history(HISTORY_LIMIT)?)
-}
-
-/// What the page sends with each message.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SendRequest {
-    text: String,
-    #[serde(default)]
-    model: Model,
-    #[serde(default)]
-    effort: Effort,
-    budget_usd: f64,
-    persona: Persona,
-    local_time: String,
-    #[serde(default)]
-    claude_path: Option<PathBuf>,
-    #[serde(default)]
-    codex_path: Option<PathBuf>,
-    #[serde(default)]
-    mcp: McpServers,
-    #[serde(default)]
-    feeling: Option<String>,
-}
-
-/// Saves the user's message, starts the answer on its own thread and returns the saved
-/// message at once. The answer streams over `events`.
-#[tauri::command]
-pub async fn send_message(
-    app: AppHandle,
-    state: State<'_, ChatState>,
-    libraries: State<'_, SharedServers>,
-    request: SendRequest,
-    events: Channel<Event>,
-) -> Result<ShownEntry, BridgeError> {
-    let transport = transport_for(
-        request.model,
-        request.claude_path.as_deref(),
-        request.codex_path.as_deref(),
-        &state.data_dir,
-    )?;
-    let target = ReviewTarget {
-        transport: Arc::clone(&transport),
-        name: request.persona.name.clone(),
-    };
-    let message = Message {
-        text: request.text,
-        persona: request.persona,
-        model: request.model,
-        effort: request.effort,
-        budget_usd: request.budget_usd,
-        local_time: request.local_time,
-        mcp: request.mcp,
-        shared_mcp: libraries.urls(),
-        feeling: request.feeling,
-    };
-    let (user_entry, mut reply) = state.conversation.send(transport, message)?;
-    state.review.note_activity();
-    *lock(&state.active) = Some(reply.stopper());
-
-    std::thread::spawn(move || {
-        // The page may be gone while the answer is still coming in; keep going so that the
-        // answer is still saved.
-        for event in reply.by_ref() {
-            events.send(event).ok();
-        }
-        let state = app.state::<ChatState>();
-        *lock(&state.active) = None;
-        drop(reply);
-        state
-            .review
-            .schedule(app.clone(), state.conversation.clone(), target);
-    });
-    Ok(user_entry)
-}
-
-/// Ends the running reply. The text so far is kept.
-#[tauri::command]
-pub fn stop_reply(state: State<'_, ChatState>) {
-    if let Some(stopper) = lock(&state.active).as_ref() {
-        stopper.stop();
-    }
-}
-
-#[tauri::command]
-pub fn forget_conversation(state: State<'_, ChatState>) -> Result<(), BridgeError> {
-    Ok(state.conversation.forget()?)
-}
-
-#[derive(Serialize)]
-pub struct MemoryView {
-    memory: String,
-    user: String,
-    recent: String,
-    limits: MemoryLimits,
-}
-
-#[derive(Serialize)]
-struct MemoryLimits {
-    memory: usize,
-    user: usize,
-    recent: usize,
-}
-
-#[tauri::command]
-pub fn load_memory(state: State<'_, ChatState>) -> Result<MemoryView, BridgeError> {
-    let Notes {
-        memory,
-        user,
-        recent,
-    } = state.conversation.notes()?;
-    Ok(MemoryView {
-        memory,
-        user,
-        recent,
-        limits: MemoryLimits {
-            memory: MEMORY_LIMIT,
-            user: USER_LIMIT,
-            recent: RECENT_LIMIT,
-        },
-    })
-}
-
-/// Saves notes the user edited and returns them as saved (cut to their limits).
-#[tauri::command]
-pub fn save_memory(state: State<'_, ChatState>, notes: Notes) -> Result<Notes, BridgeError> {
-    Ok(state.conversation.save_notes(notes)?)
-}
-
-#[tauri::command]
-pub fn render_markdown(text: &str) -> String {
-    agent::render_markdown(text)
-}
-
-/// A picture of the quanty library as a `data:` address. A relative path is read from the quanty
-/// folder in the saved settings.
-#[tauri::command]
-pub async fn read_library_image(app: AppHandle, path: String) -> Result<String, BridgeError> {
-    let settings = settings::read_from(&settings::settings_path(&app)?)?;
-    Ok(image::read_data_uri(
-        settings.mcp.quanty.cwd.as_deref(),
-        &path,
-    )?)
-}
-
-/// Opens a web or mail link in the user's own browser or mail app.
-#[tauri::command]
-pub fn open_link(app: AppHandle, url: &str) -> Result<(), BridgeError> {
-    let lowered = url.trim().to_ascii_lowercase();
-    if !OPENABLE_SCHEMES
-        .iter()
-        .any(|scheme| lowered.starts_with(scheme))
-    {
-        return Err(BridgeError::BadLink(format!(
-            "only web and mail links can be opened, not {url}"
-        )));
-    }
-    app.opener()
-        .open_url(url.trim(), None::<&str>)
-        .map_err(|error| BridgeError::Io(error.to_string()))
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;

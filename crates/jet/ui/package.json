@@ -2,7 +2,7 @@
   "name": "jet-ui",
   "private": true,
   "type": "module",
-  "description": "Jet's frontend. Plain ES modules, no bundler; Tauri serves this folder as-is.",
+  "description": "Jet's frontend. Plain ES modules, no bundler; the HTTP server serves this folder as-is.",
   "scripts": {
     "test": "node --test"
   }

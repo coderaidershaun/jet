@@ -3,7 +3,6 @@
 use agent::{ConversationError, Failure, MemoryError, TransportError, TurnError};
 use serde::Serialize;
 
-use super::image::ImageError;
 use crate::settings;
 
 /// Why a command failed. The page reads `kind` to decide what to show.
@@ -17,6 +16,14 @@ pub enum BridgeError {
     Io(String),
     #[error("{0}")]
     BadLink(String),
+    #[error("request ID was already accepted with different content")]
+    Conflict,
+    #[error("request was cancelled before it started")]
+    Cancelled,
+    #[error("{0}")]
+    InvalidRequest(String),
+    #[error("server is shutting down")]
+    ShuttingDown,
 }
 
 impl BridgeError {
@@ -26,6 +33,10 @@ impl BridgeError {
             BridgeError::ClaudeMissing(_) => "claudeMissing",
             BridgeError::Io(_) => "io",
             BridgeError::BadLink(_) => "badLink",
+            BridgeError::Conflict => "conflict",
+            BridgeError::Cancelled => "cancelled",
+            BridgeError::InvalidRequest(_) => "invalidRequest",
+            BridgeError::ShuttingDown => "shuttingDown",
         }
     }
 }
@@ -55,12 +66,6 @@ impl From<MemoryError> for BridgeError {
     }
 }
 
-impl From<ImageError> for BridgeError {
-    fn from(error: ImageError) -> BridgeError {
-        BridgeError::Io(error.to_string())
-    }
-}
-
 impl From<settings::SettingsError> for BridgeError {
     fn from(error: settings::SettingsError) -> BridgeError {
         BridgeError::Io(error.to_string())
@@ -74,6 +79,19 @@ impl From<TransportError> for BridgeError {
             Failure::ClaudeMissing { message } => BridgeError::ClaudeMissing(message),
             other => BridgeError::Io(other.message().to_owned()),
         }
+    }
+}
+
+impl axum::response::IntoResponse for BridgeError {
+    fn into_response(self) -> axum::response::Response {
+        use axum::http::StatusCode;
+        let status = match self {
+            Self::Busy | Self::Conflict | Self::Cancelled => StatusCode::CONFLICT,
+            Self::InvalidRequest(_) | Self::BadLink(_) => StatusCode::BAD_REQUEST,
+            Self::ShuttingDown => StatusCode::SERVICE_UNAVAILABLE,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        (status, axum::Json(self)).into_response()
     }
 }
 

@@ -16,6 +16,8 @@ test('defaults mirror Rust and carry the chat fields, and merge fills gaps from 
   assert.deepEqual(merge(defaults, 'garbage'), defaults);
   assert.notEqual(defaultSettings().persona, defaults.persona, 'each call returns fresh objects');
 
+  const originalFake = globalThis.__JET_FAKE__;
+  globalThis.__JET_FAKE__ = true;
   const originalWindow = globalThis.window;
   const originalStorage = globalThis.localStorage;
   let saved = JSON.stringify({
@@ -45,6 +47,7 @@ test('defaults mirror Rust and carry the chat fields, and merge fills gaps from 
       assert.equal(Object.hasOwn(JSON.parse(saved), key), false, `removed ${key} was saved`);
     }
   } finally {
+    globalThis.__JET_FAKE__ = originalFake;
     if (originalWindow === undefined) delete globalThis.window;
     else globalThis.window = originalWindow;
     if (originalStorage === undefined) delete globalThis.localStorage;
@@ -68,6 +71,8 @@ test('the shown name is the persona name, or Jet while it is blank', () => {
 
 
 test('saved model and thinking choices load as a supported pair', async () => {
+  const originalFake = globalThis.__JET_FAKE__;
+  globalThis.__JET_FAKE__ = true;
   const originalWindow = globalThis.window;
   const originalStorage = globalThis.localStorage;
   try {
@@ -83,6 +88,7 @@ test('saved model and thinking choices load as a supported pair', async () => {
       assert.deepEqual([settings.model, settings.effort], expected);
     }
   } finally {
+    globalThis.__JET_FAKE__ = originalFake;
     if (originalWindow === undefined) delete globalThis.window;
     else globalThis.window = originalWindow;
     if (originalStorage === undefined) delete globalThis.localStorage;

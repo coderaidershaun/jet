@@ -13,12 +13,6 @@ const STDERR_KEPT: usize = 4096;
 /// How often a finished process is looked for.
 pub(crate) const EXIT_POLL: Duration = Duration::from_millis(10);
 
-/// Kills a process and collects its exit status, so it does not linger.
-pub(crate) fn kill_and_reap(child: &mut Child) {
-    child.kill().ok();
-    child.wait().ok();
-}
-
 /// Returns the last `STDERR_KEPT` bytes of everything a program writes to its error output.
 pub(crate) fn keep_tail(mut stderr: impl Read) -> String {
     let mut kept: Vec<u8> = Vec::new();

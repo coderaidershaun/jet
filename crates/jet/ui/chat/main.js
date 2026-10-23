@@ -226,6 +226,7 @@ async function start() {
   paintCache();
   setInterval(paintCache, CACHE_CHECK_MS);
   live.start();
+  agent.watch?.((snapshot) => turn.restore(snapshot), (event) => turn.observe(event));
 }
 
 start().catch((error) => {

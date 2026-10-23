@@ -1,60 +1,40 @@
 # Jet
 
-Jet is a desktop chat app built around a front-end agent. You talk to Jet, a small blue kite with round resting eyes, and Jet hands work to other agents and tools: it runs the Claude Code or Codex command-line program as a child process, and it can call tools that other programs expose over MCP.
+Jet is a browser home for independently running apps, with one shared assistant conversation. Its Rust server runs the installed Claude Code or Codex CLI, keeps the transcript and notes, and serves the existing HTML/JavaScript interface.
 
-> **Work in progress.** This is not plug and play. Expect rough edges, missing pieces and changes without notice. It is a decent starting point for a chat interface that fronts other agents, not a finished product.
+This is a work in progress. App registration is available through the shared registry; the workspace, app proxy and global tool facade are being integrated.
 
-## What is in here
-
-- **Chat window.** A Tauri 2 desktop app with a chat page, streamed replies, saved threads, and Markdown and math rendered safely.
-- **Front-end agent.** Jet is a persona on top of the installed Claude Code or Codex CLI. It keeps its own notes between sessions, so a conversation can carry on after a restart.
-- **Calls other agents and tools.** Jet can use the tools of any MCP server you enable in Settings. The app starts and watches each server as a child process.
-- **Character and feelings.** Jet stands beside its last reply, flies on a send, waves hello, reacts when insulted, and becomes a spinner while waiting. Optional JEV classification reads how each message makes Jet feel before the provider starts; without a key it immediately uses neutral.
-- **Browser mode.** The chat page also runs in a plain browser against a pretend agent, so you can work on the interface without installing anything else.
-
-## Layout
-
-| Path | What it is |
-| --- | --- |
-| `crates/agent` | The agent side, with no window. It runs the provider programs, reads their output, keeps the saved thread and notes, and manages the MCP servers. |
-| `crates/jet` | The desktop app: the Tauri window, the animated character, and the chat page in `ui/`. |
-
-[The app README](crates/jet/README.md) covers commands, settings, the pretend agent and page architecture. [The character policy](crates/jet/character-policy.md) defines the geometry, motion and emotion checklist.
-
-## Requirements
-
-- A recent stable Rust toolchain (the workspace uses edition 2024).
-- The Tauri 2 CLI: `cargo install tauri-cli --version "^2" --locked`
-- At least one agent program, installed and signed in:
-  - Claude Code (`claude`), or
-  - the Codex CLI (`codex`, run `codex login` once).
-
-The app starts without these, but it cannot answer until one of them works.
-
-## Run it
+## Run
 
 ```sh
-cd crates/jet
-cargo tauri dev
+cargo run -p jet -- --listen 127.0.0.1:8787 --data-dir ./jet-data
 ```
 
-To try the pages in a browser, with no window and no agent program:
+Open `http://127.0.0.1:8787/`. Install and sign in to Claude Code or Codex on the server, then select it in Settings. The browser never silently selects a pretend agent. A missing provider is shown as an actionable status/error.
 
-```sh
-cargo run -p jet --example serve
-```
+For access from another computer, choose a reachable listen address. `--public-origin https://jet.example` records the externally visible origin for app forwarding. `--ui-dir PATH` selects the shipped static asset directory; the default is this checkout's `crates/jet/ui`. Keep the UI files with the executable when deploying a copied build. `--disable-feelings` disables optional JEV classification for offline development/testing.
 
-Then open `http://127.0.0.1:8787/`.
+Jet targets a trusted single-user deployment. Authentication is deferred. App processes run independently; Jet does not install, launch or stop them.
 
-## Optional feelings
+## Existing data
 
-On each message, the Rust side reads `JEV_API_KEY` from the environment. If it is absent or blank, it searches from the process's current directory upward and reads the nearest `.env` file. That file owns the configuration even if it contains no key; it does not continue to a more distant file. `.env` is ignored by Git. There is no feelings setting in the app.
+Point `--data-dir` at an existing conversation directory, or a copy. It contains `transcript.jsonl`, `session.json`, `MEMORY.md`, `USER.md` and `RECENT.md`. Copy the old desktop `settings.json` from its configuration directory into the selected data directory to retain provider/persona settings. Old transcript entries remain readable.
 
-With a key, the user's message is sent to JEV at `api.typesafe.ai` for classification. This is a separate network service from the chat provider. The backend allows two seconds with no retry; the page falls back to neutral after 2.2 seconds or an error. See [the contract and timing](crates/jet/README.md#feelings-and-reply-timing).
+Old process-command app settings are rejected with re-registration instructions and never launched or silently erased. Follow [the app contract](docs/app-contract.md) to preserve the original file and register each running app by URL. New installs contain no machine-specific app defaults.
 
-## Local checks
+## Browser behavior
 
-Run from the repository root:
+The server owns the active reply. Closing a tab, reconnecting or hiding the interface does not cancel it; Stop does. A browser request ID is saved with the accepted transcript entry before provider dispatch. Retrying a lost acknowledgment returns that same turn. After a server crash, unfinished accepted turns are marked interrupted and never rerun automatically.
+
+An authoritative history/current-turn snapshot and bounded event replay restore browsers after reload. Settings and memory are saved on the server. Filesystem image access has been removed; old file images show an unavailable fallback until replaced with app content URLs.
+
+## Layout and checks
+
+- `crates/agent`: provider processes, conversations, memory, app registry and tool contracts.
+- `crates/jet`: browser server and static UI.
+- [App integration contract](docs/app-contract.md): descriptors, stable registry identity and forwarding rules.
+- [Host and UI notes](crates/jet/README.md).
+- [Character policy](crates/jet/character-policy.md).
 
 ```sh
 cargo build --workspace
@@ -64,14 +44,6 @@ cargo fmt --all -- --check
 (cd crates/jet/ui && node --test)
 ```
 
-These checks use stand-in provider/MCP programs and local HTTP fixtures; they need no account or external service. The live JEV test returns without making a request unless `REX_PROD_API=true`. Deliberately enabling it with a configured key contacts the paid/network service and prints measured latency:
+These checks use local free fixtures. Browser host integration tests require Python 3 for the controlled CLI stand-in. No desktop SDK or webview is needed.
 
-```sh
-REX_PROD_API=true cargo test -p agent --test feeling_live -- --nocapture
-```
-
-Browser sequences, native Tauri appearance, and live JEV quality and latency remain manual checks; passing local tests does not establish those results.
-
-## Status
-
-Early and changing. Setup is manual, the provider integrations follow the command-line programs as they stand today, and parts of the app are tied to the author's own tools. Read the code before you rely on it.
+Optional feelings use `JEV_API_KEY`, with the existing nearest-`.env` lookup. That service is separate from the provider; absence or failure falls back to neutral. Only deliberately run live tests with `REX_PROD_API=true` when intending to contact that service.

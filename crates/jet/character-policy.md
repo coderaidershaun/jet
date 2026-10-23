@@ -136,7 +136,7 @@ The preview writes SVGs, 2× PNGs and lane-size PNGs (96 × 115 device pixels at
 - [ ] Inspect standing/hovering, lifts, J/written route, spinner and morph midpoints at 2× and actual lane size. Check contact, floor, bow attachment, hand creases, line direction and eye legibility.
 - [ ] In browser mode, send “hi”, “you useless thing” and a neutral message: flight, reaction, held text, spinner only if needed, streaming, settle. Try a quick reply, Stop during classification/reaction, early completion, held next message and rapid retry.
 - [ ] Check hero, relaunch wave, narrow screens, scroll-follow and reduced motion; round eyes stay open and grounded, spinner does not rotate, stale fades do not move a new turn.
-- [ ] In the native Tauri app, inspect drawer at 96 and 44 px, lane character, installed icon and system reduced motion. Opening that window remains a manual check.
+- [ ] In the browser, inspect drawer at 96 and 44 px, lane character and system reduced motion.
 - [ ] Only with explicit paid/network opt-in, check live JEV classifications and measured latency. Local fixtures do not prove service quality or latency.
 
-Browser whole-page sequences, native Tauri appearance and live JEV quality/latency are still outstanding manual QA. Offline renders and local tests establish only their own geometry and timing checks; do not report unobserved runtime behavior as verified.
+Full browser animation sequences and live JEV quality/latency are still outstanding manual QA. Offline renders and local tests establish only their own geometry and timing checks; do not report unobserved runtime behavior as verified.

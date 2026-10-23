@@ -15,6 +15,7 @@ use crate::turn::{
 
 /// Everything a reply needs to know about the message it answers.
 pub(super) struct Context {
+    pub identity: Option<crate::TurnIdentity>,
     pub dir: DataDir,
     pub transport: Arc<dyn Transport>,
     pub request: Request,
@@ -261,6 +262,7 @@ impl Reply {
     /// The answer so far, as a thread entry.
     fn jet_entry(&self, status: EntryStatus, error: Option<String>) -> NewEntry {
         NewEntry {
+            turn: self.context.identity.clone(),
             role: Role::Jet,
             text: self
                 .turn

@@ -1,4 +1,5 @@
 import { MODELS, effortsFor } from './models.js';
+import { requestJson } from './browser-agent.js';
 
 /** @typedef {{ name: string, jobTitle: string, notes: string }} Persona */
 /** @typedef {{ enabled: boolean, command: string, cwd: string | null }} McpServer */
@@ -56,23 +57,19 @@ export function merge(base, saved) {
   return out;
 }
 
-function tauri() {
-  return /** @type {any} */ (window).__TAURI__?.core ?? null;
-}
-
 /** @returns {Promise<Settings>} */
 export async function loadSettings() {
   const defaults = defaultSettings();
   try {
-    const bridge = tauri();
-    const saved = bridge
-      ? await bridge.invoke('load_settings')
-      : JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    const saved = globalThis.__JET_FAKE__ === true
+      ? JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')
+      : await requestJson('/api/settings');
     const settings = merge(defaults, saved);
     if (!MODELS.some(([model]) => model === settings.model)) settings.model = defaults.model;
     if (!effortsFor(settings.model).includes(settings.effort)) settings.effort = 'high';
     return settings;
   } catch (error) {
+    if (globalThis.__JET_FAKE__ !== true) throw error;
     console.warn('settings could not be loaded, using defaults:', error);
     return defaults;
   }
@@ -81,9 +78,8 @@ export async function loadSettings() {
 /** @param {Settings} settings */
 export async function saveSettings(settings) {
   try {
-    const bridge = tauri();
-    if (bridge) await bridge.invoke('save_settings', { settings });
-    else localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    if (globalThis.__JET_FAKE__ === true) localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    else await requestJson('/api/settings', settings, 'PUT');
   } catch (error) {
     console.warn('settings could not be saved:', error);
   }
