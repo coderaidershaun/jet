@@ -7,3 +7,5 @@ pub mod settings;
 
 pub use chat::BridgeError;
 pub use server::{Server, ServerConfig, ServerError};
+
+mod facade;

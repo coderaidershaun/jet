@@ -57,7 +57,15 @@ impl ToolCalls {
             if !self.seen.insert(id.clone()) {
                 continue;
             }
-            let (server, tool) = (server.to_owned(), tool.to_owned());
+            let (server, tool, input) = if server == "jet" && tool == "tools_call" {
+                (
+                    input["appId"].as_str().unwrap_or("unknown app").to_owned(),
+                    input["tool"].as_str().unwrap_or("unknown tool").to_owned(),
+                    input["arguments"].clone(),
+                )
+            } else {
+                (server.to_owned(), tool.to_owned(), input)
+            };
             steps.push(Step::ToolStarted {
                 id: id.clone(),
                 server: server.clone(),
@@ -90,7 +98,20 @@ impl ToolCalls {
             let Some(open) = self.open.remove(&id) else {
                 continue;
             };
-            let ok = !is_error;
+            let (result, nested_error) =
+                if result.get("requestId").is_some() && result.get("content").is_some() {
+                    (
+                        result
+                            .get("structuredContent")
+                            .filter(|value| !value.is_null())
+                            .cloned()
+                            .unwrap_or_else(|| crate::chat::content_value(&result["content"])),
+                        result["isError"] == true,
+                    )
+                } else {
+                    (result, false)
+                };
+            let ok = !is_error && !nested_error;
             let call = ToolCall {
                 summary: open.summary(ok, &result),
                 duration_ms: u64::try_from(open.started.elapsed().as_millis()).unwrap_or(u64::MAX),
@@ -163,7 +184,11 @@ mod tests {
 
     #[test]
     fn calls_are_paired_summed_up_and_set_apart_from_text() {
-        let search = ("a", "mcp__quanty__search", json!({"question": "vega"}));
+        let search = (
+            "a",
+            "mcp__jet__tools_call",
+            json!({"appId":"fixture-app","tool":"search","arguments":{"question":"vega"}}),
+        );
         let lines = vec![
             init_line("s1"),
             message_start_line(),
@@ -173,7 +198,10 @@ mod tests {
                 ("t", "ToolSearch", json!({"query": "select:x"})),
             ]),
             tool_result_line("t", ""),
-            tool_result_line("a", r#"{"results":[1,2,3,4,5],"usage":[{}]}"#),
+            tool_result_line(
+                "a",
+                r#"{"requestId":"a","content":[],"structuredContent":{"results":[1,2,3,4,5],"usage":[{}]},"isError":false}"#,
+            ),
             tool_use_line(&[search]),
             message_start_line(),
             delta_line("Let me look."),
@@ -198,7 +226,7 @@ mod tests {
             .collect();
         assert_eq!(
             started,
-            [("a", "quanty", "search"), ("b", "quanty", "read_page")],
+            [("a", "fixture-app", "search"), ("b", "quanty", "read_page")],
             "a call written twice starts once, and ToolSearch is left out"
         );
         let calls: Vec<&ToolCall> = steps
@@ -212,7 +240,7 @@ mod tests {
             panic!("two finished calls, got {calls:?}");
         };
         assert!(found.ok);
-        assert_eq!(found.summary, "quanty · search · 5 results");
+        assert_eq!(found.summary, "fixture-app · search · 5 results");
         assert_eq!(found.input, json!({"question": "vega"}));
         assert_eq!(
             found.result,

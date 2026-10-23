@@ -34,6 +34,9 @@ test('each tool reads as what it is doing while it runs, and sums up what came b
   assert.equal(running('quanty', 'read_page', { document_id: 'd9', page: 2 }, [SEARCHED, listed]).line, 'Reading page 2 of Paper on skew', 'or from the library list above');
 
   const searched = cardOf(SEARCHED, []);
+  const registered = cardOf({ ...SEARCHED, server: 'b5e97310-4825-4b89-ace2-e330a4ed8509' });
+  assert.deepEqual(registered.body, searched.body, 'registered app IDs retain source cards');
+  assert.equal(cardOf(finished('other-app', 'search', {}, { results: ['plain result'] })).body.kind, 'fields', 'unrelated shapes keep the generic card');
   assert.equal(searched.state, 'done');
   assert.equal(searched.head, 'quanty · search · 8 sources · 0.8 s');
   assert.equal(searched.meta, '8 sources · 0.8 s');

@@ -12,7 +12,11 @@ dotenvy = { version = "0.15.7", default-features = false }
 hyper = { version = "1.12.0", default-features = false, features = ["client", "http1"] }
 hyper-rustls = { version = "0.27.10", default-features = false, features = ["http1", "ring", "webpki-tokio", "tls12"] }
 hyper-util = { version = "0.1.21", default-features = false, features = ["client-legacy", "http1", "tokio"] }
+jsonschema = { version = "0.60.0", default-features = false }
 pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
+rmcp = { version = "=3.5.1", default-features = false, features = ["client", "server", "transport-streamable-http-client-reqwest", "transport-streamable-http-server", "reqwest"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 tempfile = { version = "3.27.0", default-features = false, features = ["getrandom"] }

@@ -24,7 +24,9 @@ use crate::{
 };
 
 pub(super) fn router(host: Server) -> Router {
+    let facade = host.facade.router();
     Router::new()
+        .merge(super::tools::router())
         .route("/api/status", get(status))
         .route("/api/snapshot", get(snapshot))
         .route("/api/events", get(events))
@@ -40,6 +42,7 @@ pub(super) fn router(host: Server) -> Router {
         .merge(crate::proxy::router())
         .fallback_service(ServeDir::new(&host.config.ui_dir))
         .with_state(host)
+        .merge(facade)
 }
 
 async fn blocking<T: Send + 'static>(
@@ -97,12 +100,10 @@ async fn save_settings(
     Json(settings): Json<settings::Settings>,
 ) -> Result<Json<Value>, BridgeError> {
     blocking(move || {
-        if settings.mcp.enabled().next().is_some() || [&settings.mcp.quanty, &settings.mcp.polysim].iter().any(|server| !server.command.as_os_str().is_empty()) {
-            return Err(BridgeError::InvalidRequest("process-command MCP settings are no longer supported; register the running app by URL".into()));
-        }
         settings::write_to(&host.config.data_dir.join(settings::FILE_NAME), &settings)?;
         Ok(json!({}))
-    }).await
+    })
+    .await
 }
 async fn load_memory(State(host): State<Server>) -> Result<Json<Value>, BridgeError> {
     blocking(move || {

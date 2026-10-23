@@ -2,37 +2,17 @@
 //! shape it. The prompt holds no clock, so the same inputs always give the same bytes and
 //! Claude's prompt cache keeps hitting.
 
-use std::collections::BTreeSet;
-
-use crate::chat::{Effort, McpServers, Model, Notes, Persona};
+use crate::chat::{Effort, Model, Notes, Persona};
 
 const TEMPLATE: &str = include_str!("persona.md");
 
 /// How much of the user's own notes about Jet goes into the prompt.
 const PERSONA_NOTES_LIMIT: usize = 600;
 
-/// What the prompt says about a quanty import and a polysim engine. The `PER_REPLY` words
-/// are for a library that Claude Code starts for each reply and closes after it; the
-/// `SHARED` words are for one the app keeps running.
-const INGEST_PER_REPLY: &str = "It runs only while your reply runs, so you must keep checking `mcp__quanty__ingest_status` until it is no longer running, and each check is another paid request.";
-const INGEST_SHARED: &str = "The job keeps running after your reply ends; check `mcp__quanty__ingest_status` only when the user asks how it is going.";
-const ENGINE_PER_REPLY: &str =
-    "An engine you start stops when your reply ends, so say so before you start one.";
-const ENGINE_SHARED: &str = "An engine you or the user start keeps running after your reply ends, until it is stopped or Jet closes.";
-
-/// The whole system prompt: who Jet is, how to talk, and the three notes. `shared` names the
-/// libraries the app keeps running, which the prompt says outlive a reply. Names only, never
-/// addresses: an address changes at every launch and would end every conversation.
-pub(super) fn compose(persona: &Persona, notes: &Notes, shared: &BTreeSet<&str>) -> String {
-    let (ingest, engine) = lifetimes(shared);
+pub(super) fn compose(persona: &Persona, notes: &Notes) -> String {
     let mut prompt = fill(
         TEMPLATE,
-        &[
-            ("name", &persona.name),
-            ("job_title", &persona.job_title),
-            ("ingest_lifetime", ingest),
-            ("engine_lifetime", engine),
-        ],
+        &[("name", &persona.name), ("job_title", &persona.job_title)],
     );
     let own_notes = persona_notes(persona);
     if !own_notes.is_empty() {
@@ -57,43 +37,19 @@ pub(super) fn message_words(message: &super::Message) -> String {
     if let Some(mood) = message.feeling.as_deref().and_then(crate::Mood::from_word) {
         words.push_str(&format!("[Jet: reading this, you feel {}]\n", mood.word()));
     }
+    if let Some(id) = &message.active_app_id {
+        words.push_str(&format!(
+            "[Active app ID: {id}; all enabled apps remain available]\n"
+        ));
+    }
     words.push_str(&message.text);
     words
 }
 
-/// What the prompt says about how long a quanty import and a polysim engine last. They
-/// outlive the reply when the app keeps that library running.
-fn lifetimes(shared: &BTreeSet<&str>) -> (&'static str, &'static str) {
-    let ingest = if shared.contains("quanty") {
-        INGEST_SHARED
-    } else {
-        INGEST_PER_REPLY
-    };
-    let engine = if shared.contains("polysim") {
-        ENGINE_SHARED
-    } else {
-        ENGINE_PER_REPLY
-    };
-    (ingest, engine)
-}
-
-/// A fingerprint of everything baked into a session's prompt: every fixed word of the prompt,
-/// the model, the thinking level, which servers are enabled and which of them the app keeps
-/// running. A change to any of them starts a fresh conversation. The notes are left out on
-/// purpose: the review updates them all the time, and that must never end a session.
-pub(super) fn prompt_hash(
-    persona: &Persona,
-    model: Model,
-    effort: Effort,
-    mcp: &McpServers,
-    shared: &BTreeSet<&str>,
-) -> String {
+pub(super) fn prompt_hash(persona: &Persona, model: Model, effort: Effort) -> String {
     let mut hash = Fnv1a::new();
-    let prompt = compose(persona, &Notes::default(), shared);
-    let servers = mcp.enabled().map(|(name, _)| name);
-    let parts = [prompt.as_str(), model.alias(), effort.alias()]
-        .into_iter()
-        .chain(servers);
+    let prompt = compose(persona, &Notes::default());
+    let parts = [prompt.as_str(), model.alias(), effort.alias()];
     for part in parts {
         hash.write(part.as_bytes());
         hash.write(&[0xff]);
@@ -166,13 +122,12 @@ impl Fnv1a {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
 
     use super::*;
-    use crate::chat::{McpServer, Mood};
+    use crate::chat::Mood;
 
     fn default_prompt() -> String {
-        compose(&Persona::default(), &Notes::default(), &BTreeSet::new())
+        compose(&Persona::default(), &Notes::default())
     }
 
     #[test]
@@ -221,7 +176,7 @@ mod tests {
             memory: "- likes {name}".into(),
             ..Notes::default()
         };
-        let prompt = compose(&persona, &notes, &BTreeSet::new());
+        let prompt = compose(&persona, &notes);
         assert!(
             prompt.starts_with("You are {job_title}, the user's {name}. "),
             "{prompt}"
@@ -232,72 +187,37 @@ mod tests {
     }
 
     #[test]
-    fn the_prompt_teaches_the_libraries() {
-        let prompt = default_prompt();
-        for rule in [
-            "mcp__quanty__search",
-            "mcp__quanty__read_page",
-            "[n]",
-            r"\(",
-            r"\[",
-            "never with $",
-            "ingest_pdf",
-            "mcp__polysim__",
-            "listed mode is live",
-            "stops when your reply ends",
-            "keep checking `mcp__quanty__ingest_status`",
-        ] {
-            assert!(prompt.contains(rule), "the prompt lost: {rule}");
+    fn facade_context_does_not_reset_the_session() {
+        use super::super::test_support::{Chat, message};
+        let chat = Chat::new("facade-context", ["one", "one"]);
+        let mut first = message("hello");
+        first.mcp = Some(crate::McpConnection {
+            url: "http://localhost/mcp".into(),
+            token: "first".into(),
+        });
+        chat.send(first.clone());
+        first.mcp.as_mut().unwrap().token = "second".into();
+        first.active_app_id = Some("b5e97310-4825-4b89-ace2-e330a4ed8509".parse().unwrap());
+        chat.send(first);
+        assert!(matches!(
+            chat.requests()[1].session,
+            crate::SessionMode::Resume(_)
+        ));
+        assert!(chat.requests()[1].prompt.contains("b5e97310"));
+        assert!(!chat.requests()[1].system_prompt.contains("b5e97310"));
+        assert_ne!(
+            prompt_hash(&Persona::default(), Model::Sonnet, Effort::Medium),
+            prompt_hash(&Persona::default(), Model::Opus, Effort::Medium)
+        );
+        for tool in crate::FACADE_TOOLS {
+            assert!(default_prompt().contains(tool));
         }
-        assert!(!prompt.contains("You have no tools"));
-        assert!(!prompt.contains("keeps running after your reply ends"));
-
-        // A library the app keeps running outlives the reply, and the prompt says so.
-        let compose_with = |shared: &[&str]| {
-            let shared: BTreeSet<&str> = shared.iter().copied().collect();
-            compose(&Persona::default(), &Notes::default(), &shared)
-        };
-        let both = compose_with(&["polysim", "quanty"]);
-        assert!(both.contains("The job keeps running after your reply ends"));
-        assert!(both.contains("keeps running after your reply ends, until it is stopped"));
-        assert!(!both.contains("stops when your reply ends"));
-        assert!(!both.contains("keep checking `mcp__quanty__ingest_status`"));
-        let polysim_only = compose_with(&["polysim"]);
-        assert!(polysim_only.contains("keep checking `mcp__quanty__ingest_status`"));
-        assert!(!polysim_only.contains("stops when your reply ends"));
-    }
-
-    #[test]
-    fn the_fingerprint_of_the_defaults_is_pinned() {
-        let hash = |mcp: &McpServers, shared: &[&str]| {
-            prompt_hash(
-                &Persona::default(),
-                Model::Sonnet,
-                Effort::Medium,
-                mcp,
-                &shared.iter().copied().collect(),
-            )
-        };
-        let none = McpServers::default();
-        assert_eq!(hash(&none, &[]), "5c858cc470a0fb0f");
-        let quanty = McpServers {
-            quanty: McpServer {
-                enabled: true,
-                ..McpServer::default()
-            },
-            ..McpServers::default()
-        };
-        assert_ne!(hash(&quanty, &[]), hash(&none, &[]));
-        // Sharing a library changes what the prompt says about it, so it starts a new
-        // conversation; the address it is shared at never reaches the prompt.
-        assert_ne!(hash(&quanty, &["quanty"]), hash(&quanty, &[]));
     }
 
     #[test]
     fn prompt_has_no_timestamp() {
-        let none = BTreeSet::new();
-        let first = compose(&Persona::default(), &Notes::default(), &none);
-        let second = compose(&Persona::default(), &Notes::default(), &none);
+        let first = compose(&Persona::default(), &Notes::default());
+        let second = compose(&Persona::default(), &Notes::default());
         assert_eq!(first, second);
         assert!(!first.contains("[local time"));
     }

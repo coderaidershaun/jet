@@ -2,7 +2,6 @@ import { MODELS, effortsFor } from './models.js';
 import { requestJson } from './browser-agent.js';
 
 /** @typedef {{ name: string, jobTitle: string, notes: string }} Persona */
-/** @typedef {{ enabled: boolean, command: string, cwd: string | null }} McpServer */
 /**
  * @typedef {object} Settings
  * @property {boolean} reducedMotion
@@ -13,7 +12,6 @@ import { requestJson } from './browser-agent.js';
  * @property {boolean} drawerOpen
  * @property {string | null} codexPath   null = find Codex automatically
  * @property {string | null} claudePath   null = find Claude Code on its own
- * @property {{ quanty: McpServer, polysim: McpServer }} mcp   the libraries Jet's agent may use
  */
 
 const STORAGE_KEY = 'jet.settings';
@@ -29,18 +27,6 @@ export function defaultSettings() {
     drawerOpen: true,
     claudePath: null,
     codexPath: null,
-    mcp: {
-      quanty: {
-        enabled: false,
-        command: '',
-        cwd: null,
-      },
-      polysim: {
-        enabled: false,
-        command: '',
-        cwd: null,
-      },
-    },
   };
 }
 

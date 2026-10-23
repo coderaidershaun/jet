@@ -1,11 +1,6 @@
 //! The exact command line, environment and MCP server config for a request. The flags and
 //! their order stay fixed so that Claude's prompt cache keeps hitting.
 
-use std::collections::BTreeMap;
-
-use serde_json::{Map, Value, json};
-
-use crate::chat::{McpServer, McpServers};
 use crate::turn::transport::{Request, SessionMode};
 
 /// Keeps Claude's prompt cache alive for an hour instead of five minutes.
@@ -18,60 +13,8 @@ pub(super) const ISOLATION_ENV: [(&str, &str); 2] = [
     ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
 ];
 
-/// The tools Claude may run without asking. The names are exact, so the engine mode switch,
-/// and any tool a server adds later, stay off.
-const ALLOWED_TOOLS: &str = "mcp__quanty__search,mcp__quanty__answer,mcp__quanty__list_documents,\
-    mcp__quanty__read_page,mcp__quanty__health,mcp__quanty__ingest_pdf,\
-    mcp__quanty__ingest_status,mcp__polysim__list_strategies,mcp__polysim__start_strategy,\
-    mcp__polysim__stop_strategy,mcp__polysim__set_execution_mode";
-
-/// How long Claude Code waits for a server to answer before it gives up, in milliseconds.
-const SERVER_TIMEOUT_MS: u64 = 300_000;
-
-/// Runs a server in its own folder. Claude Code ignores a folder in the config, so the
-/// folder and the program travel as arguments, and no path ever needs quoting here.
-const LAUNCH_IN_FOLDER: &str = r#"cd "$1" && exec "$2""#;
-
-/// The MCP servers as Claude Code's config JSON, or `None` when none is enabled. A server in
-/// `shared` is reached at its address; any other is started by Claude Code for the reply.
-/// The text depends on the settings and on those addresses, which stay the same for the
-/// whole session, so it is the same bytes on every turn.
-pub(crate) fn mcp_config(
-    servers: &McpServers,
-    shared: &BTreeMap<String, String>,
-) -> Option<String> {
-    let launches: Map<String, Value> = servers
-        .enabled()
-        .map(|(name, server)| {
-            let entry = match shared.get(name) {
-                Some(url) => reach(url),
-                None => launch(name, server),
-            };
-            (name.to_owned(), entry)
-        })
-        .collect();
-    if launches.is_empty() {
-        return None;
-    }
-    Some(json!({ "mcpServers": launches }).to_string())
-}
-
-/// A server that is already running, reached by its address.
-fn reach(url: &str) -> Value {
-    json!({"timeout": SERVER_TIMEOUT_MS, "type": "http", "url": url})
-}
-
-fn launch(name: &str, server: &McpServer) -> Value {
-    let command = server.command.to_string_lossy();
-    match &server.cwd {
-        Some(cwd) => json!({
-            "args": ["-c", LAUNCH_IN_FOLDER, name, cwd.to_string_lossy(), command],
-            "command": "/bin/sh",
-            "timeout": SERVER_TIMEOUT_MS,
-        }),
-        None => json!({"command": command, "timeout": SERVER_TIMEOUT_MS}),
-    }
-}
+/// Exact names prevent unrelated tools from becoming available to the provider.
+const ALLOWED_TOOLS: &str = "mcp__jet__apps_list,mcp__jet__apps_update,mcp__jet__apps_open,mcp__jet__tools_search,mcp__jet__tools_describe,mcp__jet__tools_call";
 
 /// The command line for a request. One function builds both the chat and the review
 /// call, so the order of the flags cannot drift between them.
@@ -95,11 +38,7 @@ pub(super) fn args(request: &Request) -> Vec<String> {
         args.extend(["--json-schema".into(), schema.to_string()]);
     }
     // Safe mode would drop the MCP servers, so the parts of it that matter are set one by one.
-    let tools = if request.mcp_config.is_some() {
-        "ToolSearch"
-    } else {
-        ""
-    };
+    let tools = "";
     args.extend(
         [
             "--tools",
@@ -137,29 +76,11 @@ pub(super) fn args(request: &Request) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use serde_json::json;
-
     use super::*;
-    use crate::chat::{Effort, McpServer, Model, SessionId};
-
-    const BOTH_SERVERS: &str = r#"{"mcpServers":{"polysim":{"args":["-c","cd \"$1\" && exec \"$2\"","polysim","/p","/p/polysim-mcp"],"command":"/bin/sh","timeout":300000},"quanty":{"args":["-c","cd \"$1\" && exec \"$2\"","quanty","/q","/q/quanty-mcp"],"command":"/bin/sh","timeout":300000}}}"#;
-
-    const QUANTY_SHARED: &str = r#"{"mcpServers":{"polysim":{"args":["-c","cd \"$1\" && exec \"$2\"","polysim","/p","/p/polysim-mcp"],"command":"/bin/sh","timeout":300000},"quanty":{"timeout":300000,"type":"http","url":"http://127.0.0.1:4321/mcp"}}}"#;
-
-    const ALLOWED: &str = "mcp__quanty__search,mcp__quanty__answer,mcp__quanty__list_documents,\
-        mcp__quanty__read_page,mcp__quanty__health,mcp__quanty__ingest_pdf,\
-        mcp__quanty__ingest_status,mcp__polysim__list_strategies,mcp__polysim__start_strategy,\
-        mcp__polysim__stop_strategy,mcp__polysim__set_execution_mode";
-
-    fn server(command: &str, cwd: Option<&str>) -> McpServer {
-        McpServer {
-            enabled: true,
-            command: command.into(),
-            cwd: cwd.map(Into::into),
-        }
-    }
+    use crate::chat::{Effort, Model, SessionId};
+    use serde_json::json;
+    const BOTH_SERVERS: &str = r#"{"mcpServers":{"jet":{"type":"http","url":"http://localhost/mcp","headers":{"x-jet-turn":"token"}}}}"#;
+    const ALLOWED: &str = ALLOWED_TOOLS;
 
     fn chat_request(session: SessionMode) -> Request {
         Request {
@@ -182,38 +103,11 @@ mod tests {
 
     #[test]
     fn chat_and_review_args_are_exact_without_safe_mode_which_drops_mcp_servers() {
-        let both = McpServers {
-            quanty: server("/q/quanty-mcp", Some("/q")),
-            polysim: server("/p/polysim-mcp", Some("/p")),
-        };
-        let nothing_shared = BTreeMap::new();
-        assert_eq!(
-            mcp_config(&both, &nothing_shared).as_deref(),
-            Some(BOTH_SERVERS)
-        );
-        assert_eq!(mcp_config(&McpServers::default(), &nothing_shared), None);
-        let quanty_shared =
-            BTreeMap::from([("quanty".to_owned(), "http://127.0.0.1:4321/mcp".to_owned())]);
-        assert_eq!(
-            mcp_config(&both, &quanty_shared).as_deref(),
-            Some(QUANTY_SHARED)
-        );
-        // The address of a library that is switched off emits nothing.
-        assert_eq!(mcp_config(&McpServers::default(), &quanty_shared), None);
-        let no_folder = McpServers {
-            quanty: server("/q/quanty-mcp", None),
-            ..McpServers::default()
-        };
-        assert_eq!(
-            mcp_config(&no_folder, &nothing_shared).as_deref(),
-            Some(r#"{"mcpServers":{"quanty":{"command":"/q/quanty-mcp","timeout":300000}}}"#)
-        );
-
         let new_chat = [
             words(
                 "-p --output-format stream-json --verbose --include-partial-messages \
                  --model sonnet --effort medium --system-prompt You-are-Jet. \
-                 --tools ToolSearch --setting-sources '' --disable-slash-commands \
+                 --tools '' --setting-sources '' --disable-slash-commands \
                  --strict-mcp-config --mcp-config",
             ),
             vec![BOTH_SERVERS.to_owned()],

@@ -14,16 +14,18 @@ use tower::Service;
 #[derive(Clone)]
 pub(super) struct Connector(HttpsConnector<HttpConnector>);
 impl Connector {
-    pub(super) fn new() -> Self {
+    pub(super) fn new() -> Result<Self, rustls::Error> {
         let mut http = HttpConnector::new();
         http.enforce_http(false);
-        Self(
+        Ok(Self(
             HttpsConnectorBuilder::new()
-                .with_webpki_roots()
+                .with_provider_and_webpki_roots(std::sync::Arc::new(
+                    rustls::crypto::ring::default_provider(),
+                ))?
                 .https_or_http()
                 .enable_http1()
                 .wrap_connector(http),
-        )
+        ))
     }
 }
 impl Service<Uri> for Connector {

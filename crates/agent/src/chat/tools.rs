@@ -1,43 +1,25 @@
-//! The MCP servers a reply may use and the tool calls it makes: the registry the settings
-//! hold, each server's status when a reply starts, and each call as the page and the
-//! transcript keep it.
-
-use std::path::PathBuf;
+//! Keep provider connection details separate from the tool calls saved in the transcript.
 
 use serde::{Deserialize, Serialize};
 
-/// The MCP servers Jet's Claude may use. Claude Code knows each by its field name, which
-/// starts the name of every tool it serves: `mcp__quanty__search`.
-// SMELL: a library whose program does not take `--http` is still started by Claude Code for
-// each reply and closed when the reply ends, so an engine it started, or a quanty ingest,
-// stops with the reply.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct McpServers {
-    pub quanty: McpServer,
-    pub polysim: McpServer,
+#[derive(Debug, Clone)]
+pub struct McpConnection {
+    pub url: String,
+    pub token: String,
 }
 
-/// One server: whether Claude may use it, and how to start it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct McpServer {
-    pub enabled: bool,
-    /// The server program.
-    pub command: PathBuf,
-    /// The folder the server runs in; `None` runs it in Claude's folder.
-    pub cwd: Option<PathBuf>,
-}
+pub const FACADE_TOOLS: [&str; 6] = [
+    "apps_list",
+    "apps_update",
+    "apps_open",
+    "tools_search",
+    "tools_describe",
+    "tools_call",
+];
 
-impl McpServers {
-    /// Every server with its name, in name order (polysim, then quanty), enabled or not.
-    pub(crate) fn named(&self) -> impl Iterator<Item = (&'static str, &McpServer)> {
-        [("polysim", &self.polysim), ("quanty", &self.quanty)].into_iter()
-    }
-
-    /// The enabled servers with their names, in name order.
-    pub fn enabled(&self) -> impl Iterator<Item = (&'static str, &McpServer)> {
-        self.named().filter(|(_, server)| server.enabled)
+impl McpConnection {
+    pub fn config(&self) -> String {
+        serde_json::json!({"mcpServers":{"jet":{"type":"http","url":self.url,"headers":{"x-jet-turn":self.token}}}}).to_string()
     }
 }
 

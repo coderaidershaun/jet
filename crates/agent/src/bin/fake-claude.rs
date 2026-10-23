@@ -2,6 +2,8 @@
 //! first line of standard input that starts with a known keyword, so the local time line
 //! that precedes a first message is ignored.
 
+mod support;
+
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::io::{self, Read, Write};
@@ -38,6 +40,9 @@ fn run() -> io::Result<ExitCode> {
 
     let mut input = String::new();
     io::stdin().read_to_string(&mut input)?;
+    if support::run(&args, &input, false) {
+        return Ok(ExitCode::SUCCESS);
+    }
     let Some(instruction) = input.lines().find(|line| is_instruction(line)) else {
         eprintln!("fake-claude: no instruction on standard input");
         return Ok(ExitCode::from(2));

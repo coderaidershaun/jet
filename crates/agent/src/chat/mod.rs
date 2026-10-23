@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub use event::{Event, Failure};
 pub use model::{Effort, Model};
 pub(crate) use tools::content_value;
-pub use tools::{McpServer, McpServers, McpStatus, ToolCall};
+pub use tools::{FACADE_TOOLS, McpConnection, McpStatus, ToolCall};
 pub use usage::Usage;
 
 // SMELL: the review prompt and the chat page repeat these three numbers; change them together.

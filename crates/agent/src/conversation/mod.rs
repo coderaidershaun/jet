@@ -7,7 +7,6 @@ mod reply;
 mod review;
 mod session_policy;
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -17,10 +16,10 @@ pub use reply::Reply;
 pub use review::{ReviewError, ReviewOutcome};
 use session_policy::decide;
 
-use crate::chat::{Effort, Entry, McpServers, Model, Notes, Persona, Role, ShownEntry};
+use crate::chat::{Effort, Entry, McpConnection, Model, Notes, Persona, Role, ShownEntry};
 use crate::markdown::render_markdown;
 use crate::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
-use crate::turn::{Request, SessionMode, Transport, Turn, mcp_config};
+use crate::turn::{Request, SessionMode, Transport, Turn};
 
 /// How long Claude's prompt cache stays warm, in minutes.
 const CACHE_TTL_MINUTES: u64 = 60;
@@ -36,11 +35,8 @@ pub struct Message {
     pub budget_usd: f64,
     /// The user's clock, for example `Tue 14 Oct 2026, 09:16`.
     pub local_time: String,
-    /// The MCP servers Claude may use for this answer.
-    pub mcp: McpServers,
-    /// The address of each library the app keeps running for the session, by name. Claude
-    /// reaches those there; any other enabled library it starts itself for the reply.
-    pub shared_mcp: BTreeMap<String, String>,
+    pub mcp: Option<McpConnection>,
+    pub active_app_id: Option<crate::apps::AppId>,
     /// A supported mood word supplied by the message classifier.
     pub feeling: Option<String>,
 }
@@ -126,14 +122,7 @@ impl Conversation {
         let claim = Claim::take(&self.answering).ok_or(ConversationError::Busy)?;
         let now = now_ms();
         let notes = Notes::load(&self.dir)?;
-        let shared = shared_names(&message);
-        let prompt_hash = persona::prompt_hash(
-            &message.persona,
-            message.model,
-            message.effort,
-            &message.mcp,
-            &shared,
-        );
+        let prompt_hash = persona::prompt_hash(&message.persona, message.model, message.effort);
         let saved = Session::load(&self.dir)?;
         let decision = decide(saved.as_ref(), &prompt_hash, now);
 
@@ -147,13 +136,13 @@ impl Conversation {
         };
         let request = Request {
             prompt,
-            system_prompt: persona::compose(&message.persona, &notes, &shared),
+            system_prompt: persona::compose(&message.persona, &notes),
             model: message.model,
             effort: message.effort,
             budget_usd: message.budget_usd,
             session: decision.mode,
             schema: None,
-            mcp_config: mcp_config(&message.mcp, &message.shared_mcp),
+            mcp_config: message.mcp.as_ref().map(McpConnection::config),
         };
         let started = Turn::start(&*transport, &request);
         let context = reply::Context {
@@ -212,17 +201,6 @@ impl Conversation {
     }
 }
 
-/// The libraries that are both enabled and kept running by the app: the ones whose lifetime
-/// the prompt describes. Names only, because an address must never reach the prompt.
-fn shared_names(message: &Message) -> BTreeSet<&'static str> {
-    message
-        .mcp
-        .enabled()
-        .map(|(name, _)| name)
-        .filter(|name| message.shared_mcp.contains_key(*name))
-        .collect()
-}
-
 fn what_claude_reads(message: &Message) -> String {
     persona::message_words(message)
 }
@@ -250,8 +228,8 @@ mod test_support {
             effort: Effort::Medium,
             budget_usd: 1.0,
             local_time: "Tue 14 Oct 2026, 11:20".to_owned(),
-            mcp: McpServers::default(),
-            shared_mcp: BTreeMap::new(),
+            mcp: None,
+            active_app_id: None,
             feeling: None,
         }
     }

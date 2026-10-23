@@ -10,17 +10,5 @@
   "turnBudgetUsd": 10.0,
   "drawerOpen": true,
   "claudePath": null,
-  "codexPath": null,
-  "mcp": {
-    "quanty": {
-      "enabled": false,
-      "command": "",
-      "cwd": null
-    },
-    "polysim": {
-      "enabled": false,
-      "command": "",
-      "cwd": null
-    }
-  }
+  "codexPath": null
 }

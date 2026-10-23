@@ -11,7 +11,7 @@ mod memory;
 mod turn;
 
 pub use chat::{
-    Effort, Entry, EntryId, EntryStatus, Event, Failure, MEMORY_LIMIT, McpServer, McpServers,
+    Effort, Entry, EntryId, EntryStatus, Event, FACADE_TOOLS, Failure, MEMORY_LIMIT, McpConnection,
     McpStatus, Model, Mood, Notes, Persona, RECENT_LIMIT, Role, SessionId, ShownEntry, ToolCall,
     TurnIdentity, USER_LIMIT, Usage,
 };
@@ -19,7 +19,6 @@ pub use conversation::{
     CacheStatus, Conversation, ConversationError, Message, Reply, ReviewError, ReviewOutcome,
 };
 pub use markdown::render_markdown;
-pub use mcp::SharedServers;
 pub use memory::{DataDir, MemoryError, now_ms};
 pub use turn::{
     ClaudeCli, CodexCli, Lines, Request, SessionMode, Step, Stopper, Summary, Transport,

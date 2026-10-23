@@ -2,14 +2,13 @@
 //! with the `fake-claude` program standing in for Claude Code itself. One test also runs
 //! a whole reply through `Conversation`, to the events and the saved thread.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use agent::{
-    ClaudeCli, Conversation, DataDir, Effort, Event, McpServer, McpServers, McpStatus, Message,
-    Model, Mood, Persona, Request, SessionId, SessionMode, Step, Turn,
+    ClaudeCli, Conversation, DataDir, Effort, Event, McpConnection, McpStatus, Message, Model,
+    Mood, Persona, Request, SessionId, SessionMode, Step, Turn,
 };
 use serde_json::json;
 
@@ -146,11 +145,6 @@ fn fake_claude_streams_a_turn() {
 fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
     let (claude, cwd) = fake_claude("quanty");
     let conversation = Conversation::new(DataDir::new(cwd.join("data")));
-    let enabled = |command: &str| McpServer {
-        enabled: true,
-        command: command.into(),
-        cwd: None,
-    };
     let message = Message {
         text: "fixture:quanty-search-reply".to_owned(),
         persona: Persona::default(),
@@ -158,11 +152,11 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
         effort: Effort::Medium,
         budget_usd: 1.0,
         local_time: "Tue 14 Oct 2026, 11:20".to_owned(),
-        mcp: McpServers {
-            quanty: enabled("/q/quanty-mcp"),
-            polysim: enabled("/p/polysim-mcp"),
-        },
-        shared_mcp: BTreeMap::new(),
+        mcp: Some(McpConnection {
+            url: "http://localhost/mcp".into(),
+            token: "fixture".into(),
+        }),
+        active_app_id: None,
         feeling: None,
     };
     let (_, reply) = conversation.send(Arc::new(claude), message).unwrap();
@@ -256,8 +250,8 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
 
     let args = recorded_args(&cwd);
     let at = |flag: &str| args.iter().position(|arg| arg == flag).unwrap();
-    assert_eq!(args[at("--tools") + 1], "ToolSearch");
-    assert!(args[at("--mcp-config") + 1].contains("/q/quanty-mcp"));
+    assert_eq!(args[at("--tools") + 1], "");
+    assert!(args[at("--mcp-config") + 1].contains("http://localhost/mcp"));
     assert!(args.contains(&"--allowedTools".to_owned()));
     assert!(!args.contains(&"--safe-mode".to_owned()));
 }

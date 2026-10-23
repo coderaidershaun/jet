@@ -42,7 +42,10 @@ impl Proxy {
             }
         };
         let public = Url::parse(&origin).map_err(|error| ServerError::Config(error.to_string()))?;
-        let client = Client::builder(TokioExecutor::new()).build(Connector::new());
+        let connector = Connector::new().map_err(|error| {
+            ServerError::Config(format!("app TLS configuration failed: {error}"))
+        })?;
+        let client = Client::builder(TokioExecutor::new()).build(connector);
         Ok(Self { client, public })
     }
 }

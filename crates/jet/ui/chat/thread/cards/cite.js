@@ -2,7 +2,7 @@
 // and a number is matched to the nearest card above it that holds that source.
 // Pure, with no DOM.
 
-import { callState, sourceTitle } from './model.js';
+import { citationSources, sourceTitle } from './model.js';
 
 const CITATION = /\[(\d{1,3})\]/g;
 
@@ -26,13 +26,6 @@ export function splitCitations(text) {
   return parts;
 }
 
-/** The sources a finished search or answer holds. A page's pieces are numbered too, but they are not sources. */
-function sourcesOf(call) {
-  if (call.server !== 'quanty' || callState(call) !== 'done' || typeof call.result !== 'object' || call.result === null) return [];
-  const held = call.tool === 'search' ? call.result.results : call.tool === 'answer' ? call.result.sources : [];
-  return Array.isArray(held) ? held : [];
-}
-
 /**
  * The nearest card above that holds source n: the last call in `calls` with it.
  * @param {import('./model.js').ShownCall[]} calls   oldest first
@@ -40,7 +33,7 @@ function sourcesOf(call) {
  */
 export function findSource(calls, n) {
   for (const call of calls.toReversed()) {
-    const item = sourcesOf(call).find((source) => source && source.number === n);
+    const item = citationSources(call).find((source) => source && source.number === n);
     if (item) return { callId: call.id, item, title: sourceTitle(item) };
   }
   return null;
