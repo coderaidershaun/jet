@@ -20,7 +20,12 @@ test('visited_frames_survive_selection_and_metadata_changes',async()=>{
     const second={...first,id:'second',label:'Second'};
     frames.open(first);const panel=root.children.find(child=>child.dataset?.appId==='first');
     const original=panel.children.find(child=>child.tag==='iframe');
+    const retry=panel.children.find(child=>child.tag==='div').children.find(child=>child.tag==='button');
     assert.equal(original.attributes.src,'/apps/first/page?q=1');
+    assert.equal(retry.hidden,true);
+    await new Promise(setImmediate);
+    assert.equal(panel.dataset.state,'reachable');
+    assert.equal(retry.hidden,true);
     frames.open(second);assert.equal(panel.hidden,true);
     frames.open({...first,label:'Renamed',enabled:false});assert.equal(panel.hidden,false);
     assert.equal(panel.children.find(child=>child.tag==='iframe'),original);assert.equal(original.attributes.title,'Renamed');
@@ -34,8 +39,10 @@ test('visited_frames_survive_selection_and_metadata_changes',async()=>{
     frames.remove('first');assert.ok(!root.children.includes(panel));assert.ok(root.children.includes(other));
     frames.open({...first,id:'external',embedding:'external'});
     const external=root.children.find(child=>child.dataset?.appId==='external');assert.ok(!external.children.some(child=>child.tag==='iframe'));assert.equal(external.dataset.state,'incompatible');
+    assert.equal(external.children.find(child=>child.tag==='div').children.find(child=>child.tag==='button').hidden,false);
     frames.open({...first,id:'direct',embedding:'direct'});const direct=root.children.find(child=>child.dataset?.appId==='direct');
     assert.equal(direct.dataset.state,'incompatible');assert.ok(!direct.children.some(child=>child.tag==='iframe'));
     status={status:'offline',message:'Stopped'};frames.open(second);await new Promise(setImmediate);assert.equal(other.dataset.state,'offline');
+    assert.equal(other.children.find(child=>child.tag==='div').children.find(child=>child.tag==='button').hidden,false);
   } finally {Object.assign(globalThis,previous);}
 });

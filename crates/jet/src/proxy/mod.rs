@@ -199,7 +199,7 @@ async fn ui_status(
     };
     let result = match tokio::time::timeout(Duration::from_secs(2), attempt).await {
         Ok(Ok(status)) => {
-            json!({"status":"reachable","httpStatus":status,"message":"App endpoint responds. Browser rendering and framing permission are not verified."})
+            json!({"status":"reachable","httpStatus":status,"message":"App server reachable. If the frame is blank, open the app externally."})
         }
         Ok(Err(error)) => json!({"status":"offline","message":error.to_string()}),
         Err(_) => {

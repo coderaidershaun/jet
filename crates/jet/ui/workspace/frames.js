@@ -7,6 +7,7 @@ export function createFrameContainer(container) {
   function showStatus(entry, state, message) {
     entry.panel.dataset.state = state;
     entry.message.textContent = message;
+    entry.retry.hidden = state === 'reachable' || state === 'loading';
   }
 
   async function check(entry) {
@@ -61,7 +62,7 @@ export function createFrameContainer(container) {
       const retry = h('button', { type: 'button', text: 'Retry', onClick: () => reload(app.id) });
       const panel = h('section', { class: 'app-frame', 'aria-label': app.label }, h('div', { class: 'app-frame-status' }, message, retry, external));
       panel.dataset.appId = app.id;
-      entry = { app, panel, message, external, frame: null, check: null };
+      entry = { app, panel, message, retry, external, frame: null, check: null };
       entries.set(app.id, entry);
       container.append(panel);
       mount(entry);
