@@ -23,7 +23,7 @@ async function setup(t, options = {}) {
     composerView: { refresh: noop, setLayout: noop, setHeld: noop },
     live, drawer: { setUsage: noop, addLine: noop },
     tracker: { sent: noop, snapshot: noop, finished: noop, failed: noop, stopped: noop },
-    afterReply: noop,
+    afterReply: noop, activeAppId: options.activeAppId,
   });
   const advance = async (ms) => { now += ms; t.mock.timers.tick(ms); await Promise.resolve(); await Promise.resolve(); };
   const entry = { id: 2, role: 'jet', text: 'Hello', html: '<p>Hello final</p>', status: 'complete', at: 0 };
@@ -73,13 +73,17 @@ test('failure clears the reveal hold immediately', async (t) => {
 });
 
 test('cancelling a held success does not stop the next held message', async (t) => {
-  const { turn, thread, advance, entry, event, requests, stops } = await setup(t);
+  let selected = 'app-a';
+  const { turn, thread, advance, entry, event, requests, stops } = await setup(t, { activeAppId: () => selected });
   event({ kind: 'mood', mood: 'hello' });
   event({ kind: 'finished', entry });
+  selected = 'app-b';
   turn.hold('next message');
+  selected = 'app-c';
   turn.stop();
   await advance(0);
   assert.deepEqual(requests.map((request) => request.text), ['hi', 'next message']);
+  assert.deepEqual(requests.map((request) => request.activeAppId), ['app-a', 'app-b']);
   assert.equal(thread.replying, true);
   assert.equal(stops(), 0, 'the completed backend needs no stop, which would target the next message');
 });

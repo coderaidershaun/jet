@@ -23,6 +23,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
   if (!clientId) { clientId = uuid(); storage?.setItem('jet.browserClient', clientId); }
   const call = (path, body, method, signal) => requestJson(path, body, method, fetcher, signal);
   const memoryListeners = new Set();
+  const registryListeners = new Set();
   let observer = null;
   let source = null;
   let epoch = null;
@@ -49,6 +50,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       cursor = message.data.cursor;
       const envelope = message.data;
       if (envelope.event.kind === 'memoryUpdated') for (const listener of memoryListeners) listener(envelope.event.notes);
+      if (envelope.event.kind === 'registryChanged') for (const listener of registryListeners) listener(envelope.event);
       if (envelope.event.kind === 'shutdown') { reconnect(); return; }
       if (envelope.event.kind === 'historyChanged') { epoch = null; cursor = null; reconnect(); return; }
       if (observer) observer.event(envelope);
@@ -93,7 +95,6 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       if (!/^(https?:|mailto:)/i.test(url.trim())) throw { kind: 'badLink', message: 'Only web and mail links can be opened.' };
       globalThis.open(url, '_blank', 'noopener,noreferrer');
     },
-    reloadLibraries: async () => {},
     async send(request, onEvent) {
       const payload = { ...request, requestId: request.requestId ?? uuid(), clientId };
       callbacks.set(payload.requestId, onEvent);
@@ -123,6 +124,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       connect();
       return () => { stopped = true; source?.close(); clearTimeout(reconnectTimer); observer = null; };
     },
+    onRegistryChanged(listener) { registryListeners.add(listener); return () => registryListeners.delete(listener); },
     onMemoryUpdated(listener) { memoryListeners.add(listener); return () => memoryListeners.delete(listener); },
   };
 }

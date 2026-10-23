@@ -14,24 +14,34 @@ test('browser bridge retries one identity, deduplicates events and resnapshots a
   const storage = { getItem: (key) => saved.get(key), setItem: (key, value) => saved.set(key, value) };
   const calls = [];
   let ids = 0;
+  const request = { text: 'hello', activeAppId: 'app-a' };
   const agent = createBrowserAgent({ EventSource: Source, storage, uuid: () => `id-${++ids}`, delay: async () => {}, fetch: async (path, options) => {
     calls.push({ path, request: JSON.parse(options.body) });
-    if (calls.length === 1) throw new Error('acknowledgment lost');
+    if (calls.length === 1) { request.activeAppId = 'app-b'; throw new Error('acknowledgment lost'); }
     return { ok: true, json: async () => ({ user: { text: 'hello' } }) };
   } });
-  const snapshots = [], events = [];
+  const snapshots = [], events = [], registry = [];
+  const unsubscribe = agent.onRegistryChanged((event) => registry.push(event));
   const stop = agent.watch((snapshot) => snapshots.push(snapshot), (event) => events.push(event));
   sources[0].emit({ kind: 'snapshot', data: { epoch: 'epoch-a', cursor: 7, history: [], active: null } });
-  assert.deepEqual(await agent.send({ text: 'hello' }, () => {}), { text: 'hello' });
+  assert.deepEqual(await agent.send(request, () => {}), { text: 'hello' });
   assert.deepEqual(calls[0].request, calls[1].request);
   assert.equal(calls[0].request.clientId, 'id-1');
   const envelope = { cursor: 8, turn: { requestId: 'id-2' }, event: { kind: 'text', delta: 'reply' } };
   sources[0].emit({ kind: 'event', data: envelope });
   sources[0].emit({ kind: 'event', data: envelope });
   assert.equal(events.length, 1);
+  const changed = { cursor: 9, event: { kind: 'registryChanged', appId: 'app-b', change: 'edited' } };
+  sources[0].emit({ kind: 'event', data: changed });
+  sources[0].emit({ kind: 'event', data: changed });
+  assert.deepEqual(registry, [changed.event]);
+  unsubscribe();
+  sources[0].emit({ kind: 'event', data: { ...changed, cursor: 10 } });
+  assert.equal(registry.length, 1);
+  assert.equal(calls[1].request.activeAppId, 'app-a');
   sources[0].onerror();
   await new Promise((resolve) => setTimeout(resolve, 340));
-  assert.equal(sources[1].url, '/api/events?epoch=epoch-a&cursor=8');
+  assert.equal(sources[1].url, '/api/events?epoch=epoch-a&cursor=10');
   sources[1].emit({ kind: 'resync' });
   await new Promise((resolve) => setTimeout(resolve, 340));
   assert.equal(sources[2].url, '/api/events');

@@ -2,9 +2,10 @@
 // every part of the page and hands each the parts it needs. The agent is connected
 // here and nowhere else; every other part is handed it.
 
+import { createWorkspace } from '../workspace/shell.js';
+import { h, icon } from '../dom.js';
 import { connectAgent } from '../bridge/agent.js';
 import { displayName, loadSettings, saveSettings } from '../bridge/settings.js';
-import { icon } from '../dom.js';
 import { createComposer } from './composer/state.js';
 import { createComposerView } from './composer/view.js';
 import { describeCache } from './drawer/cache.js';
@@ -29,6 +30,10 @@ async function start() {
   const [history, status] = await Promise.all([agent.history(), agent.status()]);
 
   const page = $('page');
+  const diagnostics = h('details', { class: 'diagnostics' }, h('summary', { text: 'Usage and diagnostics' }), $('drawer'));
+  page.prepend(diagnostics);
+  page.querySelector('.header').append($('gear'));
+  const workspace = createWorkspace({ agent, page });
   const systemReduces = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedMotion = () => settings.reducedMotion || systemReduces.matches;
   const applyReduced = () => document.documentElement.classList.toggle('reduced', reducedMotion());
@@ -111,6 +116,8 @@ async function start() {
     },
   });
 
+  diagnostics.addEventListener('toggle', () => { if (diagnostics.open) drawer.init(false); });
+
   const live = createLive({
     reducedMotion: reducedMotion(),
     heroSlot: $('hero'),
@@ -150,6 +157,7 @@ async function start() {
     tracker,
     page: { headerStatus: $('header-status'), announce: $('announce') },
     afterReply: refreshStatus,
+    activeAppId: workspace.activeAppId,
   });
 
   function paintPersona() {
@@ -198,6 +206,7 @@ async function start() {
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
+    if (diagnostics.open && !sheet.isOpen) { event.preventDefault(); diagnostics.open = false; diagnostics.querySelector('summary').focus(); return; }
     const action = composer.escape({ sheetOpen: sheet.isOpen, overlayDrawerOpen: drawer.overlayOpen });
     if (action === 'none') return;
     event.preventDefault();
@@ -210,7 +219,7 @@ async function start() {
     live.setReducedMotion(reducedMotion());
   });
 
-  drawer.init(settings.drawerOpen);
+  drawer.init(false);
   drawer.setModel({ model: settings.model, effort: settings.effort });
   drawer.setUsage(tracker.snapshot());
   paintPersona();
@@ -226,7 +235,7 @@ async function start() {
   paintCache();
   setInterval(paintCache, CACHE_CHECK_MS);
   live.start();
-  agent.watch?.((snapshot) => turn.restore(snapshot), (event) => turn.observe(event));
+  agent.watch?.((snapshot) => { turn.restore(snapshot); workspace.refresh(); }, (event) => turn.observe(event));
 }
 
 start().catch((error) => {

@@ -60,3 +60,25 @@ node crates/jet/tests/browser/proxy.mjs
 
 The namespace scenario checks HTTP, WebSocket echo and retained state. Stop and
 remove only the container created for this check.
+
+## Workspace shell
+
+The workspace harness starts its own Jet, two generic app fixtures and a temporary
+free CLI provider. It checks forms, retained iframe/chat state, explicit Stop,
+selected context capture before feeling classification, dock resizing/persistence,
+keyboard focus and responsive content. It never uses an installed paid provider.
+
+```sh
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
+CHROME_BINARY='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
+ARTIFACT_DIR=/tmp/jet-workspace-browser JOINT_FACADE=1 \
+node crates/jet/tests/browser/workspace.mjs
+```
+
+Build the workspace and install fixture dependencies as above first. Screenshots,
+viewport geometry and captured send/stop requests are written to the artifact
+directory. `JET_BINARY` optionally selects a previously built local Jet executable.
+
+`JOINT_FACADE=1` also requires automatic cross-client registry notifications,
+provider-observed selected app context and session continuity across app switches.
+Run this mode for the integrated application acceptance gate.

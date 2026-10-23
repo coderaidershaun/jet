@@ -253,3 +253,17 @@ server; no app-specific Jet code is needed. It exposes `collections` → `notes`
 `read_note`; all operations are local and free. It speaks a stateless JSON form of
 Streamable HTTP MCP for protocol `2025-11-25`. The shared MCP implementation must separately verify production compatibility and
 notification/reconnect behavior; this fixture alone does not prove those paths.
+
+### Browser workspace interface
+
+`createWorkspace({agent, page})` from `ui/workspace/shell.js` moves the existing
+chat `page` into one dock and returns `showChat()`, `showTools(appId?)`,
+`hideDock()`, `toolsContent`, `activeAppId()` and `refresh()`. The explorer mounts
+its content once in `toolsContent`; tab changes only hide content. The selected
+stable ID is captured by the chat turn before feeling classification and remains
+part of the same request across transport retries. It never filters the registry.
+
+The bridge exposes `onRegistryChanged(listener)`, returning an unsubscribe
+function. Registry notifications trigger a fresh list; browser focus and every
+reconnect snapshot also refresh the list. Dock width and visibility live only in
+browser local storage under `jet.workspace`.

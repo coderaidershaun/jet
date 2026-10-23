@@ -44,10 +44,11 @@ function parsedOrNull(line) {
  *   afterReply: () => void,
  * }} parts
  */
-export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, tracker, page, afterReply }) {
+export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, tracker, page, afterReply, activeAppId = () => null }) {
   /** @type {ReturnType<typeof createReveal> | null} */
   let reveal = null;
   let pendingEntry = null;
+  let heldAppId = null;
   let active = null;
   let warned = false;
 
@@ -71,7 +72,9 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     const held = thread.takeHeld();
     if (held !== null) {
       composerView.setHeld(null);
-      turn.send(held);
+      const appId = heldAppId;
+      heldAppId = null;
+      turn.send(held, appId);
     }
   }
 
@@ -139,9 +142,10 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     else paint();
   }
 
-  function request(text) {
+  function request(text, appId) {
     return {
       text,
+      activeAppId: appId,
       model: settings.model,
       effort: settings.effort,
       budgetUsd: settings.turnBudgetUsd,
@@ -198,11 +202,11 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     },
 
     /** Sends a message: the bubble, the new slot, the flight, then the agent. */
-    async send(text) {
+    async send(text, appId = activeAppId()) {
       const mine = { dispatched: false, cancelFeeling: null };
       active = mine;
       const now = performance.now();
-      const message = request(text);
+      const message = request(text, appId);
       if (agent.serverEvents) { message.requestId = randomId(); mine.requestId = message.requestId; }
       const takeoff = live.measure();
       tracker.sent({ effort: settings.effort, at: Date.now() });
@@ -298,11 +302,13 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     },
 
     hold(text) {
+      heldAppId = activeAppId();
       thread.hold(text);
       composerView.setHeld(thread.held);
     },
 
     cancelHold() {
+      heldAppId = null;
       composerView.setText(thread.cancelHold());
       composerView.setHeld(null);
     },

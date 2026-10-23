@@ -273,7 +273,6 @@ export function createFakeAgent({
       throw bridgeError('io', 'Library pictures open only in the app, not in a browser: ' + path);
     },
 
-    async reloadLibraries() {},
 
     async openLink(url) {
       if (!/^(https?:|mailto:)/i.test(url)) throw bridgeError('badLink', 'Only http, https and mailto links open: ' + url);

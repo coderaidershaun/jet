@@ -59,7 +59,6 @@ import { createBrowserAgent } from './browser-agent.js';
  * @property {(text: string) => Promise<string>} renderMarkdown
  * @property {(path: string) => Promise<string>} readLibraryImage   rejects when no registered image route is available
  * @property {(url: string) => Promise<void>} openLink
- * @property {() => Promise<void>} reloadLibraries   compatibility hook for the existing settings panel
  * @property {(listener: (notes: Notes) => void) => () => void} onMemoryUpdated   returns the way to stop listening
  */
 
