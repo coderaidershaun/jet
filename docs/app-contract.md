@@ -173,6 +173,30 @@ The stable facade tools are apps_list/apps_update/apps_open/tools_search/
 tools_describe/tools_call. Selected app is per-message context, not a filter or a
 provider-session fingerprint input. Full schemas are described on demand.
 
+## Tool-result images
+
+Image resolution uses the tool call’s originating stable app ID, never the selected
+workspace or label, and checks the current registry. Only `relative-paths` apps
+can supply mounted images. Disabling MCP leaves registered UI content available;
+removing the app makes its images unavailable.
+
+Return a relative image reference under the registered base, such as
+`content/figure%201.png`, or an absolute HTTP(S) URL with the exact registered
+origin and a path inside that base. Jet maps it to `/apps/{stable-id}/`, preserving
+benign escaped names and queries. The browser never receives an arbitrary upstream
+image URL. A base `/research/` contains `/research/figure.png`, not
+`/research-other/figure.png`.
+
+Malformed escapes, controls, backslashes, raw or encoded traversal/separators,
+authority-changing references, other app mounts, already-mounted paths, foreign
+origins/bases, filesystem paths and non-HTTP schemes are rejected. Direct/external,
+unknown or removed apps show an unavailable-image fallback. Historical file image
+references remain unavailable; there is no server filesystem reader.
+
+Generic tool results remain generic: an arbitrary `image` key alone does not make
+a source card. Numbered source cards and citations retain their original app
+attribution when the user switches workspaces.
+
 ## Explicit progressive discovery
 
 Only a tool marked `_meta["jet/discovery"]` with `version: 1` promises a free,
@@ -202,7 +226,9 @@ use the same client session. A `tool` leaf binds suggested arguments for inspect
 or an Ask Jet draft, never execution while browsing. Refresh the catalogue if
 operations change it. Unknown targets and unsupported result versions/shapes remain
 raw visible data; do not invent schemas. Keep breadcrumbs, cancellation and bounded
-cycle/depth/result handling in the explorer. These are Jet conventions, not standard
+cycle/depth/result handling in the explorer: at most 16 levels, 200 nodes per result
+and 256 KiB of displayed raw data. Ancestor cycles use canonical arguments;
+cancellation prevents late responses from reopening an abandoned path. These are Jet conventions, not standard
 MCP discovery claims. The fixture provides two discovery levels and one leaf.
 
 ## Frame and dock ownership

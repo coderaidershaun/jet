@@ -1,3 +1,5 @@
+import { readAppImage } from './images.js';
+
 // Browser connections observe server-owned turns; reconnecting never starts another reply.
 
 export async function requestJson(path, body, method = body === undefined ? 'GET' : 'POST', fetcher = globalThis.fetch, signal) {
@@ -117,7 +119,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     loadMemory: () => call('/api/memory'),
     saveMemory: (notes) => call('/api/memory', notes, 'PUT'),
     renderMarkdown: (text) => call('/api/markdown', { text }),
-    readLibraryImage: (path) => call('/api/image', { path }),
+    readAppImage: (appId, path) => readAppImage(call, appId, path),
     async openLink(url) {
       if (!/^(https?:|mailto:)/i.test(url.trim())) throw { kind: 'badLink', message: 'Only web and mail links can be opened.' };
       globalThis.open(url, '_blank', 'noopener,noreferrer');

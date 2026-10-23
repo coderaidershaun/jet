@@ -37,8 +37,12 @@ async function fixture(name, port = 0) {
 }
 async function stop(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, 'exit');
+  let timedOut = false;
   child.kill('SIGTERM');
-  await once(child, 'exit');
+  const deadline = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, 10000);
+  try { await exited; } finally { clearTimeout(deadline); }
+  assert.equal(timedOut, false, `Temporary server ${child.pid} did not stop within 10 seconds`);
 }
 async function until(condition, message) {
   const deadline = Date.now() + 20000;
@@ -184,6 +188,8 @@ try {
 } finally {
   await browser?.close();
   tls?.closeAllConnections(); tls?.close();
-  for (const child of children.reverse()) await stop(child);
+  const failures = [];
+  for (const child of children.reverse()) { try { await stop(child); } catch (error) { failures.push(error.message); } }
+  assert.deepEqual(failures, [], 'Temporary servers must shut down gracefully');
   if (output !== scratch) await rm(scratch, { recursive: true, force: true });
 }

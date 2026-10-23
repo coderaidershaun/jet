@@ -20,7 +20,7 @@ const doneCalls = (calls) => calls.filter((call) => callState(call) === 'done');
  *   follow: ReturnType<typeof import('./scroll.js').createFollow>,
  *   handlers: {
  *     retry: () => void, openSettings: (section: string) => void, openLink: (url: string) => void,
- *     render: (text: string) => Promise<string>, readImage: (path: string) => Promise<string>,
+ *     render: (text: string) => Promise<string>, readImage: (appId: string, path: string) => Promise<string>,
  *   },
  * }} options
  */

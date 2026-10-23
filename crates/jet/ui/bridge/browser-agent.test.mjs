@@ -133,3 +133,28 @@ test('browser bridge retries one identity, deduplicates events and resnapshots a
     assert.equal(connectAgent().serverEvents, undefined);
   } finally { globalThis.sessionStorage = original.storage; globalThis.__JET_FAKE__ = original.fake; Object.defineProperty(globalThis, 'crypto', original.crypto); }
 });
+
+test('registered_app_images_keep_their_origin_and_reject_escape', async () => {
+  let apps = [{ id: 'origin-app', baseUrl: 'https://example.test/library/', embedding: 'relative-paths', enabled: false }];
+  const requests = [];
+  const agent = createBrowserAgent({ uuid: () => 'browser', fetch: async path => {
+    requests.push(path);
+    assert.equal(path, '/api/apps');
+    return { ok: true, json: async () => apps };
+  } });
+  assert.equal(await agent.readAppImage('origin-app', 'content/a%20b.png?size=1&name=a%2Fb'), '/apps/origin-app/content/a%20b.png?size=1&name=a%2Fb');
+  assert.equal(await agent.readAppImage('origin-app', 'https://example.test/library/content/a.png'), '/apps/origin-app/content/a.png');
+  for (const path of ['../a.png', './a.png', 'content/%2e%2e/a.png', 'content/%252e%252e/a.png', 'content/a%2fb.png', 'content/a%5cb.png', 'content/%00.png', 'content/%ZZ.png', 'content/a.png?bad=%ZZ', 'content/\\a.png', 'content/a\n.png', '//other.test/a.png', '/etc/passwd', 'file:///tmp/a.png', 'data:image/png;base64,a', '/apps/other/a.png', 'https://example.test/library-other/a.png', 'https://other.test/library/a.png', 'https://example.test/library/../a.png', 'https://user@example.test/library/a.png']) {
+    await assert.rejects(agent.readAppImage('origin-app', path), /Picture unavailable/, path);
+  }
+  apps[0].baseUrl = 'https://example.test/new/';
+  await assert.rejects(agent.readAppImage('origin-app', 'https://example.test/library/a.png'), /Picture unavailable/);
+  assert.equal(await agent.readAppImage('origin-app', 'a.png'), '/apps/origin-app/a.png');
+  for (const embedding of ['direct', 'external']) {
+    apps[0].embedding = embedding;
+    await assert.rejects(agent.readAppImage('origin-app', 'a.png'), /Picture unavailable/);
+  }
+  apps = [];
+  await assert.rejects(agent.readAppImage('origin-app', 'a.png'), /Picture unavailable/);
+  assert.ok(requests.length > 0);
+});

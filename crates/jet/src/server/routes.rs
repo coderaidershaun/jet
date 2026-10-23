@@ -37,7 +37,6 @@ pub(super) fn router(host: Server) -> Router {
         .route("/api/memory", get(load_memory).put(save_memory))
         .route("/api/markdown", post(markdown))
         .route("/api/feel", post(feel))
-        .route("/api/image", post(image))
         .route("/api/apps", get(apps).post(update_apps))
         .merge(crate::proxy::router())
         .fallback_service(ServeDir::new(&host.config.ui_dir))
@@ -143,12 +142,6 @@ async fn feel(
             .map_err(|error| BridgeError::Io(error.to_string()))
     })
     .await
-}
-async fn image() -> Result<Json<Value>, BridgeError> {
-    Err(BridgeError::InvalidRequest(
-        "Image unavailable: server filesystem images are not exposed. Use an app content URL."
-            .into(),
-    ))
 }
 async fn apps(State(host): State<Server>) -> Result<Json<Value>, BridgeError> {
     blocking(move || Ok(json!(lock(&host.registry).list()))).await

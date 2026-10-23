@@ -62,7 +62,6 @@ async function start() {
   $('composer').append(quickModel.el);
 
   $('gear').append(icon('gear'));
-  $('drawer-toggle').append(icon('menu'));
   $('held-cancel').append(icon('close'));
   $('jump').prepend(icon('down'));
 
@@ -77,7 +76,7 @@ async function start() {
       openSettings: (section) => sheet.open(section),
       openLink: (url) => agent.openLink(url).catch(warn('the link could not be opened')),
       render: (text) => agent.renderMarkdown(text),
-      readImage: (path) => agent.readLibraryImage(path),
+      readImage: (appId, path) => agent.readAppImage(appId, path),
     },
   });
 
@@ -110,9 +109,6 @@ async function start() {
   });
 
   const drawer = createDrawerView({
-    page,
-    toggles: [$('drawer-toggle')],
-    scrim: $('scrim'),
     jetSvg: $('drawer-jet'),
     nameEl: $('drawer-name'),
     titleEl: $('drawer-title'),
@@ -127,14 +123,10 @@ async function start() {
     log: createLog(),
     handlers: {
       openSettings: () => sheet.open(),
-      dockedChanged: (open) => {
-        settings.drawerOpen = open;
-        saveSettings(settings);
-      },
     },
   });
 
-  diagnostics.addEventListener('toggle', () => { if (diagnostics.open) drawer.init(false); });
+  diagnostics.addEventListener('toggle', () => { if (diagnostics.open) drawer.init(); });
 
   const live = createLive({
     reducedMotion: reducedMotion(),
@@ -225,11 +217,10 @@ async function start() {
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
     if (diagnostics.open && !sheet.isOpen) { event.preventDefault(); diagnostics.open = false; diagnostics.querySelector('summary').focus(); return; }
-    const action = composer.escape({ sheetOpen: sheet.isOpen, overlayDrawerOpen: drawer.overlayOpen });
+    const action = composer.escape({ sheetOpen: sheet.isOpen });
     if (action === 'none') return;
     event.preventDefault();
     if (action === 'closeSheet') sheet.close();
-    else if (action === 'closeDrawer') drawer.setOpen(false);
     else turn.stop();
   });
   systemReduces.addEventListener('change', () => {
@@ -237,7 +228,7 @@ async function start() {
     live.setReducedMotion(reducedMotion());
   });
 
-  drawer.init(false);
+  drawer.init();
   drawer.setModel({ model: settings.model, effort: settings.effort });
   drawer.setUsage(tracker.snapshot());
   paintPersona();

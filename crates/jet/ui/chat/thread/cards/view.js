@@ -209,9 +209,13 @@ function defaultCard(card, parts) {
   return details;
 }
 
-/** The node of a call that has ended: done, failed or unfinished. */
+/**
+ * The node of a call that has ended: done, failed or unfinished.
+ * @param {import('./model.js').Card} card
+ * @param {Omit<Parts, 'readImage'> & { readImage: (appId: string, path: string) => Promise<string> }} parts
+ */
 export function renderResultCard(card, parts) {
-  return defaultCard(card, parts);
+  return defaultCard(card, { ...parts, readImage: (path) => parts.readImage(card.call.server, path) });
 }
 
 function runningCard(card) {
@@ -227,7 +231,7 @@ function runningCard(card) {
  * Keeps one node per call in `container`. A finished card is built once and never rebuilt, so its open state and
  * the rows drawn inside it survive every redraw of the thread.
  * @param {HTMLElement} container
- * @param {Parts} parts
+ * @param {Omit<Parts, 'readImage'> & { readImage: (appId: string, path: string) => Promise<string> }} parts
  */
 export function createCardList(container, parts) {
   /** @type {Map<string, { el: HTMLElement, state: string }>} */

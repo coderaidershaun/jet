@@ -37,7 +37,6 @@
 .workspace-dock .diagnostics summary { padding:10px 12px; cursor:pointer; font-size:13px; color:var(--muted); }
 .workspace-dock .drawer { display:block; position:static; width:auto; height:auto; max-height:none; transform:none; visibility:visible; border:0; }
 .workspace-dock .drawer-inner { width:auto; min-width:0; height:auto; padding:12px; }
-.workspace-dock #drawer-toggle,.workspace-dock #scrim { display:none; }
 .workspace-dock .drawer-id { padding-top:0; }
 .workspace-dock .drawer-jet { max-height:80px; }
 .app-form { width:min(480px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); overflow:auto; padding:20px; background:var(--surface); color:var(--fg); border:1px solid var(--line); border-radius:14px; }
@@ -60,5 +59,4 @@
  .workspace-dock .greeting { margin-top:0; }
  .workspace-dock textarea#field { max-height:88px; }
 }
-.workspace-dock .page[data-drawer="closed"] .drawer { width:auto; visibility:visible; transition:none; position:static; transform:none; box-shadow:none; border:0; }
 .app-workspace > .workspace-bar { flex-wrap:wrap; }

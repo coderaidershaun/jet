@@ -4,7 +4,7 @@
 import { h } from '../../../dom.js';
 import { typeset } from '../math.js';
 
-const PICTURE_ADDRESS = /^data:image\/(png|jpeg);base64,/;
+const PICTURE_ADDRESS = /^\/apps\/[a-zA-Z0-9_-]+\//;
 const PICTURE_UNSHOWABLE = 'The picture came back in a form the page cannot show.';
 
 async function fillMarkdown(element, { text, footnote }, { render, seal }) {

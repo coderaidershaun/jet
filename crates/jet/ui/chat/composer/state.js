@@ -43,10 +43,9 @@ export function createComposer({ empty }) {
       return composer.replying ? 'hold' : 'send';
     },
 
-    /** @param {{ sheetOpen: boolean, overlayDrawerOpen: boolean }} open @returns {'closeSheet' | 'closeDrawer' | 'stop' | 'none'} */
-    escape({ sheetOpen, overlayDrawerOpen }) {
+    /** @param {{ sheetOpen: boolean }} open @returns {'closeSheet' | 'stop' | 'none'} */
+    escape({ sheetOpen }) {
       if (sheetOpen) return 'closeSheet';
-      if (overlayDrawerOpen) return 'closeDrawer';
       return composer.replying ? 'stop' : 'none';
     },
   };

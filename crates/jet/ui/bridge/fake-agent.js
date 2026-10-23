@@ -269,8 +269,8 @@ export function createFakeAgent({
       return renderMarkdown(text);
     },
 
-    async readLibraryImage(path) {
-      throw bridgeError('io', 'Library pictures open only in the app, not in a browser: ' + path);
+    async readAppImage(appId, path) {
+      throw bridgeError('io', 'Picture unavailable in the preview: ' + path);
     },
 
 

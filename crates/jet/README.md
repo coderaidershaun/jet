@@ -2,6 +2,12 @@
 
 `cargo run -p jet -- --listen 127.0.0.1:8787 --data-dir ./jet-data` serves the chat in a normal browser. `jet --help` lists deployment options. The data directory owns settings, transcript, session, notes and the app registry. `--ui-dir` points to the static `ui/` directory when the executable is copied elsewhere.
 
+The [root guide](../../README.md) covers registration, commands, Quanty launch and
+existing-data reuse. The workspace keeps one frame per visited app; both navigation
+and the shared Chat/Tools dock collapse completely. Tools are global regardless of
+the selected app. Browser-local layout survives reload, but live iframe state does
+not. App disable prevents new tool calls while retaining its UI and configuration.
+
 ## Browser bridge
 
 The browser uses JSON commands and one server-sent event stream:
@@ -26,8 +32,8 @@ A reply is drained on the server independently of browser connections. The serve
 
 A deliberately configured development page may set `globalThis.__JET_FAKE__ = true` before loading the chat to use the in-browser fixture. This is never inferred from missing desktop globals. Production settings and notes remain server-owned.
 
-Markdown still passes through the Rust renderer. The character policy and animation modules remain unchanged. Native opening and arbitrary filesystem image reads are gone; web/mail links open through the browser, and unavailable file images show the existing fallback.
+Markdown still passes through the Rust renderer. The character policy and animation modules remain unchanged. Web/mail links open through the browser. Source images resolve against the tool call’s registered stable app ID and use its contained mount. Invalid, removed-app, direct/external and historical filesystem images show an unavailable fallback. See the [image contract](../../docs/app-contract.md#tool-result-images).
 
 ## Verification
 
-From the repository root run the commands in the root README. `tests/integration/` starts the actual host binary against a Python provider fixture and tests HTTP acceptance/retry, reconnect, restart, busy/Stop, saved commands and bounded shutdown. JavaScript tests cover transport cursor/retry behavior and the existing character/chat rules. Actual browser screenshots and reload checks are separate acceptance evidence, not implied by unit tests.
+From the repository root run the commands in the root README. `tests/integration/` starts the actual host binary against a Python provider fixture and tests HTTP acceptance/retry, reconnect, restart, busy/Stop, saved commands and bounded shutdown. JavaScript tests cover transport cursor/retry behavior and the existing character/chat rules. The [browser harnesses](tests/browser/README.md) exercise actual Chrome, app recovery, contained images, retained frames and network separation; unit tests alone do not prove those paths.

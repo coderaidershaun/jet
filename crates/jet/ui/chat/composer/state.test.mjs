@@ -25,7 +25,7 @@ test('the composer is centred until the first send, and Send becomes Stop while 
   assert.equal(createComposer({ empty: false }).layout, 'bottom', 'a restored conversation starts at the bottom');
 });
 
-test('Enter sends unless composing, Shift+Enter does not, and Esc closes the sheet, then the drawer, then stops', () => {
+test('Enter sends unless composing, Shift+Enter does not, and Esc closes the sheet, then stops', () => {
   const composer = createComposer({ empty: false });
   assert.equal(composer.enter(key(), 'hello'), 'send');
   assert.equal(composer.enter(key({ shiftKey: true }), 'hello'), 'newline');
@@ -36,9 +36,8 @@ test('Enter sends unless composing, Shift+Enter does not, and Esc closes the she
   assert.equal(composer.enter(key(), 'one more thing'), 'hold');
   assert.equal(composer.enter(key(), ''), 'ignore');
 
-  assert.equal(composer.escape({ sheetOpen: true, overlayDrawerOpen: true }), 'closeSheet');
-  assert.equal(composer.escape({ sheetOpen: false, overlayDrawerOpen: true }), 'closeDrawer');
-  assert.equal(composer.escape({ sheetOpen: false, overlayDrawerOpen: false }), 'stop');
+  assert.equal(composer.escape({ sheetOpen: true }), 'closeSheet');
+  assert.equal(composer.escape({ sheetOpen: false }), 'stop');
   composer.replying = false;
-  assert.equal(composer.escape({ sheetOpen: false, overlayDrawerOpen: false }), 'none');
+  assert.equal(composer.escape({ sheetOpen: false }), 'none');
 });

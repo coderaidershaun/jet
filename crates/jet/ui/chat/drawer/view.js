@@ -1,6 +1,4 @@
-// The drawer: the static Jet and name, the cache chip, the usage panel, the raw
-// stream log, and the gear that opens settings. It also opens and closes
-// itself, docked beside the thread on wide screens and over it on narrow ones.
+// Usage and diagnostics inside the chat dock.
 
 import { h } from '../../dom.js';
 import { createPlayer } from '../../jet/player.js';
@@ -10,24 +8,21 @@ import { NOTHING, compactCount, count, dollars, modelAndThinking, seconds, spend
 import { RATES_DATE } from './rates.js';
 import { tokenCount } from './usage.js';
 
-const NARROW = '(max-width: 759.98px)';
 const FOLLOW_SLACK_PX = 24;
 const COPIED_SHOWN_MS = 1200;
 const SESSION_ID_CHARS = 8;
 
 /**
  * @param {{
- *   page: HTMLElement, toggles: HTMLElement[], scrim: HTMLElement,
  *   jetSvg: SVGSVGElement, nameEl: HTMLElement, titleEl: HTMLElement, chipEl: HTMLElement, modelEl: HTMLElement,
  *   usageEl: HTMLElement, logToggle: HTMLElement, logList: HTMLElement, copyButton: HTMLElement, clearButton: HTMLElement, gearButton: HTMLElement,
  *   log: ReturnType<typeof import('./log.js').createLog>,
- *   handlers: { openSettings: () => void, dockedChanged: (open: boolean) => void },
+ *   handlers: { openSettings: () => void },
  * }} options
  */
 export function createDrawerView({
-  page, toggles, scrim, jetSvg, nameEl, titleEl, chipEl, modelEl, usageEl, logToggle, logList, copyButton, clearButton, gearButton, log, handlers,
+  jetSvg, nameEl, titleEl, chipEl, modelEl, usageEl, logToggle, logList, copyButton, clearButton, gearButton, log, handlers,
 }) {
-  const narrow = window.matchMedia(NARROW);
   jetSvg.setAttribute('viewBox', '0 70 200 170');
   const draw = mountJet(jetSvg);
   const staticJet = createPlayer({ standing: true, reducedMotion: true });
@@ -135,12 +130,6 @@ export function createDrawerView({
     );
   }
 
-  function applyOpen(open) {
-    page.dataset.drawer = open ? 'open' : 'closed';
-    for (const toggle of toggles) toggle.setAttribute('aria-expanded', String(open));
-    scrim.hidden = !(open && narrow.matches);
-  }
-
   copyButton.addEventListener('click', () => copyText(copyButton, log.text(), 'the stream log'));
   sessionCopyButton.addEventListener('click', () => copyText(sessionCopyButton, latestUsage.current.sessionId, 'the session id'));
   clearButton.addEventListener('click', () => {
@@ -152,37 +141,8 @@ export function createDrawerView({
   logToggle.addEventListener('click', () => setLogOpen(logToggle.getAttribute('aria-expanded') !== 'true'));
   usagePart('note').textContent = 'List prices of ' + RATES_DATE;
   gearButton.addEventListener('click', handlers.openSettings);
-  for (const toggle of toggles) toggle.addEventListener('click', () => view.setOpen(page.dataset.drawer !== 'open'));
-  scrim.addEventListener('click', () => view.setOpen(false));
-  // A change of width is not the user's choice, so it saves nothing.
-  narrow.addEventListener('change', () => applyOpen(view.dockedPreference && !narrow.matches));
-
   const view = {
-    /** What the user last chose for the docked drawer. */
-    dockedPreference: true,
-
-    get isOpen() {
-      return page.dataset.drawer === 'open';
-    },
-
-    /** True only for the narrow-screen drawer that covers the thread. */
-    get overlayOpen() {
-      return view.isOpen && narrow.matches;
-    },
-
-    setOpen(open) {
-      applyOpen(open);
-      if (narrow.matches) return;
-      view.dockedPreference = open;
-      handlers.dockedChanged(open);
-    },
-
-    /** The first state of the drawer: the saved choice when docked, closed when it would cover the thread. */
-    init(openWhenDocked) {
-      view.dockedPreference = openWhenDocked;
-      applyOpen(openWhenDocked && !narrow.matches);
-      drawStatic();
-    },
+    init: drawStatic,
 
     setPersona({ name, jobTitle }) {
       nameEl.textContent = name;

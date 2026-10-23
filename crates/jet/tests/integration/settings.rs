@@ -44,12 +44,6 @@ fn browser_commands_preserve_settings_memory_and_markdown() {
         host.post("/api/feel", json!({"text":"hello"})).1["mood"],
         "neutral"
     );
-    assert!(
-        host.post("/api/image", json!({"path":"/etc/passwd"})).1["message"]
-            .as_str()
-            .unwrap()
-            .contains("Image unavailable")
-    );
     let html = ureq::get(&host.url)
         .call()
         .unwrap()

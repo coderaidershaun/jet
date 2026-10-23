@@ -57,7 +57,7 @@ import { createBrowserAgent } from './browser-agent.js';
  * @property {() => Promise<Notes>} loadMemory
  * @property {(notes: { memory: string, user: string, recent: string }) => Promise<Notes>} saveMemory
  * @property {(text: string) => Promise<string>} renderMarkdown
- * @property {(path: string) => Promise<string>} readLibraryImage   rejects when no registered image route is available
+ * @property {(appId: string, path: string) => Promise<string>} readAppImage   rejects when no registered image route is available
  * @property {(url: string) => Promise<void>} openLink
  * @property {(listener: (notes: Notes) => void) => () => void} onMemoryUpdated   returns the way to stop listening
  */
