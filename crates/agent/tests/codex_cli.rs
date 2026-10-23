@@ -25,7 +25,7 @@ fn codex_stream_resume_schema_usage_and_tool_results() {
     let cli = fake(dir.path());
     let mut req = request("hello");
     req.mcp_config = Some(
-        json!({"mcpServers":{"jet":{"type":"http","url":"http://127.0.0.1:4321/mcp"}}}).to_string(),
+        json!({"mcpServers":{"jet":{"type":"http","url":"http://127.0.0.1:4321/mcp","headers":{"x-jet-turn":"turn-token"}}}}).to_string(),
     );
     let mut turn = Turn::start(&cli, &req).unwrap();
     let steps: Vec<_> = turn.by_ref().collect();
@@ -44,6 +44,7 @@ fn codex_stream_resume_schema_usage_and_tool_results() {
             .unwrap();
     assert!(args.contains(&"model_reasoning_effort=\"high\"".into()));
     assert!(args.contains(&"features.shell_tool=false".into()));
+    assert!(args.contains(&"mcp_servers.jet.http_headers.x-jet-turn=\"turn-token\"".into()));
     assert!(args.contains(&format!(
         "mcp_servers.jet.enabled_tools={}",
         json!(agent::FACADE_TOOLS)

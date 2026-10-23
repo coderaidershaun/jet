@@ -23,7 +23,7 @@ pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
         )));
         (
             value("mcp_servers.jet.url="),
-            value("mcp_servers.jet.http_headers.\"x-jet-turn\"="),
+            value("mcp_servers.jet.http_headers.x-jet-turn="),
         )
     } else {
         let value =

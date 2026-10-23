@@ -59,7 +59,7 @@ pub(super) fn args(
             for (header, value) in server.headers {
                 push_config_value(
                     &mut args,
-                    &format!("mcp_servers.{name}.http_headers.{}", json!(header)),
+                    &format!("mcp_servers.{name}.http_headers.{header}"),
                     json!(value),
                 );
             }
