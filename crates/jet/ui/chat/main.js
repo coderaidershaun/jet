@@ -2,6 +2,9 @@
 // every part of the page and hands each the parts it needs. The agent is connected
 // here and nowhere else; every other part is handed it.
 
+import { createCommands } from '../workspace/commands.js';
+import { createCommandMenu } from '../workspace/completion.js';
+import { createToolBrowser } from '../workspace/tools.js';
 import { createWorkspace } from '../workspace/shell.js';
 import { h, icon } from '../dom.js';
 import { connectAgent } from '../bridge/agent.js';
@@ -33,7 +36,11 @@ async function start() {
   const diagnostics = h('details', { class: 'diagnostics' }, h('summary', { text: 'Usage and diagnostics' }), $('drawer'));
   page.prepend(diagnostics);
   page.querySelector('.header').append($('gear'));
-  const workspace = createWorkspace({ agent, page });
+  let toolBrowser, commandMenu;
+  const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId) });
+  const commandResult = h('pre', { class: 'command-result', role: 'status', 'aria-label': 'App command result' });
+  page.prepend(commandResult);
+  const commands = createCommands({ workspace, report: text => { commandResult.textContent = text; } });
   const systemReduces = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedMotion = () => settings.reducedMotion || systemReduces.matches;
   const applyReduced = () => document.documentElement.classList.toggle('reduced', reducedMotion());
@@ -84,11 +91,22 @@ async function start() {
     state: composer,
     reducedMotion,
     handlers: {
-      send: (text) => turn.send(text),
-      hold: (text) => turn.hold(text),
+      send: (text) => commands.submit(text, () => turn.send(text)),
+      hold: (text) => commands.submit(text, () => turn.hold(text)),
+      input: (text) => commandMenu?.input(text),
+      keydown: (event) => commandMenu?.keydown(event),
       stop: () => turn.stop(),
       cancelHold: () => turn.cancelHold(),
     },
+  });
+
+  commandMenu = createCommandMenu({ field: $('field'), container: $('composer'), commands, setText: composerView.setText });
+  toolBrowser = createToolBrowser({ container: workspace.toolsContent, agent, draft: text => { workspace.showChat(); composerView.setText(text); } });
+  agent.onAppOpened?.(async (action, current) => {
+    await workspace.refresh();
+    if (!current()) return;
+    try { workspace.openApp(action.appId); }
+    catch (error) { commandResult.textContent = error.message; }
   });
 
   const drawer = createDrawerView({

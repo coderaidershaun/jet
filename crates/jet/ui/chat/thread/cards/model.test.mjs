@@ -95,6 +95,13 @@ test('each tool reads as what it is doing while it runs, and sums up what came b
   assert.deepEqual(ingest({ state: 'failed', error: 'disk full' }).body.fields.at(-1), { term: 'Error', text: 'disk full' });
   assert.equal(ingest({ state: 'queued' }).head, 'quanty · ingest_status · queued · 0.8 s');
 
+  const saved = cardOf(finished('jet', 'apps_update', {}, { app: { label: 'Notebook' }, apps: [], change: { appId: 'notes', change: 'added' }, discovery: { status: 'unavailable', message: 'offline' } }, { summary: 'jet · apps_update · 0 apps' }));
+  assert.equal(saved.head, 'jet · apps_update · added · Notebook · 0.8 s');
+  assert.equal(saved.state, 'done');
+  assert.match(saved.body.fields.find(field => field.term === 'discovery').text, /offline/);
+  const removed = cardOf(finished('jet', 'apps_update', {}, { app: null, apps: [], change: { appId: 'notes', change: 'removed' } }));
+  assert.equal(removed.head, 'jet · apps_update · removed · notes · 0.8 s');
+
   const engine = cardOf(finished('polysim', 'list_strategies', {}, { strategies: ['momentum', 'carry'], count: 2, note: null }, { summary: 'polysim · list_strategies · 2 strategies' }));
   assert.equal(engine.head, 'polysim · list_strategies · 2 strategies · 0.8 s');
   assert.deepEqual(engine.body, { kind: 'fields', fields: [{ term: 'strategies', text: 'momentum, carry' }, { term: 'count', text: '2' }, { term: 'note', text: 'null' }] });

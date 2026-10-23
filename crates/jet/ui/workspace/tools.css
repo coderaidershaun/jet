@@ -1,0 +1,15 @@
+#tools-content { min-height: 0; overflow: auto; padding: 12px; overflow-wrap: anywhere; }
+#tools-content label { display: grid; gap: 6px; }
+#tools-content select, #tools-content input { width: 100%; min-width: 0; }
+#tools-content button { max-width: 100%; white-space: normal; margin: 4px 4px 4px 0; }
+#tools-content pre { max-width: 100%; overflow: auto; padding: 8px; background: var(--surface, #15232c); font-size: 12px; }
+#tools-content summary { cursor: pointer; padding: 8px 0; }
+#tools-content h3, #tools-content h4 { margin: 12px 0 6px; }
+.tools-configuration { white-space: pre-wrap; font-size: 12px; opacity: .8; }
+.tools-status { border-inline-start: 3px solid #6e9ac5; padding-inline-start: 8px; }
+.tool-summary, .discovery-view { border-top: 1px solid #39454d; margin-top: 8px; padding-top: 4px; }
+.discovery-view nav { display: flex; flex-wrap: wrap; }
+.tools-unsupported { color: #e6bc83; }
+
+#tools-content button, #tools-content select, #tools-content input { font: inherit; color: inherit; background: #182730; border: 1px solid #34444e; border-radius: 6px; padding: 7px 9px; }
+#tools-content button:disabled { opacity: .5; }

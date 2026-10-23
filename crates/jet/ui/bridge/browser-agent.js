@@ -24,6 +24,10 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
   const call = (path, body, method, signal) => requestJson(path, body, method, fetcher, signal);
   const memoryListeners = new Set();
   const registryListeners = new Set();
+  const appListeners = new Set();
+  const cancelledActions = new Set();
+  let actionGeneration = 0;
+  let activeIdentity = null;
   let observer = null;
   let source = null;
   let epoch = null;
@@ -33,6 +37,20 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
   const callbacks = new Map();
   let pending = null;
 
+  function sameTurn(left, right) {
+    return left && right && ['clientId', 'requestId', 'turnId'].every(key => typeof left[key] === 'string' && left[key] && left[key] === right[key]);
+  }
+  async function openApp(envelope) {
+    const action = envelope.event;
+    if (action.clientId !== clientId || !sameTurn(action, activeIdentity) || cancelledActions.has(action.requestId)) return;
+    const generation = actionGeneration, eventEpoch = epoch;
+    const current = () => generation === actionGeneration && eventEpoch === epoch && sameTurn(action, activeIdentity) && !cancelledActions.has(action.requestId);
+    try {
+      const snapshot = await call('/api/snapshot');
+      if (!current() || snapshot.epoch !== eventEpoch || snapshot.cursor < envelope.cursor || !sameTurn(action, snapshot.active?.identity)) return;
+      for (const listener of appListeners) listener(action, current);
+    } catch (error) { console.warn('App opening could not be verified:', error.message ?? error); }
+  }
   function connect() {
     if (stopped) return;
     const query = epoch === null ? '' : '?epoch=' + encodeURIComponent(epoch) + '&cursor=' + cursor;
@@ -41,6 +59,8 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       const message = JSON.parse(data);
       if (message.kind === 'resync') { epoch = null; cursor = null; reconnect(); return; }
       if (message.kind === 'snapshot') {
+        actionGeneration++;
+        activeIdentity = message.data.active?.identity ?? null;
         epoch = message.data.epoch;
         cursor = message.data.cursor;
         observer?.snapshot(message.data);
@@ -49,6 +69,9 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       if (message.kind !== 'event' || message.data.cursor <= cursor) return;
       cursor = message.data.cursor;
       const envelope = message.data;
+      if (envelope.event.kind === 'accepted') { actionGeneration++; activeIdentity = envelope.turn; }
+      if (['finished', 'failed', 'stopped'].includes(envelope.event.kind) && sameTurn(envelope.turn, activeIdentity)) { actionGeneration++; activeIdentity = null; }
+      if (envelope.event.kind === 'appOpened') void openApp(envelope);
       if (envelope.event.kind === 'memoryUpdated') for (const listener of memoryListeners) listener(envelope.event.notes);
       if (envelope.event.kind === 'registryChanged') for (const listener of registryListeners) listener(envelope.event);
       if (envelope.event.kind === 'shutdown') { reconnect(); return; }
@@ -60,6 +83,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     source.onerror = reconnect;
   }
   function reconnect() {
+    actionGeneration++;
     source?.close();
     clearTimeout(reconnectTimer);
     if (!stopped) reconnectTimer = setTimeout(connect, 300);
@@ -74,6 +98,9 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     feel: (text) => call('/api/feel', { text }),
     async stop(requestId = pending?.requestId) {
       if (!requestId) return;
+      actionGeneration++;
+      cancelledActions.add(requestId);
+      if (cancelledActions.size > 512) cancelledActions.delete(cancelledActions.values().next().value);
       if (pending?.requestId === requestId) {
         pending.cancelled = true;
         pending.controller.abort();
@@ -122,8 +149,9 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       observer = { snapshot, event };
       stopped = false;
       connect();
-      return () => { stopped = true; source?.close(); clearTimeout(reconnectTimer); observer = null; };
+      return () => { actionGeneration++; activeIdentity = null; stopped = true; source?.close(); clearTimeout(reconnectTimer); observer = null; };
     },
+    onAppOpened(listener) { appListeners.add(listener); return () => appListeners.delete(listener); },
     onRegistryChanged(listener) { registryListeners.add(listener); return () => registryListeners.delete(listener); },
     onMemoryUpdated(listener) { memoryListeners.add(listener); return () => memoryListeners.delete(listener); },
   };

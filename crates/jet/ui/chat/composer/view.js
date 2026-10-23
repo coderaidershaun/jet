@@ -12,7 +12,7 @@ const HOP_MS = 420;
  *   heldChip: HTMLElement, heldCancel: HTMLElement,
  *   state: ReturnType<typeof import('./state.js').createComposer>,
  *   reducedMotion: () => boolean,
- *   handlers: { send: (text: string) => void, hold: (text: string) => void, stop: () => void, cancelHold: () => void },
+ *   handlers: { send: (text: string) => void, hold: (text: string) => void, stop: () => void, cancelHold: () => void, input?: (text: string) => void, keydown?: (event: KeyboardEvent) => boolean },
  * }} options
  */
 export function createComposerView({ page, composer, field, button, heldChip, heldCancel, state, reducedMotion, handlers }) {
@@ -37,6 +37,7 @@ export function createComposerView({ page, composer, field, button, heldChip, he
   function take() {
     const text = field.value.trim();
     field.value = '';
+    handlers.input?.('');
     grow();
     refresh();
     return text;
@@ -45,9 +46,11 @@ export function createComposerView({ page, composer, field, button, heldChip, he
   field.addEventListener('input', () => {
     grow();
     refresh();
+    handlers.input?.(field.value);
   });
 
   field.addEventListener('keydown', (event) => {
+    if (handlers.keydown?.(event)) { event.preventDefault(); event.stopPropagation(); return; }
     if (event.key !== 'Enter') return;
     const action = state.enter(event, field.value);
     if (action === 'newline') return;
@@ -75,6 +78,7 @@ export function createComposerView({ page, composer, field, button, heldChip, he
       grow();
       refresh();
       field.focus();
+      handlers.input?.(text);
     },
 
     setHeld(text) {

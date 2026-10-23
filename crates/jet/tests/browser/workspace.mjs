@@ -1,7 +1,6 @@
+import { createProcesses, until } from './process.mjs';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, writeFile, rm, chmod } from 'node:fs/promises';
-import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -11,24 +10,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const scratch = await mkdtemp(path.join(os.tmpdir(), 'jet-workspace-'));
 const output = process.env.ARTIFACT_DIR ?? scratch;
 await mkdir(output, { recursive: true });
-const children = [];
+const processes = createProcesses();
+const launch = processes.launch;
 let browser, page;
-async function launch(program, args, pattern, env = process.env) {
-  const child = spawn(program, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  children.push(child);
-  return new Promise((resolve, reject) => {
-    let log = '';
-    const timer = setTimeout(() => reject(new Error('Startup timed out: ' + log)), 30000);
-    const collect = chunk => { log += chunk; const match = log.match(pattern); if (match) { clearTimeout(timer); resolve(match[1]); } };
-    child.stdout.on('data', collect); child.stderr.on('data', collect);
-    child.on('error', reject);
-    child.once('exit', code => { clearTimeout(timer); reject(new Error(`Child exited ${code}: ${log}`)); });
-  });
-}
-async function until(check, message) {
-  const deadline = Date.now() + 15000;
-  while (!(await check())) { assert.ok(Date.now() < deadline, message); await delay(40); }
-}
 try {
   const data = path.join(scratch, 'data');
   await mkdir(data);
@@ -274,6 +258,6 @@ if (input.split('\\n').includes('hang')) {
   throw error;
 } finally {
   await browser?.close();
-  for (const child of children.reverse()) if (child.exitCode === null && child.signalCode === null) { child.kill('SIGTERM'); await once(child, 'exit'); }
+  await processes.close();
   if (output !== scratch) await rm(scratch, { recursive: true, force: true });
 }

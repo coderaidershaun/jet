@@ -71,6 +71,57 @@ test('browser bridge retries one identity, deduplicates events and resnapshots a
   assert.equal(stopCalls, 2);
   assert.deepEqual(cancelledCalls.filter((call) => call.path.endsWith('/stop')).map((call) => call.body), [{ requestId: 'pending' }, { requestId: 'pending' }]);
 
+  const opened = [], checks = [];
+  const actionAgent = createBrowserAgent({ EventSource: Source, storage, fetch: async path => {
+    if (path === '/api/snapshot') return { ok: true, json: () => new Promise(resolve => checks.push(resolve)) };
+    return { ok: true, json: async () => ({}) };
+  } });
+  actionAgent.onAppOpened((action, current) => { if (current()) opened.push(action.appId); });
+  const unwatch = actionAgent.watch(() => {}, () => {});
+  const actionSource = sources.at(-1);
+  const identity = { clientId: actionAgent.clientId, requestId: 'first-request', turnId: 'first-turn' };
+  const snapshot = { epoch: 'actions', cursor: 100, active: { identity }, history: [] };
+  actionSource.emit({ kind: 'snapshot', data: snapshot });
+  let next = 100;
+  const emit = (event, turn = identity) => actionSource.emit({ kind: 'event', data: { cursor: ++next, turn, event } });
+  const action = { kind: 'appOpened', appId: 'first-app', ...identity };
+  emit({ ...action, clientId: 'another-browser' });
+  assert.equal(checks.length, 0);
+  emit(action);
+  await new Promise(setImmediate);
+  checks.shift()({ ...snapshot, cursor: next });
+  await new Promise(setImmediate);
+  assert.deepEqual(opened, ['first-app']);
+  emit({ ...action, appId: 'late-app' });
+  await new Promise(setImmediate);
+  emit({ kind: 'finished' });
+  checks.shift()({ ...snapshot, cursor: next });
+  await new Promise(setImmediate);
+  assert.deepEqual(opened, ['first-app']);
+  const newer = { ...identity, requestId: 'new-request', turnId: 'new-turn' };
+  emit({ kind: 'accepted' }, newer);
+  emit(action);
+  await new Promise(setImmediate);
+  assert.equal(checks.length, 0);
+  emit({ kind: 'accepted' }, identity);
+  emit(action);
+  await new Promise(setImmediate);
+  checks.shift()({ ...snapshot, cursor: next, active: { identity: newer } });
+  await new Promise(setImmediate);
+  assert.deepEqual(opened, ['first-app'], 'replayed accepted/action must consult authoritative current turn');
+  emit({ kind: 'accepted' }, newer);
+  emit({ ...action, ...newer });
+  await new Promise(setImmediate);
+  await actionAgent.stop(newer.requestId);
+  checks.shift()({ ...snapshot, cursor: next, active: { identity: newer } });
+  await new Promise(setImmediate);
+  assert.deepEqual(opened, ['first-app'], 'local Stop invalidates an outstanding snapshot immediately');
+  emit({ kind: 'accepted' }, newer);
+  emit({ ...action, ...newer });
+  await new Promise(setImmediate);
+  assert.equal(checks.length, 0, 'replay cannot reauthorize a locally stopped request');
+  unwatch();
+
   const original = { storage: globalThis.sessionStorage, fake: globalThis.__JET_FAKE__, crypto: Object.getOwnPropertyDescriptor(globalThis, 'crypto') };
   try {
     globalThis.sessionStorage = storage;

@@ -3,7 +3,7 @@ import { requestJson } from '../bridge/browser-agent.js';
 import { createFrameContainer } from './frames.js';
 import { createAppForm } from './form.js';
 
-export function createWorkspace({ agent, page }) {
+export function createWorkspace({ agent, page, onTools = () => {} }) {
   const narrow = matchMedia('(max-width: 759px)');
   let preference = {};
   try { preference = JSON.parse(localStorage.getItem('jet.workspace')) ?? {}; } catch { /* Storage can be unavailable in private browser sessions. */ }
@@ -104,6 +104,7 @@ export function createWorkspace({ agent, page }) {
   });
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return;
+    if (event.target.id === 'field' && document.querySelector('.command-menu:not([hidden])')) return;
     if (narrow.matches && (navOpen || dockOpen)) {
       event.preventDefault(); event.stopImmediatePropagation();
       if (dockOpen) { dockOpen = false; paint(); dockToggle.focus(); }
@@ -117,8 +118,10 @@ export function createWorkspace({ agent, page }) {
     activeAppId: () => selected,
     refresh,
     toolsContent,
+    openApp(id) { const app = apps.find(item => item.id === id); if (!app) throw new Error('This app is no longer registered.'); select(app); },
+    showAppForm(app) { form.open(app); },
     showChat() { mode = 'chat'; dockOpen = true; if (narrow.matches) navOpen = false; paint(); chatTab.focus(); },
-    showTools(appId) { if (appId) { const app = apps.find((item) => item.id === appId); if (app) select(app); } mode = 'tools'; dockOpen = true; if (narrow.matches) navOpen = false; paint(); toolsTab.focus(); },
+    showTools(appId = null) { mode = 'tools'; dockOpen = true; if (narrow.matches) navOpen = false; paint(); toolsTab.focus(); onTools(appId); },
     hideDock() { dockOpen = false; paint(); dockToggle.focus(); },
   };
   paint();

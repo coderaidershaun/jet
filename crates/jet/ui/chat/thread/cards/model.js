@@ -217,7 +217,11 @@ function fieldsOf(value) {
 }
 
 /** A call with no reader of its own: the outcome comes from its summary, and its result shows as plain fields. */
-function readGeneric(_result, _input, call) {
+function readGeneric(result, _input, call) {
+  if (call.server === 'jet' && call.tool === 'apps_update' && typeof result.change?.change === 'string') {
+    const outcome = joined(result.change.change, orNull(result.app?.label) ?? orNull(result.change.appId));
+    return { outcome, tone: 'quiet', body: { kind: 'fields', fields: fieldsOf(call.result) } };
+  }
   const prefix = call.server + ' · ' + call.tool + ' · ';
   const summary = stringOf(call.summary);
   const outcome = summary.startsWith(prefix) ? summary.slice(prefix.length) : summary;

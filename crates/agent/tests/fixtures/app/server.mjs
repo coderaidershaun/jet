@@ -1,5 +1,8 @@
 import http from "node:http";
 import { readFile } from "node:fs/promises";
+import { createDiscoveryFixture } from "./discovery.mjs";
+
+const discovery = createDiscoveryFixture();
 
 const tools = [
   { name: "collections", description: "Browse fixture collections without side effects.", inputSchema: { type: "object", properties: {}, additionalProperties: false }, _meta: { "jet/discovery": { version: 1, entryArguments: {} } } },
@@ -26,6 +29,7 @@ function toolResult(name, args) {
 }
 
 const mcp = http.createServer(async (request, response) => {
+  if (discovery?.offline) return json(response, 503, { error: "fixture offline" });
   if (request.url !== "/mcp") return json(response, 404, { error: "not found" });
   if (request.method !== "POST") {
     response.writeHead(405, { Allow: "POST" });
@@ -40,6 +44,7 @@ const mcp = http.createServer(async (request, response) => {
     }
     message = JSON.parse(body);
     if (!Object.hasOwn(message, "id")) {
+      if (message.method === "notifications/cancelled") discovery?.cancelled(message.params);
       response.writeHead(202);
       return response.end();
     }
@@ -47,10 +52,11 @@ const mcp = http.createServer(async (request, response) => {
     switch (message.method) {
       case "initialize": result = { protocolVersion: "2025-11-25", serverInfo: { name: "fixture-notebook", version: "1.0.0" }, capabilities: { tools: {} }, instructions: "Use collections to browse examples, or inspect read_note before calling it." }; break;
       case "ping": result = {}; break;
-      case "tools/list": result = { tools }; break;
+      case "tools/list": result = { tools: discovery?.list(tools) ?? tools }; break;
       case "tools/call": {
-        const structuredContent = toolResult(message.params.name, message.params.arguments ?? {});
-        result = { content: [{ type: "text", text: JSON.stringify(structuredContent) }], structuredContent, isError: false };
+        const name = message.params.name, args = message.params.arguments ?? {};
+        const structuredContent = discovery ? await discovery.call(name, args, message.id, () => toolResult(name, args)) : toolResult(name, args);
+        result = { content: [{ type: "text", text: JSON.stringify(structuredContent) }], structuredContent, isError: discovery?.isError(name) ?? false };
         break;
       }
       default: return json(response, 200, { jsonrpc: "2.0", id: message.id, error: { code: -32601, message: "Method not found" } });
@@ -64,6 +70,7 @@ const mcp = http.createServer(async (request, response) => {
 await new Promise(resolve => mcp.listen(Number(process.env.MCP_PORT ?? 0), "127.0.0.1", resolve));
 const mcpUrl = `http://127.0.0.1:${mcp.address().port}/mcp`;
 const ui = http.createServer(async (request, response) => {
+  if (await discovery?.handle(request, response)) return;
   const path = new URL(request.url, "http://fixture").pathname;
   if (path === "/jet-app.json") return json(response, 200, { version: 1, name: "Fixture notebook", ui: "./", mcp: mcpUrl, embedding: "relative-paths" });
   if (path === "/api/message") return json(response, 200, { text: "Independent app API works" });
