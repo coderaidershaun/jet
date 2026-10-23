@@ -1,11 +1,12 @@
 //! Keep Jet's conversations, provider processes and library connections independent of the window.
 
+pub mod apps;
 mod chat;
 mod child;
 mod conversation;
 mod feeling;
 mod markdown;
-mod mcp;
+pub mod mcp;
 mod memory;
 mod turn;
 

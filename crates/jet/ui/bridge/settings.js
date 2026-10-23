@@ -30,14 +30,14 @@ export function defaultSettings() {
     codexPath: null,
     mcp: {
       quanty: {
-        enabled: true,
-        command: '/Users/shaun/Code/DEVELOPMENT/quanty/target/release/quanty-mcp',
-        cwd: '/Users/shaun/Code/DEVELOPMENT/quanty',
+        enabled: false,
+        command: '',
+        cwd: null,
       },
       polysim: {
-        enabled: true,
-        command: '/Users/shaun/Code/DEVELOPMENT/polysim/target/release/polysim-mcp',
-        cwd: '/Users/shaun/Code/DEVELOPMENT/polysim',
+        enabled: false,
+        command: '',
+        cwd: null,
       },
     },
   };

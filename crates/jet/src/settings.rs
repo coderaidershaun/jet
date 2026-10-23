@@ -3,7 +3,7 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use agent::{Effort, McpServer, McpServers, Model, Persona};
+use agent::{Effort, McpServers, Model, Persona};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
@@ -37,22 +37,8 @@ impl Default for Settings {
             drawer_open: true,
             claude_path: None,
             codex_path: None,
-            mcp: default_mcp(),
+            mcp: McpServers::default(),
         }
-    }
-}
-
-// SMELL: these point at this machine's quanty and polysim checkouts, which only suits a
-// single-user desktop app.
-fn default_mcp() -> McpServers {
-    let server = |checkout: &str, program: &str| McpServer {
-        enabled: true,
-        command: Path::new(checkout).join("target/release").join(program),
-        cwd: Some(PathBuf::from(checkout)),
-    };
-    McpServers {
-        quanty: server("/Users/shaun/Code/DEVELOPMENT/quanty", "quanty-mcp"),
-        polysim: server("/Users/shaun/Code/DEVELOPMENT/polysim", "polysim-mcp"),
     }
 }
 
@@ -134,7 +120,9 @@ mod tests {
     #[test]
     fn missing_file_means_defaults() {
         let path = scratch_file("missing");
-        assert_eq!(read_from(&path).unwrap(), Settings::default());
+        let settings = read_from(&path).unwrap();
+        assert_eq!(settings, Settings::default());
+        assert_eq!(settings.mcp.enabled().count(), 0);
     }
 
     #[test]

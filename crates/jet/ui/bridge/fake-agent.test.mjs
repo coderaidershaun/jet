@@ -125,7 +125,9 @@ test('"quanty" replays a library search as tool events before the answer', async
   const answer = recorded.at(-1).result.split('\n').slice(1).join('\n');
 
   const { agent } = fastAgent();
-  const { events } = await ask(agent, 'what does quanty say about vega?');
+  const { events } = await ask(agent, 'what does quanty say about vega?', () => {}, {
+    mcp: { quanty: { enabled: true }, polysim: { enabled: true } },
+  });
 
   assert.deepEqual(events.find((event) => event.kind === 'started').mcp, [{ name: 'polysim', status: 'connected' }, { name: 'quanty', status: 'connected' }]);
   const order = ['started', 'toolStarted', 'toolFinished', 'text', 'finished'].map((kind) => kinds(events).indexOf(kind));
