@@ -27,6 +27,13 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
   const memoryListeners = new Set();
   const registryListeners = new Set();
   const appListeners = new Set();
+  const connectionListeners = new Set();
+  let connected = true;
+  function setConnected(value) {
+    if (connected === value) return;
+    connected = value;
+    for (const listener of connectionListeners) listener(value);
+  }
   const cancelledActions = new Set();
   let actionGeneration = 0;
   let activeIdentity = null;
@@ -82,7 +89,8 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       else callbacks.get(envelope.turn?.requestId)?.(envelope.event);
       if (['finished', 'failed', 'stopped'].includes(envelope.event.kind)) callbacks.delete(envelope.turn?.requestId);
     };
-    source.onerror = reconnect;
+    source.onopen = () => setConnected(true);
+    source.onerror = () => { setConnected(false); reconnect(); };
   }
   function reconnect() {
     actionGeneration++;
@@ -154,6 +162,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     },
     onAppOpened(listener) { appListeners.add(listener); return () => appListeners.delete(listener); },
     onRegistryChanged(listener) { registryListeners.add(listener); return () => registryListeners.delete(listener); },
+    onConnectionChanged(listener) { connectionListeners.add(listener); return () => connectionListeners.delete(listener); },
     onMemoryUpdated(listener) { memoryListeners.add(listener); return () => memoryListeners.delete(listener); },
   };
 }

@@ -2,15 +2,18 @@ import { createPlayer } from '../../jet/player.js';
 import { mountJet } from '../../jet/draw/view.js';
 import { MODELS } from '../../bridge/models.js';
 
-export function createDrawerView({ jetSvg, nameEl, titleEl, modelEl, tokensEl, barEl, percentEl, noteEl, gearButton, handlers }) {
+export function createDrawerView({ jetSvg, nameEl, titleEl, statusEl, drawerEl, contextEl, contextToggle, modelEl, tokensEl, barEl, percentEl, noteEl, gearButton, handlers }) {
   jetSvg.setAttribute('viewBox', '0 70 200 170');
   const draw = mountJet(jetSvg);
   const player = createPlayer({ standing: true, reducedMotion: true });
   player.tick(0);
   gearButton.addEventListener('click', handlers.openSettings);
+  contextToggle.addEventListener('click', () => { contextEl.hidden = !contextEl.hidden; contextToggle.setAttribute('aria-expanded', String(!contextEl.hidden)); });
   return {
     init() { draw(player.frame, { unitPx: Math.max(jetSvg.getBoundingClientRect().width / 200, 0.001) }); },
     setPersona({ name, jobTitle }) { nameEl.textContent = name; titleEl.textContent = jobTitle; },
+    // SMELL: in the collapsed drawer the status line is hidden and the red dot is only drawn, so a screen reader hears nothing when the server is lost.
+    setConnection(connected) { drawerEl.dataset.connection = connected ? 'online' : 'offline'; statusEl.textContent = connected ? '' : 'Server disconnected'; },
     setContext(model, context = {}) {
       modelEl.textContent = MODELS.find(([id]) => id === model)?.[1] ?? model;
       const used = context.model === model ? context.usedTokens : null;

@@ -20,8 +20,9 @@ test('browser bridge retries one identity, deduplicates events and resnapshots a
     if (calls.length === 1) { request.activeAppId = 'app-b'; throw new Error('acknowledgment lost'); }
     return { ok: true, json: async () => ({ user: { text: 'hello' } }) };
   } });
-  const snapshots = [], events = [], registry = [];
+  const snapshots = [], events = [], registry = [], connection = [];
   const unsubscribe = agent.onRegistryChanged((event) => registry.push(event));
+  agent.onConnectionChanged((connected) => connection.push(connected));
   const stop = agent.watch((snapshot) => snapshots.push(snapshot), (event) => events.push(event));
   sources[0].emit({ kind: 'snapshot', data: { epoch: 'epoch-a', cursor: 7, history: [], active: null } });
   assert.deepEqual(await agent.send(request, () => {}), { text: 'hello' });
@@ -40,8 +41,12 @@ test('browser bridge retries one identity, deduplicates events and resnapshots a
   assert.equal(registry.length, 1);
   assert.equal(calls[1].request.activeAppId, 'app-a');
   sources[0].onerror();
+  assert.deepEqual(connection, [false]);
   await new Promise((resolve) => setTimeout(resolve, 340));
   assert.equal(sources[1].url, '/api/events?epoch=epoch-a&cursor=10');
+  sources[1].onopen();
+  sources[1].onopen();
+  assert.deepEqual(connection, [false, true], 'the drawer hears each change once');
   sources[1].emit({ kind: 'resync' });
   await new Promise((resolve) => setTimeout(resolve, 340));
   assert.equal(sources[2].url, '/api/events');

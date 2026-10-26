@@ -8,7 +8,7 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
   let mode = 'chat', apps = [], selected = null, refreshNumber = 0;
   const drawer = document.getElementById('drawer');
   const inner = drawer.querySelector('.drawer-inner');
-  const button = (label, glyph, onClick, attrs = {}) => h('button', { type: 'button', class: 'workspace-button', 'aria-label': label, title: label, onClick, ...attrs }, h('span', { class: 'nav-icon', 'aria-hidden': 'true', text: glyph }));
+  const appButton = app => { const label = app.label + (app.enabled ? '' : ' · disabled'); return h('button', { type: 'button', class: 'workspace-button', 'aria-label': label, title: label, 'data-app-id': app.id, onClick: () => select(app) }, h('span', { class: 'nav-icon', 'aria-hidden': 'true', text: app.label.slice(0, 1).toUpperCase() }), h('span', { class: 'nav-label', text: app.label })); };
   const toggle = document.getElementById('jet-toggle');
   toggle.addEventListener('click', () => { if (mode !== 'chat') api.showChat(); else { expanded = !expanded; paint(); } });
   const list = inner.querySelector('.app-list');
@@ -55,7 +55,7 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
         if (mode === 'app') { mode = 'chat'; expanded = !narrow.matches; }
       }
       for (const app of apps) frames.update(app);
-      list.replaceChildren(...apps.map(app => button(app.label + (app.enabled ? '' : ' · disabled'), app.label.slice(0, 1).toUpperCase(), () => select(app), { 'data-app-id': app.id })));
+      list.replaceChildren(...apps.map(appButton));
       paint();
       return true;
     } catch (error) { if (current === refreshNumber) notice.textContent = 'Apps could not be loaded: ' + (error.message ?? String(error)); }

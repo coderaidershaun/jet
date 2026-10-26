@@ -34,8 +34,9 @@ Labels are editable and need not be unique; stable IDs identify registrations.
 Ask Jet to change explicit UI/MCP endpoint overrides when an app has no descriptor.
 An unreachable app is saved with a discovery error so you can retry later.
 
-Jet chat fills the main content initially. One left drawer contains Jet, registered
-app icons, context capacity and settings. Selecting an app fills the content and collapses the
+Jet chat fills the main content initially. One left drawer lists Jet, then each registered
+app with its icon and label, then settings at the foot. Context capacity stays folded
+behind a chevron beside Jet's name. Selecting an app fills the content and collapses the
 drawer to an icon rail. Jet returns to the preserved chat and desktop drawer;
 last selected app context remains available to Jet. Narrow screens default to the
 rail, with an expandable drawer and settings always available. `/tools` opens the

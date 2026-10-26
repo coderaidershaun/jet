@@ -53,6 +53,7 @@ import { createBrowserAgent } from './browser-agent.js';
  * @property {(appId: string, path: string) => Promise<string>} readAppImage   rejects when no registered image route is available
  * @property {(url: string) => Promise<void>} openLink
  * @property {(listener: (notes: Notes) => void) => () => void} onMemoryUpdated   returns the way to stop listening
+ * @property {(listener: (connected: boolean) => void) => () => void} onConnectionChanged   fires only when the server is lost or found again
  */
 
 /** @returns {Agent} */

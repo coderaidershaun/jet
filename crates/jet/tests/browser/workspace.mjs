@@ -101,10 +101,13 @@ if (input.includes('fail-before-init')) {
   await page.setViewportSize({ width: 1440, height: 900 });
   const a = await add(first, 'Notebook A'), b = await add(second, 'Notebook B');
   assert.equal(sends.length, 0);
-  assert.equal(await page.locator('.app-list .nav-label').count(), 0);
-  const appButtons = await page.locator('.app-list button').evaluateAll(elements => elements.map(el => ({ text: el.textContent, title: el.title, label: el.getAttribute('aria-label'), box: el.getBoundingClientRect().toJSON() })));
+  assert.equal(await page.locator('.app-list .nav-label').count(), 2);
+  assert.equal(await page.locator('#context').isVisible(), false, 'Context stays hidden until toggled');
+  const kiteBox = await page.locator('#jet-toggle').boundingBox();
+  const appButtons = await page.locator('.app-list button').evaluateAll(elements => elements.map(el => ({ text: el.querySelector('.nav-label').textContent, title: el.title, label: el.getAttribute('aria-label'), box: el.getBoundingClientRect().toJSON(), icon: el.querySelector('.nav-icon').getBoundingClientRect().toJSON() })));
   const settingsTop = (await page.locator('#gear').boundingBox()).y;
-  for (const item of appButtons) { assert.equal(item.text.length, 1); assert.equal(item.title, item.label); assert.ok(item.box.height >= 44 && item.box.y + item.box.height <= settingsTop); }
+  for (const item of appButtons) { assert.equal(item.text, item.label); assert.equal(item.title, item.label); assert.equal(item.icon.x + item.icon.width / 2, kiteBox.x + kiteBox.width / 2, 'App icons line up with the kite'); assert.ok(item.box.height >= 44 && item.box.y > kiteBox.y && item.box.y + item.box.height <= settingsTop); }
+  assert.ok(appButtons[0].box.y < kiteBox.y + kiteBox.height + 40, 'Apps sit directly under the kite');
   await page.locator('#field').fill('Unsent chat draft');
   await nav(a.id).click();
   await frame(a.id).getByLabel('Unsaved note').fill('Unsent note A');
@@ -134,6 +137,7 @@ if (input.includes('fail-before-init')) {
       extraApps.push(result.app);
     }
     if (process.env.JOINT_FACADE !== '1') await focusRefresh();
+    await page.setViewportSize({ width: 1440, height: 480 });
     await until(async () => await page.locator('.app-list button').count() === 10, 'Long app list reaches navigation');
     assert.ok(await page.locator('.app-list').evaluate(el => el.scrollHeight > el.clientHeight), 'Long app list can scroll vertically');
     assert.ok(await page.locator('.app-list').evaluate(el => el.scrollWidth === el.clientWidth), 'Long app list has no horizontal overflow');
@@ -146,6 +150,7 @@ if (input.includes('fail-before-init')) {
         && box.left >= list.left && box.right <= list.left + el.clientWidth && box.height >= 44;
     }), 'Last app button scrolls fully into view');
     await page.screenshot({ path: path.join(output, 'workspace-scrollable-apps.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 1440, height: 900 });
     await nav(a.id).click();
   } finally {
     for (const app of extraApps) await api({ action: 'remove', id: app.id });
@@ -253,6 +258,7 @@ if (input.includes('fail-before-init')) {
   await until(() => page.locator('.empty').evaluate(el => getComputedStyle(el).visibility === 'hidden'), 'Restored history finishes hiding greeting');
   await delay(250);
   await page.screenshot({ path: path.join(output, 'workspace-desktop.png') });
+  await page.getByRole('button', { name: 'Context', exact: true }).click();
   for (const viewport of [{ width: 390, height: 844 }, { width: 390, height: 420 }]) {
     await page.setViewportSize(viewport);
     assert.equal(await page.locator('#field').inputValue(), 'Draft survives overlays');
@@ -290,6 +296,8 @@ if (input.includes('fail-before-init')) {
   const commandBox = await page.locator('.command-result').boundingBox();
   const threadBox = await page.locator('#thread').boundingBox();
   assert.ok(commandBox.y >= threadBox.y && commandBox.y + commandBox.height <= threadBox.y + threadBox.height, 'Command guidance stays visible after a long conversation');
+  const lastRow = await page.locator('#rows > :last-child').boundingBox();
+  assert.ok(commandBox.y >= lastRow.y + lastRow.height, 'Command guidance sits below the newest message');
   await slash('/app add file:///invalid');
   await until(async () => /http|address|scheme/i.test(await page.locator('.command-result').textContent()), 'Invalid address explains failure');
   await slash('/app add ' + first);

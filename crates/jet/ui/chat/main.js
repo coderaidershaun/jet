@@ -29,7 +29,7 @@ async function start() {
   let toolBrowser, commandMenu;
   const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId) });
   const commandResult = h('pre', { class: 'command-result', role: 'status', 'aria-label': 'Command result' });
-  $('banner').before(commandResult);
+  $('rows').after(commandResult);
   function reportCommand(text) {
     commandResult.textContent = text;
     page.classList.toggle('has-command-result', Boolean(text));
@@ -46,6 +46,7 @@ async function start() {
   const follow = createFollow();
   const composer = createComposer({ empty: history.length === 0 });
   $('gear').append(icon('gear'));
+  $('context-toggle').append(icon('chevron'));
   $('held-cancel').append(icon('close'));
   $('jump').prepend(icon('down'));
 
@@ -101,12 +102,14 @@ async function start() {
     jetSvg: $('drawer-jet'),
     nameEl: $('drawer-name'),
     titleEl: $('drawer-title'),
+    statusEl: $('drawer-status'), drawerEl: $('drawer'), contextEl: $('context'), contextToggle: $('context-toggle'),
     modelEl: $('context-model'), tokensEl: $('context-tokens'), barEl: $('context-bar'),
     percentEl: $('context-percent'), noteEl: $('context-note'), gearButton: $('gear'),
     handlers: {
       openSettings: () => sheet.open(),
     },
   });
+  agent.onConnectionChanged?.(drawer.setConnection);
 
   const live = createLive({
     reducedMotion: reducedMotion(),

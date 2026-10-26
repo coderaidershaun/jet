@@ -25,9 +25,10 @@
         <button id="jet-toggle" class="jet-toggle" type="button" aria-label="Collapse drawer" aria-controls="drawer" aria-expanded="true" title="Collapse drawer">
           <svg class="drawer-jet" id="drawer-jet" aria-hidden="true"></svg>
         </button>
-        <div class="drawer-persona"><p class="drawer-name" id="drawer-name">Jet</p><p class="drawer-title" id="drawer-title">First-mate</p></div>
+        <div class="drawer-persona"><p class="drawer-name" id="drawer-name">Jet</p><p class="drawer-title" id="drawer-title">First-mate</p><p class="drawer-status" id="drawer-status" role="status"></p></div>
+        <button id="context-toggle" class="context-toggle" type="button" aria-label="Context" title="Context" aria-expanded="false" aria-controls="context"></button>
       </div>
-      <section class="context-capacity" aria-labelledby="context-title">
+      <section class="context-capacity" id="context" aria-labelledby="context-title" hidden>
         <h2 id="context-title">Context</h2>
         <p id="context-model"></p>
         <p id="context-tokens"></p>

@@ -3,6 +3,7 @@
 .command-menu button { display: flex; flex-direction: column; width: 100%; padding: 9px; border: 0; border-radius: 6px; text-align: left; color: inherit; background: transparent; }
 .command-menu button[aria-selected="true"], .command-menu button:hover { background: #29495f; }
 .command-menu span { font-size: 12px; color: #aebcc5; }
-.command-result { flex: none; max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding: 8px 12px; font-size: 13px; border-bottom: 1px solid #293942; }
+.command-result { max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 12px 0 0; padding: 8px 12px; font-size: 13px; border-top: 1px solid #293942; }
+#rows:empty + .command-result { margin-top: 0; border-top: 0; }
 .command-result:empty { display: none; }
 .page.has-command-result .empty { visibility: hidden; }
