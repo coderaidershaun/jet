@@ -5,7 +5,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use super::super::{Request, SessionMode};
-use crate::chat::TURN_HEADER;
+use crate::chat::{FACADE_TOOLS, TURN_HEADER};
 
 fn push_config_value(args: &mut Vec<String>, key: &str, value: impl Into<Value>) {
     args.extend(["-c".into(), format!("{key}={}", value.into())]);
@@ -47,7 +47,7 @@ pub(super) fn args(request: &Request, schema: Option<&Path>) -> Vec<String> {
         push_config_value(
             &mut args,
             "mcp_servers.jet.enabled_tools",
-            json!(crate::FACADE_TOOLS),
+            json!(FACADE_TOOLS),
         );
         // Jet users authorize their configured servers; headless turns cannot prompt.
         push_config_value(

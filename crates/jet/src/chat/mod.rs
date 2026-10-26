@@ -24,6 +24,9 @@ pub(crate) use events::{Envelope, Snapshot};
 pub(crate) use provider::AgentStatus;
 use review_timer::{ReviewTarget, ReviewTimer};
 
+/// The longest request or client ID the page may send, in bytes.
+pub(crate) const MAX_ID_BYTES: usize = 128;
+
 pub(crate) struct ChatState {
     pub conversation: Conversation,
     // SMELL: chat and facade import each other; the facade reaches back through a weak link that server::open sets.
@@ -84,8 +87,8 @@ impl ChatState {
     pub fn send(self: &Arc<Self>, request: SendRequest) -> Result<Accepted, BridgeError> {
         if request.request_id.is_empty()
             || request.client_id.is_empty()
-            || request.request_id.len() > 128
-            || request.client_id.len() > 128
+            || request.request_id.len() > MAX_ID_BYTES
+            || request.client_id.len() > MAX_ID_BYTES
             || request.text.trim().is_empty()
             || !request.budget_usd.is_finite()
             || request.budget_usd <= 0.0
@@ -95,6 +98,11 @@ impl ChatState {
             ));
         }
         let payload = json!(&request);
+        // Finding the program can take seconds, so it runs before the lock. Its error waits
+        // until the other checks have passed.
+        let transport = settings::read_from(&self.data_dir)
+            .map_err(BridgeError::from)
+            .and_then(|saved| provider::transport_for(request.model, &saved, &self.data_dir));
         let mut runtime = lock(&self.runtime);
         if let Some(user) = self.conversation.accepted_request(&request.request_id)? {
             let identity = user
@@ -121,8 +129,7 @@ impl ChatState {
             return Err(BridgeError::Busy);
         }
         let mut history = self.conversation.history(199)?;
-        let saved = settings::read_from(&self.data_dir)?;
-        let transport = provider::transport_for(request.model, &saved, &self.data_dir)?;
+        let transport = transport?;
         let target = ReviewTarget {
             transport: transport.clone(),
             name: request.persona.name.clone(),
@@ -250,10 +257,10 @@ impl ChatState {
     }
 
     pub fn stop(&self, request_id: &str) -> Result<(), BridgeError> {
-        if request_id.is_empty() || request_id.len() > 128 {
-            return Err(BridgeError::InvalidRequest(
-                "request ID is required and must be at most 128 bytes".into(),
-            ));
+        if request_id.is_empty() || request_id.len() > MAX_ID_BYTES {
+            return Err(BridgeError::InvalidRequest(format!(
+                "request ID is required and must be at most {MAX_ID_BYTES} bytes"
+            )));
         }
         let mut runtime = lock(&self.runtime);
         runtime.cancel_request(request_id);

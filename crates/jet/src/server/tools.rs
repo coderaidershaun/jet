@@ -1,5 +1,6 @@
 //! Expose catalogue inspection and explicitly marked free discovery to the browser.
 use super::Server;
+use crate::chat::MAX_ID_BYTES;
 use agent::{
     apps::AppId,
     mcp::{ToolCatalogue, ToolRequest, ToolTarget},
@@ -47,8 +48,10 @@ async fn discover(
     Path(id): Path<AppId>,
     Json(request): Json<DiscoveryRequest>,
 ) -> Result<Json<Value>, Error> {
-    if request.request_id.is_empty() || request.request_id.len() > 128 {
-        return Err(error("requestId must contain 1 to 128 bytes"));
+    if request.request_id.is_empty() || request.request_id.len() > MAX_ID_BYTES {
+        return Err(error(format!(
+            "requestId must contain 1 to {MAX_ID_BYTES} bytes"
+        )));
     }
     let result = host
         .mcp

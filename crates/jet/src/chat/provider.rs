@@ -22,7 +22,7 @@ impl Transport for MissingAgent {
     }
 }
 
-/// The provider a model runs on. This is the one place that maps a model to a provider.
+/// The provider a model runs on.
 struct Selected {
     name: &'static str,
     /// Where the program is, or the places that were searched.
@@ -31,26 +31,20 @@ struct Selected {
     transport: Arc<dyn Transport>,
 }
 
-fn found<C: Transport + 'static>(
-    cli: C,
-    program: fn(&C) -> &Path,
-) -> (PathBuf, Arc<dyn Transport>) {
-    (program(&cli).to_path_buf(), Arc::new(cli))
-}
-
+/// This is the one place that maps a model to a provider.
 fn select(model: Model, settings: &Settings, data_dir: &Path) -> Result<Selected, BridgeError> {
-    let (name, located, missing): (_, _, fn(Vec<String>) -> TransportError) = if model.is_codex() {
+    let (name, located, missing): (_, _, fn(_) -> _) = if model.is_codex() {
         (
             "Codex",
             CodexCli::locate(settings.codex_path.as_deref(), data_dir)
-                .map(|cli| found(cli, CodexCli::program)),
+                .map(|cli| (cli.program().to_path_buf(), Arc::new(cli) as _)),
             |searched| TransportError::CodexMissing { searched },
         )
     } else {
         (
             "Claude Code",
             ClaudeCli::locate(settings.claude_path.as_deref(), data_dir)
-                .map(|cli| found(cli, ClaudeCli::program)),
+                .map(|cli| (cli.program().to_path_buf(), Arc::new(cli) as _)),
             |searched| TransportError::ClaudeMissing { searched },
         )
     };

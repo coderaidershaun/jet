@@ -98,17 +98,11 @@ impl ToolCalls {
             let ok = !is_error && !nested_error;
             let summary = open.summary(ok, &result);
             let duration_ms = u64::try_from(open.started.elapsed().as_millis()).unwrap_or(u64::MAX);
-            let ToolStart {
-                id,
-                server,
-                tool,
-                input,
-            } = open.call;
             let call = ToolCall {
-                id,
-                server,
-                tool,
-                input,
+                id: open.call.id,
+                server: open.call.server,
+                tool: open.call.tool,
+                input: open.call.input,
                 ok,
                 result,
                 summary,
