@@ -1,11 +1,12 @@
 // Moves the kite through time. It owns the state and plays a clip from wherever
 // the kite is, so a new clip blends in instead of cutting. On top of the
 // state it adds what no clip should have to write: the body answering the
-// hand, the stretch of a fast corner, the idle bob and sway, blinks, eyes that
-// change kind only while shut, and the string. It knows nothing about the DOM.
+// hand, the stretch of a fast corner, the idle bob and sway, the wandering and
+// gusts of a kite the wind has, blinks, eyes that change kind only while shut,
+// and the string. It knows nothing about the DOM.
 
 import { bodyPoint, restingFrame } from './draw/paint.js';
-import { easeInOut, easeOut } from './easing.js';
+import { easeInOut, easeOut, pulse } from './easing.js';
 import { clamp, lerp } from './maths.js';
 import { CENTRE, HOVER_Y, kite, TIP } from './parts/forms.js';
 import { createChain, raiseBlend, SEGMENTS, wind } from './parts/string.js';
@@ -38,6 +39,17 @@ const STAND_SWAY_DEGREES = 0.6;
 const STAND_SWAY_PERIOD_MS = 6100;
 // The string lies to the left and holds the standing kite up, so the top leans that way.
 const STAND_LEAN_DEGREES = -2;
+
+// Slow sines as [amplitude, period in ms, phase]. The periods only line up again after
+// minutes, so the wandering never visibly repeats. Units are page units, roll is in degrees.
+const WANDER_X = [[18, 9700, 0], [7, 4300, 1.3]];
+const WANDER_Y = [[11, 7300, 0.6], [4, 3100, 2.1]];
+const WANDER_ROLL = [[2, 8300, 2], [0.6, 3700, 0]];
+
+const GUST_GAP_MIN_MS = 11000;
+const GUST_GAP_RANGE_MS = 13000;
+const GUST_MS = 2800;
+const NO_GUST = { lift: 0, roll: 0, x: 0, drag: 0 };
 
 const BLINK_GAP_MIN_MS = 4000;
 const BLINK_GAP_RANGE_MS = 5000;
@@ -82,13 +94,27 @@ function meanWind(ms) {
   return sum / SEGMENTS;
 }
 
+const wander = (now, sines) => sines.reduce((sum, [amplitude, periodMs, phase]) => sum + amplitude * Math.sin((2 * Math.PI * now) / periodMs + phase), 0);
+
+// A stronger puff from the left: it lifts Jet, leans the top into the wind, carries it right and
+// streams the string right. `into` is ms since the gust began.
+function gustAt(into) {
+  const t = into / 1000;
+  return {
+    lift: 9 * pulse(t, 0, 0.55, 2.3) - 2.5 * pulse(t, 1.7, 2.2, 2.8),
+    roll: -3.5 * pulse(t, 0, 0.45, 1.8) + 0.9 * pulse(t, 1.5, 2, 2.8),
+    x: 20 * pulse(t, 0.05, 0.75, 2.8),
+    drag: -240 * pulse(t, 0, 0.35, 1.6),
+  };
+}
+
 const squintWith = (own, other) => (own <= 0 && other > 0 ? Math.max(own, SYMPATHY * other) : own);
 
 /**
  * @param {object} [options]
  * @param {() => number} [options.random]  a number in [0, 1); a test passes its own to choose the blink times
  * @param {boolean} [options.reducedMotion]
- * @param {boolean} [options.layers]  false turns the idle bob and sway off, for tests and renders
+ * @param {boolean} [options.layers]  false turns off the idle bob, the sway, and the wind's wandering and gusts, for tests and renders
  * @param {boolean} [options.standing]  start standing instead of hovering
  */
 export function createPlayer({ random = Math.random, reducedMotion = false, layers = true, standing = false } = {}) {
@@ -116,12 +142,16 @@ export function createPlayer({ random = Math.random, reducedMotion = false, laye
   // The string pose is resolved here because a raise runs on after its clip ends.
   let poseTrack = null;
   let heldPoseKey = null;
+  let raisedPose = null;
   let raiseFrom = NO_BLEND;
   let raiseSince = 0;
 
   let nextBlinkAt = null;
   let blink = null;
   let shownKind = null;
+
+  let nextGustAt = null;
+  let gust = null;
 
   let carriedX = 0;
   let carrySpeed = 0;
@@ -132,6 +162,9 @@ export function createPlayer({ random = Math.random, reducedMotion = false, laye
     if (key !== heldPoseKey) {
       heldPoseKey = key;
       raiseFrom = state.stringPose ? state.stringPose.blend : NO_BLEND;
+      // A raise with no angles of its own works on whatever pose the string holds, so a clip need
+      // not know what the string was doing. A hanging string then stays hanging.
+      raisedPose = key.v?.angles ? key.v : state.stringPose;
       raiseSince = clipStart + key.t;
     }
     const pose = key.v;
@@ -139,11 +172,15 @@ export function createPlayer({ random = Math.random, reducedMotion = false, laye
       state.stringPose = pose;
       return;
     }
+    if (!raisedPose) {
+      state.stringPose = null;
+      return;
+    }
     const { to, lagMs, durationMs, overshoot, order } = pose.raise;
     const timing = { start: 0, lag: lagMs / 1000, duration: durationMs / 1000, overshoot, order };
     const seconds = (now - raiseSince) / 1000;
     const blend = raiseFrom.map((from, i) => from + (to - from) * raiseBlend(i, seconds, timing));
-    state.stringPose = { angles: pose.angles, proportions: pose.proportions, blend };
+    state.stringPose = { angles: raisedPose.angles, proportions: raisedPose.proportions, blend };
   }
 
   // The next blink is a random 4 to 9 s after the one before, so blinks never fall into a rhythm.
@@ -177,6 +214,24 @@ export function createPlayer({ random = Math.random, reducedMotion = false, laye
     }
   }
 
+  const gustGap = () => GUST_GAP_MIN_MS + random() * GUST_GAP_RANGE_MS;
+
+  // Like the blinks, each gust comes a random gap after the one before, so the gusts never fall into a
+  // rhythm, and one that fell in a hidden tab is skipped. Gusts only exist while the wind has Jet.
+  function advanceGusts(now) {
+    if (reduced || state.drift === 0) {
+      gust = null;
+      nextGustAt = null;
+      return;
+    }
+    nextGustAt ??= now + gustGap();
+    if (now >= nextGustAt) {
+      if (now < nextGustAt + GUST_MS) gust = { start: nextGustAt };
+      nextGustAt += gustGap();
+    }
+    if (gust && now - gust.start >= GUST_MS) gust = null;
+  }
+
   function smoothCarry(now) {
     const seconds = lastTickAt === null ? 0 : (now - lastTickAt) / 1000;
     if (seconds <= 0) return;
@@ -208,22 +263,30 @@ export function createPlayer({ random = Math.random, reducedMotion = false, laye
 
     let roll = state.roll + ROLL_PER_LIFT * (liftThen[1] - liftThen[0]);
     let y = state.y;
+    const drift = layerOn ? state.drift : 0;
+    const gustNow = gust ? gustAt(now - gust.start) : NO_GUST;
     if (layerOn) {
       y += BOB_UNITS * Math.sin((2 * Math.PI * now) / BOB_PERIOD_MS) * hoverWeight;
       roll += HOVER_SWAY_PER_WIND * meanWind(now - HOVER_SWAY_LAG_MS) * hoverWeight;
       roll += (STAND_SWAY_DEGREES * Math.sin((2 * Math.PI * now) / STAND_SWAY_PERIOD_MS) + STAND_LEAN_DEGREES) * standWeight;
     }
+    let x = 0;
+    if (drift > 0) {
+      x = drift * (wander(now, WANDER_X) + gustNow.x);
+      y += drift * (wander(now, WANDER_Y) + gustNow.lift);
+      roll += drift * (wander(now, WANDER_ROLL) + gustNow.roll);
+    }
     if (!reduced) roll += clamp(LEAN_PER_SPEED * carrySpeed, -MAX_LEAN_DEGREES, MAX_LEAN_DEGREES);
 
     const eyes = eyesAt(now);
-    const body = { y: Math.max(0, y), roll, squash: state.squash, pivot: lerp(TIP_POINT, CENTRE, hoverWeight) };
+    const body = { x, y: Math.max(0, y), roll, squash: state.squash, pivot: lerp(TIP_POINT, CENTRE, hoverWeight) };
     const activeChain = playing?.windHz ? createChain({ windHz: playing.windHz }) : chain;
     const string = activeChain.points({
       tip: bodyPoint(body, TIP_POINT),
       t: reduced ? 0 : (playing?.windHz ? now - clipStart : now) / 1000,
       pose: state.stringPose,
       payout: state.payout * (1 - state.form),
-      drag: reduced ? 0 : carrySpeed,
+      drag: reduced ? 0 : carrySpeed + drift * gustNow.drag,
       written: state.form > 0 ? null : state.written,
     });
     return {
@@ -273,6 +336,8 @@ export function createPlayer({ random = Math.random, reducedMotion = false, laye
       shownKind = 'round';
       carriedX = 0;
       carrySpeed = 0;
+      gust = null;
+      nextGustAt = null;
     },
 
     stretchFromSpeed,
@@ -324,6 +389,7 @@ export function createPlayer({ random = Math.random, reducedMotion = false, laye
         const rest = restState({ standing: true });
         state.y = 0;
         state.roll = 0;
+        state.drift = 0;
         state.stringPose = rest.stringPose;
         if (!playing) {
           state.eyeKind = 'round';
@@ -334,6 +400,7 @@ export function createPlayer({ random = Math.random, reducedMotion = false, laye
       }
       smoothCarry(now);
       advanceBlinks(now);
+      advanceGusts(now);
       frame = composeFrame(now);
       while (liftSources.length > 1 && now - liftSources[1].since > LIFT_HISTORY_MS) liftSources.shift();
       lastTickAt = now;

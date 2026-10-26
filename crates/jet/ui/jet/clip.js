@@ -35,7 +35,7 @@ function checkTime(what, at) {
  * Makes an empty clip and the writers that put keys on its tracks. Times are
  * in milliseconds from the start of the clip.
  *
- * `y(at, v, e)` and the eleven other writers named after the tracks each push a
+ * `y(at, v, e)` and the twelve other writers named after the tracks each push a
  * key at the time `at`; `e` is the easing used while arriving at it. `t()` is
  * the latest key time written so far, so a clip can chain durations:
  * `y(t() + 320, 64, ease)`. Write `t()` with its brackets: a writer refuses a
@@ -83,6 +83,7 @@ export function createClip() {
     toRest('anger', 0, easeOut);
     toRest('squint', 0, easeOut);
     toRest('payout', 1, easeOut);
+    toRest('drift', 0, easeOut);
     toRest('written', null);
     toRest('stringPose', restState({ standing }).stringPose);
   }

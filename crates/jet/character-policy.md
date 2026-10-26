@@ -37,17 +37,18 @@ The lane uses scale .24 (about 35 px body width), the hero .6 (about 88 px). The
 
 The character is JavaScript geometry. `parts/` owns forms, eyes, hand, string and route data; `geometry.js` owns geometric primitives. `draw/paint.js` is pure frame → SVG tree; `draw/view.js` mounts that fixed tree once and updates attributes. The host owns DOM placement and screen travel.
 
-`state.js` names twelve tracks: `y`, `roll`, `lift`, `squash`, `form`, `lids`, `eyeKind`, `anger`, `squint`, `payout`, `stringPose`, `written`. `eyeKind`, `stringPose` and `written` are step tracks. A resolved string pose has angles, optional chord proportions and per-segment blend; a clip key may instead request a timed raise. A written value holds route points/length, written length, scale and tremor.
+`state.js` names thirteen tracks: `y`, `roll`, `lift`, `squash`, `form`, `lids`, `eyeKind`, `anger`, `squint`, `payout`, `stringPose`, `written`, `drift`. `eyeKind`, `stringPose` and `written` are step tracks. A resolved string pose has angles, optional chord proportions and per-segment blend; a clip key may instead request a timed raise. A written value holds route points/length, written length, scale and tremor. `drift` (0 still .. 1 blown about) scales the player's wandering and gusts; it is not an emotion.
 
 `clip.js` supplies track writers, `t()`, `phase()`, `returnToRest()` and `finish()`. Keys are `{ t, v, e }`, in milliseconds, with easing on the key being arrived at. `player.play()` copies the clip and prepends live state at t 0; it never changes catalogue keys. Unmentioned tracks hold. Builders use `returnToRest(start, ownedTracks)` to reset the tracks they do not own, including string payout/pose and scowl, so interruption cannot leave a previous gesture behind. Every hold needs keys at both ends.
 
-The player composes a frame from authored state plus derived roll, lift speed/stretch, pivot, eyes and string points. Idle layers never become part of the next clip's start state. `clips/catalogue.js` lists six builders; `emotions.js` maps emotions to them; `director.js` orders them from events without timers or DOM.
+The player composes a frame from authored state plus derived roll, lift speed/stretch, pivot, eyes and string points. Idle layers never become part of the next clip's start state. `clips/catalogue.js` lists seven builders; `emotions.js` maps emotions to them; `director.js` orders them from events without timers or DOM.
 
 ## Rules that apply to every clip
 
 - Roll answers lift at −10% of (right − left), **100 ms late**; the 250 ms history survives clip changes.
 - Lift speed is sampled across a 40 ms window; stretch and speed lines use that same speed. A wink gives the other eye an 18% sympathy squint.
 - Hover bob is 1.6 units over 3 s. Hover sway uses mean wind delayed 150 ms at 0.12° per wind unit. Standing sway is ±0.6° over 6.1 s with a −2° lean toward the lying string. Their weights blend with clamp(y/8, 0, 1).
+- Drift: after 20 s of quiet with Jet standing in a lane (no reply, no clip, not reduced motion; the hero never drifts) the `drift` clip stirs, lifts Jet to the hover height and fades `drift` in. The player then adds, times `drift`, a wander of about ±25 units sideways, ±15 up and down and ±2.6° of roll from slow sines, plus a gust 11–24 s apart: 2.8 s that lift 9 units, lean −3.5°, carry 20 units right and stream the string right. Typing lands Jet with the gentle settle from its live height. A send flies with `drift` faded out over the launch.
 - The pivot blends from tip when standing to centre when hovering, so a grounded contact does not slide under roll and squash. Height never goes below zero.
 - Idle blinks are scheduled 4–9 s apart and skipped during clips: shut 60 ms, hold 40 ms, reopen to −0.07 overshoot by 200 ms, settle by 340 ms. The first idle blink at least 3 s after a clip returns eyes to round and anger to zero. A clip's eye-kind change waits for both lids to shut.
 - Eyes fade as form goes from .1 to .4. The string reels in with payout × (1 − form); written routes are hidden during the morph. The bow stays attached.
@@ -70,7 +71,9 @@ Anticipation, arcs, overshoot, follow-through and slower returns give movement w
 | `insulted` | **4800 ms**; prepare 0–420, scowl 420–560, J raise from 800, palm 1860–2400, finger 2490–2720, hold to 3400, unwind/drop, anger softens 4400–4680. Reveal at start of `hold`, **2720 ms**. Ends hovering, lid eyes/anger 0. A standing start lifts during the initial 420 ms; reduced motion stays grounded. |
 | `fly` | Anticipate to 180 ms, launch to **500 ms**, cruise for host `cruiseMs` (at least 220), brake 400 ms. Launch overshoots height to 64 then returns to 58.8. Host cruise is 520–1400 ms based on distance, bows right by 15% of distance (cap 40 px), overshoots 5 px, then lands. |
 | `settle` | **1080 ms**: rise 160, contact 680, round eyes under shut lids at contact, squash/rebound and open, string laid left. Ends standing. |
-| `working` | Shut 80 ms, hold 40, morph 360; spin starts 240 ms into morph (**360 ms from start**). First turn takes 1.5 × 1.1 s; then 1.1 s turns until the eight-second region, one slowing turn, then 1.8 s. Continuations keep angle and elapsed working time. The sole hold. |
+| `settle` (gentle) | **1800 ms**: rise 220 from the live height, floating contact at 1400, string lays from 700, softer squash. Fades `drift` to 0 along the descent. Used when the wind had Jet. |
+| `drift` | **5400 ms**; `stir` 0–900, `lift` to 2900 (y 63 settling to 58.8, string released base-first), `blow` fades `drift` in to 5400. A hold. |
+| `working` | Shut 80 ms, hold 40, morph 360; spin starts 240 ms into morph (**360 ms from start**). First turn takes 1.5 × 1.1 s; then 1.1 s turns until the eight-second region, one slowing turn, then 1.8 s. Continuations keep angle and elapsed working time. A hold, like `drift`. |
 | `workingEnd` | Finish the current turn in **200–700 ms**, then unmorph over 360 and reopen over 300. Whole-turn keys are 360 then 0 at the same time; never rewind or cut the turn. Reduced motion holds roll. |
 
 Wave goldens compare roll within 0.05° and hand opacity/wink scale within 0.02. Flip goldens compare roll, dy and eye corners every fifth frame within 0.05. The **string golden applies only to fully blended J frames, about 2.0–3.74 s**, using wind frequencies `[2/4.8, 3/4.8]`; the authored reference keeps unequal J chords even before blending, while the runtime's hanging chain starts with equal lengths. Do not claim a full-duration string match.
@@ -79,7 +82,7 @@ Wave goldens compare roll within 0.05° and hand opacity/wink scale within 0.02.
 
 | Director status | Meaning and drawing |
 | --- | --- |
-| `idle` | No clip playing; standing in a lane or hovering in the hero, with normal-motion idle layers. Also possible while streaming after a reaction. |
+| `idle` | No clip playing, or `drift`; standing in a lane, blown about in a lane, or hovering in the hero, with normal-motion idle layers. Also possible while streaming after a reaction. |
 | `flying` | `fly` or `settle`; host movement occurs only in fly's cruise. |
 | `reacting` | `hello` or `insulted`. |
 | `working` | `working` or `workingEnd`: waiting spinner or its closure. |
@@ -128,13 +131,17 @@ node dev/frames.mjs hello /tmp/jet-motion
 node dev/frames.mjs insulted /tmp/jet-motion
 node dev/frames.mjs insulted --layers off /tmp/jet-reference
 node dev/frames.mjs working --reduced-motion /tmp/jet-reduced
+node dev/frames.mjs drift --standing /tmp/jet-motion
+node dev/frames.mjs land --standing /tmp/jet-motion
 ```
 
-The preview writes SVGs, 2× PNGs and lane-size PNGs (96 × 115 device pixels at 2×; 48 × 57.6 CSS px, rounded for PNG output) plus contact sheets. Clip clocks sample every 40 ms (25 fps) and disable random blinks; idle layers are on unless `--layers off`. Keep output outside the repository. Golden comparison disables idle layers; inspect the production-layer variant too.
+The preview writes SVGs, 2× PNGs and lane-size PNGs (96 × 115 device pixels at 2×; 48 × 57.6 CSS px, rounded for PNG output) plus contact sheets. Clip clocks sample every 40 ms (25 fps) with no blinks while a clip plays; drift and land keep drawing after their clip, so they blink there; idle layers are on unless `--layers off`. Keep output outside the repository. Golden comparison disables idle layers; inspect the production-layer variant too.
 
 - [ ] Compare wave at 0, .18, .50, 1.15 and 2.30 s; flip at 0, .75, 1.45, 2.40 and 3.0 s. Contact sheets choose the last 40 ms frame at or before each requested time.
 - [ ] Inspect standing/hovering, lifts, J/written route, spinner and morph midpoints at 2× and actual lane size. Check contact, floor, bow attachment, hand creases, line direction and eye legibility.
 - [ ] In the browser, with a JEV key (the opt-in in the last item), send “hi”, “you useless thing” and a neutral message: flight, reaction, held text, spinner only if needed, streaming, settle. Try a quick reply, Stop during classification/reaction, early completion, held next message and rapid retry.
+- [ ] Compare drift at 0, .3, .9, 1.7, 2.5, 2.9, 5.4, 9, 14.5 and 16 s, and the land render: stir, lift, string sliding then swinging under the kite, wander small at lane size, gust lean and push right, landing with x 0 at contact.
+- [ ] In the browser, stay quiet 20 s in a lane: Jet drifts; type a character and it lands on its spot; the hero never drifts.
 - [ ] Check hero, relaunch wave, narrow screens, scroll-follow and reduced motion; round eyes stay open and grounded, spinner does not rotate, stale fades do not move a new turn.
 - [ ] In the browser, inspect drawer at 96 and 44 px, lane character and system reduced motion.
 - [ ] Only with explicit paid/network opt-in, check live JEV classifications and measured latency. Local fixtures do not prove service quality or latency.

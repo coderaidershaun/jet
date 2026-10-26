@@ -10,8 +10,9 @@ const OPTIONS = {
   insulted: [{}],
   hello: [{}, { brief: true }],
   fly: [{ cruiseMs: 800 }],
-  settle: [{}],
+  settle: [{}, { gentle: true, fromY: 20 }],
   working: [{ spinMs: 5000 }, { spinMs: 5000, continueFrom: { roll: 200, elapsedMs: 9000 } }],
+  drift: [{}],
   workingEnd: [{ roll: 0 }, { roll: 200, elapsedMs: 9000 }],
 };
 
@@ -21,7 +22,7 @@ const everyClip = Object.entries(CLIPS).flatMap(([name, entry]) =>
   OPTIONS[name].map((options) => ({ name, entry, options, title: `${name} ${JSON.stringify(options)}` })),
 );
 
-test("every clip's tracks and phases run forward from every start, and any clip interrupting any clip ends at rest unless it is the hold", () => {
+test("every clip's tracks and phases run forward from every start, and any clip interrupting any clip ends at rest unless it is a hold", () => {
   for (const { entry, options, title } of everyClip) {
     for (const standing of [true, false]) {
       const clip = entry.build({ standing, eyeKind: 'round', reducedMotion: false }, options);
@@ -62,6 +63,7 @@ test("every clip's tracks and phases run forward from every start, and any clip 
         assert.equal(state.squint, 0, `${title}: ends squinting`);
         assert.equal(state.payout, 1, `${title}: ends paid out`);
         assert.equal(state.written, null, `${title}: ends writing`);
+        assert.equal(state.drift, 0, `${title}: ends with the wind on`);
         if (state.y === HOVER_Y) assert.equal(state.stringPose, null, `${title}: ends hovering with a posed string`);
         assert.equal(state.form, 0, `${title}: ends melted`);
         assert.deepEqual(state.squash, [1, 1], `${title}: ends squashed`);

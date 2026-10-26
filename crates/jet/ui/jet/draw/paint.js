@@ -30,6 +30,7 @@ const SPINNER = spinner();
 
 /**
  * @typedef {object} Frame
+ * @property {number} x            sideways offset of the whole kite in units: 0 unless the wind has it
  * @property {number} y            tip height above its standing place: 0 standing, 58.8 hovering
  * @property {number} roll         degrees about the pivot, clockwise like SVG rotate
  * @property {number[]} squash     [sx, sy] about the pivot
@@ -55,6 +56,7 @@ const SPINNER = spinner();
  */
 export function restingFrame() {
   return {
+    x: 0,
     y: HOVER_Y,
     roll: 0,
     squash: [1, 1],
@@ -95,11 +97,11 @@ function stringNode(points, unitPx) {
   });
 }
 
-function bodyTransform({ y, roll, squash, pivot }) {
+function bodyTransform({ x, y, roll, squash, pivot }) {
   const [px, py] = pivot.map(fmt);
   const [negX, negY] = pivot.map((v) => fmt(-v));
   return (
-    `translate(0 ${fmt(HOVER_Y - y)}) translate(${px} ${py}) rotate(${fmt(roll)}) ` +
+    `translate(${fmt(x)} ${fmt(HOVER_Y - y)}) translate(${px} ${py}) rotate(${fmt(roll)}) ` +
     `scale(${fmt(squash[0])} ${fmt(squash[1])}) translate(${negX} ${negY})`
   );
 }
@@ -107,17 +109,17 @@ function bodyTransform({ y, roll, squash, pivot }) {
 /**
  * Where a point of the kite, given in the reference pose, lands on the page
  * after the same move, turn and squash that the body is drawn with.
- * @param {Pick<Frame, 'y' | 'roll' | 'squash' | 'pivot'>} frame
+ * @param {Pick<Frame, 'x' | 'y' | 'roll' | 'squash' | 'pivot'>} frame
  * @param {number[]} point
  * @returns {number[]}
  */
-export function bodyPoint({ y, roll, squash, pivot }, point) {
+export function bodyPoint({ x, y, roll, squash, pivot }, point) {
   const radians = (roll * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   const dx = (point[0] - pivot[0]) * squash[0];
   const dy = (point[1] - pivot[1]) * squash[1];
-  return [pivot[0] + dx * cos - dy * sin, pivot[1] + HOVER_Y - y + dx * sin + dy * cos];
+  return [x + pivot[0] + dx * cos - dy * sin, pivot[1] + HOVER_Y - y + dx * sin + dy * cos];
 }
 
 // The hand and its speed lines fade out as the body turns into the spinner.

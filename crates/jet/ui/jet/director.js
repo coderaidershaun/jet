@@ -1,8 +1,8 @@
 // Decides which clip Jet plays for each thing that happens in a chat: a message
 // going out, a mood arriving, the reply starting, finishing, failing or being
-// stopped. It only chooses and orders clips. It has no DOM and no timers, and
-// it reads time only from the `now` it is given, so a host can drive it from
-// any clock.
+// stopped, the user typing, or twenty quiet seconds in a lane. It only chooses
+// and orders clips. It has no DOM and no timers, and it reads time only from
+// the `now` it is given, so a host can drive it from any clock.
 
 import { CLIPS } from './clips/catalogue.js';
 import { EMOTIONS } from './emotions.js';
@@ -13,7 +13,11 @@ export const MOODS = ['neutral', 'hello', 'insulted'];
 // How long the text waits for a mood that plays no clip, in ms.
 const MOOD_HOLD_MS = 300;
 
+// How long a standing Jet may be left alone before the wind takes it.
+const DRIFT_AFTER_MS = 20000;
+
 const STATUS_OF_CLIP = {
+  drift: 'idle',
   fly: 'flying',
   settle: 'flying',
   working: 'working',
@@ -46,6 +50,7 @@ export function createDirector({ player }) {
   let feeling = null;
   let revealAt = -Infinity;
   let workingStartedAt = 0;
+  let quietSince = null;
 
   const startOf = () => ({ standing: player.standing, eyeKind: player.state.eyeKind, reducedMotion: player.reducedMotion });
   const build = (step) => CLIPS[step.clip].build(startOf(), step.options);
@@ -124,6 +129,17 @@ export function createDirector({ player }) {
   }
 
   return {
+    /**
+     * The user typed. The quiet time starts again, and a Jet the wind has lands gently from where it is.
+     * @param {number} now
+     */
+    typing(now) {
+      quietSince = now;
+      const blown = player.playing ? current.step.clip === 'drift' : player.state.drift > 0;
+      if (running || !blown) return;
+      start({ clip: 'settle', options: { gentle: true, fromY: player.state.y } }, now);
+    },
+
     /**
      * Plays hello, unless a reply is running.
      * @param {number} now
@@ -220,6 +236,7 @@ export function createDirector({ player }) {
     /**
      * Moves Jet to time `now`. Call it once per frame, before drawing.
      * Queued reactions play before the spinner, which waits for classification and stops when text arrives.
+     * A standing Jet that has been left alone for twenty seconds drifts.
      * @param {number} now
      * @returns {{ clip: string | null, busy: boolean }}
      *   `clip` is the catalogue name of the clip playing after this tick, or null;
@@ -237,6 +254,9 @@ export function createDirector({ player }) {
           startSpinner(now);
         }
       }
+      quietSince ??= now;
+      if (player.playing || queue.length > 0 || running || !player.standing || player.reducedMotion) quietSince = now;
+      else if (now - quietSince >= DRIFT_AFTER_MS) start({ clip: 'drift' }, now);
       return { clip: player.playing ? current.step.clip : null, busy: player.playing || queue.length > 0 };
     },
 

@@ -10,7 +10,7 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Hovering** — reference centre (100, 88), tip (100, 173), height track `y = 58.8`, string hanging in the wind.
 - **Part** — geometry for a body form, eyes, folded corner or string, in `ui/jet/parts/`.
 - **Draw** — `ui/jet/draw/`: pure `paint(frame, { unitPx })` creates SVG nodes; `view.js` mounts once and updates attributes. _Avoid_: render (that means Markdown to HTML).
-- **State** — the twelve authored values in `JetState`: y, roll, lift, squash, form, lids, eyeKind, anger, squint, payout, stringPose and written. _Avoid_: using it for idle or working.
+- **State** — the thirteen authored values in `JetState`: y, roll, lift, squash, form, lids, eyeKind, anger, squint, payout, stringPose, written and drift. _Avoid_: using it for idle or working.
 - **Frame** — state composed with idle layers, delayed roll, corner speed/stretch, eyes, pivot and string points, ready to draw.
 - **Status** — the director's current activity: `idle`, `flying`, `reacting` or `working`. `flying` also covers settle. _Avoid_: mood, state.
 - **Track** — keys for one authored state field; `eyeKind`, `stringPose` and `written` hold choices instead of interpolating them.
@@ -22,14 +22,16 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Hello** — the wave emotion: a lifted corner, folded hand, delayed roll and wink; brief has one wag and no wink.
 - **Insulted** — the flip emotion: scowl, shiver, lean, J-shaped string and one written fist/finger stroke, then unwind.
 - **Fly** — anticipation, launch, cruise and brake; the host carries Jet only during cruise.
-- **Settle** — the 1080 ms landing, round eyes at contact, squash/rebound and string laid left.
-- **Hold** — a clip deliberately ending away from rest. `working` is the sole hold; `workingEnd` closes it.
+- **Settle** — the landing, round eyes at contact, squash/rebound and string laid left: 1080 ms after a reply, or a gentle 1800 ms from Jet's live height when the wind had it.
+- **Drift** — the wind has Jet: after 20 s of quiet in a lane it lifts off the floor and is blown about slowly until the user types.
+- **Gust** — a 2.8 s stronger puff during a drift: it lifts, leans and carries Jet right, and streams the string.
+- **Hold** — a clip deliberately ending away from rest. `working` and `drift` are the holds; `workingEnd` closes the first, and a send, typing or any other clip ends the second.
 - **Spinner** — the body's C-shaped working form, with hidden eyes and the string reeled into the bow.
 - **Payout** — the multiplier of string segment lengths, normally 1; the J uses about 1.592.
 - **Written route** — the local polyline the string's free end traces, with a length, scale and tremor.
 - **Settings** — saved reduced motion, persona, model/provider, memory-related choices. App registrations live separately. Rust owns the file format in the app.
 - **Reduced motion** — app setting combined with the system preference: always grounded, no flight, blink, idle oscillation or spinner rotation; the form still morphs.
-- **Animation catalogue** — `ui/jet/clips/catalogue.js`, the builders and hold flags for all six clips.
+- **Animation catalogue** — `ui/jet/clips/catalogue.js`, the builders and hold flags for all seven clips.
 - **Director** — chooses and queues clips from chat events and feelings; reads only the time supplied by the host.
 - **Emotion** — a feeling with an authored animation: `hello` or `insulted`; `neutral` has none. `EMOTIONS` maps words to clips.
 - **Mood** — the supported word at the start of the provider's reply: `neutral`, `hello` or `insulted`. Unknown saved words read as neutral.

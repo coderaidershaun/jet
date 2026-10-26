@@ -135,3 +135,97 @@ test('every way a reply ends (done, failed, stopped) returns Jet to rest, a mood
   assert.deepEqual(seen, ['working', 'workingEnd'], 'Jet never left the ground, so it does not settle');
   assert.ok(player.standing);
 });
+
+test('after 20 s of quiet in a lane Jet drifts and the wind moves it, typing lands it gently from any moment of the lift, a send while blown flies with drift 0 by the move, and the hero, reduced motion and a still kite never move', () => {
+  const QUIET_MS = 20000;
+  const lane = ({ layers = true, standing = true, reducedMotion = false } = {}) => {
+    const player = createPlayer({ random: () => 0, layers, standing, reducedMotion });
+    const director = createDirector({ player });
+    let now = 0;
+    const frames = [];
+    // Ticks one frame at a time until the clock reaches `until` or `stop(result)` is true, and records where each frame drew Jet.
+    const run = (until, stop = () => false) => {
+      while (now < until) {
+        now += FRAME_MS;
+        const result = director.tick(now);
+        frames.push({ x: player.frame.x, y: player.frame.y });
+        if (stop(result)) break;
+      }
+    };
+    return { player, director, frames, run, get now() { return now; } };
+  };
+  // Quiet from the start of the run until the drift begins.
+  const blown = () => {
+    const jet = lane();
+    jet.run(QUIET_MS - FRAME_MS);
+    assert.equal(jet.director.tick(jet.now).clip, null, 'not yet');
+    assert.equal(jet.player.frame.x, 0);
+    jet.run(QUIET_MS + FRAME_MS, ({ clip }) => clip === 'drift');
+    return jet;
+  };
+
+  const jet = blown();
+  assert.equal(jet.director.tick(jet.now).clip, 'drift');
+  jet.run(jet.now + 8000);
+  const { director, player, frames } = jet;
+  const tick = director.tick(jet.now);
+  assert.equal(tick.busy, false);
+  assert.equal(director.status, 'idle');
+  assert.equal(player.state.drift, 1);
+  assert.equal(player.standing, false);
+  assert.ok(frames.some((frame) => frame.x !== 0), 'the wind moves Jet sideways');
+
+  director.typing(jet.now);
+  assert.equal(director.tick(jet.now + FRAME_MS).clip, 'settle');
+  jet.run(jet.now + 2000);
+  assert.ok(player.standing);
+  assert.equal(player.state.drift, 0);
+  assert.equal(player.frame.x, 0);
+
+  // Typing again inside the quiet time starts no drift; the quiet time then counts from that keystroke.
+  const typed = jet.now;
+  director.typing(typed);
+  jet.run(typed + QUIET_MS - 2 * FRAME_MS);
+  assert.equal(director.tick(jet.now).clip, null);
+  jet.run(typed + QUIET_MS + 2 * FRAME_MS);
+  assert.equal(director.tick(jet.now).clip, 'drift');
+
+  // Typing at about y 20 during the lift: Jet lands from there, with no drop and no jump.
+  const lifting = blown();
+  lifting.run(lifting.now + 3000, () => lifting.player.state.y >= 20);
+  lifting.director.typing(lifting.now);
+  const from = lifting.frames.length;
+  lifting.run(lifting.now + 4000, () => lifting.player.standing);
+  assert.ok(lifting.player.standing);
+  const ys = lifting.frames.slice(from - 1).map((frame) => frame.y);
+  const steps = ys.slice(1).map((y, i) => Math.abs(y - ys[i]));
+  assert.ok(Math.max(...steps) <= 2.5, `y moved ${Math.max(...steps)} units in one frame`);
+
+  // A send while blown flies, and the wind is gone by the time the move begins.
+  const sending = blown();
+  sending.run(sending.now + 8000);
+  const { moveAt } = sending.director.send({ cruiseMs: 800 }, sending.now);
+  const sentAt = sending.now;
+  assert.equal(sending.director.tick(sentAt).clip, 'fly');
+  assert.equal(sending.director.tick(sentAt + moveAt).clip, 'fly');
+  assert.equal(sending.player.state.drift, 0);
+
+  // Reduced motion switched on mid-drift grounds Jet at once.
+  const reduced = blown();
+  reduced.run(reduced.now + 8000);
+  reduced.player.reducedMotion = true;
+  reduced.run(reduced.now + FRAME_MS);
+  assert.equal(reduced.player.frame.x, 0);
+  assert.equal(reduced.player.frame.y, 0);
+
+  // Jet in the hero spot and Jet under reduced motion never drift, and a kite with no idle layers is never blown sideways.
+  const hero = lane({ standing: false });
+  hero.run(60000, ({ clip }) => clip !== null);
+  assert.equal(hero.director.tick(hero.now).clip, null);
+  const grounded = lane({ reducedMotion: true });
+  grounded.run(60000, ({ clip }) => clip !== null);
+  assert.equal(grounded.director.tick(grounded.now).clip, null);
+  const still = lane({ layers: false });
+  still.run(QUIET_MS + 8000);
+  assert.ok(still.frames.every((frame) => frame.x === 0), 'a kite with no idle layers stays put');
+});

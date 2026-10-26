@@ -38,8 +38,11 @@ const STANDING_TIP = [REFERENCE_TIP[0], REFERENCE_TIP[1] + HOVER_Y];
 const FRAME_MS = 40;
 
 // A clip mode plays its steps in turn. A step's options may be a function of the
-// player, and `playMs` cuts the step short. The contact sheet shows the moments
-// in `sheetMs`, or else the start and the end of every phase.
+// player, `playMs` cuts the step short and `recordMs` keeps drawing until that long
+// after the step began, even once the clip has ended, for the wandering and gusts
+// that live outside the clip. A mode may give its own `random`, which decides when
+// the blinks and gusts come. The contact sheet shows the moments in `sheetMs`, or
+// else the start and the end of every phase.
 const HELLO_SHEET_MS = [0, 180, 500, 1150, 2300];
 const WORKING_PLAY_MS = 3000;
 const CLIP_MODES = {
@@ -48,6 +51,15 @@ const CLIP_MODES = {
   'hello-brief': { steps: [{ clip: 'hello', options: { brief: true } }], sheetMs: HELLO_SHEET_MS },
   fly: { steps: [{ clip: 'fly', options: { cruiseMs: 800 } }], carry: true },
   settle: { steps: [{ clip: 'settle' }] },
+  drift: {
+    steps: [{ clip: 'drift', recordMs: 17000 }],
+    random: () => 0,
+    sheetMs: [0, 300, 900, 1700, 2500, 2900, 5400, 9000, 14500, 16000],
+  },
+  land: {
+    steps: [{ clip: 'drift', recordMs: 7000 }, { clip: 'settle', options: (player) => ({ gentle: true, fromY: player.state.y }) }],
+    random: () => 0,
+  },
   working: {
     steps: [
       { clip: 'working', playMs: WORKING_PLAY_MS },
@@ -67,10 +79,11 @@ A flag given more than once draws one still for each value.
   --pose j      the string raised in the J and writing the fist
   --lids l,r    how shut each lid is, 0 open .. 1 shut
 
-A clip mode plays at 25 frames a second with no blinks. It starts hovering unless you say --standing,
-and writes into <out-dir>/<mode>-<hovering|standing>[-no-layers] one SVG and two PNGs for every frame, and a contact sheet
-of the first frame and the end of each phase (hello: the wave's own key moments).
-  --layers off  leaves out the idle bob and sway, so only the clip moves the kite`;
+A clip mode plays at 25 frames a second, with no blinks while a clip plays. It starts hovering unless you say
+--standing (drift and land need it), and writes into <out-dir>/<mode>-<hovering|standing>[-no-layers] one SVG
+and two PNGs for every frame, and a contact sheet of the first frame and the end of each phase (hello: the
+wave's own key moments).
+  --layers off  leaves out the idle bob, the sway, and the wind's wandering and gusts, so only the clip moves the kite`;
 
 class UsageError extends Error {}
 
@@ -229,7 +242,7 @@ function stillsMode(args) {
 // Plays the mode's steps through a real player, one frame every 40 ms, and writes each frame as it is made.
 // `phaseEndsMs` are the moments the steps' phases end, for the contact sheet.
 function playFrames(mode, { standing, layers, reducedMotion }, folder) {
-  const player = createPlayer({ random: () => 1, layers, standing, reducedMotion });
+  const player = createPlayer({ random: mode.random ?? (() => 1), layers, standing, reducedMotion });
   const frames = [];
   const written = [];
   const phaseEndsMs = [0];
@@ -265,7 +278,7 @@ function playFrames(mode, { standing, layers, reducedMotion }, folder) {
     player.play(clip, now);
     // The step's first frame is the last frame of the one before, so only the very first step draws it.
     if (index === 0) record();
-    while (player.playing && now - began < playMs) {
+    while ((player.playing && now - began < playMs) || now - began < (step.recordMs ?? 0)) {
       now += FRAME_MS;
       record();
     }

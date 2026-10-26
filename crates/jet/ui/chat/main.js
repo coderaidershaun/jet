@@ -82,7 +82,7 @@ async function start() {
     handlers: {
       send: submit,
       hold: submit,
-      input: (text) => commandMenu?.input(text),
+      input: (text) => { commandMenu?.input(text); live.typing(); },
       keydown: (event) => commandMenu?.keydown(event),
       stop: () => turn.stop(),
       cancelHold: () => turn.cancelHold(),

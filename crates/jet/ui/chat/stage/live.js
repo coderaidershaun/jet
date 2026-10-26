@@ -181,6 +181,8 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
       needsDraw = true;
     },
 
+    /** The user typed: a Jet the wind has lands, and the quiet time starts again. */
+    typing: (now = performance.now()) => director.typing(now),
     feel: (word, now = performance.now()) => director.feel(word, now),
     mood: (word, now = performance.now()) => director.mood(word, now),
     replying: (now = performance.now()) => director.replying(now),

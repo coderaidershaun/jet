@@ -5,7 +5,7 @@
 import { createClip } from '../clip.js';
 import { cubicBezier, easeInOut, easeOut } from '../easing.js';
 import { HOVER_Y } from '../parts/forms.js';
-import { lyingPose, SEGMENTS } from '../parts/string.js';
+import { SEGMENTS } from '../parts/string.js';
 
 const CROUCH_MS = 140;
 const ANTICIPATE_MS = 180;
@@ -25,7 +25,7 @@ const BRAKE_PEAK_MS = 160;
 const BRAKE_MS = 400;
 const BRAKE_SQUASH = [1.04, 0.962];
 
-// The lying string lets go base-first, one segment after another.
+// The string lets go base-first, one segment after another.
 const RELEASE = { to: 0, lagMs: 40, durationMs: 300, overshoot: 1.4, order: 'base' };
 
 /**
@@ -33,8 +33,8 @@ const RELEASE = { to: 0, lagMs: 40, durationMs: 300, overshoot: 1.4, order: 'bas
  * @param {{ cruiseMs: number }} options  how long the host carries Jet; at least the ease down
  */
 export function buildFly(start, { cruiseMs } = {}) {
-  const { y, squash, stringPose, phase, finish, returnToRest } = createClip();
-  returnToRest(start, ['y', 'squash', 'stringPose']);
+  const { y, squash, stringPose, drift, phase, finish, returnToRest } = createClip();
+  returnToRest(start, ['y', 'squash', 'stringPose', 'drift']);
   const cruiseEnd = LAUNCH_END_MS + Math.max(cruiseMs, EASE_DOWN_MS);
 
   // From standing the whole body crouches; from a hover it only dips.
@@ -49,6 +49,8 @@ export function buildFly(start, { cruiseMs } = {}) {
   y(LAUNCH_END_MS, LAUNCH_Y, LAUNCH_EASE);
   squash(STRETCH_AT_MS, STRETCH_SQUASH, easeOut);
   squash(LAUNCH_END_MS, [1, 1], easeInOut);
+  // Jet that was blown about loses the wind through the launch instead of snapping out of it.
+  drift(LAUNCH_END_MS, 0, easeInOut);
   phase('launch', LAUNCH_END_MS);
 
   y(LAUNCH_END_MS + EASE_DOWN_MS, HOVER_Y, easeInOut);
@@ -60,12 +62,9 @@ export function buildFly(start, { cruiseMs } = {}) {
   squash(cruiseEnd + BRAKE_MS, [1, 1], easeInOut);
   phase('brake', cruiseEnd + BRAKE_MS);
 
-  if (start.standing) {
-    const lastSegmentFreeMs = ANTICIPATE_MS + (SEGMENTS - 1) * RELEASE.lagMs + RELEASE.durationMs;
-    stringPose(ANTICIPATE_MS, { ...lyingPose(), raise: RELEASE });
-    stringPose(lastSegmentFreeMs, null);
-  } else {
-    stringPose(ANTICIPATE_MS, null);
-  }
+  // No angles: the string lets go of whatever pose it holds, so a send never snaps it into another shape.
+  const lastSegmentFreeMs = ANTICIPATE_MS + (SEGMENTS - 1) * RELEASE.lagMs + RELEASE.durationMs;
+  stringPose(ANTICIPATE_MS, { raise: RELEASE });
+  stringPose(lastSegmentFreeMs, null);
   return finish();
 }

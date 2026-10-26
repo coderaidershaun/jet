@@ -9,9 +9,11 @@ import { lyingPose, SEGMENTS } from './parts/string.js';
  * `{ angles, proportions?, blend }`, or null for a hanging string. In a clip
  * key it can also be `{ angles, proportions?, raise: { to, lagMs, durationMs, overshoot, order } }`,
  * which moves every segment's blend from where it is to `to`, segment by
- * segment with lag and overshoot. A raise cannot be written as keys on one
- * array track, because each segment has its own start time, so the player
- * works the blend out and a clip only says when the raise starts.
+ * segment with lag and overshoot. Without angles, `{ raise }` works on whatever
+ * pose the string holds, so a clip can let go of a string it knows nothing about.
+ * A raise cannot be written as keys on one array track, because each segment
+ * has its own start time, so the player works the blend out and a clip only
+ * says when the raise starts.
  * @typedef {{ angles: number[], proportions?: number[], blend: number[] } | null} StringPose
  */
 
@@ -29,9 +31,10 @@ import { lyingPose, SEGMENTS } from './parts/string.js';
  * @property {number} payout    string length factor, 1 at rest
  * @property {StringPose} stringPose   null hangs   (step track)
  * @property {{ route: { points: number[][], totalLength: number }, length: number, scale: number, tremor: number } | null} written   the route the string's free end writes   (step track)
+ * @property {number} drift     how much the wind has Jet: 0 still, 1 blown about
  */
 
-export const TRACKS = /** @type {const} */ (['y', 'roll', 'lift', 'squash', 'form', 'lids', 'eyeKind', 'anger', 'squint', 'payout', 'stringPose', 'written']);
+export const TRACKS = /** @type {const} */ (['y', 'roll', 'lift', 'squash', 'form', 'lids', 'eyeKind', 'anger', 'squint', 'payout', 'stringPose', 'written', 'drift']);
 
 /** The tracks whose value is a choice, not a quantity: they hold instead of blending. */
 export const STEP_TRACKS = /** @type {const} */ (['eyeKind', 'stringPose', 'written']);
@@ -56,5 +59,6 @@ export function restState({ standing = false } = {}) {
     payout: 1,
     stringPose: standing ? { angles, proportions, blend: Array(SEGMENTS).fill(1) } : null,
     written: null,
+    drift: 0,
   };
 }

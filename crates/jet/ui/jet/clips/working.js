@@ -1,6 +1,6 @@
 // The spinner Jet becomes while a reply is on its way: the eyes shut, the kite
-// melts into a ring and the ring turns. `working` is the one clip that ends
-// away from rest on purpose; `workingEnd` finishes the turn, melts back into
+// melts into a ring and the ring turns. `working` ends away from rest on
+// purpose, as `drift` does; `workingEnd` finishes the turn, melts back into
 // the kite and opens the eyes.
 
 import { createClip } from '../clip.js';
