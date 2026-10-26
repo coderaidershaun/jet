@@ -10,8 +10,6 @@ mod session_policy;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
-
 pub use reply::Reply;
 pub use review::{ReviewError, ReviewOutcome};
 use session_policy::decide;
@@ -20,9 +18,6 @@ use crate::chat::{Effort, Entry, McpConnection, Model, Notes, Persona, Role, Sho
 use crate::markdown::render_markdown;
 use crate::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
 use crate::turn::{Request, SessionMode, Transport, Turn};
-
-/// How long Claude's prompt cache stays warm, in minutes.
-const CACHE_TTL_MINUTES: u64 = 60;
 
 /// Everything one message brings with it.
 #[derive(Debug, Clone)]
@@ -47,16 +42,6 @@ pub enum ConversationError {
     Busy,
     #[error(transparent)]
     Memory(#[from] MemoryError),
-}
-
-/// Whether the next reply will find Claude's prompt cache warm.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CacheStatus {
-    /// Unix milliseconds of the last request, or `None` before the first one.
-    pub last_request_at: Option<u64>,
-    pub ttl_minutes: u64,
-    pub context_tokens: u64,
 }
 
 /// The saved thread and notes, and the right to run one answer and one review at a time.
@@ -144,6 +129,11 @@ impl Conversation {
             schema: None,
             mcp_config: message.mcp.as_ref().map(McpConnection::config),
         };
+        if request.session == SessionMode::New
+            && let Some(session) = &saved
+        {
+            session.clone().without_conversation().save(&self.dir)?;
+        }
         let started = Turn::start(&*transport, &request);
         let context = reply::Context {
             identity,
@@ -191,13 +181,20 @@ impl Conversation {
         Ok(saved)
     }
 
-    pub fn cache_status(&self) -> Result<CacheStatus, MemoryError> {
+    /// Returns only measurements associated with the selected model.
+    ///
+    /// # Errors
+    /// Returns a memory error if the saved session cannot be read.
+    pub fn context_status(&self, model: Model) -> Result<crate::chat::ContextStatus, MemoryError> {
         let session = Session::load(&self.dir)?.unwrap_or_default();
-        Ok(CacheStatus {
-            last_request_at: Some(session.last_request_at).filter(|&at| at > 0),
-            ttl_minutes: CACHE_TTL_MINUTES,
-            context_tokens: session.context_tokens,
-        })
+        if session.context.model == Some(model) {
+            Ok(session.context)
+        } else {
+            Ok(crate::chat::ContextStatus {
+                model: Some(model),
+                ..Default::default()
+            })
+        }
     }
 }
 
@@ -289,20 +286,5 @@ mod test_support {
             change(&mut session);
             session.save(&self.dir).unwrap();
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-
-    #[test]
-    fn cache_status_json_matches_the_ui_contract() {
-        let conversation = Conversation::new(DataDir::scratch("cache-never"));
-        let never = serde_json::to_value(conversation.cache_status().unwrap()).unwrap();
-        let expected = json!({"lastRequestAt": null, "ttlMinutes": 60, "contextTokens": 0});
-        assert_eq!(never, expected);
     }
 }

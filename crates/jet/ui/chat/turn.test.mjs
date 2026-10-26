@@ -10,7 +10,7 @@ async function setup(t, options = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const thread = createThread();
   const composer = createComposer({ empty: true });
-  const page = { headerStatus: {}, announce: {} };
+  const page = { announce: {} };
   let event;
   const requests = [];
   let stopped = 0;
@@ -21,8 +21,7 @@ async function setup(t, options = {}) {
     settings: { persona: { name: 'Jet' } }, thread, composer, page,
     view: { render: noop, liveLane: noop }, follow: { onSend: noop },
     composerView: { refresh: noop, setLayout: noop, setHeld: noop },
-    live, drawer: { setUsage: noop, addLine: noop },
-    tracker: { sent: noop, snapshot: noop, finished: noop, failed: noop, stopped: noop },
+    live,
     afterReply: noop, activeAppId: options.activeAppId,
   });
   const advance = async (ms) => { now += ms; t.mock.timers.tick(ms); await Promise.resolve(); await Promise.resolve(); };

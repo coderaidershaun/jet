@@ -48,7 +48,16 @@ fn main() {
         "mood: happy\nHello from Codex."
     };
     emit(json!({"type":"item.completed","item":{"type":"agent_message","text":text}}));
-    emit(
-        json!({"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":12,"reasoning_output_tokens":4}}),
-    );
+    let mut completion = json!({"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":12,"reasoning_output_tokens":4}});
+    if matches!(prompt.as_str(), "context-usage" | "context-overflow") {
+        let input = if prompt == "context-overflow" {
+            u64::MAX
+        } else {
+            40
+        };
+        completion["usage"]["last_token_usage"] =
+            json!({"input_tokens": input, "output_tokens": 2});
+        completion["usage"]["model_context_window"] = json!(90000);
+    }
+    emit(completion);
 }

@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use agent::{CacheStatus, ClaudeCli, CodexCli, Lines, Model, Request, Transport, TransportError};
+use agent::{ClaudeCli, CodexCli, ContextStatus, Lines, Model, Request, Transport, TransportError};
 use serde::Serialize;
 
 use super::error::BridgeError;
@@ -64,7 +64,7 @@ pub struct AgentStatus {
     claude: ProgramStatus,
     data_dir: String,
     busy: bool,
-    cache: CacheStatus,
+    context: ContextStatus,
 }
 
 #[derive(Serialize)]
@@ -75,7 +75,7 @@ struct ProgramStatus {
     searched: Vec<String>,
 }
 
-/// Where the selected agent is, whether a reply is running, and whether the prompt cache is warm.
+/// Where the selected agent is, whether a reply is running, and the last measured context.
 // SMELL: this makes the same choice between Claude Code and Codex as transport_for, so a new
 // provider must be added in both places.
 pub(super) fn agent_status(
@@ -112,10 +112,52 @@ pub(super) fn agent_status(
         },
         Err(other) => return Err(other.into()),
     };
+    let mut context = conversation.context_status(settings.model)?;
+    if context.limit_tokens.is_none() && settings.model.is_codex() {
+        let home = std::env::var_os("CODEX_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex"))
+            });
+        context.limit_tokens = home.and_then(|home| {
+            model_context_limit(&home.join("models_cache.json"), settings.model.alias())
+        });
+    }
     Ok(AgentStatus {
         claude: program,
         data_dir: data_dir.display().to_string(),
         busy: conversation.is_busy(),
-        cache: conversation.cache_status()?,
+        context,
     })
+}
+
+fn model_context_limit(path: &Path, model: &str) -> Option<u64> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let metadata: serde_json::Value = serde_json::from_str(&text).ok()?;
+    metadata["models"]
+        .as_array()?
+        .iter()
+        .find(|entry| entry["slug"] == model)?["context_window"]
+        .as_u64()
+        .filter(|&limit| limit > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_context_limit_uses_selected_provider_metadata() {
+        let dir = std::env::temp_dir().join(format!("jet-model-metadata-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("models_cache.json");
+        std::fs::write(&path, r#"{"models":[{"slug":"gpt-6.1-sol","context_window":90000},{"slug":"other","context_window":0}]}"#).unwrap();
+        assert_eq!(model_context_limit(&path, "gpt-6.1-sol"), Some(90000));
+        assert_eq!(model_context_limit(&path, "gpt-6"), None);
+        assert_eq!(model_context_limit(&path, "other"), None);
+        std::fs::write(&path, "invalid").unwrap();
+        assert_eq!(model_context_limit(&path, "gpt-6.1-sol"), None);
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(model_context_limit(&path, "gpt-6.1-sol"), None);
+    }
 }

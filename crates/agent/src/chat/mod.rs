@@ -11,7 +11,7 @@ pub use event::{Event, Failure};
 pub use model::{Effort, Model};
 pub(crate) use tools::content_value;
 pub use tools::{FACADE_TOOLS, McpConnection, McpStatus, ToolCall};
-pub use usage::Usage;
+pub use usage::{ContextStatus, Usage};
 
 // SMELL: the review prompt and the chat page repeat these three numbers; change them together.
 /// The longest MEMORY note, in characters.

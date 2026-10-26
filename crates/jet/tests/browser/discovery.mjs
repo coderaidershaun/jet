@@ -16,7 +16,7 @@ export async function catalogueAndSafeDiscovery({ page, app, fixtureUrl, artifac
   };
   const discovery = page.locator('.discovery-view');
   const status = page.locator('.tools-status');
-  await page.getByRole('button', { name: 'Jet', exact: true }).click();
+  if (await page.locator('.workspace-shell').getAttribute('data-mode') !== 'chat') await page.locator('#jet-toggle').click();
   await page.locator('#field').fill('/tools');
   await page.locator('#field').press('Enter');
   await page.getByLabel('Tool app', { exact: true }).selectOption(app.id);
@@ -44,7 +44,7 @@ export async function catalogueAndSafeDiscovery({ page, app, fixtureUrl, artifac
   assert.equal((await state()).calls.length, beforeDraft);
   assert.equal(modelRequests, 0);
   page.off('request', track);
-  await page.getByRole('button', { name: 'Jet', exact: true }).click();
+  if (await page.locator('.workspace-shell').getAttribute('data-mode') !== 'chat') await page.locator('#jet-toggle').click();
   await page.locator('#field').fill('/tools');
   await page.locator('#field').press('Enter');
   await page.getByLabel('Tool app', { exact: true }).selectOption(app.id);

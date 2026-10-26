@@ -58,7 +58,7 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
   const get = async route => (await context.request.get(origin + route)).json();
   const apps = () => get('/api/apps'), snapshot = () => get('/api/snapshot');
   const nav = id => page.locator(`.app-list [data-app-id="${id}"]`);
-  const chat = () => page.getByRole('button', { name: 'Jet', exact: true }).click();
+  const chat = async () => { if (await page.locator('.workspace-shell').getAttribute('data-mode') !== 'chat') await page.locator('#jet-toggle').click(); };
   const finish = async () => { await until(async () => !(await snapshot()).active, 'Reply must finish'); await until(async () => await page.locator('#send').getAttribute('aria-label') === 'Send', 'Reply reveal must finish'); };
   const send = async text => { await chat(); await page.locator('#field').fill(text); await page.locator('#send').click(); };
   async function add(address, label) {

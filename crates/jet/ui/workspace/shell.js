@@ -8,12 +8,10 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
   let mode = 'chat', apps = [], selected = null, refreshNumber = 0;
   const drawer = document.getElementById('drawer');
   const inner = drawer.querySelector('.drawer-inner');
-  const button = (label, glyph, onClick, attrs = {}) => h('button', { type: 'button', class: 'workspace-button', 'aria-label': label, title: label, onClick, ...attrs }, h('span', { class: 'nav-icon', 'aria-hidden': 'true', text: glyph }), h('span', { class: 'nav-label', text: label }));
-  const toggle = button('Collapse drawer', '☰', () => { expanded = !expanded; paint(); }, { 'aria-controls': 'drawer' });
-  const jet = button('Jet', 'J', () => api.showChat());
-  jet.querySelector('.nav-icon').replaceChildren(document.getElementById('drawer-jet'));
-  const list = h('nav', { class: 'app-list', 'aria-label': 'Registered apps' });
-  inner.prepend(h('div', { class: 'drawer-navigation' }, toggle, jet, list));
+  const button = (label, glyph, onClick, attrs = {}) => h('button', { type: 'button', class: 'workspace-button', 'aria-label': label, title: label, onClick, ...attrs }, h('span', { class: 'nav-icon', 'aria-hidden': 'true', text: glyph }));
+  const toggle = document.getElementById('jet-toggle');
+  toggle.addEventListener('click', () => { if (mode !== 'chat') api.showChat(); else { expanded = !expanded; paint(); } });
+  const list = inner.querySelector('.app-list');
   const frameHost = h('div', { class: 'workspace-frames', tabindex: '-1', 'aria-label': 'App content' });
   const notice = h('p', { class: 'workspace-notice', role: 'status' });
   const toolsContent = h('section', { id: 'tools-content', 'aria-label': 'App tools', tabindex: '-1' });
@@ -30,9 +28,10 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
     frameHost.hidden = mode !== 'app';
     toolsContent.hidden = mode !== 'tools';
     toggle.setAttribute('aria-expanded', String(expanded));
-    toggle.setAttribute('aria-label', expanded ? 'Collapse drawer' : 'Expand drawer');
-    toggle.title = expanded ? 'Collapse drawer' : 'Expand drawer';
-    jet.setAttribute('aria-current', String(mode === 'chat'));
+    const label = mode !== 'chat' ? 'Return to chat' : expanded ? 'Collapse drawer' : 'Expand drawer';
+    toggle.setAttribute('aria-label', label);
+    toggle.title = label;
+    toggle.setAttribute('aria-current', String(mode === 'chat'));
     for (const item of list.children) item.setAttribute('aria-current', String(mode === 'app' && item.dataset.appId === selected));
   }
   function select(app) {

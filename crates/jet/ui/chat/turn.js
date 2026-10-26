@@ -1,9 +1,3 @@
-// One conversation turn from the user's side: what happens on a send, how each
-// event of the reply reaches the thread, the drawer and Jet, and what follows
-// when the reply ends (the held message, the cache chip, the announcement).
-// It is handed the agent and every part of the page instead of importing them,
-// so the agent is chosen in one place.
-
 import { MOODS } from '../jet/director.js';
 import { displayName } from '../bridge/settings.js';
 import { randomId } from '../bridge/browser-agent.js';
@@ -14,14 +8,6 @@ const FEELING_CAP_MS = 2200;
 const SUPPORTED_MOODS = new Set(MOODS);
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped']);
-
-function parsedOrNull(line) {
-  try {
-    return JSON.parse(line);
-  } catch {
-    return null;
-  }
-}
 
 /**
  * @param {{
@@ -38,13 +24,11 @@ function parsedOrNull(line) {
  *   composer: ReturnType<typeof import('./composer/state.js').createComposer>,
  *   composerView: ReturnType<typeof import('./composer/view.js').createComposerView>,
  *   live: ReturnType<typeof import('./stage/live.js').createLive>,
- *   drawer: ReturnType<typeof import('./drawer/view.js').createDrawerView>,
- *   tracker: ReturnType<typeof import('./drawer/usage.js').createUsageTracker>,
- *   page: { headerStatus: HTMLElement, announce: HTMLElement },
+ *   page: { announce: HTMLElement },
  *   afterReply: () => void,
  * }} parts
  */
-export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, drawer, tracker, page, afterReply, activeAppId = () => null }) {
+export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, page, afterReply, activeAppId = () => null }) {
   /** @type {ReturnType<typeof createReveal> | null} */
   let reveal = null;
   let pendingEntry = null;
@@ -54,8 +38,6 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
 
   function paint() {
     view.render(thread.rows());
-    const slot = thread.slot;
-    page.headerStatus.textContent = !slot ? '' : slot.html === '' ? '· thinking…' : '· typing…';
     composer.replying = thread.replying;
     composerView.refresh();
   }
@@ -78,19 +60,11 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     }
   }
 
-  const showUsage = () => drawer.setUsage(tracker.snapshot());
-
   function onEvent(event) {
     const now = performance.now();
     switch (event.kind) {
-      case 'rawLine':
-        tracker.raw(parsedOrNull(event.line));
-        drawer.addLine(event.line);
-        showUsage();
-        return;
       case 'started':
-        tracker.started(event);
-        showUsage();
+        if (event.fresh) afterReply();
         break;
       case 'notice':
         thread.addNotice(event.message);
@@ -112,8 +86,6 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         break;
       case 'finished':
         pendingEntry = event.entry;
-        tracker.finished(event);
-        showUsage();
         live.done(now);
         reveal.finish(() => {
           thread.finish(event.entry);
@@ -122,15 +94,11 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         });
         return;
       case 'failed':
-        tracker.failed();
-        showUsage();
         reveal.end();
         thread.fail(event.failure, event.entry);
         live.failed(now);
         break;
       case 'stopped':
-        tracker.stopped();
-        showUsage();
         reveal.end();
         thread.stop(event.entry);
         live.stopped(now);
@@ -181,7 +149,6 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
           thread.reveal(html);
           paint();
         } });
-        if (current.started) tracker.started(current.started);
         if (current.mood) thread.setMood(current.mood);
         for (const tool of current.tools) {
           thread.startTool(tool);
@@ -209,8 +176,6 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       const message = request(text, appId);
       if (agent.serverEvents) { message.requestId = randomId(); mine.requestId = message.requestId; }
       const takeoff = live.measure();
-      tracker.sent({ effort: settings.effort, at: Date.now() });
-      showUsage();
       follow.onSend();
       thread.addUser(text);
       thread.openSlot();
@@ -301,8 +266,8 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       endReply();
     },
 
-    hold(text) {
-      heldAppId = activeAppId();
+    hold(text, appId = activeAppId()) {
+      heldAppId = appId;
       thread.hold(text);
       composerView.setHeld(thread.held);
     },

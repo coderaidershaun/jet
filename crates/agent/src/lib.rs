@@ -11,12 +11,12 @@ mod memory;
 mod turn;
 
 pub use chat::{
-    Effort, Entry, EntryId, EntryStatus, Event, FACADE_TOOLS, Failure, MEMORY_LIMIT, McpConnection,
-    McpStatus, Model, Mood, Notes, Persona, RECENT_LIMIT, Role, SessionId, ShownEntry, ToolCall,
-    TurnIdentity, USER_LIMIT, Usage,
+    ContextStatus, Effort, Entry, EntryId, EntryStatus, Event, FACADE_TOOLS, Failure, MEMORY_LIMIT,
+    McpConnection, McpStatus, Model, Mood, Notes, Persona, RECENT_LIMIT, Role, SessionId,
+    ShownEntry, ToolCall, TurnIdentity, USER_LIMIT, Usage,
 };
 pub use conversation::{
-    CacheStatus, Conversation, ConversationError, Message, Reply, ReviewError, ReviewOutcome,
+    Conversation, ConversationError, Message, Reply, ReviewError, ReviewOutcome,
 };
 pub use markdown::render_markdown;
 pub use memory::{DataDir, MemoryError, now_ms};

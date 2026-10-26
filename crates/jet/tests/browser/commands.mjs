@@ -53,7 +53,7 @@ fs.writeFileSync(${JSON.stringify(promptFile)},input);
   const apps = async () => (await context.request.get(base + '/api/apps')).json();
   const snapshot = async () => (await context.request.get(base + '/api/snapshot')).json();
   const nav = (tab, id) => tab.locator(`.app-list [data-app-id="${id}"]`);
-  async function chat(tab = page) { if (!(await tab.locator('#field').isVisible())) await tab.getByRole('button', { name: 'Jet', exact: true }).click(); }
+  async function chat(tab = page) { if (!(await tab.locator('#field').isVisible())) await tab.locator('#jet-toggle').click(); }
   async function slash(text) { await chat(); await page.locator('#field').fill(text); await page.locator('#field').press('Enter'); }
   async function finish() { await until(async () => !(await snapshot()).active, 'Provider must finish'); await until(async () => await page.locator('#send').getAttribute('aria-label') === 'Send', 'Reply reveal must finish'); }
   await slash(`/app add ${first.ui} "Equivalent"`);

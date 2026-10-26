@@ -39,6 +39,9 @@ fn codex_stream_resume_schema_usage_and_tool_results() {
     assert_eq!(summary.usage.cache_read_tokens, 80);
     assert_eq!(summary.usage.thinking_tokens, 4);
     assert_eq!(summary.usage.model, "gpt-6.1-sol");
+    assert_eq!(summary.context.used_tokens, Some(112));
+    assert!(summary.context.estimated);
+    assert_eq!(summary.context.limit_tokens, None);
     let args: Vec<String> =
         serde_json::from_slice(&std::fs::read(dir.path().join("fake-codex-args.json")).unwrap())
             .unwrap();
@@ -50,6 +53,15 @@ fn codex_stream_resume_schema_usage_and_tool_results() {
         json!(agent::FACADE_TOOLS)
     )));
     assert!(args.contains(&"mcp_servers.jet.default_tools_approval_mode=\"approve\"".into()));
+    for (prompt, expected) in [("context-usage", 42), ("context-overflow", u64::MAX)] {
+        let Step::Finished(summary) = Turn::start(&cli, &request(prompt)).unwrap().last().unwrap()
+        else {
+            panic!("context measurement failed");
+        };
+        assert_eq!(summary.context.used_tokens, Some(expected));
+        assert_eq!(summary.context.limit_tokens, Some(90000));
+        assert!(!summary.context.estimated);
+    }
     let mut failed_tool = Turn::start(&cli, &request("tool-fail")).unwrap();
     assert!(matches!(
         failed_tool.by_ref().last(),

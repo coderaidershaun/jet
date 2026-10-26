@@ -1,5 +1,5 @@
 //! Codex replies use different event names, so translate them for the shared turn reader.
-//! Keep the original events so the log can show what the provider sent.
+//! Aggregate usage remains separate from an optional last context measurement.
 use serde_json::{Value, json};
 use std::time::Instant;
 
@@ -86,6 +86,13 @@ impl Events {
                         serde_json::from_str::<Value>(&self.result).ok()
                     } else {
                         None
+                    },
+                    "context": {
+                        "usedTokens": event["context"]["used_tokens"].as_u64().or_else(|| {
+                            let last = &usage["last_token_usage"];
+                            last["total_tokens"].as_u64().or_else(|| Some(last["input_tokens"].as_u64()?.saturating_add(last["output_tokens"].as_u64()?)))
+                        }),
+                        "limitTokens": event["context"]["context_window"].as_u64().or_else(|| usage["model_context_window"].as_u64()),
                     },
                     "duration_ms": self.started_at.elapsed().as_millis() as u64,
                     "usage": {

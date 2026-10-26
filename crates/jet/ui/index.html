@@ -22,82 +22,28 @@
   <aside class="drawer" id="drawer" aria-label="Jet and the agent stream">
     <div class="drawer-inner">
       <div class="drawer-id">
-        <svg class="drawer-jet" id="drawer-jet" aria-hidden="true"></svg>
-        <p class="drawer-name" id="drawer-name">Jet</p>
-        <p class="drawer-title" id="drawer-title">First-mate</p>
-        <p class="cache-chip" id="cache-chip" data-warm="false" role="status">cold · nothing cached yet</p>
+        <button id="jet-toggle" class="jet-toggle" type="button" aria-label="Collapse drawer" aria-controls="drawer" aria-expanded="true" title="Collapse drawer">
+          <svg class="drawer-jet" id="drawer-jet" aria-hidden="true"></svg>
+        </button>
+        <div class="drawer-persona"><p class="drawer-name" id="drawer-name">Jet</p><p class="drawer-title" id="drawer-title">First-mate</p></div>
       </div>
-      <section class="usage" id="usage" aria-labelledby="usage-title">
-        <h2 class="section-title" id="usage-title">Usage</h2>
-        <div class="usage-group" role="group" aria-labelledby="usage-reply-title">
-          <div class="usage-head">
-            <h3 class="usage-group-title" id="usage-reply-title">This reply</h3>
-            <p class="usage-status"><span class="usage-dot" id="usage-dot" data-status="idle"></span><span id="usage-status">idle</span></p>
-          </div>
-          <dl class="usage-grid">
-            <dt>in</dt><dd id="usage-in">0</dd>
-            <dt>cache read</dt><dd id="usage-cache-read">0</dd>
-            <dt>cache write (5m/1h)</dt><dd id="usage-cache-write">0/0</dd>
-            <dt>out</dt><dd id="usage-out">0</dd>
-            <dt>thinking</dt><dd id="usage-thinking">0</dd>
-          </dl>
-          <dl class="usage-grid">
-            <dt>spend</dt><dd id="usage-spend" data-empty>—</dd>
-          </dl>
-          <dl class="usage-grid">
-            <dt>first token</dt><dd id="usage-first-token" data-empty>—</dd>
-            <dt>api</dt><dd id="usage-api" data-empty>—</dd>
-            <dt>total</dt><dd id="usage-duration" data-empty>—</dd>
-            <dt>turns</dt><dd id="usage-turns" data-empty>—</dd>
-            <dt>stop reason</dt><dd id="usage-stop" data-empty>—</dd>
-          </dl>
-        </div>
-        <div class="usage-group" role="group" aria-labelledby="usage-all-title">
-          <div class="usage-head">
-            <h3 class="usage-group-title" id="usage-all-title">Session</h3>
-            <p class="usage-aside">since the app started</p>
-          </div>
-          <dl class="usage-tiles">
-            <div class="usage-tile"><dt>replies</dt><dd id="usage-all-replies">0</dd></div>
-            <div class="usage-tile"><dt>tokens</dt><dd id="usage-all-tokens">0</dd></div>
-            <div class="usage-tile"><dt>spend</dt><dd id="usage-all-spend">$0.0000</dd></div>
-          </dl>
-          <table class="usage-table" id="usage-table" hidden>
-            <caption class="sr-only">Replies by model and thinking level</caption>
-            <thead><tr><th scope="col">Model · thinking</th><th scope="col">Replies</th><th scope="col">Tokens</th><th scope="col">$</th></tr></thead>
-            <tbody id="usage-table-body"></tbody>
-          </table>
-        </div>
-        <div class="usage-group" role="group" aria-labelledby="usage-model-title">
-          <h3 class="usage-group-title" id="usage-model-title">Model</h3>
-          <p class="usage-model" id="usage-model" data-empty>—</p>
-          <div class="usage-id">
-            <span class="usage-label">session id</span>
-            <span class="usage-chip" id="usage-session" data-empty>—</span>
-            <button class="text-button" id="usage-copy" type="button" disabled>Copy</button>
-          </div>
-          <p class="usage-note" id="usage-note"></p>
-        </div>
+      <section class="context-capacity" aria-labelledby="context-title">
+        <h2 id="context-title">Context</h2>
+        <p id="context-model"></p>
+        <p id="context-tokens"></p>
+        <progress id="context-bar" max="100" hidden aria-label="Context capacity used"></progress>
+        <p id="context-percent"></p>
+        <p class="context-note" id="context-note"></p>
       </section>
-      <section class="log" data-open="false" aria-labelledby="log-title">
-        <div class="log-head">
-          <h2 class="section-title" id="log-title"><button class="log-toggle" id="log-toggle" type="button" aria-expanded="false" aria-controls="log-list">Raw stream (0)</button></h2>
-          <button class="text-button" id="log-copy" type="button">Copy</button>
-          <button class="text-button" id="log-clear" type="button">Clear</button>
-        </div>
-        <div class="log-list" id="log-list" role="list" hidden></div>
-      </section>
+      <nav class="app-list" aria-label="Registered apps"></nav>
       <div class="drawer-foot">
-        <button class="gear" id="gear" type="button" aria-label="Settings"></button>
-        <span class="model-caption" id="model-caption">Sonnet · medium</span>
+        <button class="gear" id="gear" type="button" aria-label="Settings" title="Settings"></button>
+        <span class="settings-label">Settings</span>
       </div>
     </div>
   </aside>
 
   <div class="main">
-    <header class="header">
-      <h1 class="title"><span id="header-name">Jet</span> <span class="header-status" id="header-status"></span></h1>
-    </header>
 
     <div class="stage">
       <div class="thread" id="thread" role="log" aria-live="off" aria-label="Conversation" tabindex="0">

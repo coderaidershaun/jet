@@ -35,7 +35,7 @@ Ask Jet to change explicit UI/MCP endpoint overrides when an app has no descript
 An unreachable app is saved with a discovery error so you can retry later.
 
 Jet chat fills the main content initially. One left drawer contains Jet, registered
-apps, usage and settings. Selecting an app fills the content and collapses the
+app icons, context capacity and settings. Selecting an app fills the content and collapses the
 drawer to an icon rail. Jet returns to the preserved chat and desktop drawer;
 last selected app context remains available to Jet. Narrow screens default to the
 rail, with an expandable drawer and settings always available. `/tools` opens the
@@ -53,7 +53,11 @@ busy response.
 | `/app reload [id-or-label]` | Reload the target or last selected app with current endpoints. |
 | `/app remove <id-or-label>` | Forget the registration without stopping the app. |
 | `/app enable <id-or-label>` / `/app disable <id-or-label>` | Allow or prevent new MCP calls. |
+| `/model [model-id]` | Show choices or save the model for the next reply. |
+| `/thinking [level]` | Show valid levels or save thinking for the next reply. |
 | `/tools [id-or-label]` | Browse the global tool catalogue or one app. |
+
+Context shows the last measured tokens and the selected model’s available capacity. Provider limits are used when reported; Codex can also read its installed model metadata. Missing counts or limits stay unknown, and aggregate usage fallbacks are labelled estimates. Reload preserves measurements; a fresh conversation or Forget clears them.
 
 Quoted labels work. Missing or ambiguous targets offer a choice. Slash commands
 run directly without a model request; unknown commands show help.

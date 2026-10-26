@@ -1,6 +1,6 @@
 //! Follows the MCP tool calls of one turn: names each call's server and tool, pairs it with
 //! its result, times it and sums the result up in one line. Claude Code's own tools, such
-//! as ToolSearch, are left to the raw log.
+//! as ToolSearch, are ignored.
 
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;

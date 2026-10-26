@@ -6,7 +6,7 @@ import { createBrowserAgent } from './browser-agent.js';
 /** @typedef {{ found: boolean, path: string | null, searched: string[] }} ClaudeStatus */
 /** The state of one MCP server when a reply started. Only `failed` means offline; `pending` is still starting. @typedef {{ name: string, status: string }} McpStatus */
 /** One finished call of an MCP tool. @typedef {{ id: string, server: string, tool: string, input: any, ok: boolean, result: any, summary: string, durationMs: number }} ToolCall */
-/** @typedef {{ lastRequestAt: number | null, ttlMinutes: number, contextTokens: number }} CacheStatus */
+/** @typedef {{ model: string | null, usedTokens: number | null, limitTokens: number | null, estimated: boolean }} ContextStatus */
 /**
  * `id` is null only for an entry that was never saved, such as a send that failed before a reply began.
  * @typedef {{
@@ -19,8 +19,7 @@ import { createBrowserAgent } from './browser-agent.js';
 /** @typedef {{ inputTokens: number, cacheReadTokens: number, cacheCreationTokens: number, cacheCreation1hTokens: number, outputTokens: number, thinkingTokens: number, model: string }} Usage */
 
 /**
- * @typedef {{ kind: 'rawLine', line: string }
- *   | { kind: 'started', sessionId: string, model: string, fresh: boolean, mcp: McpStatus[] }
+ * @typedef { { kind: 'started', sessionId: string, model: string, fresh: boolean, mcp: McpStatus[] }
  *   | { kind: 'notice', message: string }
  *   | { kind: 'mood', mood: string }
  *   | { kind: 'text', delta: string }
@@ -47,7 +46,7 @@ import { createBrowserAgent } from './browser-agent.js';
 
 /**
  * @typedef {object} Agent
- * @property {() => Promise<{ claude: ClaudeStatus, dataDir: string, busy: boolean, cache: CacheStatus }>} status
+ * @property {() => Promise<{ claude: ClaudeStatus, dataDir: string, busy: boolean, context: ContextStatus }>} status
  * @property {(text: string) => Promise<{ mood: string, scores: object }>} feel
  * @property {() => Promise<ShownEntry[]>} history
  * @property {(request: SendRequest, onEvent: (event: AgentEvent) => void) => Promise<ShownEntry>} send

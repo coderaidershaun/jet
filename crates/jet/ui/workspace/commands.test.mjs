@@ -8,9 +8,11 @@ import { createComposerView } from '../chat/composer/view.js';
 test('commands_route_before_chat_and_preserve_composer_keys', async () => {
   const requests = [], reports = [], opened = [], scopes = [];
   const apps = [{ id: 'a', label: 'Same name' }, { id: 'b', label: 'Same name' }];
-  let sent = 0, selected = 'a';
+  let sent = 0, selected = 'a', failSave = false, saveGate = null;
+  const settings = { model: 'gpt-6.1-sol', effort: 'ultra' };
+  const saved = [];
   const workspace = { activeAppId: () => selected, refresh: async () => {}, openApp: id => opened.push(id), reloadApp: async id => opened.push("reload:" + id), showTools: id => scopes.push(id) };
-  const commands = createCommands({ workspace, report: text => reports.push(text), request: async (path, body) => {
+  const commands = createCommands({ workspace, settings, save: async candidate => { if (failSave) throw new Error('Disk unavailable'); await saveGate; saved.push({ ...candidate }); }, report: text => reports.push(text), request: async (path, body) => {
     requests.push({ path, body });
     if (!body) return apps;
     return { app: { id: 'new', label: body.overrides?.label ?? 'Saved' }, apps, discovery: { status: 'unavailable', message: 'offline' } };
@@ -50,8 +52,42 @@ test('commands_route_before_chat_and_preserve_composer_keys', async () => {
     assert.ok(reports.at(-1).length);
   }
   assert.equal(sent, 0);
+  await commands.submit('/model', () => sent++);
+  assert.match(reports.at(-1), /gpt-6.1-sol/);
+  assert.ok(commands.suggestions('/model so').some(item => item.value === '/model sonnet'));
+  await commands.submit('/model sonnet', () => sent++);
+  assert.equal(settings.model, 'sonnet');
+  assert.equal(settings.effort, 'high');
+  assert.equal(saved.at(-1).model, 'sonnet');
+  assert.deepEqual(commands.suggestions('/thinking u'), []);
+  await commands.submit('/thinking ultra', () => sent++);
+  assert.match(reports.at(-1), /valid|choose/i);
+  assert.equal(settings.effort, 'high');
+  await commands.submit('/thinking low', () => sent++);
+  assert.equal(settings.effort, 'low');
+  failSave = true;
+  await commands.submit('/model gpt-6.1-sol', () => sent++);
+  assert.match(reports.at(-1), /Disk unavailable/);
+  assert.equal(settings.model, 'sonnet');
+  assert.equal(settings.effort, 'low');
+  await commands.submit('/model missing', () => sent++);
+  assert.match(reports.at(-1), /valid|choose/i);
+  assert.equal(sent, 0);
   await commands.submit('ordinary chat', () => sent++);
   assert.equal(sent, 1);
+  failSave = false;
+  let releaseSave;
+  saveGate = new Promise(resolve => { releaseSave = resolve; });
+  const chosen = commands.submit('/model opus', () => sent++);
+  const dispatched = [];
+  const first = commands.submit('first', text => { dispatched.push([text, settings.model]); return new Promise(() => {}); });
+  const second = commands.submit('second', text => dispatched.push([text, settings.model]));
+  await new Promise(setImmediate);
+  assert.deepEqual(dispatched, [], 'Messages wait for preceding settings to be saved');
+  releaseSave();
+  await Promise.all([chosen, first, second]);
+  assert.deepEqual(dispatched, [['first', 'opus'], ['second', 'opus']], 'Dispatch order does not wait for a provider reply');
+  saveGate = null;
 
   class Element {
     constructor() { this.value = ''; this.style = {}; this.dataset = {}; this.children = []; this.listeners = {}; this.attributes = {}; this.scrollHeight = this.offsetHeight = this.clientHeight = 0; }
@@ -90,6 +126,7 @@ test('commands_route_before_chat_and_preserve_composer_keys', async () => {
     assert.equal(field.attributes['aria-expanded'], 'false');
     view.setText('queued ordinary message');
     field.emit('keydown', { key: 'Enter' });
+    await new Promise(setImmediate);
     assert.equal(held, 1);
   } finally { globalThis.document = previous; }
 });

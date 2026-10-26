@@ -53,10 +53,11 @@
 .switch:checked::after { transform: translateX(20px); }
 .switch:disabled { opacity: .6; }
 
-.totals { display: grid; grid-template-columns: auto 1fr; gap: 2px 16px; margin: 0 0 12px; font-size: 13px; }
-.totals dt { color: var(--muted); }
-.totals dd { margin: 0; font-variant-numeric: tabular-nums; }
 
 .row-actions { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .confirm { margin-top: 12px; padding: 12px 14px; background: var(--surface-2); border-left: 2px solid var(--danger); border-radius: 8px; }
 .confirm p { margin: 0 0 8px; font-size: 13px; }
+
+.model-picker { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.model-picker label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.model-picker select { max-width: 190px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: inherit; font: inherit; }

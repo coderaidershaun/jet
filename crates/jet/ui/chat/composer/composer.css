@@ -1,14 +1,14 @@
 /* The composer: a bar at the bottom, or a floating field in the middle of the
    empty state. The same element does both, so it can hop between them. */
 .composer {
-  position: relative; z-index: 3;
+  position: relative; z-index: 5;
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   background: var(--surface); border-top: 1px solid var(--line);
 }
 .composer-row, .held { display: flex; align-items: flex-end; gap: 8px; max-width: 820px; margin: 0 auto; }
 
 .page[data-layout="centred"] .composer {
-  grid-row: 2; grid-column: 1; align-self: start; justify-self: center;
+  grid-row: 1; grid-column: 1; align-self: start; justify-self: center;
   top: calc(45% + var(--empty-block) / 2 - 44px);
   width: min(640px, calc(100% - 2 * var(--gutter))); padding: 0;
   background: none; border: 0;
@@ -43,8 +43,3 @@ textarea#field:focus-visible { outline-offset: 0; }
 }
 .held .icon-button { position: relative; width: 36px; height: 36px; margin: 4px 0; color: var(--fg); }
 .held .icon-button::after { content: ""; position: absolute; inset: -4px; }
-
-.model-picker { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.model-picker label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.model-picker select { max-width: 190px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: inherit; font: inherit; }
-#composer > .model-picker { max-width: 820px; margin: 0 auto; padding: 8px 12px 4px; color: var(--muted); }

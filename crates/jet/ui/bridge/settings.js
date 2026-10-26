@@ -63,12 +63,8 @@ export async function loadSettings() {
 
 /** @param {Settings} settings */
 export async function saveSettings(settings) {
-  try {
-    if (globalThis.__JET_FAKE__ === true) localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    else await requestJson('/api/settings', settings, 'PUT');
-  } catch (error) {
-    console.warn('settings could not be saved:', error);
-  }
+  if (globalThis.__JET_FAKE__ === true) localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  else await requestJson('/api/settings', settings, 'PUT');
 }
 
 /** The name the page shows for Jet: the persona's name, or Jet while it is blank. */

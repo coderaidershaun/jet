@@ -90,7 +90,7 @@ impl Reply {
     fn advance(&mut self) {
         let step = self.turn.as_mut().and_then(Iterator::next);
         match step {
-            Some(Step::Raw(line)) => self.queue.push_back(Event::RawLine { line }),
+            Some(Step::Raw(_)) => {}
             Some(Step::Init {
                 session_id,
                 model,
@@ -170,6 +170,7 @@ impl Reply {
             started_at: kept.map_or_else(now_ms, |saved| saved.started_at),
             last_request_at: self.spawned_at,
             context_tokens: kept.map_or(0, |saved| saved.context_tokens),
+            context: kept.map_or_else(Default::default, |saved| saved.context.clone()),
             prompt_hash: prompt_hash.clone(),
             reviewed_through: reviewed.reviewed_through,
             reviewed_at: reviewed.reviewed_at,
@@ -289,6 +290,8 @@ impl Reply {
             let usage = &summary.usage;
             session.context_tokens =
                 usage.cache_read_tokens + usage.cache_creation_tokens + usage.input_tokens;
+            session.context = summary.context.clone();
+            session.context.model = Some(self.context.request.model);
             session.save(dir)?;
         }
         Ok(entry)

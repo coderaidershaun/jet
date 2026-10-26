@@ -1,6 +1,9 @@
+import { MODELS, effortsFor } from '../bridge/models.js';
 import { requestJson } from '../bridge/browser-agent.js';
 
 const HELP = [
+  ['/model', '[model-id] — choose the model for the next reply'],
+  ['/thinking', '[level] — choose thinking for the next reply'],
   ['/app add', '<address> ["label"] — register an app'],
   ['/app list', 'show registered apps and IDs'],
   ['/app open', '<id-or-label> — open an app'],
@@ -28,12 +31,27 @@ function words(text) {
   return result;
 }
 
-export function createCommands({ workspace, report, request = requestJson }) {
+export function createCommands({ workspace, report, settings, save, changed = () => {}, request = requestJson }) {
   let pending = Promise.resolve();
   const help = () => HELP.map(([command, description]) => command + ' ' + description).join('\n');
   async function run(text) {
     try {
       const [root, ...args] = words(text);
+      if (root === '/model' || root === '/thinking') {
+        const modelCommand = root === '/model';
+        const choices = modelCommand ? MODELS.map(([id]) => id) : effortsFor(settings.model);
+        const key = modelCommand ? 'model' : 'effort';
+        if (!args.length) { report(`Current ${modelCommand ? 'model' : 'thinking'}: ${settings[key]}\nValid choices: ${choices.join(', ')}`); return; }
+        if (args.length !== 1 || !choices.includes(args[0])) throw new Error(`Choose a valid ${modelCommand ? 'model' : 'thinking level'}: ${choices.join(', ')}`);
+        const candidate = { ...settings, [key]: args[0] };
+        if (!effortsFor(candidate.model).includes(candidate.effort)) candidate.effort = 'high';
+        await save(candidate);
+        settings.model = candidate.model;
+        settings.effort = candidate.effort;
+        changed();
+        report(`Saved. Next reply: ${settings.model} · ${settings.effort} thinking.`);
+        return;
+      }
       const action = root === '/tools' ? 'tools' : args.shift();
       if ((root !== '/app' && root !== '/tools') || (root === '/app' && action === 'tools') || !['add', 'list', 'open', 'edit', 'remove', 'enable', 'disable', 'reload', 'tools'].includes(action)) {
         report('Command help\n' + help()); return;
@@ -64,9 +82,21 @@ export function createCommands({ workspace, report, request = requestJson }) {
     } catch (error) { report(error.message ?? JSON.stringify(error)); }
   }
   return {
-    submit(text, forward) { if (text.trimStart().startsWith('/')) { pending = pending.then(() => run(text.trim())); return pending; } report(''); return forward(text); },
+    submit(text, forward) {
+      pending = pending.then(() => {
+        if (text.trimStart().startsWith('/')) return run(text.trim());
+        report('');
+        forward(text);
+      });
+      return pending;
+    },
     suggestions(text) {
       const prefix = text.trimStart();
+      const argument = prefix.match(/^\/(model|thinking)\s+(.*)$/);
+      if (argument) {
+        const choices = argument[1] === 'model' ? MODELS.map(([id, label]) => [id, label]) : effortsFor(settings.model).map(level => [level, 'Thinking level']);
+        return choices.filter(([id]) => id.startsWith(argument[2]) && id !== argument[2].trim()).map(([id, description]) => ({ value: `/${argument[1]} ${id}`, description }));
+      }
       return prefix.startsWith('/') ? HELP.filter(([command]) => command.startsWith(prefix) && command !== prefix).map(([value, description]) => ({ value, description })) : [];
     },
   };

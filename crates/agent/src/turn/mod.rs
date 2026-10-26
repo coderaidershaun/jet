@@ -3,6 +3,7 @@
 
 mod claude;
 mod codex;
+mod context;
 mod error;
 mod mood;
 mod process;
@@ -67,6 +68,7 @@ pub struct Summary {
     pub duration_ms: u64,
     pub cost_usd: f64,
     pub usage: Usage,
+    pub context: crate::chat::ContextStatus,
     /// The model's final answer as plain text.
     pub result: String,
     /// The answer as data, when the request asked for a schema.
@@ -101,9 +103,8 @@ pub struct Turn {
     text: String,
     mood: Option<Mood>,
     init_model: String,
+    context: context::ContextReader,
     saw_delta: bool,
-    /// Text was shown before a new call to the model began, so the next text starts a new
-    /// paragraph.
     needs_paragraph_break: bool,
     ended: bool,
 }
@@ -130,6 +131,7 @@ impl Turn {
             text: String::new(),
             mood: None,
             init_model: String::new(),
+            context: context::ContextReader::default(),
             saw_delta: false,
             needs_paragraph_break: false,
             ended: false,
@@ -202,6 +204,7 @@ impl Turn {
     }
 
     fn take_line(&mut self, line: String) {
+        self.context.read(&line);
         let parsed = stream::parse(&line);
         self.queued.push_back(Step::Raw(line));
         match parsed {
@@ -246,13 +249,12 @@ impl Turn {
             duration_ms: result.duration_ms,
             cost_usd: result.cost_usd,
             usage: result.usage,
+            context: self.context.finish(),
             result: result.result.unwrap_or_default(),
             structured_output: result.structured_output,
         }));
     }
 
-    /// A new call to the model has begun. It may open with a mood line of its own, so the
-    /// check for one starts again, and its text is set apart from any text already shown.
     fn begin_call(&mut self) {
         let rest = self.splitter.finish();
         self.release(rest);

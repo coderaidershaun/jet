@@ -21,7 +21,6 @@ pub(super) enum Line {
     /// What the tools gave back.
     ToolResults(Vec<ToolResult>),
     Result(ResultLine),
-    /// Anything else: shown in the raw log, otherwise ignored.
     Other,
 }
 

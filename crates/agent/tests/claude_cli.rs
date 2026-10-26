@@ -245,6 +245,16 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
         (&saved.id, &saved.input, &saved.result, &saved.summary),
         (id, input, result, summary)
     );
+    let capacity = conversation.context_status(Model::Sonnet).unwrap();
+    assert_eq!(capacity.used_tokens, Some(8373));
+    assert_eq!(capacity.limit_tokens, Some(1_000_000));
+    assert!(!capacity.estimated);
+    let reloaded = Conversation::new(DataDir::new(cwd.join("data")));
+    assert_eq!(reloaded.context_status(Model::Sonnet).unwrap(), capacity);
+    assert_eq!(
+        reloaded.context_status(Model::Opus).unwrap().used_tokens,
+        None
+    );
     let history = conversation.history(10).unwrap();
     assert_eq!(history.last().unwrap().entry.tools, entry.entry.tools);
 

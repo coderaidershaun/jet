@@ -17,6 +17,7 @@ pub(crate) struct Session {
     pub last_request_at: u64,
     /// Tokens Claude read for the last reply: what a cold restart would have to re-read.
     pub context_tokens: u64,
+    pub context: crate::chat::ContextStatus,
     /// Fingerprint of the prompt inputs the session started with. Empty marks it stale.
     pub prompt_hash: String,
     /// The last thread entry the notes review has covered.
@@ -60,6 +61,7 @@ impl Session {
     pub(crate) fn without_conversation(self) -> Session {
         Session {
             session_id: SessionId::default(),
+            context: crate::chat::ContextStatus::default(),
             ..self
         }
     }

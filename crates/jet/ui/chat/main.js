@@ -9,11 +9,7 @@ import { connectAgent } from '../bridge/agent.js';
 import { displayName, loadSettings, saveSettings } from '../bridge/settings.js';
 import { createComposer } from './composer/state.js';
 import { createComposerView } from './composer/view.js';
-import { describeCache } from './drawer/cache.js';
-import { createLog } from './drawer/log.js';
-import { createUsageTracker } from './drawer/usage.js';
 import { createDrawerView } from './drawer/view.js';
-import { modelPicker } from './settings/model-picker.js';
 import { createSheet } from './settings/sheet.js';
 import { createLive } from './stage/live.js';
 import { createFollow } from './thread/scroll.js';
@@ -21,7 +17,6 @@ import { createThread } from './thread/store.js';
 import { createThreadView } from './thread/view.js';
 import { createTurn } from './turn.js';
 
-const CACHE_CHECK_MS = 60 * 1000;
 const $ = (id) => document.getElementById(id);
 const warn = (what) => (error) => console.warn(what + ':', error);
 
@@ -33,14 +28,14 @@ async function start() {
   const page = $('page');
   let toolBrowser, commandMenu;
   const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId) });
-  const commandResult = h('pre', { class: 'command-result', role: 'status', 'aria-label': 'App command result' });
+  const commandResult = h('pre', { class: 'command-result', role: 'status', 'aria-label': 'Command result' });
   $('banner').before(commandResult);
   function reportCommand(text) {
     commandResult.textContent = text;
     page.classList.toggle('has-command-result', Boolean(text));
     if (text && !page.hidden) commandResult.scrollIntoView({ block: 'nearest' });
   }
-  const commands = createCommands({ workspace, report: reportCommand });
+  const commands = createCommands({ workspace, report: reportCommand, settings, save: saveSettings, changed: () => { drawer.setContext(settings.model); refreshStatus(); } });
   const systemReduces = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedMotion = () => settings.reducedMotion || systemReduces.matches;
   const applyReduced = () => document.documentElement.classList.toggle('reduced', reducedMotion());
@@ -50,17 +45,6 @@ async function start() {
   thread.load(history);
   const follow = createFollow();
   const composer = createComposer({ empty: history.length === 0 });
-  const tracker = createUsageTracker();
-  let cache = status.cache;
-
-  const quickModel = modelPicker(settings, async () => {
-    drawer.setModel(settings);
-    await saveSettings(settings);
-    const latest = await agent.status();
-    showProgramStatus(latest.claude);
-  });
-  $('composer').append(quickModel.el);
-
   $('gear').append(icon('gear'));
   $('held-cancel').append(icon('close'));
   $('jump').prepend(icon('down'));
@@ -80,6 +64,11 @@ async function start() {
     },
   });
 
+  function submit(text) {
+    const appId = workspace.activeAppId();
+    return commands.submit(text, () => composer.replying ? turn.hold(text, appId) : turn.send(text, appId));
+  }
+
   const composerView = createComposerView({
     page,
     composer: $('composer'),
@@ -90,8 +79,8 @@ async function start() {
     state: composer,
     reducedMotion,
     handlers: {
-      send: (text) => commands.submit(text, () => turn.send(text)),
-      hold: (text) => commands.submit(text, () => turn.hold(text)),
+      send: submit,
+      hold: submit,
       input: (text) => commandMenu?.input(text),
       keydown: (event) => commandMenu?.keydown(event),
       stop: () => turn.stop(),
@@ -112,15 +101,8 @@ async function start() {
     jetSvg: $('drawer-jet'),
     nameEl: $('drawer-name'),
     titleEl: $('drawer-title'),
-    chipEl: $('cache-chip'),
-    modelEl: $('model-caption'),
-    usageEl: $('usage'),
-    logToggle: $('log-toggle'),
-    logList: $('log-list'),
-    copyButton: $('log-copy'),
-    clearButton: $('log-clear'),
-    gearButton: $('gear'),
-    log: createLog(),
+    modelEl: $('context-model'), tokensEl: $('context-tokens'), barEl: $('context-bar'),
+    percentEl: $('context-percent'), noteEl: $('context-note'), gearButton: $('gear'),
     handlers: {
       openSettings: () => sheet.open(),
     },
@@ -132,7 +114,6 @@ async function start() {
     scrollToBottom: () => view.scrollToBottom(),
   });
 
-  const paintCache = () => drawer.setCache(describeCache(cache, Date.now()));
   function showProgramStatus(program) {
     if (program.found) {
       view.setBanner(null);
@@ -141,15 +122,17 @@ async function start() {
     const message = "I couldn't find " + (program.provider ?? "Claude Code") + ". I looked in: " + program.searched.join(', ');
     view.setBanner(message, { label: 'Settings', run: () => sheet.open('claude') });
   }
+  let statusNumber = 0;
   async function refreshStatus() {
+    const current = ++statusNumber, model = settings.model;
     try {
       const latest = await agent.status();
-      cache = latest.cache;
+      if (current !== statusNumber || model !== settings.model) return;
+      drawer.setContext(model, latest.context);
       showProgramStatus(latest.claude);
     } catch (error) {
       console.warn('the agent status could not be read:', error);
     }
-    paintCache();
   }
 
   const turn = createTurn({
@@ -161,9 +144,7 @@ async function start() {
     composer,
     composerView,
     live,
-    drawer,
-    tracker,
-    page: { headerStatus: $('header-status'), announce: $('announce') },
+    page: { announce: $('announce') },
     afterReply: refreshStatus,
     activeAppId: workspace.activeAppId,
   });
@@ -171,7 +152,6 @@ async function start() {
   function paintPersona() {
     const name = displayName(settings);
     const title = settings.persona.jobTitle.trim() || 'assistant';
-    $('header-name').textContent = name;
     $('greeting').textContent = "Hi, I'm " + name + ', your ' + title.charAt(0).toLowerCase() + title.slice(1) + '.';
     composerView.setPlaceholder('Message ' + name);
     $('held-text').textContent = 'Sends when ' + name + ' finishes';
@@ -196,15 +176,14 @@ async function start() {
     context: {
       settings,
       agent,
-      totals: () => tracker.snapshot().total,
       systemReducesMotion: () => systemReduces.matches,
       onClaudeChecked: showProgramStatus,
       onForget: forget,
     },
-    save: () => saveSettings(settings),
+    save: async () => { await saveSettings(settings); await refreshStatus(); },
     onChange: (kind) => {
       if (kind === 'persona') paintPersona();
-      else if (kind === 'model') { drawer.setModel(settings); quickModel.refresh(); }
+      else if (kind === 'model') { drawer.setContext(settings.model); }
       else if (kind === 'motion') {
         applyReduced();
         live.setReducedMotion(reducedMotion());
@@ -226,8 +205,7 @@ async function start() {
   });
 
   drawer.init();
-  drawer.setModel({ model: settings.model, effort: settings.effort });
-  drawer.setUsage(tracker.snapshot());
+  drawer.setContext(settings.model, status.context);
   paintPersona();
   showProgramStatus(status.claude);
   page.dataset.layout = composer.layout;
@@ -238,10 +216,8 @@ async function start() {
     view.scrollToBottom();
     live.showInLane(view.liveLane());
   }
-  paintCache();
-  setInterval(paintCache, CACHE_CHECK_MS);
   live.start();
-  agent.watch?.((snapshot) => { turn.restore(snapshot); workspace.refresh(); }, (event) => turn.observe(event));
+  agent.watch?.((snapshot) => { turn.restore(snapshot); workspace.refresh(); refreshStatus(); }, (event) => turn.observe(event));
 }
 
 start().catch((error) => {

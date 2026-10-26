@@ -40,10 +40,6 @@ impl Failure {
     rename_all_fields = "camelCase"
 )]
 pub enum Event {
-    /// A transport line sent before the typed events made from it.
-    RawLine {
-        line: String,
-    },
     Started {
         session_id: SessionId,
         model: String,
@@ -142,10 +138,6 @@ mod tests {
         let call = quanty_search();
         let stopped = jet_entry(44, EntryStatus::Stopped);
         let mut cases = vec![
-            (
-                Event::RawLine { line: text() },
-                json!({"kind": "rawLine", "line": "m"}),
-            ),
             (
                 Event::Started {
                     session_id: SessionId("5b0c".into()),

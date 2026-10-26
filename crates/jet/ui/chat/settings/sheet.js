@@ -16,7 +16,6 @@ const SAVE_AFTER_EDIT_MS = 600;
  * @property {import('../../bridge/settings.js').Settings} settings   edited in place
  * @property {*} agent   what the page talks to the agent through
  * @property {(kind: string) => void} changed   tell the page what changed; saving follows
- * @property {() => import('../drawer/usage.js').UsageTotals} totals   what the replies since the app started have used, read on each refresh
  * @property {() => boolean} systemReducesMotion   true when the system asks for less motion
  * @property {(claude: import('../../bridge/agent.js').ClaudeStatus) => void} onClaudeChecked   the page's banner follows each check
  * @property {() => Promise<void>} onForget
@@ -33,8 +32,14 @@ export function createSheet({ dialog, context, onChange, save }) {
   const saveEdits = async () => {
     const checkProgram = needsProgramCheck;
     needsProgramCheck = false;
-    await save();
-    if (checkProgram) programs.refresh();
+    try {
+      await save();
+      saveError.textContent = '';
+      if (checkProgram) programs.refresh();
+    } catch (error) {
+      needsProgramCheck ||= checkProgram;
+      saveError.textContent = 'Settings could not be saved: ' + (error.message ?? String(error));
+    }
   };
   const changed = (kind) => {
     onChange(kind);
@@ -50,7 +55,8 @@ export function createSheet({ dialog, context, onChange, save }) {
   const model = buildModel(ctx);
   const memory = buildMemory(ctx);
   const programs = buildClaude(ctx);
-  const body = h('div', { class: 'sheet-body' }, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, ...programs.el);
+  const saveError = h('p', { class: 'settings-save-error', role: 'alert' });
+  const body = h('div', { class: 'sheet-body' }, saveError, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, ...programs.el);
 
   const closeButton = h('button', { class: 'icon-button', type: 'button', 'aria-label': 'Close settings', onClick: () => sheet.close() }, icon('close'));
   dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), closeButton), body);
