@@ -1,7 +1,9 @@
 //! Define the fixed facade contract without copying registered tool schemas.
-use rmcp::model::Tool;
+use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Value, json};
-pub(super) fn definitions() -> Vec<Tool> {
+use std::sync::LazyLock;
+
+static TOOLS: LazyLock<Vec<Tool>> = LazyLock::new(|| {
     let target = json!({"appId":{"type":"string","format":"uuid"},"tool":{"type":"string"}});
     [
         ("apps_list", "List all registered apps and stable IDs.", object(json!({}),json!([]))),
@@ -11,10 +13,14 @@ pub(super) fn definitions() -> Vec<Tool> {
         ("tools_describe", "Read a real tool schema and its server instructions.", object(target,json!(["appId","tool"]))),
         ("tools_call", "Validate and call a real tool once. Discover its schema first.", object(json!({"appId":{"type":"string","format":"uuid"},"tool":{"type":"string"},"arguments":{"type":"object"}}),json!(["appId","tool","arguments"]))),
     ].into_iter().map(|(name, description, schema)| {
-        let mut tool = Tool::new(name, description, schema.as_object().cloned().unwrap_or_default());
-        tool.annotations = serde_json::from_value(json!({"readOnlyHint":matches!(name,"apps_list"|"tools_search"|"tools_describe")})).ok();
-        tool
+        let read_only = matches!(name, "apps_list" | "tools_search" | "tools_describe");
+        Tool::new(name, description, schema.as_object().cloned().unwrap_or_default())
+            .with_annotations(ToolAnnotations::new().read_only(read_only))
     }).collect()
+});
+
+pub(super) fn definitions() -> &'static [Tool] {
+    &TOOLS
 }
 fn object(properties: Value, required: Value) -> Value {
     json!({"type":"object","properties":properties,"required":required,"additionalProperties":false})
@@ -48,14 +54,12 @@ fn command_schema() -> Value {
     json!({"oneOf":variants})
 }
 pub(super) fn validate(name: &str, arguments: &Value) -> Result<(), rmcp::ErrorData> {
-    let tool = definitions()
-        .into_iter()
+    let tool = TOOLS
+        .iter()
         .find(|tool| tool.name == name)
         .ok_or_else(|| rmcp::ErrorData::invalid_params("unknown facade tool", None))?;
-    let schema = Value::Object((*tool.input_schema).clone());
-    let validator = jsonschema::validator_for(&schema)
-        .map_err(|error| rmcp::ErrorData::internal_error(error.to_string(), None))?;
-    validator
+    jsonschema::validator_for(&Value::Object((*tool.input_schema).clone()))
+        .map_err(|error| rmcp::ErrorData::internal_error(error.to_string(), None))?
         .validate(arguments)
         .map_err(|error| rmcp::ErrorData::invalid_params(error.to_string(), None))
 }

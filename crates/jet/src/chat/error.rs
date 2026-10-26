@@ -3,7 +3,7 @@
 use agent::{ConversationError, Failure, MemoryError, TransportError, TurnError};
 use serde::Serialize;
 
-use crate::settings;
+use crate::settings::SettingsError;
 
 /// Why a command failed. The page reads `kind` to decide what to show.
 #[derive(Debug, thiserror::Error)]
@@ -14,6 +14,10 @@ pub enum BridgeError {
     ClaudeMissing(String),
     #[error("{0}")]
     Io(String),
+    #[error(transparent)]
+    Memory(#[from] MemoryError),
+    #[error(transparent)]
+    Settings(#[from] SettingsError),
     #[error("request ID was already accepted with different content")]
     Conflict,
     #[error("request was cancelled before it started")]
@@ -29,7 +33,7 @@ impl BridgeError {
         match self {
             BridgeError::Busy => "busy",
             BridgeError::ClaudeMissing(_) => "claudeMissing",
-            BridgeError::Io(_) => "io",
+            BridgeError::Io(_) | BridgeError::Memory(_) | BridgeError::Settings(_) => "io",
             BridgeError::Conflict => "conflict",
             BridgeError::Cancelled => "cancelled",
             BridgeError::InvalidRequest(_) => "invalidRequest",
@@ -54,18 +58,6 @@ impl From<ConversationError> for BridgeError {
             ConversationError::Busy => BridgeError::Busy,
             ConversationError::Memory(error) => error.into(),
         }
-    }
-}
-
-impl From<MemoryError> for BridgeError {
-    fn from(error: MemoryError) -> BridgeError {
-        BridgeError::Io(error.to_string())
-    }
-}
-
-impl From<settings::SettingsError> for BridgeError {
-    fn from(error: settings::SettingsError) -> BridgeError {
-        BridgeError::Io(error.to_string())
     }
 }
 
@@ -119,5 +111,14 @@ mod tests {
         }
         let from_agent = BridgeError::from(ConversationError::Busy);
         assert_eq!(serde_json::to_value(&from_agent).unwrap()["kind"], "busy");
+        let unwritable = SettingsError::Io {
+            path: "settings.json".into(),
+            source: std::io::Error::other("disk full"),
+        };
+        let message = unwritable.to_string();
+        assert_eq!(
+            serde_json::to_value(BridgeError::from(unwritable)).unwrap(),
+            json!({"kind": "io", "message": message})
+        );
     }
 }

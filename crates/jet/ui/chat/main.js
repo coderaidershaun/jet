@@ -129,7 +129,7 @@ async function start() {
       const latest = await agent.status();
       if (current !== statusNumber || model !== settings.model) return;
       drawer.setContext(model, latest.context);
-      showProgramStatus(latest.claude);
+      showProgramStatus(latest.program);
     } catch (error) {
       console.warn('the agent status could not be read:', error);
     }
@@ -207,7 +207,7 @@ async function start() {
   drawer.init();
   drawer.setContext(settings.model, status.context);
   paintPersona();
-  showProgramStatus(status.claude);
+  showProgramStatus(status.program);
   page.dataset.layout = composer.layout;
   if (history.length === 0) {
     live.showHero();

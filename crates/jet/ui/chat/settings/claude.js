@@ -57,7 +57,7 @@ export function buildClaude({ settings, agent, changed, onClaudeChecked, onForge
     /** Asks where the selected agent is, and shows the answer here and in the page's banner. */
     async refresh() {
       try {
-        const { claude: program } = await agent.status();
+        const { program } = await agent.status();
         status.textContent = program.found ? (program.provider ?? 'Agent') + ' found at ' + program.path : 'Not found. Looked in ' + program.searched.join(', ');
         status.dataset.found = String(program.found);
         onClaudeChecked(program);

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use agent::{Effort, Model, Persona};
 use serde::{Deserialize, Serialize};
 
-pub(crate) const FILE_NAME: &str = "settings.json";
+const FILE_NAME: &str = "settings.json";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -53,41 +53,36 @@ pub enum SettingsError {
 }
 
 /// Reads the saved settings, or the defaults when nothing has been saved yet.
-pub fn read_from(path: &Path) -> Result<Settings, SettingsError> {
-    match std::fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|source| SettingsError::Json {
-            path: path.to_path_buf(),
-            source,
-        }),
+pub fn read_from(data_dir: &Path) -> Result<Settings, SettingsError> {
+    let path = data_dir.join(FILE_NAME);
+    match std::fs::read(&path) {
+        Ok(bytes) => {
+            serde_json::from_slice(&bytes).map_err(|source| SettingsError::Json { path, source })
+        }
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(Settings::default()),
-        Err(source) => Err(SettingsError::Io {
-            path: path.to_path_buf(),
-            source,
-        }),
+        Err(source) => Err(SettingsError::Io { path, source }),
     }
 }
 
-pub fn write_to(path: &Path, settings: &Settings) -> Result<(), SettingsError> {
+pub fn write_to(data_dir: &Path, settings: &Settings) -> Result<(), SettingsError> {
+    let path = data_dir.join(FILE_NAME);
     if path.exists() {
-        let _ = read_from(path)?;
+        let _ = read_from(data_dir)?;
     }
     let io = |source| SettingsError::Io {
-        path: path.to_path_buf(),
+        path: path.clone(),
         source,
     };
-    if let Some(folder) = path.parent() {
-        std::fs::create_dir_all(folder).map_err(io)?;
-    }
+    std::fs::create_dir_all(data_dir).map_err(io)?;
     let json = serde_json::to_vec_pretty(settings).map_err(|source| SettingsError::Json {
-        path: path.to_path_buf(),
+        path: path.clone(),
         source,
     })?;
     use std::io::Write;
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(io)?;
+    let mut temporary = tempfile::NamedTempFile::new_in(data_dir).map_err(io)?;
     temporary.write_all(&json).map_err(io)?;
     temporary.as_file().sync_all().map_err(io)?;
-    temporary.persist(path).map_err(|error| io(error.error))?;
+    temporary.persist(&path).map_err(|error| io(error.error))?;
     Ok(())
 }
 
@@ -95,40 +90,39 @@ pub fn write_to(path: &Path, settings: &Settings) -> Result<(), SettingsError> {
 mod tests {
     use super::*;
 
-    fn scratch_file(name: &str) -> PathBuf {
+    fn scratch_dir(name: &str) -> PathBuf {
         let unique = format!("jet-settings-{}-{name}", std::process::id());
-        std::env::temp_dir().join(unique).join(FILE_NAME)
+        std::env::temp_dir().join(unique)
     }
 
     #[test]
     fn missing_file_means_defaults() {
-        let path = scratch_file("missing");
-        let settings = read_from(&path).unwrap();
+        let settings = read_from(&scratch_dir("missing")).unwrap();
         assert_eq!(settings, Settings::default());
     }
 
     #[test]
     fn settings_survive_a_round_trip() {
-        let path = scratch_file("roundtrip");
+        let dir = scratch_dir("roundtrip");
         let settings = Settings {
             reduced_motion: true,
             ..Settings::default()
         };
-        write_to(&path, &settings).unwrap();
-        assert_eq!(read_from(&path).unwrap(), settings);
+        write_to(&dir, &settings).unwrap();
+        assert_eq!(read_from(&dir).unwrap(), settings);
 
         let saved: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(dir.join(FILE_NAME)).unwrap()).unwrap();
         assert!(saved.get("page").is_none());
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn old_files_with_missing_fields_still_load() {
-        let path = scratch_file("partial");
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let dir = scratch_dir("partial");
+        std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
-            &path,
+            dir.join(FILE_NAME),
             br#"{
                 "behaviour":{"candid":0.1},
                 "expressiveness":{"master":2.5},
@@ -143,7 +137,7 @@ mod tests {
             }"#,
         )
         .unwrap();
-        let settings = read_from(&path).unwrap();
+        let settings = read_from(&dir).unwrap();
         assert!(settings.reduced_motion);
         assert_eq!(
             settings.persona,
@@ -156,10 +150,10 @@ mod tests {
         assert_eq!(settings.effort, Effort::Medium);
         assert_eq!(settings.turn_budget_usd, 1.0);
         assert_eq!(settings.claude_path, None);
-        write_to(&path, &settings).unwrap();
-        assert_eq!(read_from(&path).unwrap(), settings);
+        write_to(&dir, &settings).unwrap();
+        assert_eq!(read_from(&dir).unwrap(), settings);
         let saved: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(dir.join(FILE_NAME)).unwrap()).unwrap();
         for key in [
             "behaviour",
             "expressiveness",
@@ -171,12 +165,12 @@ mod tests {
         ] {
             assert!(saved.get(key).is_none(), "removed {key} was saved");
         }
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn new_fields_round_trip() {
-        let path = scratch_file("new-fields");
+        let dir = scratch_dir("new-fields");
         let settings = Settings {
             persona: Persona {
                 name: "Ada".into(),
@@ -189,10 +183,10 @@ mod tests {
             claude_path: Some(PathBuf::from("/opt/tools/claude")),
             ..Settings::default()
         };
-        write_to(&path, &settings).unwrap();
-        assert_eq!(read_from(&path).unwrap(), settings);
+        write_to(&dir, &settings).unwrap();
+        assert_eq!(read_from(&dir).unwrap(), settings);
 
-        let json = std::fs::read_to_string(&path).unwrap();
+        let json = std::fs::read_to_string(dir.join(FILE_NAME)).unwrap();
         for key in ["jobTitle", "turnBudgetUsd", "claudePath"] {
             assert!(
                 json.contains(&format!("\"{key}\"")),
@@ -204,24 +198,25 @@ mod tests {
                 effort,
                 ..settings.clone()
             };
-            write_to(&path, &settings).unwrap();
-            assert_eq!(read_from(&path).unwrap(), settings);
+            write_to(&dir, &settings).unwrap();
+            assert_eq!(read_from(&dir).unwrap(), settings);
             let saved: serde_json::Value =
-                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+                serde_json::from_str(&std::fs::read_to_string(dir.join(FILE_NAME)).unwrap())
+                    .unwrap();
             assert_eq!(saved["effort"], word);
         }
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn broken_file_names_the_path() {
-        let path = scratch_file("broken");
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, b"not json").unwrap();
-        let error = read_from(&path).unwrap_err();
+        let dir = scratch_dir("broken");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(FILE_NAME), b"not json").unwrap();
+        let error = read_from(&dir).unwrap_err();
         assert!(matches!(error, SettingsError::Json { .. }));
         assert!(error.to_string().contains(FILE_NAME));
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

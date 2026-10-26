@@ -1,6 +1,9 @@
 //! Adapt browser requests to the shared conversation and registry operations.
 
-use agent::{Notes, apps::RegistryCommand};
+use agent::{
+    Feeling, Notes,
+    apps::{App, RegistryCommand, RegistryResult},
+};
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -21,7 +24,7 @@ use tower_http::services::ServeDir;
 
 use super::Server;
 use crate::{
-    chat::{BridgeError, SendRequest, lock},
+    chat::{Accepted, AgentStatus, BridgeError, SendRequest, Snapshot, lock},
     settings,
 };
 
@@ -63,17 +66,17 @@ async fn blocking<T: Send + 'static>(
         .map(Json)
 }
 
-async fn status(State(host): State<Server>) -> Result<Json<Value>, BridgeError> {
-    blocking(move || Ok(json!(host.chat.status()?))).await
+async fn status(State(host): State<Server>) -> Result<Json<AgentStatus>, BridgeError> {
+    blocking(move || host.chat.status()).await
 }
-async fn snapshot(State(host): State<Server>) -> Result<Json<Value>, BridgeError> {
-    blocking(move || Ok(json!(host.chat.snapshot()?))).await
+async fn snapshot(State(host): State<Server>) -> Result<Json<Snapshot>, BridgeError> {
+    blocking(move || host.chat.snapshot()).await
 }
 async fn send(
     State(host): State<Server>,
     Json(request): Json<SendRequest>,
-) -> Result<Json<Value>, BridgeError> {
-    blocking(move || Ok(json!(host.chat.send(request)?))).await
+) -> Result<Json<Accepted>, BridgeError> {
+    blocking(move || host.chat.send(request)).await
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,19 +100,14 @@ async fn forget(State(host): State<Server>) -> Result<Json<Value>, BridgeError> 
 async fn load_settings(
     State(host): State<Server>,
 ) -> Result<Json<settings::Settings>, BridgeError> {
-    blocking(move || {
-        Ok(settings::read_from(
-            &host.config.data_dir.join(settings::FILE_NAME),
-        )?)
-    })
-    .await
+    blocking(move || Ok(settings::read_from(&host.config.data_dir)?)).await
 }
 async fn save_settings(
     State(host): State<Server>,
     Json(settings): Json<settings::Settings>,
 ) -> Result<Json<Value>, BridgeError> {
     blocking(move || {
-        settings::write_to(&host.config.data_dir.join(settings::FILE_NAME), &settings)?;
+        settings::write_to(&host.config.data_dir, &settings)?;
         Ok(json!({}))
     })
     .await
@@ -142,28 +140,25 @@ async fn markdown(Json(text): Json<Text>) -> Json<String> {
 async fn feel(
     State(host): State<Server>,
     Json(text): Json<Text>,
-) -> Result<Json<Value>, BridgeError> {
+) -> Result<Json<Feeling>, BridgeError> {
     if host.config.disable_feelings {
-        return Ok(Json(json!({"mood":"neutral","scores":{}})));
+        return Ok(Json(Feeling::neutral()));
     }
     blocking(move || {
-        agent::feel_message(&text.text)
-            .map(|feeling| json!(feeling))
-            .map_err(|error| BridgeError::Io(error.to_string()))
+        agent::feel_message(&text.text).map_err(|error| BridgeError::Io(error.to_string()))
     })
     .await
 }
-async fn apps(State(host): State<Server>) -> Result<Json<Value>, BridgeError> {
-    blocking(move || Ok(json!(lock(&host.registry).list()))).await
+async fn apps(State(host): State<Server>) -> Result<Json<Vec<App>>, BridgeError> {
+    blocking(move || Ok(lock(&host.registry).list().to_vec())).await
 }
 async fn update_apps(
     State(host): State<Server>,
     Json(command): Json<RegistryCommand>,
-) -> Result<Json<Value>, BridgeError> {
+) -> Result<Json<RegistryResult>, BridgeError> {
     blocking(move || {
         lock(&host.registry)
             .execute(command)
-            .map(|result| json!(result))
             .map_err(|error| BridgeError::InvalidRequest(error.to_string()))
     })
     .await

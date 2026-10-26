@@ -36,7 +36,7 @@ fn browser_commands_preserve_settings_memory_and_markdown() {
         .contains("<strong>bold</strong>")
     );
     assert!(
-        host.get("/api/status")["claude"]["found"]
+        host.get("/api/status")["program"]["found"]
             .as_bool()
             .unwrap()
     );

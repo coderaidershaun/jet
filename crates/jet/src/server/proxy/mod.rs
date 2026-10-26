@@ -4,6 +4,7 @@ mod headers;
 mod target;
 
 use super::{Server, ServerConfig, ServerError};
+use crate::chat::lock;
 use agent::apps::{App, AppId, DiscoveryStatus};
 use axum::{
     Json, Router,
@@ -88,11 +89,10 @@ pub(crate) fn router() -> Router<Server> {
 }
 fn app(host: &Server, id: &str) -> Result<App, ProxyError> {
     let id: AppId = id.parse().map_err(|_| ProxyError::Missing)?;
-    let registry = host
-        .registry
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    registry.get(&id).cloned().ok_or(ProxyError::Missing)
+    lock(&host.registry)
+        .get(&id)
+        .cloned()
+        .ok_or(ProxyError::Missing)
 }
 async fn slash(
     State(host): State<Server>,
@@ -172,11 +172,7 @@ async fn ui_status(
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ProxyError> {
     let app = app(&host, &id)?;
-    let discovery = host
-        .registry
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .discovery_status(&app.id);
+    let discovery = lock(&host.registry).discovery_status(&app.id);
     if let DiscoveryStatus::Incompatible { message } = discovery {
         return Ok(Json(json!({"status":"incompatible","message":message})));
     }

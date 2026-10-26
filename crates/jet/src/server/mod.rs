@@ -26,6 +26,8 @@ pub enum ServerError {
     Chat(#[from] BridgeError),
     #[error("server network operation failed: {0}")]
     Io(#[from] std::io::Error),
+    #[error("server task failed: {0}")]
+    Task(#[from] tokio::task::JoinError),
 }
 
 #[derive(Clone)]
@@ -111,7 +113,7 @@ impl Server {
         });
         tokio::select! {
             result = &mut running => {
-                return result.map_err(|error| ServerError::Config(format!("server task failed: {error}")))?.map_err(ServerError::Io);
+                return Ok(result??);
             }
             _ = shutdown_signal() => {}
         }
@@ -120,9 +122,7 @@ impl Server {
             eprintln!("jet: server already stopped");
         }
         match tokio::time::timeout(Duration::from_secs(2), &mut running).await {
-            Ok(result) => result
-                .map_err(|error| ServerError::Config(format!("server task failed: {error}")))?
-                .map_err(ServerError::Io),
+            Ok(result) => Ok(result??),
             Err(_) => {
                 running.abort();
                 eprintln!("jet: closed browser connections after shutdown deadline");

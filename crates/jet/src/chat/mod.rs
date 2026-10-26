@@ -21,6 +21,7 @@ use crate::settings;
 pub use error::BridgeError;
 use events::{ActiveTurn, Runtime, TurnContext};
 pub(crate) use events::{Envelope, Snapshot};
+pub(crate) use provider::AgentStatus;
 use review_timer::{ReviewTarget, ReviewTimer};
 
 pub(crate) struct ChatState {
@@ -75,8 +76,8 @@ impl ChatState {
         }))
     }
 
-    pub fn status(&self) -> Result<provider::AgentStatus, BridgeError> {
-        let settings = settings::read_from(&self.data_dir.join(settings::FILE_NAME))?;
+    pub fn status(&self) -> Result<AgentStatus, BridgeError> {
+        let settings = settings::read_from(&self.data_dir)?;
         provider::agent_status(&settings, &self.data_dir, &self.conversation)
     }
 
@@ -113,24 +114,15 @@ impl ChatState {
         if runtime.closing {
             return Err(BridgeError::ShuttingDown);
         }
-        if runtime
-            .cancelled_requests
-            .iter()
-            .any(|id| id == &request.request_id)
-        {
+        if runtime.cancelled_requests.contains(&request.request_id) {
             return Err(BridgeError::Cancelled);
         }
         if runtime.active.is_some() {
             return Err(BridgeError::Busy);
         }
         let mut history = self.conversation.history(199)?;
-        let saved = settings::read_from(&self.data_dir.join(settings::FILE_NAME))?;
-        let transport = provider::transport_for(
-            request.model,
-            saved.claude_path.as_deref(),
-            saved.codex_path.as_deref(),
-            &self.data_dir,
-        )?;
+        let saved = settings::read_from(&self.data_dir)?;
+        let transport = provider::transport_for(request.model, &saved, &self.data_dir)?;
         let target = ReviewTarget {
             transport: transport.clone(),
             name: request.persona.name.clone(),

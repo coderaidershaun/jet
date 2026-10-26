@@ -7,7 +7,11 @@ use agent::{
 };
 use rmcp::{RoleServer, ServerHandler, model::*, service::RequestContext};
 use serde_json::{Value, json};
-use std::sync::Arc;
+use std::{fmt::Display, sync::Arc};
+
+const SEARCHED_APP_LIMIT: usize = 128;
+const FOUND_TOOL_LIMIT: usize = 200;
+
 #[derive(Clone)]
 pub(super) struct Handler(pub Arc<Facade>);
 impl ServerHandler for Handler {
@@ -23,7 +27,7 @@ impl ServerHandler for Handler {
         _: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, rmcp::ErrorData> {
         Ok(ListToolsResult {
-            tools: tools::definitions(),
+            tools: tools::definitions().to_vec(),
             ..Default::default()
         })
     }
@@ -59,6 +63,9 @@ impl ServerHandler for Handler {
 fn expired() -> rmcp::ErrorData {
     rmcp::ErrorData::invalid_request("initiating turn has expired", None)
 }
+fn message(error: impl Display) -> Value {
+    json!({"message":error.to_string()})
+}
 impl Handler {
     async fn execute(
         &self,
@@ -68,29 +75,28 @@ impl Handler {
         binding: Binding,
         context: RequestContext<RoleServer>,
     ) -> Result<Value, Value> {
-        let error = |error: &dyn std::fmt::Display| json!({"message":error.to_string()});
         match name {
             "apps_list" => Ok(json!(lock(&self.0.registry).list())),
             "apps_update" => {
                 let command: RegistryCommand =
-                    serde_json::from_value(arguments["command"].clone()).map_err(|e| error(&e))?;
+                    serde_json::from_value(arguments["command"].clone()).map_err(message)?;
                 let registry = self.0.registry.clone();
                 tokio::task::spawn_blocking(move || lock(&registry).execute(command))
                     .await
-                    .map_err(|e| error(&e))?
+                    .map_err(message)?
                     .map(|result| json!(result))
-                    .map_err(|e| error(&e))
+                    .map_err(message)
             }
             "apps_open" => {
                 let id: AppId =
-                    serde_json::from_value(arguments["appId"].clone()).map_err(|e| error(&e))?;
+                    serde_json::from_value(arguments["appId"].clone()).map_err(message)?;
                 if lock(&self.0.registry).get(&id).is_none() {
-                    return Err(json!({"message":"app is no longer registered"}));
+                    return Err(message("app is no longer registered"));
                 }
                 let chat = lock(&self.0.chat)
                     .upgrade()
-                    .ok_or_else(|| error(&"host closed"))?;
-                chat.open_app(&binding, &id).map_err(|e| error(&e))?;
+                    .ok_or_else(|| message("host closed"))?;
+                chat.open_app(&binding, &id).map_err(message)?;
                 Ok(json!({"appId":id,"opened":true}))
             }
             "tools_search" => {
@@ -106,9 +112,9 @@ impl Handler {
                     .to_lowercase();
                 let mut found = Vec::new();
                 let mut errors = Vec::new();
-                let mut truncated = ids.len() > 128;
+                let mut truncated = ids.len() > SEARCHED_APP_LIMIT;
                 let mut pending = tokio::task::JoinSet::new();
-                for id in ids.into_iter().take(128) {
+                for id in ids.into_iter().take(SEARCHED_APP_LIMIT) {
                     let client = self.0.mcp.clone();
                     pending.spawn(async move {
                         let result = client.catalogue(&id).await;
@@ -116,7 +122,7 @@ impl Handler {
                     });
                 }
                 while let Some(result) = pending.join_next().await {
-                    let (id, result) = result.map_err(|e| error(&e))?;
+                    let (id, result) = result.map_err(message)?;
                     match result {
                         Ok(catalogue) => {
                             if catalogue.is_stale {
@@ -125,18 +131,17 @@ impl Handler {
                                 );
                             }
                             for tool in catalogue.tools {
-                                if found.len() >= 200 {
+                                if found.len() >= FOUND_TOOL_LIMIT {
                                     truncated = true;
                                     break;
                                 }
-                                if found.len() < 200
-                                    && format!(
-                                        "{} {}",
-                                        tool.name,
-                                        tool.description.as_deref().unwrap_or_default()
-                                    )
-                                    .to_lowercase()
-                                    .contains(&query)
+                                if format!(
+                                    "{} {}",
+                                    tool.name,
+                                    tool.description.as_deref().unwrap_or_default()
+                                )
+                                .to_lowercase()
+                                .contains(&query)
                                 {
                                     found.push(json!({"appId":id,"tool":tool.name,"description":tool.description}));
                                 }
@@ -145,12 +150,11 @@ impl Handler {
                         Err(e) => errors.push(json!({"appId":id,"error":e})),
                     }
                 }
-                found.sort_by_key(|tool| format!("{}:{}", tool["appId"], tool["tool"]));
+                found.sort_by_cached_key(|tool| format!("{}:{}", tool["appId"], tool["tool"]));
                 Ok(json!({"tools":found,"errors":errors,"truncated":truncated}))
             }
             "tools_describe" => {
-                let target: ToolTarget =
-                    serde_json::from_value(arguments).map_err(|e| error(&e))?;
+                let target: ToolTarget = serde_json::from_value(arguments).map_err(message)?;
                 let catalogue = self
                     .0
                     .mcp
@@ -161,14 +165,14 @@ impl Handler {
                     .tools
                     .into_iter()
                     .find(|tool| tool.name == target.tool)
-                    .ok_or_else(|| error(&"tool is not listed"))?;
+                    .ok_or_else(|| message("tool is not listed"))?;
                 Ok(
                     json!({"appId":target.app_id,"tool":tool,"server":catalogue.server,"isStale":catalogue.is_stale,"lastError":catalogue.last_error}),
                 )
             }
             "tools_call" => {
                 let target: ToolTarget =
-                    serde_json::from_value(arguments.clone()).map_err(|e| error(&e))?;
+                    serde_json::from_value(arguments.clone()).map_err(message)?;
                 let request_id = format!("{}:{}", binding.turn_id, context.id);
                 let request = ToolRequest {
                     request_id: request_id.clone(),
@@ -182,7 +186,7 @@ impl Handler {
                     let mut bindings = lock(&self.0.bindings);
                     bindings
                         .get_mut(token)
-                        .ok_or_else(|| error(&"initiating turn expired"))?
+                        .ok_or_else(|| message("initiating turn expired"))?
                         .calls
                         .insert(request_id.clone());
                     self.0.mcp.call(request)
@@ -197,7 +201,7 @@ impl Handler {
                 let result = result.map_err(|e| json!(e))?;
                 Ok(json!(result))
             }
-            _ => Err(error(&"unknown facade tool")),
+            _ => Err(message("unknown facade tool")),
         }
     }
 }

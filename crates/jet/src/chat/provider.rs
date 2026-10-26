@@ -1,7 +1,7 @@
 //! Which provider answers the chat, Claude Code or Codex: where its program is, the stand-in that
 //! fails each reply when it is missing, and the status the page checks.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use agent::{ClaudeCli, CodexCli, ContextStatus, Lines, Model, Request, Transport, TransportError};
@@ -12,56 +12,80 @@ use crate::settings::Settings;
 
 /// A missing provider reaches the page through the same failure path as a failed run.
 struct MissingAgent {
-    is_codex: bool,
     searched: Vec<String>,
+    error: fn(Vec<String>) -> TransportError,
 }
 
 impl Transport for MissingAgent {
     fn start(&self, _request: &Request) -> Result<Lines, TransportError> {
-        if self.is_codex {
-            Err(TransportError::CodexMissing {
-                searched: self.searched.clone(),
-            })
-        } else {
-            Err(TransportError::ClaudeMissing {
-                searched: self.searched.clone(),
-            })
-        }
+        Err((self.error)(self.searched.clone()))
+    }
+}
+
+/// The provider a model runs on. This is the one place that maps a model to a provider.
+struct Selected {
+    name: &'static str,
+    /// Where the program is, or the places that were searched.
+    program: Result<PathBuf, Vec<String>>,
+    /// Runs the provider, or fails each reply when the program is missing.
+    transport: Arc<dyn Transport>,
+}
+
+fn found<C: Transport + 'static>(
+    cli: C,
+    program: fn(&C) -> &Path,
+) -> (PathBuf, Arc<dyn Transport>) {
+    (program(&cli).to_path_buf(), Arc::new(cli))
+}
+
+fn select(model: Model, settings: &Settings, data_dir: &Path) -> Result<Selected, BridgeError> {
+    let (name, located, missing): (_, _, fn(Vec<String>) -> TransportError) = if model.is_codex() {
+        (
+            "Codex",
+            CodexCli::locate(settings.codex_path.as_deref(), data_dir)
+                .map(|cli| found(cli, CodexCli::program)),
+            |searched| TransportError::CodexMissing { searched },
+        )
+    } else {
+        (
+            "Claude Code",
+            ClaudeCli::locate(settings.claude_path.as_deref(), data_dir)
+                .map(|cli| found(cli, ClaudeCli::program)),
+            |searched| TransportError::ClaudeMissing { searched },
+        )
+    };
+    match located {
+        Ok((path, transport)) => Ok(Selected {
+            name,
+            program: Ok(path),
+            transport,
+        }),
+        Err(
+            TransportError::ClaudeMissing { searched } | TransportError::CodexMissing { searched },
+        ) => Ok(Selected {
+            name,
+            program: Err(searched.clone()),
+            transport: Arc::new(MissingAgent {
+                searched,
+                error: missing,
+            }),
+        }),
+        Err(other) => Err(other.into()),
     }
 }
 
 pub(super) fn transport_for(
     model: Model,
-    claude_path: Option<&Path>,
-    codex_path: Option<&Path>,
+    settings: &Settings,
     data_dir: &Path,
 ) -> Result<Arc<dyn Transport>, BridgeError> {
-    if model.is_codex() {
-        return match CodexCli::locate(codex_path, data_dir) {
-            Ok(codex) => Ok(Arc::new(codex)),
-            Err(TransportError::CodexMissing { searched }) => Ok(Arc::new(MissingAgent {
-                is_codex: true,
-                searched,
-            })),
-            Err(other) => Err(other.into()),
-        };
-    }
-    match ClaudeCli::locate(claude_path, data_dir) {
-        Ok(claude) => Ok(Arc::new(claude)),
-        Err(TransportError::ClaudeMissing { searched }) => Ok(Arc::new(MissingAgent {
-            is_codex: false,
-            searched,
-        })),
-        Err(other) => Err(other.into()),
-    }
+    Ok(select(model, settings, data_dir)?.transport)
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentStatus {
-    // SMELL: this holds whichever provider is selected, Codex too, so the name misleads. The
-    // page reads the name, so rename both together.
-    claude: ProgramStatus,
+    program: ProgramStatus,
     context: ContextStatus,
 }
 
@@ -74,57 +98,36 @@ struct ProgramStatus {
 }
 
 /// Where the selected agent is and the last measured context.
-// SMELL: this makes the same choice between Claude Code and Codex as transport_for, so a new
-// provider must be added in both places.
 pub(super) fn agent_status(
     settings: &Settings,
     data_dir: &Path,
     conversation: &agent::Conversation,
 ) -> Result<AgentStatus, BridgeError> {
-    let provider = if settings.model.is_codex() {
-        "Codex"
-    } else {
-        "Claude Code"
-    };
-    let located = if settings.model.is_codex() {
-        CodexCli::locate(settings.codex_path.as_deref(), data_dir)
-            .map(|cli| cli.program().to_path_buf())
-    } else {
-        ClaudeCli::locate(settings.claude_path.as_deref(), data_dir)
-            .map(|cli| cli.program().to_path_buf())
-    };
-    let program = match located {
+    let selected = select(settings.model, settings, data_dir)?;
+    let program = match selected.program {
         Ok(path) => ProgramStatus {
-            provider,
+            provider: selected.name,
             found: true,
             path: Some(path.display().to_string()),
             searched: Vec::new(),
         },
-        Err(
-            TransportError::ClaudeMissing { searched } | TransportError::CodexMissing { searched },
-        ) => ProgramStatus {
-            provider,
+        Err(searched) => ProgramStatus {
+            provider: selected.name,
             found: false,
             path: None,
             searched,
         },
-        Err(other) => return Err(other.into()),
     };
     let mut context = conversation.context_status(settings.model)?;
     if context.limit_tokens.is_none() && settings.model.is_codex() {
         let home = std::env::var_os("CODEX_HOME")
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex"))
-            });
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")));
         context.limit_tokens = home.and_then(|home| {
             model_context_limit(&home.join("models_cache.json"), settings.model.alias())
         });
     }
-    Ok(AgentStatus {
-        claude: program,
-        context,
-    })
+    Ok(AgentStatus { program, context })
 }
 
 fn model_context_limit(path: &Path, model: &str) -> Option<u64> {

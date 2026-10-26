@@ -19,9 +19,7 @@ impl ServerConfig {
         args: impl IntoIterator<Item = impl Into<String>>,
     ) -> Result<Self, ServerError> {
         let mut config = Self {
-            listen: "127.0.0.1:8787"
-                .parse()
-                .expect("default listen address is valid"),
+            listen: SocketAddr::from(([127, 0, 0, 1], 8787)),
             data_dir: PathBuf::from("jet-data"),
             public_origin: None,
             ui_dir: PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/ui")),

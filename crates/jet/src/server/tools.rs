@@ -2,7 +2,7 @@
 use super::Server;
 use agent::{
     apps::AppId,
-    mcp::{ToolRequest, ToolTarget},
+    mcp::{ToolCatalogue, ToolRequest, ToolTarget},
 };
 use axum::{
     Json, Router,
@@ -26,19 +26,14 @@ pub(super) fn router() -> Router<Server> {
 async fn catalogue(
     State(host): State<Server>,
     Path(id): Path<AppId>,
-) -> Result<Json<Value>, Error> {
-    host.mcp
-        .catalogue(&id)
-        .await
-        .map(|value| Json(json!(value)))
-        .map_err(error)
+) -> Result<Json<ToolCatalogue>, Error> {
+    host.mcp.catalogue(&id).await.map(Json).map_err(error)
 }
-async fn refresh(State(host): State<Server>, Path(id): Path<AppId>) -> Result<Json<Value>, Error> {
-    host.mcp
-        .refresh(&id)
-        .await
-        .map(|value| Json(json!(value)))
-        .map_err(error)
+async fn refresh(
+    State(host): State<Server>,
+    Path(id): Path<AppId>,
+) -> Result<Json<ToolCatalogue>, Error> {
+    host.mcp.refresh(&id).await.map(Json).map_err(error)
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
