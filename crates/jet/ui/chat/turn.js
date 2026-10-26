@@ -161,7 +161,12 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     },
 
     observe(envelope) {
-      if (envelope.event.kind === 'accepted') { turn.restore(envelope.event.snapshot); return; }
+      if (envelope.event.kind === 'accepted') {
+        // The page that sent the message already shows its bubble and has Jet in flight; it only needs the turn's id.
+        if (active && !active.turnId && envelope.turn?.requestId === active.requestId) active.turnId = envelope.turn.turnId;
+        else turn.restore(envelope.event.snapshot);
+        return;
+      }
       if (active && active.turnId === envelope.turn?.turnId && thread.slot) onEvent(envelope.event);
     },
 

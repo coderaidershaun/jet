@@ -15,9 +15,10 @@ async function setup(t, options = {}) {
   const requests = [];
   let stopped = 0;
   const noop = () => {};
-  const live = { feel: () => ({ revealAt: 1000 }), measure: () => ({}), send: noop, mood: () => ({ revealAt: 1650 }), replying: noop, done: noop, failed: noop, stopped: noop };
+  let relaunched = 0;
+  const live = { feel: () => ({ revealAt: 1000 }), measure: () => ({}), send: noop, mood: () => ({ revealAt: 1650 }), replying: noop, done: noop, failed: noop, stopped: noop, showInLane: () => { relaunched++; } };
   const turn = createTurn({
-    agent: { feel: options.feel ?? (async () => ({ mood: 'neutral' })), send: (request, receive) => { requests.push(request); event = receive; return Promise.resolve({}); }, stop: () => { stopped++; return Promise.resolve(); }, renderMarkdown: async (text) => '<p>' + text + '</p>' },
+    agent: { serverEvents: options.serverEvents, feel: options.feel ?? (async () => ({ mood: 'neutral' })), send: (request, receive) => { requests.push(request); event = receive; return Promise.resolve({}); }, stop: () => { stopped++; return Promise.resolve(); }, renderMarkdown: async (text) => '<p>' + text + '</p>' },
     settings: { persona: { name: 'Jet' } }, thread, composer, page,
     view: { render: noop, liveLane: noop }, follow: { onSend: noop },
     composerView: { refresh: noop, setLayout: noop, setHeld: noop },
@@ -28,8 +29,21 @@ async function setup(t, options = {}) {
   const entry = { id: 2, role: 'jet', text: 'Hello', html: '<p>Hello final</p>', status: 'complete', at: 0 };
   const sending = turn.send('hi');
   if (!options.pending) await sending;
-  return { sending, live, turn, thread, page, advance, entry, requests, stops: () => stopped, captureEvent: () => event, event: (value) => event(value) };
+  return { sending, live, turn, thread, page, advance, entry, requests, stops: () => stopped, relaunched: () => relaunched, captureEvent: () => event, event: (value) => event(value) };
 }
+
+test("the page that sent a message keeps Jet's flight on its own accepted event, and restores on another page's", async (t) => {
+  const { turn, thread, requests, relaunched } = await setup(t, { serverEvents: true });
+  const requestId = requests[0].requestId;
+  const snapshot = { history: [], active: null };
+  turn.observe({ turn: { requestId, turnId: 'turn-1' }, event: { kind: 'accepted', snapshot } });
+  assert.equal(relaunched(), 0, 'its own send does not put Jet back in the lane');
+  assert.equal(thread.replying, true);
+  turn.observe({ turn: { requestId, turnId: 'turn-1' }, event: { kind: 'text', delta: 'Hi' } });
+  assert.equal(thread.slot.text, 'Hi', 'the reply reaches the slot by the turn id the accepted event gave');
+  turn.observe({ turn: { requestId: 'elsewhere', turnId: 'turn-2' }, event: { kind: 'accepted', snapshot } });
+  assert.equal(thread.replying, false, "another page's turn replaces this one");
+});
 
 test('Stop and a failure both end a held successful terminal at once, without a backend event', async (t) => {
   const { turn, thread, page, advance, entry, event } = await setup(t);
