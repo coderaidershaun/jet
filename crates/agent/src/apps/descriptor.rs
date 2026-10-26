@@ -38,32 +38,33 @@ pub(super) fn client() -> ureq::Agent {
 
 pub(super) fn discover(http: &ureq::Agent, app: &mut App) -> DiscoveryStatus {
     match fetch(http, &app.base_url) {
-        Ok(descriptor) => {
-            let mut discovered = app.clone();
-            discovered.label = descriptor.name;
-            let endpoints = (|| {
-                discovered.ui_url = app.base_url.resolve(&descriptor.ui)?;
-                discovered.mcp_url = descriptor
-                    .mcp
-                    .as_deref()
-                    .map(|reference| app.base_url.resolve(reference))
-                    .transpose()?;
-                discovered.embedding = descriptor.embedding;
-                apply_overrides(&mut discovered)?;
-                validate_app(&discovered)
-            })();
-            match endpoints {
-                Ok(()) => {
-                    *app = discovered;
-                    DiscoveryStatus::Ready
-                }
-                Err(error) => DiscoveryStatus::Incompatible {
-                    message: error.to_string(),
-                },
+        Ok(descriptor) => match apply(app, descriptor) {
+            Ok(discovered) => {
+                *app = discovered;
+                DiscoveryStatus::Ready
             }
-        }
+            Err(error) => DiscoveryStatus::Incompatible {
+                message: error.to_string(),
+            },
+        },
         Err(status) => status,
     }
+}
+
+/// The app as its descriptor declares it, with the manual overrides applied on top.
+fn apply(app: &App, descriptor: AppDescriptor) -> Result<App, RegistryError> {
+    let mut discovered = app.clone();
+    discovered.label = descriptor.name;
+    discovered.ui_url = app.base_url.resolve(&descriptor.ui)?;
+    discovered.mcp_url = descriptor
+        .mcp
+        .as_deref()
+        .map(|reference| app.base_url.resolve(reference))
+        .transpose()?;
+    discovered.embedding = descriptor.embedding;
+    apply_overrides(&mut discovered)?;
+    validate_app(&discovered)?;
+    Ok(discovered)
 }
 
 fn fetch(http: &ureq::Agent, base: &AppAddress) -> Result<AppDescriptor, DiscoveryStatus> {

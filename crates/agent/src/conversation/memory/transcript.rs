@@ -115,16 +115,14 @@ impl Transcript {
         Ok(entries)
     }
 
-    /// Moves the thread aside as `transcript.<UTC time>.jsonl`. The next entry starts a
-    /// new thread at id 1.
+    /// Moves the thread aside as `transcript.<at>.jsonl`, where `at` is Unix milliseconds.
+    /// The next entry starts a new thread at id 1.
     pub(crate) fn rotate(&self, at: u64) -> Result<(), MemoryError> {
         let from = self.dir.path(FILE_NAME);
         if !from.exists() {
             return Ok(());
         }
-        let to = self
-            .dir
-            .path(&format!("transcript.{}.jsonl", utc_stamp(at)));
+        let to = self.dir.path(&format!("transcript.{at}.jsonl"));
         std::fs::rename(&from, &to).map_err(|source| MemoryError::Write { path: from, source })
     }
 }
@@ -150,38 +148,6 @@ fn parse(text: &str, path: &std::path::Path) -> Result<Vec<Entry>, MemoryError> 
         }
     }
     Ok(entries)
-}
-
-/// `2026-10-14T11-20-05` for a Unix time in milliseconds.
-fn utc_stamp(at_ms: u64) -> String {
-    let seconds = at_ms / 1000;
-    let (year, month, day) = civil_date(seconds / 86_400);
-    let second_of_day = seconds % 86_400;
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}-{:02}-{:02}",
-        second_of_day / 3600,
-        second_of_day % 3600 / 60,
-        second_of_day % 60
-    )
-}
-
-/// Year, month and day for a count of days since 1970-01-01 (proleptic Gregorian).
-fn civil_date(days_since_epoch: u64) -> (u64, u64, u64) {
-    let shifted = days_since_epoch + 719_468;
-    let era = shifted / 146_097;
-    let day_of_era = shifted % 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_index = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
-    let month = if month_index < 10 {
-        month_index + 3
-    } else {
-        month_index - 9
-    };
-    let year = year_of_era + era * 400 + u64::from(month <= 2);
-    (year, month, day)
 }
 
 #[cfg(test)]
@@ -253,13 +219,12 @@ mod tests {
     }
 
     #[test]
-    fn rotated_transcript_is_named_by_utc_time_and_ids_restart() {
+    fn rotated_transcript_is_named_by_unix_milliseconds_and_ids_restart() {
         let dir = DataDir::scratch("transcript-rotate");
         let transcript = Transcript::open(&dir);
         transcript.append(NewEntry::user("one"), 10).unwrap();
-        // 2026-10-14T11:20:05Z
         transcript.rotate(1_791_976_805_000).unwrap();
-        assert!(dir.path("transcript.2026-10-14T11-20-05.jsonl").exists());
+        assert!(dir.path("transcript.1791976805000.jsonl").exists());
         assert!(transcript.entries().unwrap().is_empty());
         assert_eq!(
             transcript.append(NewEntry::user("again"), 11).unwrap().id,

@@ -1,6 +1,6 @@
 //! Refresh metadata without the SDK's silent stale-cache fallback.
 use super::{
-    HttpMcpClient, McpError, ServerMetadata, ToolCatalogue, ToolDefinition,
+    HttpMcpClient, McpError, ServerMetadata, ToolCatalogue,
     http::{Connection, DEADLINE, MAX_BYTES, failure, protocol},
 };
 use crate::apps::AppId;
@@ -97,15 +97,11 @@ async fn read(connection: &Connection) -> Result<ToolCatalogue, McpError> {
             return Err(failure("tool catalogue exceeds limits"));
         }
         for tool in page.tools {
-            let raw = serde_json::to_value(tool).map_err(failure)?;
-            tools.push(ToolDefinition {
-                name: raw["name"].as_str().unwrap_or_default().into(),
-                description: raw["description"].as_str().map(str::to_owned),
-                input_schema: raw["inputSchema"].clone(),
-                output_schema: raw.get("outputSchema").cloned(),
-                annotations: raw.get("annotations").cloned(),
-                meta: raw["_meta"].as_object().cloned().unwrap_or_default(),
-            });
+            tools.push(
+                serde_json::to_value(tool)
+                    .and_then(serde_json::from_value)
+                    .map_err(failure)?,
+            );
         }
         cursor = page.next_cursor;
         if let Some(next) = &cursor {

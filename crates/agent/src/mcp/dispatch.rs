@@ -105,11 +105,11 @@ impl HttpMcpClient {
                 message: format!("unsupported tool schema: {error}"),
             }
         })?;
-        if let Err(error) = validator.validate(&Value::Object(request.arguments.clone())) {
-            return Err(McpError::InvalidArguments {
+        validator
+            .validate(&Value::Object(request.arguments.clone()))
+            .map_err(|error| McpError::InvalidArguments {
                 message: error.to_string(),
-            });
-        }
+            })?;
         // Registry edits after this snapshot do not cancel an already dispatched call.
         if self.endpoint(&request.target.app_id)? != connection.endpoint {
             return Err(failure("app endpoint changed; rediscover before retrying"));
@@ -135,7 +135,7 @@ impl HttpMcpClient {
         .await
         .map_err(failure)?
         .map_err(protocol)?;
-        guard.wire = Some((peer.clone(), handle.id.clone()));
+        guard.wire = Some((peer, handle.id.clone()));
         let response = tokio::select! {
             response = handle.await_response() => { guard.wire = None; response.map_err(protocol) },
             _ = cancelled => Err(McpError::Cancelled { request_id:request.request_id.clone() }),

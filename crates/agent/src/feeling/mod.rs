@@ -64,17 +64,8 @@ pub enum JevError {
 /// # Errors
 /// Returns a safe request or decoding error when JEV is unavailable.
 pub fn feel_message(text: &str) -> Result<Feeling, JevError> {
-    let environment = std::env::var(key::VARIABLE)
-        .ok()
-        .filter(|key| !key.trim().is_empty());
-    let key = if environment.is_some() {
-        environment
-    } else {
-        std::env::current_dir()
-            .ok()
-            .and_then(|directory| key::discover(None, &directory))
-    };
-    let Some(key) = key else {
+    let directory = std::env::current_dir().unwrap_or_default();
+    let Some(key) = key::discover(std::env::var(key::VARIABLE).ok(), &directory) else {
         return Ok(Feeling::neutral());
     };
     Jev::new(key).classify(text)

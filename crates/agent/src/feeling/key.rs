@@ -9,18 +9,15 @@ pub(super) fn discover(environment: Option<String>, directory: &Path) -> Option<
         return Some(key);
     }
     // Match dotenv's nearest-file rule; a nearer file owns the configuration even without a key.
-    for parent in directory.ancestors() {
-        let path = parent.join(".env");
-        if !path.is_file() {
-            continue;
-        }
-        return dotenvy::from_path_iter(path)
-            .ok()?
-            .filter_map(Result::ok)
-            .find(|(name, value)| name == VARIABLE && !value.trim().is_empty())
-            .map(|(_, value)| value);
-    }
-    None
+    let path = directory
+        .ancestors()
+        .map(|parent| parent.join(".env"))
+        .find(|path| path.is_file())?;
+    dotenvy::from_path_iter(path)
+        .ok()?
+        .filter_map(Result::ok)
+        .find(|(name, value)| name == VARIABLE && !value.trim().is_empty())
+        .map(|(_, value)| value)
 }
 
 #[cfg(test)]

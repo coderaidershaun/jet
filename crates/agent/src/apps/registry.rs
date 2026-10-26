@@ -46,10 +46,8 @@ impl Registry {
     pub fn execute(&mut self, command: RegistryCommand) -> Result<RegistryResult, RegistryError> {
         match command {
             RegistryCommand::List => Ok(RegistryResult {
-                app: None,
                 apps: self.apps.clone(),
-                discovery: None,
-                change: None,
+                ..Default::default()
             }),
             RegistryCommand::Add(input) => self.add(input),
             RegistryCommand::Edit {
@@ -90,9 +88,8 @@ impl Registry {
                 let event = self.publish(&id, RegistryChange::Removed);
                 Ok(RegistryResult {
                     app: Some(app),
-                    apps: Vec::new(),
-                    discovery: None,
                     change: Some(event),
+                    ..Default::default()
                 })
             }
             RegistryCommand::Refresh { id } => {
@@ -165,9 +162,9 @@ impl Registry {
         let event = self.publish(&app.id, change);
         Ok(RegistryResult {
             app: Some(app),
-            apps: Vec::new(),
             discovery: Some(status),
             change: Some(event),
+            ..Default::default()
         })
     }
     fn publish(&mut self, id: &AppId, change: RegistryChange) -> RegistryEvent {

@@ -41,22 +41,17 @@ impl Notes {
 /// Keeps whole lines from the top while they fit in `limit` characters. A first line that
 /// is longer than the limit by itself is cut in the middle.
 pub(crate) fn trim_to_limit(text: &str, limit: usize) -> String {
-    let mut kept = String::new();
+    let mut kept: Vec<&str> = Vec::new();
     let mut used = 0;
-    let mut kept_lines = 0;
     for line in text.lines() {
-        let cost = line.chars().count() + usize::from(kept_lines > 0);
+        let cost = line.chars().count() + usize::from(!kept.is_empty());
         if used + cost > limit {
             break;
         }
-        if kept_lines > 0 {
-            kept.push('\n');
-        }
-        kept.push_str(line);
+        kept.push(line);
         used += cost;
-        kept_lines += 1;
     }
-    if kept_lines == 0 {
+    if kept.is_empty() {
         return text
             .lines()
             .next()
@@ -65,7 +60,7 @@ pub(crate) fn trim_to_limit(text: &str, limit: usize) -> String {
             .take(limit)
             .collect();
     }
-    kept
+    kept.join("\n")
 }
 
 #[cfg(test)]

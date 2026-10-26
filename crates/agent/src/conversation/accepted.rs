@@ -39,14 +39,12 @@ impl Conversation {
                 NewEntry {
                     turn: Some(identity.clone()),
                     role: Role::Jet,
-                    text: String::new(),
-                    mood: None,
                     status: EntryStatus::Stopped,
                     error: Some(
                         "The server stopped before this reply completed. It was not run again."
                             .into(),
                     ),
-                    tools: Vec::new(),
+                    ..NewEntry::user("")
                 },
                 now_ms(),
             )?;

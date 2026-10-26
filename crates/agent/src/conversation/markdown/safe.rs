@@ -26,8 +26,7 @@ pub(super) fn make_safe<'a>(
             in_image = false;
             Some(Event::Text("]".into()))
         }
-        Event::Text(alt) if in_image => Some(Event::Text(alt)),
-        Event::Code(alt) if in_image => Some(Event::Text(alt)),
+        Event::Text(alt) | Event::Code(alt) if in_image => Some(Event::Text(alt)),
         _ if in_image => None,
         other => Some(other),
     })

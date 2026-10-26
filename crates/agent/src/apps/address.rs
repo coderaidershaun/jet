@@ -23,9 +23,8 @@ impl AppAddress {
         } else {
             input
         };
-        if !address.to_ascii_lowercase().starts_with("http://")
-            && !address.to_ascii_lowercase().starts_with("https://")
-        {
+        let lowercase = address.to_ascii_lowercase();
+        if !lowercase.starts_with("http://") && !lowercase.starts_with("https://") {
             return Err(RegistryError::InvalidAddress(input.into()));
         }
         let mut url = valid_url(address)?;

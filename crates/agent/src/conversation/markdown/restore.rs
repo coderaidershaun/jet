@@ -188,15 +188,8 @@ fn element(tag: &str, math: &Math) -> String {
 /// Escapes `&`, `<`, `>` and `"` so TeX can sit in an attribute and in text. A `'` stays, because
 /// it is part of the formula.
 fn escape(tex: &str) -> String {
-    let mut escaped = String::with_capacity(tex.len());
-    for c in tex.chars() {
-        match c {
-            '&' => escaped.push_str("&amp;"),
-            '<' => escaped.push_str("&lt;"),
-            '>' => escaped.push_str("&gt;"),
-            '"' => escaped.push_str("&quot;"),
-            _ => escaped.push(c),
-        }
-    }
-    escaped
+    tex.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }

@@ -127,15 +127,14 @@ impl HttpMcpClient {
         }
     }
     pub async fn shutdown(&self) {
-        for (_, sender) in self
+        for sender in self
             .calls
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .drain()
+            .filter_map(|(_, sender)| sender)
         {
-            if let Some(sender) = sender {
-                let _ = sender.send(());
-            }
+            let _ = sender.send(());
         }
         self.apps.lock().await.clear();
     }
