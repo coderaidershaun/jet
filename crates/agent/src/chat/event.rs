@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use super::{Mood, ShownEntry};
+use super::{Mood, ShownEntry, ToolCall, ToolStart};
 
 /// Why a reply failed. The message is written for the user and shown as it stands.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -14,9 +14,7 @@ use super::{Mood, ShownEntry};
 )]
 pub enum Failure {
     ClaudeMissing { message: String },
-    // SMELL: a failed Codex run also arrives as this variant, so the name misleads. The page
-    // reads the name, so rename both together.
-    ClaudeFailed { message: String },
+    ProviderFailed { message: String },
     Timeout { message: String },
     Io { message: String },
 }
@@ -25,7 +23,7 @@ impl Failure {
     pub fn message(&self) -> &str {
         match self {
             Failure::ClaudeMissing { message }
-            | Failure::ClaudeFailed { message }
+            | Failure::ProviderFailed { message }
             | Failure::Timeout { message }
             | Failure::Io { message } => message,
         }
@@ -53,22 +51,9 @@ pub enum Event {
     },
     /// The model called a library tool; it is running now. A call still running when the reply
     /// ends gets no `ToolFinished`, and the saved entry keeps only finished calls.
-    ToolStarted {
-        id: String,
-        server: String,
-        tool: String,
-        input: serde_json::Value,
-    },
-    /// The call with this `id` came back.
-    ToolFinished {
-        id: String,
-        server: String,
-        tool: String,
-        ok: bool,
-        result: serde_json::Value,
-        summary: String,
-        duration_ms: u64,
-    },
+    ToolStarted(ToolStart),
+    /// The call with the same `id` came back.
+    ToolFinished(ToolCall),
     /// A fresh conversation began for a reason the user should hear about.
     Notice {
         message: String,
@@ -90,7 +75,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::chat::{Entry, EntryId, EntryStatus, Role, ToolCall};
+    use crate::chat::{Entry, EntryId, EntryStatus, Role};
 
     fn jet_entry(id: u64, status: EntryStatus) -> ShownEntry {
         let entry = Entry {
@@ -129,6 +114,12 @@ mod tests {
         complete.entry.mood = Some(insulted);
         complete.entry.tools = vec![quanty_search()];
         let call = quanty_search();
+        let started = ToolStart {
+            id: call.id.clone(),
+            server: call.server.clone(),
+            tool: call.tool.clone(),
+            input: call.input.clone(),
+        };
         let stopped = jet_entry(44, EntryStatus::Stopped);
         let mut cases = vec![
             (
@@ -136,27 +127,15 @@ mod tests {
                 json!({"kind": "started", "fresh": true}),
             ),
             (
-                Event::ToolStarted {
-                    id: call.id.clone(),
-                    server: call.server.clone(),
-                    tool: call.tool.clone(),
-                    input: call.input.clone(),
-                },
+                Event::ToolStarted(started),
                 json!({"kind": "toolStarted", "id": "toolu_1", "server": "quanty",
                        "tool": "search", "input": {"question": "What is vega?"}}),
             ),
             (
-                Event::ToolFinished {
-                    id: call.id.clone(),
-                    server: call.server.clone(),
-                    tool: call.tool.clone(),
-                    ok: call.ok,
-                    result: call.result.clone(),
-                    summary: call.summary.clone(),
-                    duration_ms: call.duration_ms,
-                },
+                Event::ToolFinished(call),
                 json!({"kind": "toolFinished", "id": "toolu_1", "server": "quanty",
-                       "tool": "search", "ok": true, "result": {"results": [1, 2]},
+                       "tool": "search", "input": {"question": "What is vega?"}, "ok": true,
+                       "result": {"results": [1, 2]},
                        "summary": "quanty · search · 2 results", "durationMs": 950}),
             ),
             (
@@ -197,7 +176,10 @@ mod tests {
         ];
         let failures = [
             (Failure::ClaudeMissing { message: text() }, "claudeMissing"),
-            (Failure::ClaudeFailed { message: text() }, "claudeFailed"),
+            (
+                Failure::ProviderFailed { message: text() },
+                "providerFailed",
+            ),
             (Failure::Timeout { message: text() }, "timeout"),
             (Failure::Io { message: text() }, "io"),
         ];

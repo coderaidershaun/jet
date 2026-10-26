@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use super::{Lines, Stopper, TransportError};
 
-pub(super) fn launch(mut child: Child, prompt: &str) -> Result<Lines, TransportError> {
+pub(super) fn launch(mut child: Child, prompt: &str) -> Lines {
     let mut stdin = child.stdin.take().expect("stdin was piped");
     let stdout = child.stdout.take().expect("stdout was piped");
     let stderr = child.stderr.take().expect("stderr was piped");
@@ -44,8 +44,9 @@ pub(super) fn launch(mut child: Child, prompt: &str) -> Result<Lines, TransportE
     });
     let watcher = stopper.clone();
     thread::spawn(move || pump(stdout, &sender, &child, stderr_tail, &watcher));
-    Ok(Lines { receiver, stopper })
+    Lines { receiver, stopper }
 }
+
 fn pump(
     stdout: impl Read,
     sender: &mpsc::Sender<Result<String, TransportError>>,
@@ -99,28 +100,15 @@ fn keep_tail(mut stderr: impl Read) -> String {
 /// The lines a program writes to its output, without the line break and without empty lines.
 /// A read error is the last item.
 fn output_lines(reader: impl Read) -> impl Iterator<Item = io::Result<String>> {
-    let mut reader = BufReader::new(reader);
-    let mut buffer = Vec::new();
     let mut failed = false;
-    std::iter::from_fn(move || {
-        while !failed {
-            buffer.clear();
-            match reader.read_until(b'\n', &mut buffer) {
-                Ok(0) => return None,
-                Ok(_) => {
-                    let line = String::from_utf8_lossy(&buffer).trim_end().to_owned();
-                    if !line.is_empty() {
-                        return Some(Ok(line));
-                    }
-                }
-                Err(error) => {
-                    failed = true;
-                    return Some(Err(error));
-                }
-            }
-        }
-        None
-    })
+    BufReader::new(reader)
+        .split(b'\n')
+        .take_while(move |item| {
+            let already_failed = std::mem::replace(&mut failed, item.is_err());
+            !already_failed
+        })
+        .map(|item| item.map(|bytes| String::from_utf8_lossy(&bytes).trim_end().to_owned()))
+        .filter(|item| !matches!(item, Ok(line) if line.is_empty()))
 }
 
 /// Waits without holding the lock, so a stop request can still get in.
@@ -134,5 +122,33 @@ fn wait_for_exit(child: &Mutex<Child>) -> Option<ExitStatus> {
             Ok(None) => thread::sleep(EXIT_POLL),
             Err(_) => return None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Fails on every read, like a pipe that broke.
+    struct Broken;
+
+    impl Read for Broken {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("pipe broke"))
+        }
+    }
+
+    #[test]
+    fn output_lines_trim_skip_blanks_and_end_at_the_first_read_error() {
+        let output: &[u8] = b"first  \r\n\n   \nsecond \xff\nthird\n";
+        let items: Vec<_> = output_lines(output.chain(Broken)).collect();
+        let lines: Vec<&str> = items
+            .iter()
+            .filter_map(|item| item.as_ref().ok())
+            .map(String::as_str)
+            .collect();
+        assert_eq!(lines, ["first", "second \u{fffd}", "third"]);
+        assert_eq!(items.len(), 4, "{items:?}");
+        assert!(items[3].is_err());
     }
 }

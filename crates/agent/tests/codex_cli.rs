@@ -1,7 +1,7 @@
 //! The real Codex transport against a local stand-in, plus an opt-in live smoke test.
 use agent::{
-    CodexCli, Effort, Model, Request, SessionId, SessionMode, Step, Transport, TransportError,
-    Turn, TurnError,
+    CodexCli, Effort, McpConnection, Model, Request, SessionId, SessionMode, Step, Transport,
+    TransportError, Turn, TurnError,
 };
 use serde_json::json;
 fn request(prompt: &str) -> Request {
@@ -13,7 +13,7 @@ fn request(prompt: &str) -> Request {
         budget_usd: 1.0,
         session: SessionMode::New,
         schema: None,
-        mcp_config: None,
+        mcp: None,
     }
 }
 fn fake(dir: &std::path::Path) -> CodexCli {
@@ -24,9 +24,10 @@ fn codex_stream_resume_schema_usage_and_tool_results() {
     let dir = tempfile::tempdir().unwrap();
     let cli = fake(dir.path());
     let mut req = request("hello");
-    req.mcp_config = Some(
-        json!({"mcpServers":{"jet":{"type":"http","url":"http://127.0.0.1:4321/mcp","headers":{"x-jet-turn":"turn-token"}}}}).to_string(),
-    );
+    req.mcp = Some(McpConnection {
+        url: "http://127.0.0.1:4321/mcp".into(),
+        token: "turn-token".into(),
+    });
     let mut turn = Turn::start(&cli, &req).unwrap();
     let steps: Vec<_> = turn.by_ref().collect();
     assert_eq!(turn.text(), "Hello from Codex.");
@@ -94,24 +95,6 @@ fn codex_stream_resume_schema_usage_and_tool_results() {
 fn codex_errors_and_cancellation_are_terminal() {
     let dir = tempfile::tempdir().unwrap();
     let cli = fake(dir.path());
-    let mut malformed = request("hello");
-    for config in [
-        "not JSON",
-        r#"{"mcpServers":[]}"#,
-        r#"{"mcpServers":{"jet":{"headers":{"x-jet-turn":42}}}}"#,
-        r#"{"mcpServers":{"quanty.extra":{"url":"http://localhost/mcp"}}}"#,
-    ] {
-        malformed.mcp_config = Some(config.into());
-        assert!(
-            matches!(
-                Turn::start(&cli, &malformed),
-                Err(TurnError::Transport(
-                    TransportError::McpConfig { .. } | TransportError::McpServerName { .. }
-                ))
-            ),
-            "{config}"
-        );
-    }
     for prompt in ["fail", "exit"] {
         let steps: Vec<_> = Turn::start(&cli, &request(prompt)).unwrap().collect();
         assert!(matches!(steps.last(), Some(Step::Failed(_))), "{steps:?}");
@@ -169,7 +152,7 @@ fn live_codex_review_schema() {
     req.model = cli.review_model();
     req.effort = Effort::Low;
     req.schema = Some(
-        json!({"type":"object","additionalProperties":false,"required":["changed","memory","user","recent"],"properties":{"changed":{"type":"boolean"},"memory":{"type":"string","maxLength":2200},"user":{"type":"string","maxLength":1375},"recent":{"type":"string","maxLength":1500}}}),
+        json!({"type":"object","additionalProperties":false,"required":["changed","memory","user","recent"],"properties":{"changed":{"type":"boolean"},"memory":{"type":"string","maxLength":agent::MEMORY_LIMIT},"user":{"type":"string","maxLength":agent::USER_LIMIT},"recent":{"type":"string","maxLength":agent::RECENT_LIMIT}}}),
     );
     let steps: Vec<_> = Turn::start(&cli, &req).unwrap().collect();
     let Some(Step::Finished(summary)) = steps.last() else {

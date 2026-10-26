@@ -48,7 +48,7 @@ impl From<&TurnError> for Failure {
                 } else {
                     tail.to_owned()
                 };
-                Failure::ClaudeFailed { message }
+                Failure::ProviderFailed { message }
             }
             TurnError::Transport(other) => Failure::Io {
                 message: other.to_string(),
@@ -59,10 +59,10 @@ impl From<&TurnError> for Failure {
                     idle.as_secs() / 60
                 ),
             },
-            TurnError::Reported { message, .. } => Failure::ClaudeFailed {
+            TurnError::Reported { message, .. } => Failure::ProviderFailed {
                 message: message.clone(),
             },
-            TurnError::NoResult => Failure::ClaudeFailed {
+            TurnError::NoResult => Failure::ProviderFailed {
                 message: "Agent ended without a reply.".to_owned(),
             },
         }
@@ -70,8 +70,8 @@ impl From<&TurnError> for Failure {
 }
 
 fn last_chars(text: &str, count: usize) -> &str {
-    match text.char_indices().rev().nth(count.saturating_sub(1)) {
-        Some((start, _)) => &text[start..],
-        None => text,
-    }
+    text.char_indices()
+        .rev()
+        .nth(count.saturating_sub(1))
+        .map_or(text, |(start, _)| &text[start..])
 }

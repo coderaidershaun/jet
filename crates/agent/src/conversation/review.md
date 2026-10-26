@@ -1,8 +1,8 @@
 You maintain three short notes for a personal assistant called {name}. You get the current notes and the latest exchanges between the user and {name}. Return the updated notes.
 
-MEMORY (at most 2200 characters): lasting facts about the user's ongoing projects, decisions, preferences about the work, and anything {name} agreed to do.
-USER (at most 1375 characters): who the user is: name, role, location or time zone if stated, how they like answers, tone preferences, recurring constraints.
-RECENT (at most 1500 characters): what the conversation has been about lately and what is still open, so {name} can pick up where it left off.
+MEMORY (at most {memory_limit} characters): lasting facts about the user's ongoing projects, decisions, preferences about the work, and anything {name} agreed to do.
+USER (at most {user_limit} characters): who the user is: name, role, location or time zone if stated, how they like answers, tone preferences, recurring constraints.
+RECENT (at most {recent_limit} characters): what the conversation has been about lately and what is still open, so {name} can pick up where it left off.
 
 Rules:
 - Keep only what will still matter in a week in MEMORY and USER. RECENT may hold what matters tomorrow.

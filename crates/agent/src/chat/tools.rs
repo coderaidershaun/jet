@@ -2,11 +2,15 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+/// Where a provider reaches Jet's tools, and the token that ties its calls to one turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpConnection {
     pub url: String,
     pub token: String,
 }
+
+/// The request header that carries `McpConnection::token`.
+pub const TURN_HEADER: &str = "x-jet-turn";
 
 pub const FACADE_TOOLS: [&str; 6] = [
     "apps_list",
@@ -19,8 +23,17 @@ pub const FACADE_TOOLS: [&str; 6] = [
 
 impl McpConnection {
     pub fn config(&self) -> String {
-        serde_json::json!({"mcpServers":{"jet":{"type":"http","url":self.url,"headers":{"x-jet-turn":self.token}}}}).to_string()
+        serde_json::json!({"mcpServers":{"jet":{"type":"http","url":self.url,"headers":{TURN_HEADER:self.token}}}}).to_string()
     }
+}
+
+/// An MCP tool call that has just begun.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ToolStart {
+    pub id: String,
+    pub server: String,
+    pub tool: String,
+    pub input: serde_json::Value,
 }
 
 /// One finished call of an MCP tool.

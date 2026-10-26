@@ -1,38 +1,30 @@
-//! Codex takes TOML overrides, so validate and translate the shared request before launch.
+//! Codex takes TOML overrides, so translate the shared request into them before launch.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::super::{Request, SessionMode, TransportError};
+use super::super::{Request, SessionMode};
+use crate::chat::TURN_HEADER;
 
-fn push_config_value(args: &mut Vec<String>, key: &str, value: Value) {
-    args.extend(["-c".into(), format!("{key}={value}")]);
+fn push_config_value(args: &mut Vec<String>, key: &str, value: impl Into<Value>) {
+    args.extend(["-c".into(), format!("{key}={}", value.into())]);
 }
 
-pub(super) fn args(
-    request: &Request,
-    schema: Option<&Path>,
-) -> Result<Vec<String>, TransportError> {
+pub(super) fn args(request: &Request, schema: Option<&Path>) -> Vec<String> {
     let mut args = vec!["exec".into()];
     // exec's global settings must precede the resume subcommand.
-    push_config_value(&mut args, "sandbox_mode", json!("read-only"));
-    push_config_value(&mut args, "approval_policy", json!("never"));
-    push_config_value(&mut args, "forced_login_method", json!("chatgpt"));
+    push_config_value(&mut args, "sandbox_mode", "read-only");
+    push_config_value(&mut args, "approval_policy", "never");
+    push_config_value(&mut args, "forced_login_method", "chatgpt");
     push_config_value(
         &mut args,
         "developer_instructions",
-        json!(request.system_prompt),
+        request.system_prompt.as_str(),
     );
-    push_config_value(
-        &mut args,
-        "model_reasoning_effort",
-        json!(request.effort.alias()),
-    );
-    push_config_value(&mut args, "project_doc_max_bytes", json!(0));
-    push_config_value(&mut args, "web_search", json!("disabled"));
+    push_config_value(&mut args, "model_reasoning_effort", request.effort.alias());
+    push_config_value(&mut args, "project_doc_max_bytes", 0);
+    push_config_value(&mut args, "web_search", "disabled");
     for feature in [
         "shell_tool",
         "plugins",
@@ -46,40 +38,24 @@ pub(super) fn args(
         "view_image",
         "skill_search",
     ] {
-        push_config_value(&mut args, &format!("features.{feature}"), json!(false));
+        push_config_value(&mut args, &format!("features.{feature}"), false);
     }
-    if let Some(raw) = &request.mcp_config {
-        let config: McpConfig =
-            serde_json::from_str(raw).map_err(|source| TransportError::McpConfig { source })?;
-        for (name, server) in config.servers {
-            if name != "jet" {
-                return Err(TransportError::McpServerName { name });
-            }
-            push_config_value(&mut args, "mcp_servers.jet.url", json!(server.url));
-            for (header, value) in server.headers {
-                push_config_value(
-                    &mut args,
-                    &format!("mcp_servers.{name}.http_headers.{header}"),
-                    json!(value),
-                );
-            }
-            push_config_value(
-                &mut args,
-                &format!("mcp_servers.{name}.enabled_tools"),
-                json!(crate::FACADE_TOOLS),
-            );
-            // Jet users authorize their configured servers; headless turns cannot prompt.
-            push_config_value(
-                &mut args,
-                &format!("mcp_servers.{name}.default_tools_approval_mode"),
-                json!("approve"),
-            );
-            push_config_value(
-                &mut args,
-                &format!("mcp_servers.{name}.tool_timeout_sec"),
-                json!(300),
-            );
-        }
+    if let Some(mcp) = &request.mcp {
+        push_config_value(&mut args, "mcp_servers.jet.url", mcp.url.as_str());
+        let header = format!("mcp_servers.jet.http_headers.{TURN_HEADER}");
+        push_config_value(&mut args, &header, mcp.token.as_str());
+        push_config_value(
+            &mut args,
+            "mcp_servers.jet.enabled_tools",
+            json!(crate::FACADE_TOOLS),
+        );
+        // Jet users authorize their configured servers; headless turns cannot prompt.
+        push_config_value(
+            &mut args,
+            "mcp_servers.jet.default_tools_approval_mode",
+            "approve",
+        );
+        push_config_value(&mut args, "mcp_servers.jet.tool_timeout_sec", 300);
     }
 
     if matches!(request.session, SessionMode::Resume(_)) {
@@ -106,27 +82,5 @@ pub(super) fn args(
         args.push(id.0.clone());
     }
     args.push("-".into());
-    Ok(args)
-}
-
-#[derive(Deserialize)]
-struct McpConfig {
-    #[serde(rename = "mcpServers")]
-    servers: BTreeMap<String, McpServer>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct McpServer {
-    #[serde(rename = "type")]
-    _kind: HttpTransport,
-    #[serde(default)]
-    headers: BTreeMap<String, String>,
-    url: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum HttpTransport {
-    Http,
+    args
 }

@@ -8,7 +8,8 @@ use std::sync::{
 };
 use std::time::Duration;
 
-const REVIEW_DELAY: Duration = Duration::from_secs(91);
+/// One second past the quiet wait, so the review is due when the timer fires.
+const REVIEW_DELAY: Duration = agent::REVIEW_QUIET.saturating_add(Duration::from_secs(1));
 
 pub(super) struct ReviewTarget {
     pub transport: Arc<dyn Transport>,

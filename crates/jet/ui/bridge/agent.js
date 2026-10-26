@@ -13,7 +13,7 @@ import { createBrowserAgent } from './browser-agent.js';
  * }} ShownEntry
  */
 /** @typedef {{ memory: string, user: string, recent: string, limits?: { memory: number, user: number, recent: number } }} Notes */
-/** @typedef {{ kind: 'busy' | 'claudeMissing' | 'claudeFailed' | 'timeout' | 'io' | 'badLink', message: string }} Failure */
+/** @typedef {{ kind: 'busy' | 'claudeMissing' | 'providerFailed' | 'timeout' | 'io' | 'badLink', message: string }} Failure */
 
 /**
  * @typedef { { kind: 'started', fresh: boolean }
@@ -21,7 +21,7 @@ import { createBrowserAgent } from './browser-agent.js';
  *   | { kind: 'mood', mood: string }
  *   | { kind: 'text', delta: string }
  *   | { kind: 'toolStarted', id: string, server: string, tool: string, input: any }
- *   | { kind: 'toolFinished', id: string, server: string, tool: string, ok: boolean, result: any, summary: string, durationMs: number }
+ *   | { kind: 'toolFinished', id: string, server: string, tool: string, input: any, ok: boolean, result: any, summary: string, durationMs: number }
  *   | { kind: 'finished', entry: ShownEntry }
  *   | { kind: 'failed', failure: Failure, entry: ShownEntry }
  *   | { kind: 'stopped', entry: ShownEntry }} AgentEvent
@@ -40,7 +40,7 @@ import { createBrowserAgent } from './browser-agent.js';
 
 /**
  * @typedef {object} Agent
- * @property {() => Promise<{ claude: ClaudeStatus, context: ContextStatus }>} status
+ * @property {() => Promise<{ program: ClaudeStatus, context: ContextStatus }>} status
  * @property {(text: string) => Promise<{ mood: string, scores: object }>} feel
  * @property {() => Promise<ShownEntry[]>} history
  * @property {(request: SendRequest, onEvent: (event: AgentEvent) => void) => Promise<ShownEntry>} send

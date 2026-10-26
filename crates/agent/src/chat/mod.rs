@@ -11,9 +11,8 @@ pub use context::ContextStatus;
 pub use event::{Event, Failure};
 pub use model::{Effort, Model};
 pub(crate) use tools::content_value;
-pub use tools::{FACADE_TOOLS, McpConnection, ToolCall};
+pub use tools::{FACADE_TOOLS, McpConnection, TURN_HEADER, ToolCall, ToolStart};
 
-// SMELL: the review prompt and the chat page repeat these three numbers; change them together.
 /// The longest MEMORY note, in characters.
 pub const MEMORY_LIMIT: usize = 2200;
 /// The longest USER note, in characters.

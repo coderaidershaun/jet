@@ -67,16 +67,13 @@ impl ResultLine {
     }
 }
 
-pub(super) fn parse(line: &str) -> Line {
-    let Ok(value) = serde_json::from_str::<Value>(line) else {
-        return Line::Other;
-    };
+pub(super) fn parse(value: &Value) -> Line {
     match value["type"].as_str() {
-        Some("system") if value["subtype"] == "init" => init(&value),
-        Some("stream_event") => stream_event(&value),
-        Some("assistant") => tool_uses(&value),
-        Some("user") => tool_results(&value),
-        Some("result") => Line::Result(result(&value)),
+        Some("system") if value["subtype"] == "init" => init(value),
+        Some("stream_event") => stream_event(value),
+        Some("assistant") => tool_uses(value),
+        Some("user") => tool_results(value),
+        Some("result") => Line::Result(result(value)),
         _ => Line::Other,
     }
 }
@@ -158,17 +155,15 @@ fn result(value: &Value) -> ResultLine {
         result: value["result"].as_str().map(str::to_owned),
         errors: value["errors"]
             .as_array()
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default(),
-        structured_output: match &value["structured_output"] {
-            Value::Null => None,
-            other => Some(other.clone()),
-        },
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        structured_output: value
+            .get("structured_output")
+            .filter(|v| !v.is_null())
+            .cloned(),
         context_tokens: count(&usage["input_tokens"])
             + count(&usage["cache_read_input_tokens"])
             + count(&usage["cache_creation_input_tokens"]),
@@ -179,12 +174,16 @@ fn result(value: &Value) -> ResultLine {
 mod tests {
     use super::*;
 
+    fn parse_line(line: &str) -> Line {
+        serde_json::from_str(line).map_or(Line::Other, |value| parse(&value))
+    }
+
     const RECORDED_TURN: &str = include_str!("../../tests/fixtures/sonnet-mood-reply.jsonl");
     const RECORDED_SEARCH: &str = include_str!("../../tests/fixtures/quanty-search-reply.jsonl");
 
     #[test]
     fn parses_the_recorded_sonnet_turn() {
-        let lines: Vec<Line> = RECORDED_TURN.lines().map(parse).collect();
+        let lines: Vec<Line> = RECORDED_TURN.lines().map(parse_line).collect();
 
         let Some(Line::Init {
             session_id, model, ..
@@ -222,7 +221,7 @@ mod tests {
     #[test]
     fn parses_the_recorded_quanty_search() {
         const SEARCH_ID: &str = "toolu_01K3EDj1tq5Co9obfZ2yX4Nx";
-        let lines: Vec<Line> = RECORDED_SEARCH.lines().map(parse).collect();
+        let lines: Vec<Line> = RECORDED_SEARCH.lines().map(parse_line).collect();
 
         let starts = lines.iter().filter(|line| **line == Line::MessageStart);
         assert_eq!(
@@ -317,7 +316,7 @@ mod tests {
             "not json at all",
             "",
         ] {
-            assert_eq!(parse(line), Line::Other, "line: {line}");
+            assert_eq!(parse_line(line), Line::Other, "line: {line}");
         }
     }
 }

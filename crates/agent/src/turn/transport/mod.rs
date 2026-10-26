@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
-use crate::chat::{Effort, Model, SessionId};
+use crate::chat::{Effort, McpConnection, Model, SessionId};
 pub use claude::ClaudeCli;
 pub use codex::CodexCli;
 
@@ -38,9 +38,9 @@ pub struct Request {
     pub session: SessionMode,
     /// A JSON schema the answer must follow, for requests that want structured output.
     pub schema: Option<serde_json::Value>,
-    /// The MCP servers as Claude Code's config JSON; `None` for a run with no servers, such
-    /// as the notes review.
-    pub mcp_config: Option<String>,
+    /// The tool server the run may call; `None` for a run with no tools, such as the notes
+    /// review.
+    pub mcp: Option<McpConnection>,
 }
 
 /// How a request relates to the agent's saved conversations.
@@ -96,13 +96,6 @@ impl Stopper {
 pub enum TransportError {
     #[error("unsupported Codex model {} with thinking level {}", model.alias(), effort.alias())]
     CodexModel { model: Model, effort: Effort },
-    #[error("invalid MCP configuration: {source}")]
-    McpConfig {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("invalid MCP server name {name:?}; use only letters, digits, underscores or hyphens")]
-    McpServerName { name: String },
     #[error("Claude Code was not found; looked in {}", searched.join(", "))]
     ClaudeMissing { searched: Vec<String> },
     #[error("Codex was not found; looked in {}", searched.join(", "))]

@@ -19,7 +19,7 @@ use std::{
     sync::{Arc, Mutex, Weak},
 };
 
-pub(crate) const HEADER: &str = "x-jet-turn";
+pub(crate) const HEADER: &str = agent::TURN_HEADER;
 #[derive(Clone)]
 pub(crate) struct Binding {
     pub turn_id: String,

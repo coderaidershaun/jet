@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::chat::{Mood, SessionId, ToolCall};
+use crate::chat::{Mood, SessionId, ToolCall, ToolStart};
 pub use error::TurnError;
 use mood::{MoodSplitter, Split};
 use stream::{Line, ResultLine};
@@ -43,12 +43,7 @@ pub enum Step {
     Mood(Mood),
     Text(String),
     /// An MCP tool call has started.
-    ToolStarted {
-        id: String,
-        server: String,
-        tool: String,
-        input: Value,
-    },
+    ToolStarted(ToolStart),
     /// An MCP tool call came back.
     ToolFinished(ToolCall),
     Finished(Summary),
@@ -119,7 +114,7 @@ impl Turn {
             idle,
             splitter: MoodSplitter::new(),
             queued: VecDeque::new(),
-            tools: ToolCalls::new(),
+            tools: ToolCalls::default(),
             text: String::new(),
             mood: None,
             context: context::ContextReader::default(),
@@ -149,7 +144,7 @@ impl Turn {
 
     fn advance(&mut self) {
         match self.next_arrival() {
-            Arrival::Line(line) => self.take_line(line),
+            Arrival::Line(line) => self.take_line(&line),
             Arrival::Error(error) => self.end(Step::Failed(error.into())),
             Arrival::Stopped => self.end(Step::Stopped),
             Arrival::Silent => {
@@ -194,10 +189,12 @@ impl Turn {
         }
     }
 
-    fn take_line(&mut self, line: String) {
-        self.context.read(&line);
-        let parsed = stream::parse(&line);
-        match parsed {
+    fn take_line(&mut self, line: &str) {
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
+            return;
+        };
+        self.context.read(&value);
+        match stream::parse(&value) {
             Line::Init { session_id, model } => {
                 self.queued.push_back(Step::Init { session_id, model });
             }

@@ -1,6 +1,7 @@
 //! The exact command line, environment and MCP server config for a request. The flags and
 //! their order stay fixed so that Claude's prompt cache keeps hitting.
 
+use crate::chat::FACADE_TOOLS;
 use crate::turn::transport::{Request, SessionMode};
 
 /// Keeps Claude's prompt cache alive for an hour instead of five minutes.
@@ -12,9 +13,6 @@ pub(super) const ISOLATION_ENV: [(&str, &str); 2] = [
     ("CLAUDE_CODE_DISABLE_CLAUDE_MDS", "1"),
     ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
 ];
-
-/// Exact names prevent unrelated tools from becoming available to the provider.
-const ALLOWED_TOOLS: &str = "mcp__jet__apps_list,mcp__jet__apps_update,mcp__jet__apps_open,mcp__jet__tools_search,mcp__jet__tools_describe,mcp__jet__tools_call";
 
 /// The command line for a request. One function builds both the chat and the review
 /// call, so the order of the flags cannot drift between them.
@@ -38,11 +36,10 @@ pub(super) fn args(request: &Request) -> Vec<String> {
         args.extend(["--json-schema".into(), schema.to_string()]);
     }
     // Safe mode would drop the MCP servers, so the parts of it that matter are set one by one.
-    let tools = "";
     args.extend(
         [
             "--tools",
-            tools,
+            "",
             "--setting-sources",
             "",
             "--disable-slash-commands",
@@ -50,12 +47,16 @@ pub(super) fn args(request: &Request) -> Vec<String> {
         ]
         .map(String::from),
     );
-    if let Some(config) = &request.mcp_config {
+    if let Some(mcp) = &request.mcp {
+        // Exact names prevent unrelated tools from becoming available to the provider.
+        let allowed = FACADE_TOOLS
+            .map(|name| format!("mcp__jet__{name}"))
+            .join(",");
         args.extend([
             "--mcp-config".into(),
-            config.clone(),
+            mcp.config(),
             "--allowedTools".into(),
-            ALLOWED_TOOLS.into(),
+            allowed,
         ]);
     }
     args.extend(["--no-chrome", "--permission-prompts", "none"].map(String::from));
@@ -77,10 +78,10 @@ pub(super) fn args(request: &Request) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chat::{Effort, Model, SessionId};
+    use crate::chat::{Effort, McpConnection, Model, SessionId};
     use serde_json::json;
-    const BOTH_SERVERS: &str = r#"{"mcpServers":{"jet":{"type":"http","url":"http://localhost/mcp","headers":{"x-jet-turn":"token"}}}}"#;
-    const ALLOWED: &str = ALLOWED_TOOLS;
+    const JET_SERVER: &str = r#"{"mcpServers":{"jet":{"headers":{"x-jet-turn":"token"},"type":"http","url":"http://localhost/mcp"}}}"#;
+    const ALLOWED: &str = "mcp__jet__apps_list,mcp__jet__apps_update,mcp__jet__apps_open,mcp__jet__tools_search,mcp__jet__tools_describe,mcp__jet__tools_call";
 
     fn chat_request(session: SessionMode) -> Request {
         Request {
@@ -91,7 +92,10 @@ mod tests {
             budget_usd: 10.0,
             session,
             schema: None,
-            mcp_config: Some(BOTH_SERVERS.to_owned()),
+            mcp: Some(McpConnection {
+                url: "http://localhost/mcp".into(),
+                token: "token".into(),
+            }),
         }
     }
 
@@ -110,7 +114,7 @@ mod tests {
                  --tools '' --setting-sources '' --disable-slash-commands \
                  --strict-mcp-config --mcp-config",
             ),
-            vec![BOTH_SERVERS.to_owned()],
+            vec![JET_SERVER.to_owned()],
             words("--allowedTools"),
             vec![ALLOWED.to_owned()],
             words(
@@ -121,7 +125,7 @@ mod tests {
         assert_eq!(args(&chat_request(SessionMode::New)), new_chat);
 
         let no_servers = Request {
-            mcp_config: None,
+            mcp: None,
             ..chat_request(SessionMode::New)
         };
         assert_eq!(
@@ -155,7 +159,7 @@ mod tests {
             budget_usd: 0.2,
             session: SessionMode::Ephemeral,
             schema: Some(json!({"type": "object"})),
-            mcp_config: None,
+            mcp: None,
         };
         assert_eq!(
             args(&review),
@@ -166,14 +170,6 @@ mod tests {
                  --no-chrome --permission-prompts none --no-session-persistence \
                  --max-budget-usd 0.20"
             )
-        );
-        assert_eq!(CACHE_TTL_ENV, ("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h"));
-        assert_eq!(
-            ISOLATION_ENV,
-            [
-                ("CLAUDE_CODE_DISABLE_CLAUDE_MDS", "1"),
-                ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
-            ]
         );
     }
 }

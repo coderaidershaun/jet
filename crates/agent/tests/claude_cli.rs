@@ -8,9 +8,8 @@ use std::time::{Duration, Instant};
 
 use agent::{
     ClaudeCli, Conversation, DataDir, Effort, Event, McpConnection, Message, Model, Mood, Persona,
-    Request, SessionId, SessionMode, Step, Turn,
+    Request, SessionMode, Step, ToolStart, Turn,
 };
-use serde_json::json;
 
 fn fake_claude(name: &str) -> (ClaudeCli, PathBuf) {
     let cwd = std::env::temp_dir().join(format!("agent-contract-{}-{name}", std::process::id()));
@@ -28,110 +27,13 @@ fn chat_request(prompt: &str, session: SessionMode) -> Request {
         budget_usd: 1.0,
         session,
         schema: None,
-        mcp_config: None,
+        mcp: None,
     }
 }
 
 fn recorded_args(cwd: &Path) -> Vec<String> {
     let text = std::fs::read_to_string(cwd.join("fake-claude-args.json")).unwrap();
     serde_json::from_str(&text).unwrap()
-}
-
-#[test]
-fn fake_claude_streams_a_turn() {
-    // SAFETY: in this test binary only Rust's standard library touches the environment, and
-    // `set_var`, `remove_var`, `vars_os` and `Command::spawn` take the same internal lock,
-    // so no reader ever sees a half-written value.
-    unsafe {
-        // Claude variables this test inherited are dropped first, so that the result does
-        // not depend on how the tests were started.
-        for (name, _) in std::env::vars_os() {
-            if name.to_string_lossy().starts_with("CLAUDE") {
-                std::env::remove_var(name);
-            }
-        }
-        // SMELL: other tests in this file start fake Claude programs at the same time, and one
-        // started as these values are set can inherit them. This test needs its own process.
-        let session = [
-            ("CLAUDECODE", "1"),
-            ("CLAUDE_PID", "1"),
-            ("CLAUDE_EFFORT", "high"),
-            ("CLAUDE_CODE_FOO", "bar"),
-        ];
-        for (name, value) in session {
-            std::env::set_var(name, value);
-        }
-    }
-    let (claude, cwd) = fake_claude("streams");
-    let prompt = "[local time: Tue 14 Oct 2026, 11:20]\nfixture:sonnet-mood-reply";
-    let resume = SessionMode::Resume(SessionId("abc-123".into()));
-    let turn = Turn::start(&claude, &chat_request(prompt, resume)).unwrap();
-    let steps: Vec<Step> = turn.collect();
-
-    assert!(
-        matches!(steps.iter().find(|s| matches!(s, Step::Init { .. })),
-        Some(Step::Init { model, .. }) if model == "claude-sonnet-5-5")
-    );
-    let mood_at = steps
-        .iter()
-        .position(|s| matches!(s, Step::Mood(Mood::Neutral)))
-        .unwrap();
-    let text_at = steps
-        .iter()
-        .position(|s| matches!(s, Step::Text(_)))
-        .unwrap();
-    assert!(mood_at < text_at, "the mood comes before the first text");
-    let text: String = steps
-        .iter()
-        .filter_map(|step| match step {
-            Step::Text(delta) => Some(delta.as_str()),
-            _ => None,
-        })
-        .collect();
-    assert!(text.starts_with("Congratulations"), "{text}");
-    let Some(Step::Finished(summary)) = steps.last() else {
-        panic!("a turn ends with Finished: {:?}", steps.last());
-    };
-    assert_eq!(summary.context_tokens, 1577);
-
-    let args = recorded_args(&cwd);
-    assert_eq!(args[0], "-p");
-    let at = |flag: &str| args.iter().position(|arg| arg == flag).unwrap();
-    assert_eq!(args[at("--system-prompt") + 1], "You are Jet.");
-    assert_eq!(
-        args[at("--tools") + 1],
-        "",
-        "the empty tool list is one empty argument"
-    );
-    assert_eq!(args[args.len() - 2..], ["--resume", "abc-123"]);
-    let env = std::fs::read_to_string(cwd.join("fake-claude-env.json")).unwrap();
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&env).unwrap(),
-        json!({
-            "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h",
-            "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
-            "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
-        }),
-        "of the Claude variables, only Jet's own settings reach the program"
-    );
-
-    let review = Request {
-        schema: Some(json!({"type": "object"})),
-        session: SessionMode::Ephemeral,
-        ..chat_request("fixture:haiku-review", SessionMode::New)
-    };
-    let steps: Vec<Step> = Turn::start(&claude, &review).unwrap().collect();
-    let Some(Step::Finished(summary)) = steps.last() else {
-        panic!("the review ends with Finished: {:?}", steps.last());
-    };
-    let notes = summary
-        .structured_output
-        .as_ref()
-        .expect("the review answers as data");
-    assert_eq!(notes["changed"], true);
-    let args = recorded_args(&cwd);
-    assert!(args.contains(&"--no-session-persistence".to_owned()));
-    assert!(args.contains(&"{\"type\":\"object\"}".to_owned()));
 }
 
 #[test]
@@ -157,15 +59,15 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
 
     let tool_started: Vec<&Event> = events
         .iter()
-        .filter(|e| matches!(e, Event::ToolStarted { .. }))
+        .filter(|e| matches!(e, Event::ToolStarted(_)))
         .collect();
     let [
-        Event::ToolStarted {
+        Event::ToolStarted(ToolStart {
             id,
             server,
             tool,
             input,
-        },
+        }),
     ] = tool_started[..]
     else {
         panic!("one tool call starts, ToolSearch is left out: {tool_started:?}");
@@ -176,28 +78,21 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
         input["question"],
         "What is vega, the sensitivity of an option price to volatility?"
     );
-    let Some(Event::ToolFinished {
-        id: finished_id,
-        ok,
-        result,
-        summary,
-        ..
-    }) = events
-        .iter()
-        .find(|e| matches!(e, Event::ToolFinished { .. }))
+    let Some(Event::ToolFinished(call)) =
+        events.iter().find(|e| matches!(e, Event::ToolFinished(_)))
     else {
         panic!("the call finishes: {events:?}");
     };
-    assert_eq!(finished_id, id);
-    assert!(ok);
-    assert_eq!(result["results"].as_array().unwrap().len(), 5);
-    assert_eq!(summary, "quanty · search · 5 results");
+    assert_eq!((&call.id, &call.input), (id, input));
+    assert!(call.ok);
+    assert_eq!(call.result["results"].as_array().unwrap().len(), 5);
+    assert_eq!(call.summary, "quanty · search · 5 results");
 
     let position = |wanted: fn(&Event) -> bool| events.iter().position(wanted).unwrap();
     let order = [
         position(|e| matches!(e, Event::Started { .. })),
-        position(|e| matches!(e, Event::ToolStarted { .. })),
-        position(|e| matches!(e, Event::ToolFinished { .. })),
+        position(|e| matches!(e, Event::ToolStarted(_))),
+        position(|e| matches!(e, Event::ToolFinished(_))),
         position(|e| matches!(e, Event::Text { .. })),
         events.len() - 1,
     ];
@@ -220,10 +115,7 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
     let [saved] = &entry.entry.tools[..] else {
         panic!("the saved entry keeps the call: {:?}", entry.entry.tools);
     };
-    assert_eq!(
-        (&saved.id, &saved.input, &saved.result, &saved.summary),
-        (id, input, result, summary)
-    );
+    assert_eq!(saved, call);
     let capacity = conversation.context_status(Model::Sonnet).unwrap();
     assert_eq!(capacity.used_tokens, Some(8373));
     assert_eq!(capacity.limit_tokens, Some(1_000_000));

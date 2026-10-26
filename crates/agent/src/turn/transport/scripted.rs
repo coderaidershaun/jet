@@ -129,7 +129,7 @@ pub(crate) fn request() -> Request {
         budget_usd: 1.0,
         session: SessionMode::New,
         schema: None,
-        mcp_config: None,
+        mcp: None,
     }
 }
 

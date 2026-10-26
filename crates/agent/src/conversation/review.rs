@@ -1,7 +1,7 @@
 //! Keeps the three notes current. Once the conversation has been quiet for a while, one
 //! cheap model call reads everything said since the last review and rewrites the notes.
 
-use std::sync::{PoisonError, atomic::Ordering};
+use std::sync::{MutexGuard, PoisonError, atomic::Ordering};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -11,12 +11,12 @@ use super::memory::{MemoryError, Session, Transcript, now_ms};
 use super::persona::{fill, note_or_empty};
 use super::{Claim, Conversation};
 use crate::chat::{Effort, Entry, MEMORY_LIMIT, Notes, RECENT_LIMIT, Role, USER_LIMIT};
-use crate::turn::{Request, SessionMode, Step, Summary, Transport, Turn, TurnError};
+use crate::turn::{Request, SessionMode, Step, Stopper, Summary, Transport, Turn, TurnError};
 
 const PROMPT: &str = include_str!("review.md");
 
-// SMELL: the app's review timer has its own copy of this wait; change both together.
-const QUIET_BEFORE_REVIEW_MS: u64 = 90_000;
+/// How long the chat must be quiet before a review is due.
+pub const REVIEW_QUIET: Duration = Duration::from_secs(90);
 
 /// Two reviews are at least this far apart.
 const MIN_GAP_BETWEEN_REVIEWS_MS: u64 = 10 * 60 * 1000;
@@ -69,12 +69,7 @@ impl Conversation {
     /// Prevents future reviews and cancels any provider review already running.
     pub fn stop_review(&self) {
         self.shutting_down.store(true, Ordering::SeqCst);
-        if let Some(stopper) = self
-            .review_stop
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-        {
+        if let Some(stopper) = self.lock_review_stop().as_ref() {
             stopper.stop();
         }
     }
@@ -87,7 +82,7 @@ impl Conversation {
             .flatten()
             .is_some_and(|(session, pending)| {
                 let last_said = pending.last().map_or(0, |entry| entry.at);
-                now_ms.saturating_sub(last_said) >= QUIET_BEFORE_REVIEW_MS
+                Duration::from_millis(now_ms.saturating_sub(last_said)) >= REVIEW_QUIET
                     && now_ms.saturating_sub(session.reviewed_at) >= MIN_GAP_BETWEEN_REVIEWS_MS
             })
     }
@@ -108,19 +103,16 @@ impl Conversation {
         let before = Notes::load(&self.dir)?;
         let request = Request {
             prompt: review_prompt(&before, &pending, name),
-            system_prompt: fill(PROMPT, &[("name", name)]),
+            system_prompt: system_prompt(name),
             model: transport.review_model(),
             effort: Effort::Low,
             budget_usd: BUDGET_USD,
             session: SessionMode::Ephemeral,
             schema: Some(schema()),
-            mcp_config: None,
+            mcp: None,
         };
         let turn = {
-            let mut current = self
-                .review_stop
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let mut current = self.lock_review_stop();
             if self.shutting_down.load(Ordering::SeqCst) {
                 return Ok(ReviewOutcome::Skipped);
             }
@@ -129,10 +121,7 @@ impl Conversation {
             turn
         };
         let result = run(turn);
-        *self
-            .review_stop
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = None;
+        *self.lock_review_stop() = None;
         let summary = result?;
         let verdict = read_verdict(summary)?;
 
@@ -158,6 +147,13 @@ impl Conversation {
         Ok(outcome)
     }
 
+    /// A lock that a panic poisoned is still usable: it only holds a stopper.
+    fn lock_review_stop(&self) -> MutexGuard<'_, Option<Stopper>> {
+        self.review_stop
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// The session and the entries with text that the review has not read yet, or `None`
     /// when there is no session or nothing new.
     fn pending_since_last_review(&self) -> Result<Option<(Session, Vec<Entry>)>, MemoryError> {
@@ -170,20 +166,23 @@ impl Conversation {
     }
 }
 
+fn system_prompt(name: &str) -> String {
+    let [memory, user, recent] = [MEMORY_LIMIT, USER_LIMIT, RECENT_LIMIT].map(|n| n.to_string());
+    let values = [
+        ("name", name),
+        ("memory_limit", &memory),
+        ("user_limit", &user),
+        ("recent_limit", &recent),
+    ];
+    fill(PROMPT, &values)
+}
+
 fn run(turn: Turn) -> Result<Summary, ReviewError> {
-    for step in turn {
-        match step {
-            Step::Finished(summary) => return Ok(summary),
-            Step::Failed(error) => return Err(error.into()),
-            Step::Stopped => return Err(TurnError::NoResult.into()),
-            Step::Init { .. }
-            | Step::Mood(_)
-            | Step::Text(_)
-            | Step::ToolStarted { .. }
-            | Step::ToolFinished(_) => {}
-        }
+    match turn.last() {
+        Some(Step::Finished(summary)) => Ok(summary),
+        Some(Step::Failed(error)) => Err(error.into()),
+        _ => Err(TurnError::NoResult.into()),
     }
-    Err(TurnError::NoResult.into())
 }
 
 /// The notes come back as structured output, or, failing that, as JSON text.

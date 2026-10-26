@@ -93,26 +93,8 @@ impl Reply {
             Some(Step::Init { session_id, .. }) => self.handle_init(session_id),
             Some(Step::Mood(mood)) => self.queue.push_back(Event::Mood { mood }),
             Some(Step::Text(delta)) => self.queue.push_back(Event::Text { delta }),
-            Some(Step::ToolStarted {
-                id,
-                server,
-                tool,
-                input,
-            }) => self.queue.push_back(Event::ToolStarted {
-                id,
-                server,
-                tool,
-                input,
-            }),
-            Some(Step::ToolFinished(call)) => self.queue.push_back(Event::ToolFinished {
-                id: call.id,
-                server: call.server,
-                tool: call.tool,
-                ok: call.ok,
-                result: call.result,
-                summary: call.summary,
-                duration_ms: call.duration_ms,
-            }),
+            Some(Step::ToolStarted(start)) => self.queue.push_back(Event::ToolStarted(start)),
+            Some(Step::ToolFinished(call)) => self.queue.push_back(Event::ToolFinished(call)),
             Some(Step::Finished(summary)) => self.conclude(Ending::Finished(summary)),
             Some(Step::Stopped) => self.conclude(Ending::Stopped),
             Some(Step::Failed(error)) => self.handle_failure(error),
@@ -248,22 +230,15 @@ impl Reply {
 
     /// The answer so far, as a thread entry.
     fn jet_entry(&self, status: EntryStatus, error: Option<String>) -> NewEntry {
+        let turn = self.turn.as_ref();
         NewEntry {
             turn: self.context.identity.clone(),
             role: Role::Jet,
-            text: self
-                .turn
-                .as_ref()
-                .map(|turn| turn.text().to_owned())
-                .unwrap_or_default(),
-            mood: self.turn.as_ref().and_then(Turn::mood),
+            text: turn.map(|turn| turn.text().to_owned()).unwrap_or_default(),
+            mood: turn.and_then(Turn::mood),
             status,
             error,
-            tools: self
-                .turn
-                .as_ref()
-                .map(|turn| turn.tools().to_vec())
-                .unwrap_or_default(),
+            tools: turn.map(|turn| turn.tools().to_vec()).unwrap_or_default(),
         }
     }
 

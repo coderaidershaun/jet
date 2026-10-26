@@ -12,10 +12,7 @@ pub(super) struct ContextReader {
 }
 
 impl ContextReader {
-    pub(super) fn read(&mut self, line: &str) {
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            return;
-        };
+    pub(super) fn read(&mut self, value: &Value) {
         match value["type"].as_str() {
             Some("system") if value["subtype"] == "init" => {
                 self.model = value["model"].as_str().unwrap_or_default().to_owned();

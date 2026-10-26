@@ -9,13 +9,11 @@ use serde_json::Value;
 
 use super::Step;
 use super::stream::{ToolResult, ToolUse};
-use crate::chat::ToolCall;
+use crate::chat::{ToolCall, ToolStart};
 
 /// A call that has started and not come back yet.
 struct Open {
-    server: String,
-    tool: String,
-    input: Value,
+    call: ToolStart,
     started: Instant,
 }
 
@@ -27,10 +25,11 @@ impl Open {
         } else {
             "failed".to_owned()
         };
-        format!("{} · {} · {outcome}", self.server, self.tool)
+        format!("{} · {} · {outcome}", self.call.server, self.call.tool)
     }
 }
 
+#[derive(Default)]
 pub(super) struct ToolCalls {
     open: HashMap<String, Open>,
     /// Every id that started, so a call written out twice starts once.
@@ -39,14 +38,6 @@ pub(super) struct ToolCalls {
 }
 
 impl ToolCalls {
-    pub(super) fn new() -> ToolCalls {
-        ToolCalls {
-            open: HashMap::new(),
-            seen: HashSet::new(),
-            done: Vec::new(),
-        }
-    }
-
     /// The steps for calls just written. Repeats and tools of Claude Code give none.
     pub(super) fn start(&mut self, uses: Vec<ToolUse>) -> Vec<Step> {
         let mut steps = Vec::new();
@@ -66,22 +57,15 @@ impl ToolCalls {
             } else {
                 (server.to_owned(), tool.to_owned(), input)
             };
-            steps.push(Step::ToolStarted {
+            let call = ToolStart {
                 id: id.clone(),
-                server: server.clone(),
-                tool: tool.clone(),
-                input: input.clone(),
-            });
+                server,
+                tool,
+                input,
+            };
+            steps.push(Step::ToolStarted(call.clone()));
             let started = Instant::now();
-            self.open.insert(
-                id,
-                Open {
-                    server,
-                    tool,
-                    input,
-                    started,
-                },
-            );
+            self.open.insert(id, Open { call, started });
         }
         steps
     }
@@ -112,15 +96,23 @@ impl ToolCalls {
                     (result, false)
                 };
             let ok = !is_error && !nested_error;
-            let call = ToolCall {
-                summary: open.summary(ok, &result),
-                duration_ms: u64::try_from(open.started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            let summary = open.summary(ok, &result);
+            let duration_ms = u64::try_from(open.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+            let ToolStart {
                 id,
-                server: open.server,
-                tool: open.tool,
-                input: open.input,
+                server,
+                tool,
+                input,
+            } = open.call;
+            let call = ToolCall {
+                id,
+                server,
+                tool,
+                input,
                 ok,
                 result,
+                summary,
+                duration_ms,
             };
             self.done.push(call.clone());
             steps.push(Step::ToolFinished(call));
@@ -180,7 +172,7 @@ mod tests {
         tool_error_line, tool_result_line, tool_use_line,
     };
     use super::super::{Step, Turn};
-    use crate::chat::{Mood, ToolCall};
+    use crate::chat::{Mood, ToolCall, ToolStart};
 
     #[test]
     fn calls_are_paired_summed_up_and_set_apart_from_text() {
@@ -218,9 +210,9 @@ mod tests {
         let started: Vec<(&str, &str, &str)> = steps
             .iter()
             .filter_map(|step| match step {
-                Step::ToolStarted {
+                Step::ToolStarted(ToolStart {
                     id, server, tool, ..
-                } => Some((id.as_str(), server.as_str(), tool.as_str())),
+                }) => Some((id.as_str(), server.as_str(), tool.as_str())),
                 _ => None,
             })
             .collect();
@@ -252,7 +244,7 @@ mod tests {
 
         let at = |id: &str, finished: bool| {
             steps.iter().position(|step| match step {
-                Step::ToolStarted { id: started, .. } => !finished && started == id,
+                Step::ToolStarted(call) => !finished && call.id == id,
                 Step::ToolFinished(call) => finished && call.id == id,
                 _ => false,
             })

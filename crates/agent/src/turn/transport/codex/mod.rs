@@ -78,7 +78,7 @@ impl Transport for CodexCli {
             .map_err(spawn_failed)?;
         let mut command = Command::new(&self.program);
         command
-            .args(args(request, schema.as_ref().map(|f| f.path()))?)
+            .args(args(request, schema.as_ref().map(|f| f.path())))
             .current_dir(&self.cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -93,7 +93,7 @@ impl Transport for CodexCli {
             }
         }
         let child = command.spawn().map_err(spawn_failed)?;
-        let lines = launch(child, &request.prompt)?;
+        let lines = launch(child, &request.prompt);
         let (sender, receiver) = mpsc::channel();
         let stopper = lines.stopper.clone();
         let watcher = stopper.clone();

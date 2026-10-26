@@ -1,5 +1,6 @@
 //! Connect using the exact HTTP configuration the adapter passed to the process.
 use super::events;
+use agent::TURN_HEADER;
 use rmcp::{
     ServiceExt,
     model::CallToolRequestParams,
@@ -23,7 +24,7 @@ pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
         )));
         (
             value("mcp_servers.jet.url="),
-            value("mcp_servers.jet.http_headers.x-jet-turn="),
+            value(&format!("mcp_servers.jet.http_headers.{TURN_HEADER}=")),
         )
     } else {
         let value =
@@ -39,7 +40,7 @@ pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
         let config: Value = serde_json::from_str(value("--mcp-config")).unwrap();
         (
             config["mcpServers"]["jet"]["url"].as_str().unwrap().into(),
-            config["mcpServers"]["jet"]["headers"]["x-jet-turn"]
+            config["mcpServers"]["jet"]["headers"][TURN_HEADER]
                 .as_str()
                 .unwrap()
                 .into(),
@@ -53,7 +54,7 @@ pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
     let mut config = StreamableHttpClientTransportConfig::with_uri(url);
     config
         .custom_headers
-        .insert("x-jet-turn".parse().unwrap(), token.parse().unwrap());
+        .insert(TURN_HEADER.parse().unwrap(), token.parse().unwrap());
     config.reinit_on_expired_session = false;
     let transport = StreamableHttpClientTransport::with_client(reqwest::Client::new(), config);
     let client = ().serve(transport).await.unwrap();

@@ -49,15 +49,12 @@ impl ActiveTurn {
         match event {
             Event::Text { delta } => self.text.push_str(delta),
             Event::Mood { mood } => self.mood = Some(*mood),
-            Event::ToolStarted { .. } => self.tools.push(json!(event)),
-            Event::ToolFinished { id, .. } => {
-                let result = json!(event);
-                if let Some(tool) = self.tools.iter_mut().find(|tool| tool["id"] == *id) {
-                    if let (Some(tool), Some(result)) = (tool.as_object_mut(), result.as_object()) {
-                        tool.extend(result.clone());
-                    }
-                } else {
-                    self.tools.push(result);
+            Event::ToolStarted(_) => self.tools.push(json!(event)),
+            Event::ToolFinished(call) => {
+                let started = self.tools.iter_mut().find(|tool| tool["id"] == call.id);
+                match (started, json!(event)) {
+                    (Some(Value::Object(tool)), Value::Object(finished)) => tool.extend(finished),
+                    (_, finished) => self.tools.push(finished),
                 }
             }
             _ => {}
@@ -121,9 +118,7 @@ impl Runtime {
             self.events.pop_front();
         }
         // No browser needs to be connected for a turn to finish.
-        match self.sender.send(envelope) {
-            Ok(_) | Err(broadcast::error::SendError(_)) => {}
-        }
+        self.sender.send(envelope).ok();
     }
 
     pub fn replay(&self, epoch: Option<&str>, cursor: Option<u64>) -> Option<Vec<Envelope>> {

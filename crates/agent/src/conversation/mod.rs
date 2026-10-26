@@ -16,7 +16,7 @@ pub use markdown::render_markdown;
 pub use memory::{DataDir, MemoryError, now_ms};
 use memory::{NewEntry, Session, Transcript};
 pub use reply::Reply;
-pub use review::{ReviewError, ReviewOutcome};
+pub use review::{REVIEW_QUIET, ReviewError, ReviewOutcome};
 use session_policy::decide;
 
 use crate::chat::{Effort, Entry, McpConnection, Model, Notes, Persona, Role, ShownEntry};
@@ -122,7 +122,7 @@ impl Conversation {
             budget_usd: message.budget_usd,
             session: decision.mode,
             schema: None,
-            mcp_config: message.mcp.as_ref().map(McpConnection::config),
+            mcp: message.mcp,
         };
         if request.session == SessionMode::New
             && let Some(session) = &saved

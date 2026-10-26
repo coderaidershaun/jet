@@ -65,12 +65,15 @@ fn find_program(candidates: &[PathBuf], shell: Option<&Path>) -> Result<PathBuf,
     Err(TransportError::ClaudeMissing { searched })
 }
 
-/// The answer is kept for the life of the process, because starting a login shell is slow.
-// SMELL: a "not found" is kept too, so a Claude Code that only the login shell can find,
-// installed after the app started, stays unfound until the app restarts.
+/// A path the login shell found is kept for the life of the process, because starting a login
+/// shell is slow. A miss is not kept, so a Claude Code installed later is found without a restart.
 fn ask_login_shell(shell: &Path) -> Option<PathBuf> {
-    static ANSWER: OnceLock<Option<PathBuf>> = OnceLock::new();
-    ANSWER.get_or_init(|| probe_login_shell(shell)).clone()
+    static FOUND: OnceLock<PathBuf> = OnceLock::new();
+    if let Some(path) = FOUND.get() {
+        return Some(path.clone());
+    }
+    let path = probe_login_shell(shell)?;
+    Some(FOUND.get_or_init(|| path).clone())
 }
 
 fn probe_login_shell(shell: &Path) -> Option<PathBuf> {

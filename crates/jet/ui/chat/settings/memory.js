@@ -18,7 +18,8 @@ const NOTES = [
 export function buildMemory({ agent, settings }) {
   /** @type {Record<string, string>} */
   let saved = { memory: '', user: '', recent: '' };
-  let limits = { memory: 2200, user: 1375, recent: 1500 };
+  /** @type {Record<string, number> | null} Sent by the server with the notes; until then nothing is capped. */
+  let limits = null;
 
   const editors = NOTES.map(([key, file, hint]) => {
     const area = h('textarea', { class: 'mono', rows: 6, spellcheck: 'false', 'aria-label': file });
@@ -29,9 +30,10 @@ export function buildMemory({ agent, settings }) {
     const dirty = () => area.value !== saved[key];
     const paint = () => {
       const used = countCodePoints(area.value);
-      counter.textContent = used + ' / ' + limits[key];
-      counter.classList.toggle('over', used > limits[key]);
-      save.disabled = !dirty() || used > limits[key];
+      const limit = limits ? limits[key] : Infinity;
+      counter.textContent = used + (limits ? ' / ' + limit : '');
+      counter.classList.toggle('over', used > limit);
+      save.disabled = !dirty() || used > limit;
     };
     area.addEventListener('input', () => { status.textContent = ''; paint(); });
     save.addEventListener('click', async () => {
