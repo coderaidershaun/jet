@@ -154,7 +154,7 @@ impl ChatState {
         };
         let (user, mut reply) = self
             .conversation
-            .send_identified(transport, message, Some(identity.clone()))
+            .send(transport, message, Some(identity.clone()))
             .inspect_err(|_| {
                 self.facade.revoke(&identity.request_id);
             })?;
@@ -166,7 +166,6 @@ impl ChatState {
             text: String::new(),
             mood: None,
             tools: Vec::new(),
-            started: None,
         });
         runtime.stopper = Some(reply.stopper());
         history.push(user.clone());

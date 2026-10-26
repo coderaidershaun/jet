@@ -62,8 +62,6 @@ pub struct AgentStatus {
     // SMELL: this holds whichever provider is selected, Codex too, so the name misleads. The
     // page reads the name, so rename both together.
     claude: ProgramStatus,
-    data_dir: String,
-    busy: bool,
     context: ContextStatus,
 }
 
@@ -75,7 +73,7 @@ struct ProgramStatus {
     searched: Vec<String>,
 }
 
-/// Where the selected agent is, whether a reply is running, and the last measured context.
+/// Where the selected agent is and the last measured context.
 // SMELL: this makes the same choice between Claude Code and Codex as transport_for, so a new
 // provider must be added in both places.
 pub(super) fn agent_status(
@@ -125,8 +123,6 @@ pub(super) fn agent_status(
     }
     Ok(AgentStatus {
         claude: program,
-        data_dir: data_dir.display().to_string(),
-        busy: conversation.is_busy(),
         context,
     })
 }

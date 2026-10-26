@@ -156,15 +156,16 @@ not a durable replay log; reconnecting consumers fetch a fresh list.
 
 ## One MCP service
 
-`agent::mcp::McpService` is the shared asynchronous interface: `catalogue(app_id)`,
-`refresh(app_id)`, `call(ToolRequest)` and `cancel(request_id)`. Catalogue preserves
+`agent::mcp::HttpMcpClient` is the one shared client: `catalogue(app_id)`,
+`refresh(app_id)`, `call(ToolRequest)`, `discover(ToolRequest)` and
+`cancel_request(request_id)`. Catalogue preserves
 server metadata, full schemas, annotations and `_meta`, plus stale/error state.
 ToolRequest includes request identity, `{appId, tool}` and an argument object.
 ToolResult retains content, structured content, tool-error state and request ID.
 Transport errors remain separate from a valid MCP result with `isError: true`.
 
-Implementations negotiate the server-supported protocol, paginate tool listing,
-refresh on supported notifications, and retain last successful metadata as stale
+The client negotiates the server-supported protocol, paginates tool listing,
+refreshes on supported notifications, and retains last successful metadata as stale
 when refresh fails. Quanty's installed rmcp 3.5.1 currently negotiates
 `2025-11-25`; do not assume a newer document's APIs exist in that negotiated version.
 Resolve enablement at dispatch. Disable/remove prevents new calls; an already
@@ -296,4 +297,4 @@ The bridge exposes `onRegistryChanged(listener)`, returning an unsubscribe
 function. Registry notifications trigger a fresh list; browser focus and every
 reconnect snapshot also refresh the list. Returning to Jet retains last selected
 app context. Removing that app clears context; removing the visible app returns
-to chat. Legacy dock preferences are ignored.
+to chat.

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ADDED_HITS, QUANTY_DOWN, QUANTY_SEARCH } from '../../../bridge/fixtures/quanty-search.js';
+import { ADDED_HITS, QUANTY_DOWN, QUANTY_SEARCH } from './quanty-search.js';
 import { cardOf, pageLabel, showOf, sourceTitle } from './model.js';
 
 const call = (server, tool, input, rest = {}) => ({ id: server + '-' + tool, server, tool, input, ...rest });

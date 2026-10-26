@@ -14,8 +14,6 @@ pub enum BridgeError {
     ClaudeMissing(String),
     #[error("{0}")]
     Io(String),
-    #[error("{0}")]
-    BadLink(String),
     #[error("request ID was already accepted with different content")]
     Conflict,
     #[error("request was cancelled before it started")]
@@ -32,7 +30,6 @@ impl BridgeError {
             BridgeError::Busy => "busy",
             BridgeError::ClaudeMissing(_) => "claudeMissing",
             BridgeError::Io(_) => "io",
-            BridgeError::BadLink(_) => "badLink",
             BridgeError::Conflict => "conflict",
             BridgeError::Cancelled => "cancelled",
             BridgeError::InvalidRequest(_) => "invalidRequest",
@@ -87,7 +84,7 @@ impl axum::response::IntoResponse for BridgeError {
         use axum::http::StatusCode;
         let status = match self {
             Self::Busy | Self::Conflict | Self::Cancelled => StatusCode::CONFLICT,
-            Self::InvalidRequest(_) | Self::BadLink(_) => StatusCode::BAD_REQUEST,
+            Self::InvalidRequest(_) => StatusCode::BAD_REQUEST,
             Self::ShuttingDown => StatusCode::SERVICE_UNAVAILABLE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -115,10 +112,6 @@ mod tests {
             (
                 BridgeError::Io("disk full".into()),
                 json!({"kind": "io", "message": "disk full"}),
-            ),
-            (
-                BridgeError::BadLink("nope".into()),
-                json!({"kind": "badLink", "message": "nope"}),
             ),
         ];
         for (error, expected) in cases {

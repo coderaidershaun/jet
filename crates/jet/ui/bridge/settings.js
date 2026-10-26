@@ -9,12 +9,9 @@ import { requestJson } from './browser-agent.js';
  * @property {string} model
  * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'} effort
  * @property {number} turnBudgetUsd
- * @property {boolean} drawerOpen
  * @property {string | null} codexPath   null = find Codex automatically
  * @property {string | null} claudePath   null = find Claude Code on its own
  */
-
-const STORAGE_KEY = 'jet.settings';
 
 /** Mirrors `Settings::default()` on the Rust side. @returns {Settings} */
 export function defaultSettings() {
@@ -24,7 +21,6 @@ export function defaultSettings() {
     model: 'gpt-6.1-sol',
     effort: 'medium',
     turnBudgetUsd: 10,
-    drawerOpen: true,
     claudePath: null,
     codexPath: null,
   };
@@ -46,25 +42,15 @@ export function merge(base, saved) {
 /** @returns {Promise<Settings>} */
 export async function loadSettings() {
   const defaults = defaultSettings();
-  try {
-    const saved = globalThis.__JET_FAKE__ === true
-      ? JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')
-      : await requestJson('/api/settings');
-    const settings = merge(defaults, saved);
-    if (!MODELS.some(([model]) => model === settings.model)) settings.model = defaults.model;
-    if (!effortsFor(settings.model).includes(settings.effort)) settings.effort = 'high';
-    return settings;
-  } catch (error) {
-    if (globalThis.__JET_FAKE__ !== true) throw error;
-    console.warn('settings could not be loaded, using defaults:', error);
-    return defaults;
-  }
+  const settings = merge(defaults, await requestJson('/api/settings'));
+  if (!MODELS.some(([model]) => model === settings.model)) settings.model = defaults.model;
+  if (!effortsFor(settings.model).includes(settings.effort)) settings.effort = 'high';
+  return settings;
 }
 
 /** @param {Settings} settings */
 export async function saveSettings(settings) {
-  if (globalThis.__JET_FAKE__ === true) localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  else await requestJson('/api/settings', settings, 'PUT');
+  await requestJson('/api/settings', settings, 'PUT');
 }
 
 /** The name the page shows for Jet: the persona's name, or Jet while it is blank. */

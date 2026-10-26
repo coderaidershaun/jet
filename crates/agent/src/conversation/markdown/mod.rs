@@ -51,8 +51,8 @@ mod tests {
         assert!(html.contains("<table>"), "{html}");
     }
 
-    /// The cases the browser fallback runs too, so the two renderers cannot drift apart.
-    const VECTORS: &str = include_str!("../../../../jet/ui/bridge/fixtures/math-vectors.json");
+    /// Each case is a Markdown source and the HTML it must render to.
+    const VECTORS: &str = include_str!("math-vectors.json");
 
     #[derive(Deserialize)]
     struct VectorFile {
@@ -66,7 +66,7 @@ mod tests {
         html: String,
     }
 
-    /// Newlines beside a tag are only layout, and the two renderers lay them out differently.
+    /// Newlines beside a tag are only layout, so the cases are written without them.
     fn without_layout_newlines(html: &str) -> String {
         let chars: Vec<char> = html.chars().collect();
         let mut kept = String::with_capacity(html.len());

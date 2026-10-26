@@ -35,10 +35,7 @@ fn codex_stream_resume_schema_usage_and_tool_results() {
     let Step::Finished(summary) = steps.last().unwrap() else {
         panic!("{steps:?}");
     };
-    assert_eq!(summary.usage.input_tokens, 20);
-    assert_eq!(summary.usage.cache_read_tokens, 80);
-    assert_eq!(summary.usage.thinking_tokens, 4);
-    assert_eq!(summary.usage.model, "gpt-6.1-sol");
+    assert_eq!(summary.context_tokens, 100);
     assert_eq!(summary.context.used_tokens, Some(112));
     assert!(summary.context.estimated);
     assert_eq!(summary.context.limit_tokens, None);

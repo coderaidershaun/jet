@@ -8,7 +8,6 @@
   "model": "gpt-6.1-sol",
   "effort": "medium",
   "turnBudgetUsd": 10.0,
-  "drawerOpen": true,
   "claudePath": null,
   "codexPath": null
 }

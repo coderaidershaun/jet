@@ -1,17 +1,17 @@
 //! The app and saved conversations share these data types so event and file formats stay consistent.
 
+mod context;
 mod event;
 mod model;
 mod tools;
-mod usage;
 
 use serde::{Deserialize, Serialize};
 
+pub use context::ContextStatus;
 pub use event::{Event, Failure};
 pub use model::{Effort, Model};
 pub(crate) use tools::content_value;
-pub use tools::{FACADE_TOOLS, McpConnection, McpStatus, ToolCall};
-pub use usage::{ContextStatus, Usage};
+pub use tools::{FACADE_TOOLS, McpConnection, ToolCall};
 
 // SMELL: the review prompt and the chat page repeat these three numbers; change them together.
 /// The longest MEMORY note, in characters.

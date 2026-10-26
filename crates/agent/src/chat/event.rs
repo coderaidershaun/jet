@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use super::{McpStatus, Mood, SessionId, ShownEntry, Usage};
+use super::{Mood, ShownEntry};
 
 /// Why a reply failed. The message is written for the user and shown as it stands.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -41,11 +41,7 @@ impl Failure {
 )]
 pub enum Event {
     Started {
-        session_id: SessionId,
-        model: String,
         fresh: bool,
-        /// Each MCP server and its state when the reply started.
-        mcp: Vec<McpStatus>,
     },
     /// At most once, before the first `Text`.
     Mood {
@@ -79,9 +75,6 @@ pub enum Event {
     },
     Finished {
         entry: ShownEntry,
-        duration_ms: u64,
-        cost_usd: f64,
-        usage: Usage,
     },
     Failed {
         failure: Failure,
@@ -139,17 +132,8 @@ mod tests {
         let stopped = jet_entry(44, EntryStatus::Stopped);
         let mut cases = vec![
             (
-                Event::Started {
-                    session_id: SessionId("5b0c".into()),
-                    model: "claude-sonnet-5-5".into(),
-                    fresh: true,
-                    mcp: vec![McpStatus {
-                        name: "quanty".into(),
-                        status: "connected".into(),
-                    }],
-                },
-                json!({"kind": "started", "sessionId": "5b0c", "model": "claude-sonnet-5-5",
-                       "fresh": true, "mcp": [{"name": "quanty", "status": "connected"}]}),
+                Event::Started { fresh: true },
+                json!({"kind": "started", "fresh": true}),
             ),
             (
                 Event::ToolStarted {
@@ -188,20 +172,7 @@ mod tests {
                 json!({"kind": "text", "delta": "m"}),
             ),
             (
-                Event::Finished {
-                    entry: complete,
-                    duration_ms: 4210,
-                    cost_usd: 0.0123,
-                    usage: Usage {
-                        input_tokens: 812,
-                        cache_read_tokens: 40210,
-                        cache_creation_tokens: 0,
-                        cache_creation_1h_tokens: 7,
-                        output_tokens: 391,
-                        thinking_tokens: 120,
-                        model: "claude-sonnet-5-5".into(),
-                    },
-                },
+                Event::Finished { entry: complete },
                 json!({
                     "kind": "finished",
                     "entry": {"id": 42, "role": "jet", "text": "Friday looks fine",
@@ -211,13 +182,7 @@ mod tests {
                                          "input": {"question": "What is vega?"}, "ok": true,
                                          "result": {"results": [1, 2]},
                                          "summary": "quanty · search · 2 results",
-                                         "durationMs": 950}]},
-                    "durationMs": 4210,
-                    "costUsd": 0.0123,
-                    "usage": {"inputTokens": 812, "cacheReadTokens": 40210,
-                              "cacheCreationTokens": 0, "cacheCreation1hTokens": 7,
-                              "outputTokens": 391, "thinkingTokens": 120,
-                              "model": "claude-sonnet-5-5"}
+                                         "durationMs": 950}]}
                 }),
             ),
             (

@@ -1,4 +1,4 @@
-//! Share tool metadata and explicit discovery results between chat and the tool browser.
+//! Share tool metadata between chat and the tool browser.
 use crate::apps::AppId;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -30,33 +30,4 @@ pub struct ToolDefinition {
 pub struct ToolTarget {
     pub app_id: AppId,
     pub tool: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiscoveryMarker {
-    pub version: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub entry_arguments: Option<Map<String, Value>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DiscoveryResult {
-    pub version: u64,
-    pub nodes: Vec<DiscoveryNode>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DiscoveryNode {
-    pub label: String,
-    pub kind: DiscoveryKind,
-    pub tool: String,
-    pub arguments: Map<String, Value>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DiscoveryKind {
-    Discover,
-    Tool,
 }

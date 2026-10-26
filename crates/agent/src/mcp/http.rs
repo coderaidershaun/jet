@@ -1,5 +1,5 @@
 //! Keep one negotiated HTTP connection per registered endpoint.
-use super::{McpError, McpFuture, McpService, ToolCatalogue, ToolRequest, ToolResult};
+use super::{McpError, ToolCatalogue, ToolRequest, ToolResult, dispatch::Purpose};
 use crate::apps::{AppId, Registry};
 use rmcp::{
     ClientHandler, RoleClient, ServiceExt,
@@ -48,6 +48,27 @@ impl HttpMcpClient {
             apps: AsyncMutex::new(HashMap::new()),
             calls: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+    pub async fn catalogue(&self, app_id: &AppId) -> Result<ToolCatalogue, McpError> {
+        self.load(app_id, false).await
+    }
+    pub async fn refresh(&self, app_id: &AppId) -> Result<ToolCatalogue, McpError> {
+        self.load(app_id, true).await
+    }
+    /// Rechecks that the app is still enabled when the call is sent, and never sends an
+    /// uncertain call a second time.
+    pub fn call(
+        &self,
+        request: ToolRequest,
+    ) -> impl Future<Output = Result<ToolResult, McpError>> + Send {
+        self.prepare(request, Purpose::Call)
+    }
+    /// Dispatch only tools whose current metadata promises free discovery.
+    pub fn discover(
+        &self,
+        request: ToolRequest,
+    ) -> impl Future<Output = Result<ToolResult, McpError>> + Send {
+        self.prepare(request, Purpose::Discovery)
     }
     pub(super) fn endpoint(&self, id: &AppId) -> Result<String, McpError> {
         let registry = self
@@ -117,24 +138,6 @@ impl HttpMcpClient {
             }
         }
         self.apps.lock().await.clear();
-    }
-}
-impl McpService for HttpMcpClient {
-    fn catalogue<'a>(&'a self, app_id: &'a AppId) -> McpFuture<'a, ToolCatalogue> {
-        Box::pin(self.load(app_id, false))
-    }
-    fn refresh<'a>(&'a self, app_id: &'a AppId) -> McpFuture<'a, ToolCatalogue> {
-        Box::pin(self.load(app_id, true))
-    }
-    fn call(&self, request: ToolRequest) -> McpFuture<'_, ToolResult> {
-        self.prepare(request, super::dispatch::Purpose::Call)
-    }
-    fn discover(&self, request: ToolRequest) -> McpFuture<'_, ToolResult> {
-        self.prepare(request, super::dispatch::Purpose::Discovery)
-    }
-    fn cancel<'a>(&'a self, request_id: &'a str) -> McpFuture<'a, ()> {
-        self.cancel_request(request_id);
-        Box::pin(async { Ok(()) })
     }
 }
 pub(super) fn failure(error: impl std::fmt::Display) -> McpError {

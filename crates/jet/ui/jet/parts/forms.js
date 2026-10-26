@@ -8,7 +8,6 @@ import { clamp, lerp } from '../maths.js';
 
 export const POINTS = 52;
 // Point 0 is the top; the points run clockwise.
-export const TOP = 0;
 export const RIGHT_HAND = 13;
 export const TIP = 26;
 export const LEFT_HAND = 39;

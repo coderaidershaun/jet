@@ -6,7 +6,7 @@ Read this before changing `ui/jet/` or adding an emotion. [CONTEXT.md](CONTEXT.m
 
 Jet is a small blue kite with round eyes at rest, a bow at its bottom tip and a pale string. Its body, eyes and string move together as one character. The string is also a limb: it can hang, lie on the floor or write an authored gesture.
 
-Jet stands beside its last reply with the string lying left, away from the bubble. On a send it lifts off, flies to the new reply's lane and hovers while reacting, waiting or streaming. It settles after the reply ends. In the empty page's hero spot it hovers and waves. The drawer uses a static standing kite with round eyes and a lying string; the desktop icon uses the standing kite without the string.
+Jet stands beside its last reply with the string lying left, away from the bubble. On a send it lifts off, flies to the new reply's lane and hovers while reacting, waiting or streaming. It settles after the reply ends. In the empty page's hero spot it hovers and waves. The drawer uses a static standing kite with round eyes and a lying string.
 
 An emotion exists only when it has an animation. Today those are **hello** and **insulted**, with **neutral** for no reaction. Colour stays fixed. The default speaking tone lives in `../agent/src/conversation/persona.md`; motion does not choose the wording.
 
@@ -98,7 +98,7 @@ On send the bubble and slot appear, flight starts and classification starts conc
 
 Successful completion preserves queued reactions and settles afterward. Failure and Stop discard waiting reactions, close the spinner if needed and settle; they cancel the text hold. A stopped classification cannot dispatch the model. Turn identity guards discard late classifier answers and old provider events. Reduced-motion fades also reject stale callbacks after stop/retry.
 
-JEV's credentials, request, selection and fallback rules are documented in [Feelings and reply timing](README.md#feelings-and-reply-timing). Never use a live classifier call as part of default validation.
+JEV's key lookup and neutral fallback are documented in [root README](../../README.md#layout-and-checks). Never use a live classifier call as part of default validation.
 
 ## Adding an emotion
 
@@ -107,15 +107,15 @@ Each supplied animation is one future feature; do not invent extra mood words fi
 1. Read the supplied script and its SVG/HTML; record timing, frame, eye kinds, route data and reveal beat. Resolve differences against the actual script before implementing.
 2. Add a `buildX(start, options)` clip using `createClip()`. Use named phases, duration constants, keys on both sides of holds, exact script curves, and `returnToRest` with owned tracks excluded. Handle standing, hovering, interruption and reduced motion.
 3. Add the builder/hold flag in `clips/catalogue.js`, and the emotion → clip mapping in `emotions.js`. Add the word to the single-line `MOODS` export in `director.js`.
-4. Add the Rust `Mood` variant, `ALL` entry, `word()` mapping, persona mood description and JEV question in `../agent/src/feeling/mod.rs`. Keep neutral as the no-animation fallback. Update the pinned persona fingerprint when prompt content changes.
-5. Add the clip's compact golden fixture and public-behavior coverage; extend catalogue interruption and director timing coverage where needed. Keep Rust's vocabulary agreement test. Add its coverage row to the README test table and update this policy's emotion table.
-6. Preview through the real player and painter, inspect contact sheets beside the authored reference at key times, and complete the visual checks below. Update fake classification only when useful to exercise the new feature in a browser.
+4. Add the Rust `Mood` variant, `ALL` entry and `word()` mapping in `../agent/src/chat/mod.rs`, the persona mood description in `../agent/src/conversation/persona.md`, and the JEV question in `../agent/src/feeling/mod.rs`. Keep neutral as the no-animation fallback. Update the pinned persona fingerprint when prompt content changes.
+5. Add the clip's compact golden fixture and public-behavior coverage; extend catalogue interruption and director timing coverage where needed. Keep Rust's vocabulary agreement test. Update this policy's emotion table.
+6. Preview through the real player and painter, inspect contact sheets beside the authored reference at key times, and complete the visual checks below.
 
 A new clip should not require player or drawing changes unless it introduces a new part or state capability. Question that extra complexity before expanding the model.
 
 ## Before you show it
 
-Run the local build/tests/lints in [README.md](README.md#local-checks). No tests or renders replace looking at the result.
+Run the local build/tests/lints in [root README](../../README.md#layout-and-checks). No tests or renders replace looking at the result.
 
 From `crates/jet`, with `/opt/homebrew/bin/rsvg-convert` installed:
 
@@ -134,7 +134,7 @@ The preview writes SVGs, 2× PNGs and lane-size PNGs (96 × 115 device pixels at
 
 - [ ] Compare wave at 0, .18, .50, 1.15 and 2.30 s; flip at 0, .75, 1.45, 2.40 and 3.0 s. Contact sheets choose the last 40 ms frame at or before each requested time.
 - [ ] Inspect standing/hovering, lifts, J/written route, spinner and morph midpoints at 2× and actual lane size. Check contact, floor, bow attachment, hand creases, line direction and eye legibility.
-- [ ] In browser mode, send “hi”, “you useless thing” and a neutral message: flight, reaction, held text, spinner only if needed, streaming, settle. Try a quick reply, Stop during classification/reaction, early completion, held next message and rapid retry.
+- [ ] In the browser, with a JEV key (the opt-in in the last item), send “hi”, “you useless thing” and a neutral message: flight, reaction, held text, spinner only if needed, streaming, settle. Try a quick reply, Stop during classification/reaction, early completion, held next message and rapid retry.
 - [ ] Check hero, relaunch wave, narrow screens, scroll-follow and reduced motion; round eyes stay open and grounded, spinner does not rotate, stale fades do not move a new turn.
 - [ ] In the browser, inspect drawer at 96 and 44 px, lane character and system reduced motion.
 - [ ] Only with explicit paid/network opt-in, check live JEV classifications and measured latency. Local fixtures do not prove service quality or latency.

@@ -6,9 +6,6 @@ mod http;
 mod metadata;
 mod service;
 
-pub use catalogue::{
-    DiscoveryKind, DiscoveryMarker, DiscoveryNode, DiscoveryResult, ServerMetadata, ToolDefinition,
-    ToolTarget,
-};
+pub use catalogue::{ServerMetadata, ToolDefinition, ToolTarget};
 pub use http::HttpMcpClient;
-pub use service::{McpError, McpFuture, McpService, ToolCatalogue, ToolRequest, ToolResult};
+pub use service::{McpError, ToolCatalogue, ToolRequest, ToolResult};

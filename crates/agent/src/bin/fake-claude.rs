@@ -50,26 +50,14 @@ fn run() -> io::Result<ExitCode> {
 
     if let Some(name) = instruction.strip_prefix("fixture:") {
         print_fixture(name.trim())?;
-    } else if instruction == "hang" {
-        hang()?;
-    } else if instruction == "fail" {
-        eprintln!("fake-claude: simulated failure");
-        return Ok(ExitCode::from(1));
-    } else if let Some(id) = args
-        .iter()
-        .position(|arg| arg == "--resume")
-        .and_then(|at| args.get(at + 1))
-    {
-        eprintln!("No conversation found with session ID: {id}");
-        return Ok(ExitCode::from(1));
     } else {
-        print_fixture("sonnet-mood-reply")?;
+        hang()?;
     }
     Ok(ExitCode::SUCCESS)
 }
 
 fn is_instruction(line: &str) -> bool {
-    line.starts_with("fixture:") || ["hang", "fail", "no-session"].contains(&line)
+    line.starts_with("fixture:") || line == "hang"
 }
 
 fn print_fixture(name: &str) -> io::Result<()> {

@@ -176,8 +176,7 @@ fn run(turn: Turn) -> Result<Summary, ReviewError> {
             Step::Finished(summary) => return Ok(summary),
             Step::Failed(error) => return Err(error.into()),
             Step::Stopped => return Err(TurnError::NoResult.into()),
-            Step::Raw(_)
-            | Step::Init { .. }
+            Step::Init { .. }
             | Step::Mood(_)
             | Step::Text(_)
             | Step::ToolStarted { .. }

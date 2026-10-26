@@ -3,7 +3,7 @@ use super::{Binding, Facade, HEADER, tools};
 use crate::chat::lock;
 use agent::{
     apps::{AppId, RegistryCommand},
-    mcp::{McpService, ToolRequest, ToolTarget},
+    mcp::{ToolRequest, ToolTarget},
 };
 use rmcp::{RoleServer, ServerHandler, model::*, service::RequestContext};
 use serde_json::{Value, json};
@@ -189,7 +189,7 @@ impl Handler {
                 };
                 let result = tokio::select! {
                     result = call => result,
-                    _ = context.ct.cancelled() => { self.0.mcp.cancel(&request_id).await.map_err(|e| json!(e))?; return Err(json!({"kind":"cancelled","requestId":request_id})); }
+                    _ = context.ct.cancelled() => { self.0.mcp.cancel_request(&request_id); return Err(json!({"kind":"cancelled","requestId":request_id})); }
                 };
                 if let Some(binding) = lock(&self.0.bindings).get_mut(token) {
                     binding.calls.remove(&request_id);

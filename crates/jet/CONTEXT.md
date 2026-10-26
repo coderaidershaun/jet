@@ -38,15 +38,13 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Reveal deadline** — `revealAt`, an absolute monotonic time consumed by `holdUntil(at)`; streamed and successfully completed text both wait until it.
 - **Player** — owns live state, samples clips and adds secondary motion, idle layers, blinks and the deterministic string chain.
 - **Host** — the page that places Jet, supplies time, measured scale and carry, and forwards chat events.
-- **Bridge** — `ui/bridge/`, the chat page’s HTTP commands and server-sent events, with an explicitly selected development fixture.
+- **Bridge** — `ui/bridge/`, the chat page’s HTTP commands and server-sent events.
 
 - **Turn** — one exchange: the user's message and Jet's reply, from the send to the finished, failed or stopped end.
-- **Event** — one step of a streamed reply as the chat page receives it: a raw line from the provider, started, a notice, a mood, text, or a tool call started or finished; exactly one of finished, failed or stopped ends the reply. _Avoid_: message (that is what the user sends).
+- **Event** — one step of a streamed reply as the chat page receives it: started, a mood, text, a notice, or a tool call started or finished; exactly one of finished, failed or stopped ends the reply. _Avoid_: message (that is what the user sends).
 - **Session** — the selected provider conversation Jet resumes (`session.json`). A fresh one starts when the prompt inputs change, after a long idle with a big context, or when the old one vanished. _Avoid_: thread, history.
 - **Provider** — the installed program that answers the chat and runs the notes review, Claude Code or Codex, chosen by the model setting; when it is missing, replies fail with the searched locations. _Avoid_: transport (the agent crate’s provider interface).
 - **Transcript** — the app's own record of the thread (`transcript.jsonl`). The chat page opens on its newest entries, which the code calls the history. _Avoid_: session.
-- **Usage** — the tokens and spend of the replies since the app started. It is counted from the stream while a reply runs and closed by the cost Claude Code reports; it is not saved. The "Session" group of the drawer's usage panel means since the app started, not one Claude Code session. _Avoid_: session (that is the provider conversation), cost alone (it leaves out tokens).
-- **Rate** — the published list price per million tokens for one model and one kind of token, with its date. It gives the live estimate while a reply runs. _Avoid_: price list, tariff.
 - **Notes** — MEMORY, USER and RECENT: the three short files in Jet's prompt that a background review keeps current. The memory commands and the memory section of the settings handle all three.
 - **App** — an independently running UI and optional HTTP MCP endpoint, registered by stable ID in `apps.json`.
 - **Tool call** — one use of a registered app tool during a reply: started, then finished with its result and a one-line summary; kept with the reply in the transcript.
@@ -58,7 +56,7 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Turn binding** — temporary server-issued correlation connecting facade actions to the initiating browser. It expires on completion, failure or Stop.
 - **Tool catalogue** — an app’s MCP tool definitions and server metadata, shared by the assistant and Tools browser.
 - **Workspace** — the main content showing Jet chat, a selected app, or the tool browser. Last selected app identity adds context without limiting available tools.
-- **Drawer** — the persistent left navigation for Jet and apps, with usage information and settings. It collapses to icons while viewing an app.
+- **Drawer** — the persistent left navigation for Jet and apps, with the context capacity and settings. It collapses to icons while viewing an app.
 
 
 - **Lane** — the column at the left of each Jet row, where the live Jet stands. The lane of an older row stays empty once Jet has moved on.

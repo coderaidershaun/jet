@@ -91,17 +91,9 @@ impl Conversation {
 
     /// Saves the user's message and starts the answer. The returned `Reply` streams the
     /// events; the conversation stays busy until it is dropped. Even when Claude cannot
-    /// be started, the failure comes out of the `Reply`, as it does for any other.
+    /// be started, the failure comes out of the `Reply`, as it does for any other. The
+    /// identity is saved with the user's entry before any provider work starts.
     pub fn send(
-        &self,
-        transport: Arc<dyn Transport>,
-        message: Message,
-    ) -> Result<(ShownEntry, Reply), ConversationError> {
-        self.send_identified(transport, message, None)
-    }
-
-    /// Persists browser correlation before dispatching any provider work.
-    pub fn send_identified(
         &self,
         transport: Arc<dyn Transport>,
         message: Message,
@@ -117,7 +109,7 @@ impl Conversation {
         let mut user = NewEntry::user(&message.text);
         user.turn = identity.clone();
         let user_entry = Transcript::open(&self.dir).append(user, now)?;
-        let words = what_claude_reads(&message);
+        let words = persona::message_words(&message);
         let prompt = match decision.mode {
             SessionMode::New => reply::first_message(&message.local_time, &words),
             _ => words.clone(),
@@ -201,10 +193,6 @@ impl Conversation {
     }
 }
 
-fn what_claude_reads(message: &Message) -> String {
-    persona::message_words(message)
-}
-
 /// An entry with its text rendered for display.
 pub(super) fn shown(entry: Entry) -> ShownEntry {
     let html = match entry.role {
@@ -265,7 +253,7 @@ mod test_support {
         pub fn send(&self, message: Message) -> Vec<Event> {
             let (_, reply) = self
                 .conversation
-                .send(self.transport.clone(), message)
+                .send(self.transport.clone(), message, None)
                 .unwrap();
             reply.collect()
         }

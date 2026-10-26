@@ -96,7 +96,6 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     clientId,
     status: () => call('/api/status'),
     history: async () => (await call('/api/snapshot')).history,
-    snapshot: () => call('/api/snapshot'),
     feel: (text) => call('/api/feel', { text }),
     async stop(requestId = pending?.requestId) {
       if (!requestId) return;

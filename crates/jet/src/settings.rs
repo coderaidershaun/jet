@@ -17,12 +17,9 @@ pub struct Settings {
     pub effort: Effort,
     /// The most one Claude answer may cost, in US dollars.
     pub turn_budget_usd: f64,
-    pub drawer_open: bool,
     /// Where Claude Code lives; `None` means look in the usual places.
     pub claude_path: Option<PathBuf>,
     pub codex_path: Option<PathBuf>,
-    #[serde(rename = "mcp", skip_serializing, deserialize_with = "reject_legacy")]
-    legacy_mcp: Option<()>,
 }
 
 impl Default for Settings {
@@ -33,10 +30,8 @@ impl Default for Settings {
             model: Model::default(),
             effort: Effort::default(),
             turn_budget_usd: 10.0,
-            drawer_open: true,
             claude_path: None,
             codex_path: None,
-            legacy_mcp: None,
         }
     }
 }
@@ -96,31 +91,6 @@ pub fn write_to(path: &Path, settings: &Settings) -> Result<(), SettingsError> {
     Ok(())
 }
 
-fn reject_legacy<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<()>, D::Error> {
-    let value = serde_json::Value::deserialize(deserializer)?;
-    fn has_command(value: &serde_json::Value) -> bool {
-        match value {
-            serde_json::Value::Object(fields) => {
-                fields.get("command").is_some_and(|command| {
-                    command.as_str() != Some("")
-                        || fields.get("enabled").and_then(serde_json::Value::as_bool) == Some(true)
-                        || fields.get("cwd").is_some_and(|cwd| !cwd.is_null())
-                }) || fields.values().any(has_command)
-            }
-            serde_json::Value::Array(values) => values.iter().any(has_command),
-            _ => false,
-        }
-    }
-    if has_command(&value) {
-        return Err(serde::de::Error::custom(
-            "process-command integrations are unsupported; keep settings.json as a backup and register running apps by HTTP(S) address",
-        ));
-    }
-    Ok(None)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,12 +105,6 @@ mod tests {
         let path = scratch_file("missing");
         let settings = read_from(&path).unwrap();
         assert_eq!(settings, Settings::default());
-        assert!(
-            serde_json::to_value(&settings)
-                .unwrap()
-                .get("mcp")
-                .is_none()
-        );
     }
 
     #[test]
@@ -172,6 +136,7 @@ mod tests {
                 "repeat":false,
                 "page":"workstation",
                 "workstation":{"bridgePath":"/tmp/polysim-bridge","token":"old-secret"},
+                "drawerOpen":false,
                 "reducedMotion":true,
                 "persona":{"name":"Ada"},
                 "turnBudgetUsd":1.0
@@ -190,7 +155,6 @@ mod tests {
         assert_eq!(settings.model, Model::Gpt61Sol);
         assert_eq!(settings.effort, Effort::Medium);
         assert_eq!(settings.turn_budget_usd, 1.0);
-        assert!(settings.drawer_open);
         assert_eq!(settings.claude_path, None);
         write_to(&path, &settings).unwrap();
         assert_eq!(read_from(&path).unwrap(), settings);
@@ -203,6 +167,7 @@ mod tests {
             "repeat",
             "page",
             "workstation",
+            "drawerOpen",
         ] {
             assert!(saved.get(key).is_none(), "removed {key} was saved");
         }
@@ -221,7 +186,6 @@ mod tests {
             model: Model::Opus,
             effort: Effort::High,
             turn_budget_usd: 2.5,
-            drawer_open: false,
             claude_path: Some(PathBuf::from("/opt/tools/claude")),
             ..Settings::default()
         };
@@ -229,7 +193,7 @@ mod tests {
         assert_eq!(read_from(&path).unwrap(), settings);
 
         let json = std::fs::read_to_string(&path).unwrap();
-        for key in ["jobTitle", "turnBudgetUsd", "drawerOpen", "claudePath"] {
+        for key in ["jobTitle", "turnBudgetUsd", "claudePath"] {
             assert!(
                 json.contains(&format!("\"{key}\"")),
                 "missing {key} in {json}"

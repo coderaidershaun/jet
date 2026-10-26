@@ -1,6 +1,6 @@
 //! Keeps the JEV wire format and credential handling out of the conversation.
 
-use super::{FeelingSource, JevError, QUESTIONS};
+use super::{Feeling, JevError, QUESTIONS};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -38,19 +38,10 @@ impl Jev {
             endpoint: ENDPOINT.into(),
         }
     }
-}
-
-#[derive(Deserialize)]
-struct Response {
-    answers: BTreeMap<String, Answer>,
-}
-#[derive(Deserialize)]
-struct Answer {
-    noul: f64,
-}
-
-impl FeelingSource for Jev {
-    fn scores(&self, text: &str) -> Result<BTreeMap<String, f64>, JevError> {
+    /// Asks JEV how the message makes Jet feel.
+    /// # Errors
+    /// Returns a safe request or decoding error when JEV is unavailable.
+    pub fn classify(&self, text: &str) -> Result<Feeling, JevError> {
         let questions: serde_json::Map<_, _> = QUESTIONS
             .into_iter()
             .map(|(mood, question)| {
@@ -83,18 +74,29 @@ impl FeelingSource for Jev {
         {
             return Err(JevError::Decode);
         }
-        Ok(decoded
-            .answers
-            .into_iter()
-            .map(|(word, answer)| (word, answer.noul))
-            .collect())
+        Ok(Feeling::from_scores(
+            decoded
+                .answers
+                .into_iter()
+                .map(|(word, answer)| (word, answer.noul))
+                .collect(),
+        ))
     }
+}
+
+#[derive(Deserialize)]
+struct Response {
+    answers: BTreeMap<String, Answer>,
+}
+#[derive(Deserialize)]
+struct Answer {
+    noul: f64,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Mood, classify};
+    use crate::Mood;
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
@@ -154,7 +156,7 @@ mod tests {
             r#"{"answers":{"hello":{"noul":0.8},"insulted":{"noul":0.1}}}"#,
             Duration::ZERO,
         );
-        assert_eq!(classify(&client, "hello\nworld").unwrap().mood, Mood::Hello);
+        assert_eq!(client.classify("hello\nworld").unwrap().mood, Mood::Hello);
         let request = worker.join().unwrap();
         let (header, body) = request.split_once("\r\n\r\n").unwrap();
         assert!(header.starts_with("POST /systemone HTTP/1.1"));
@@ -202,7 +204,7 @@ mod tests {
             ),
         ] {
             let (client, worker) = server(status, body, Duration::ZERO);
-            let error = classify(&client, "hi").unwrap_err();
+            let error = client.classify("hi").unwrap_err();
             assert_eq!(error, expected);
             assert!(!format!("{error:?} {error}").contains("test-credential"));
             worker.join().unwrap();
@@ -213,7 +215,7 @@ mod tests {
     fn jev_times_out_after_two_seconds_without_retrying() {
         let (client, worker) = server(200, "{}", Duration::from_millis(2200));
         let start = std::time::Instant::now();
-        assert_eq!(classify(&client, "hi"), Err(JevError::Http));
+        assert_eq!(client.classify("hi"), Err(JevError::Http));
         assert!(start.elapsed() >= Duration::from_millis(1800));
         assert!(start.elapsed() < Duration::from_secs(3));
         worker.join().unwrap();

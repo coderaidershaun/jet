@@ -23,7 +23,7 @@ The browser uses JSON commands and one server-sent event stream:
 - `GET /api/status`, `POST /api/markdown`, `POST /api/feel`.
 - `GET/POST /api/apps`: the deterministic registry operations documented in the app contract.
 
-Provider paths come from server settings. Process-command MCP configuration is rejected; the host never launches legacy app processes. The existing provider-process helpers remain available to both CLI adapters.
+Provider paths come from server settings. Process-command MCP configuration is rejected; the host never launches legacy app processes.
 
 A lost acknowledgment is retried with the same request ID. The transcript records acceptance before provider dispatch, so restart can recover the association. An orphaned accepted turn becomes interrupted without repeating its tools. The bounded event tail, active-turn snapshot and last 512 cancelled request IDs live in memory; there is no durable event database. Stop ends pending browser send retries and targets one request, so a delayed Stop cannot cancel a later reply. Cancellation IDs for requests never accepted are retained only until eviction or server restart.
 
@@ -31,9 +31,7 @@ A reply is drained on the server independently of browser connections. The serve
 
 ## UI
 
-`ui/bridge/browser-agent.js` is the real transport. `ui/chat/main.js` composes the existing thread, composer, character, settings and drawer. `ui/chat/turn.js` also restores server snapshots without resending input or repeating feeling classification.
-
-A deliberately configured development page may set `globalThis.__JET_FAKE__ = true` before loading the chat to use the in-browser fixture. This is never inferred from missing desktop globals. Production settings and notes remain server-owned.
+`ui/bridge/browser-agent.js` is the transport. `ui/chat/main.js` composes the existing thread, composer, character, settings and drawer. `ui/chat/turn.js` also restores server snapshots without resending input or repeating feeling classification.
 
 Markdown still passes through the Rust renderer. The character policy and animation modules remain unchanged. Web/mail links open through the browser. Source images resolve against the tool call’s registered stable app ID and use its contained mount. Invalid, removed-app, direct/external and historical filesystem images show an unavailable fallback. See the [image contract](../../docs/app-contract.md#tool-result-images).
 

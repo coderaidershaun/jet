@@ -26,7 +26,3 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 ureq = { workspace = true }
-
-[[test]]
-name = "integration"
-path = "tests/integration/main.rs"

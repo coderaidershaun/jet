@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use crate::chat::{McpStatus, SessionId, Usage, content_value};
+use crate::chat::{SessionId, content_value};
 
 /// What one stdout line means for a turn.
 #[derive(Debug, Clone, PartialEq)]
@@ -11,7 +11,6 @@ pub(super) enum Line {
     Init {
         session_id: SessionId,
         model: String,
-        mcp: Vec<McpStatus>,
     },
     /// A new call to the model begins.
     MessageStart,
@@ -49,9 +48,8 @@ pub(super) struct ResultLine {
     pub result: Option<String>,
     pub errors: Vec<String>,
     pub structured_output: Option<Value>,
-    pub duration_ms: u64,
-    pub cost_usd: f64,
-    pub usage: Usage,
+    /// Input, cache read and cache creation tokens of the request.
+    pub context_tokens: u64,
 }
 
 impl ResultLine {
@@ -88,17 +86,6 @@ fn init(value: &Value) -> Line {
         Some(id) => Line::Init {
             session_id: SessionId(id.to_owned()),
             model: value["model"].as_str().unwrap_or_default().to_owned(),
-            mcp: value["mcp_servers"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|server| {
-                    Some(McpStatus {
-                        name: server["name"].as_str()?.to_owned(),
-                        status: server["status"].as_str().unwrap_or_default().to_owned(),
-                    })
-                })
-                .collect(),
         },
         None => Line::Other,
     }
@@ -182,29 +169,10 @@ fn result(value: &Value) -> ResultLine {
             Value::Null => None,
             other => Some(other.clone()),
         },
-        duration_ms: count(&value["duration_ms"]),
-        cost_usd: value["total_cost_usd"].as_f64().unwrap_or(0.0),
-        usage: Usage {
-            input_tokens: count(&usage["input_tokens"]),
-            cache_read_tokens: count(&usage["cache_read_input_tokens"]),
-            cache_creation_tokens: count(&usage["cache_creation_input_tokens"]),
-            cache_creation_1h_tokens: count(&usage["cache_creation"]["ephemeral_1h_input_tokens"]),
-            output_tokens: count(&usage["output_tokens"]),
-            thinking_tokens: count(&usage["output_tokens_details"]["thinking_tokens"]),
-            model: busiest_model(&value["modelUsage"]),
-        },
+        context_tokens: count(&usage["input_tokens"])
+            + count(&usage["cache_read_input_tokens"])
+            + count(&usage["cache_creation_input_tokens"]),
     }
-}
-
-/// The model that wrote the most output. A request can use more than one model, and the one
-/// that answered writes the most. Empty when the line names no model.
-fn busiest_model(model_usage: &Value) -> String {
-    let output = |entry: &Value| entry["outputTokens"].as_u64().unwrap_or(0);
-    model_usage
-        .as_object()
-        .and_then(|models| models.iter().max_by_key(|(_, entry)| output(entry)))
-        .map(|(name, _)| name.clone())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -212,7 +180,6 @@ mod tests {
     use super::*;
 
     const RECORDED_TURN: &str = include_str!("../../tests/fixtures/sonnet-mood-reply.jsonl");
-    const RECORDED_REVIEW: &str = include_str!("../../tests/fixtures/haiku-review.jsonl");
     const RECORDED_SEARCH: &str = include_str!("../../tests/fixtures/quanty-search-reply.jsonl");
 
     #[test]
@@ -249,47 +216,13 @@ mod tests {
         };
         assert_eq!(result.failure(), None);
         assert_eq!(result.result.as_deref(), Some(streamed.as_str()));
-        assert_eq!(result.cost_usd, 0.007334);
-        assert_eq!(
-            result.usage,
-            Usage {
-                input_tokens: 2,
-                cache_read_tokens: 0,
-                cache_creation_tokens: 1575,
-                cache_creation_1h_tokens: 1575,
-                output_tokens: 103,
-                thinking_tokens: 0,
-                model: "claude-sonnet-5-5".into(),
-            }
-        );
-    }
-
-    #[test]
-    fn parses_the_recorded_haiku_review() {
-        let Line::Result(result) = RECORDED_REVIEW.lines().map(parse).next_back().unwrap() else {
-            panic!("the recording ends with the result line");
-        };
-        assert_eq!(result.usage.output_tokens, 491);
-        assert_eq!(result.usage.thinking_tokens, 187);
-        assert_eq!(result.usage.model, "claude-haiku-5-5");
+        assert_eq!(result.context_tokens, 1577);
     }
 
     #[test]
     fn parses_the_recorded_quanty_search() {
         const SEARCH_ID: &str = "toolu_01K3EDj1tq5Co9obfZ2yX4Nx";
         let lines: Vec<Line> = RECORDED_SEARCH.lines().map(parse).collect();
-
-        let Some(Line::Init { mcp, .. }) = lines.first() else {
-            panic!("the recording starts with the init line");
-        };
-        let status = |name: &str, status: &str| McpStatus {
-            name: name.into(),
-            status: status.into(),
-        };
-        assert_eq!(
-            mcp,
-            &[status("polysim", "failed"), status("quanty", "connected")]
-        );
 
         let starts = lines.iter().filter(|line| **line == Line::MessageStart);
         assert_eq!(

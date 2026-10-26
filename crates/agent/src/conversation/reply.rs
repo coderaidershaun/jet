@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use super::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
 use super::session_policy::FreshReason;
 use super::{Claim, shown};
-use crate::chat::{Entry, EntryId, EntryStatus, Event, Failure, McpStatus, Role, SessionId};
+use crate::chat::{Entry, EntryId, EntryStatus, Event, Failure, Role, SessionId};
 use crate::turn::{
     Request, SessionMode, Step, Stopper, Summary, Transport, TransportError, Turn, TurnError,
 };
@@ -90,12 +90,7 @@ impl Reply {
     fn advance(&mut self) {
         let step = self.turn.as_mut().and_then(Iterator::next);
         match step {
-            Some(Step::Raw(_)) => {}
-            Some(Step::Init {
-                session_id,
-                model,
-                mcp,
-            }) => self.handle_init(session_id, model, mcp),
+            Some(Step::Init { session_id, .. }) => self.handle_init(session_id),
             Some(Step::Mood(mood)) => self.queue.push_back(Event::Mood { mood }),
             Some(Step::Text(delta)) => self.queue.push_back(Event::Text { delta }),
             Some(Step::ToolStarted {
@@ -125,7 +120,7 @@ impl Reply {
         }
     }
 
-    fn handle_init(&mut self, session_id: SessionId, model: String, mcp: Vec<McpStatus>) {
+    fn handle_init(&mut self, session_id: SessionId) {
         self.seen_init = true;
         let fresh = self.context.request.session == SessionMode::New;
         if let Err(error) = self.save_new_session(&session_id) {
@@ -134,12 +129,7 @@ impl Reply {
                 message: error.to_string(),
             }));
         }
-        self.queue.push_back(Event::Started {
-            session_id,
-            model,
-            fresh,
-            mcp,
-        });
+        self.queue.push_back(Event::Started { fresh });
         if let Some(message) = self.context.notice.take() {
             self.queue.push_back(Event::Notice { message });
         }
@@ -167,7 +157,6 @@ impl Reply {
             .unwrap_or_default();
         Session {
             session_id: session_id.clone(),
-            started_at: kept.map_or_else(now_ms, |saved| saved.started_at),
             last_request_at: self.spawned_at,
             context_tokens: kept.map_or(0, |saved| saved.context_tokens),
             context: kept.map_or_else(Default::default, |saved| saved.context.clone()),
@@ -235,11 +224,8 @@ impl Reply {
         };
         let saved = self.save_jet_entry(self.jet_entry(status, error), &ending);
         let event = match (saved, ending) {
-            (Ok(entry), Ending::Finished(summary)) => Event::Finished {
+            (Ok(entry), Ending::Finished(_)) => Event::Finished {
                 entry: shown(entry),
-                duration_ms: summary.duration_ms,
-                cost_usd: summary.cost_usd,
-                usage: summary.usage,
             },
             (Ok(entry), Ending::Stopped) => Event::Stopped {
                 entry: shown(entry),
@@ -287,9 +273,7 @@ impl Reply {
         if let Ending::Finished(summary) = ending
             && let Some(mut session) = Session::load(dir)?
         {
-            let usage = &summary.usage;
-            session.context_tokens =
-                usage.cache_read_tokens + usage.cache_creation_tokens + usage.input_tokens;
+            session.context_tokens = summary.context_tokens;
             session.context = summary.context.clone();
             session.context.model = Some(self.context.request.model);
             session.save(dir)?;
@@ -380,7 +364,7 @@ mod tests {
             if message == "Couldn't find the last conversation, so started a fresh one. Jet's memory is kept."));
         let started: Vec<_> = events
             .iter()
-            .filter(|e| matches!(e, Event::Started { fresh: true, .. }))
+            .filter(|e| matches!(e, Event::Started { fresh: true }))
             .collect();
         assert_eq!(
             started.len(),

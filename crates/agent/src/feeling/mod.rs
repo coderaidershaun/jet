@@ -4,7 +4,7 @@ mod jev;
 mod key;
 
 use crate::Mood;
-pub use jev::Jev;
+use jev::Jev;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -52,28 +52,12 @@ impl Feeling {
 /// Failures contain no server body or credential-bearing transport error.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum JevError {
-    #[error("no JEV key found in JEV_API_KEY or a parent .env")]
-    MissingKey,
     #[error("JEV request failed or exceeded its two-second timeout")]
     Http,
     #[error("JEV rejected the request with status {status}")]
     Rejected { status: u16 },
     #[error("JEV response did not contain valid answers for both emotions")]
     Decode,
-}
-
-/// The classifier's only outside dependency.
-pub trait FeelingSource {
-    /// # Errors
-    /// Returns a safe error when classification could not complete.
-    fn scores(&self, text: &str) -> Result<BTreeMap<String, f64>, JevError>;
-}
-
-/// Classifies a message using the supplied source.
-/// # Errors
-/// Returns the source's classification error.
-pub fn classify(source: &impl FeelingSource, text: &str) -> Result<Feeling, JevError> {
-    source.scores(text).map(Feeling::from_scores)
 }
 
 /// Reads the key anew for this call. With no key, classification is immediate.
@@ -93,17 +77,7 @@ pub fn feel_message(text: &str) -> Result<Feeling, JevError> {
     let Some(key) = key else {
         return Ok(Feeling::neutral());
     };
-    classify(&Jev::new(key), text)
-}
-
-#[cfg(test)]
-struct FakeJev(Result<BTreeMap<String, f64>, JevError>);
-
-#[cfg(test)]
-impl FeelingSource for FakeJev {
-    fn scores(&self, _text: &str) -> Result<BTreeMap<String, f64>, JevError> {
-        self.0.clone()
-    }
+    Jev::new(key).classify(text)
 }
 
 #[cfg(test)]
@@ -132,15 +106,5 @@ mod tests {
         }
         let moods: Vec<_> = QUESTIONS.iter().map(|(mood, _)| *mood).collect();
         assert_eq!(moods, Mood::ALL[1..]);
-        assert_eq!(
-            classify(&FakeJev(Err(JevError::Http)), "hi"),
-            Err(JevError::Http)
-        );
-        assert_eq!(
-            classify(&FakeJev(Ok(BTreeMap::from([("hello".into(), 0.9)]))), "hi")
-                .unwrap()
-                .mood,
-            Mood::Hello
-        );
     }
 }

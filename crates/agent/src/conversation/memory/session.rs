@@ -13,7 +13,6 @@ const FILE_NAME: &str = "session.json";
 pub(crate) struct Session {
     /// Empty when Claude lost the conversation, so the next message must start a fresh one.
     pub session_id: SessionId,
-    pub started_at: u64,
     pub last_request_at: u64,
     /// Tokens Claude read for the last reply: what a cold restart would have to re-read.
     pub context_tokens: u64,
@@ -64,5 +63,19 @@ impl Session {
             context: crate::chat::ContextStatus::default(),
             ..self
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_record_saved_with_the_old_start_time_still_loads() {
+        let saved = r#"{"sessionId":"abc","startedAt":5,"lastRequestAt":7,"contextTokens":9}"#;
+        let session: Session = serde_json::from_str(saved).unwrap();
+        assert_eq!(session.session_id.0, "abc");
+        assert_eq!(session.last_request_at, 7);
+        assert_eq!(session.context_tokens, 9);
     }
 }

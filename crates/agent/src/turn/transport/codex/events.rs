@@ -1,20 +1,17 @@
 //! Codex replies use different event names, so translate them for the shared turn reader.
 //! Aggregate usage remains separate from an optional last context measurement.
 use serde_json::{Value, json};
-use std::time::Instant;
 
 pub(super) struct Events {
     model: String,
     wants_structured_output: bool,
-    started_at: Instant,
     result: String,
 }
 impl Events {
-    pub(super) fn new(model: String, wants_structured_output: bool, started_at: Instant) -> Self {
+    pub(super) fn new(model: String, wants_structured_output: bool) -> Self {
         Self {
             model,
             wants_structured_output,
-            started_at,
             result: String::new(),
         }
     }
@@ -30,7 +27,6 @@ impl Events {
                 "subtype": "init",
                 "session_id": event["thread_id"],
                 "model": self.model,
-                "mcp_servers": [],
             })),
             "item.completed" if item["type"] == "agent_message" => {
                 self.result = item["text"].as_str().unwrap_or_default().to_owned();
@@ -94,12 +90,10 @@ impl Events {
                         }),
                         "limitTokens": event["context"]["context_window"].as_u64().or_else(|| usage["model_context_window"].as_u64()),
                     },
-                    "duration_ms": self.started_at.elapsed().as_millis() as u64,
                     "usage": {
                         "input_tokens": input.saturating_sub(cached),
                         "cache_read_input_tokens": cached,
                         "output_tokens": usage["output_tokens"],
-                        "output_tokens_details": {"thinking_tokens": usage["reasoning_output_tokens"]},
                     },
                 }))
             }

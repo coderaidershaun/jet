@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { QUANTY_SEARCH } from '../../../bridge/fixtures/quanty-search.js';
+import { QUANTY_SEARCH } from './quanty-search.js';
 import { findSource, splitCitations } from './cite.js';
 
 const finished = (id, tool, result, rest = {}) => ({ id, server: 'quanty', tool, input: {}, ok: true, result, durationMs: 500, ...rest });

@@ -1,11 +1,8 @@
-//! Give chat and browsing one cancellable interface to registered HTTP tool servers.
+//! The requests, results and errors that chat and browsing exchange with registered HTTP tool servers.
 use super::{ServerMetadata, ToolDefinition, ToolTarget};
 use crate::apps::AppId;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::{future::Future, pin::Pin};
-
-pub type McpFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, McpError>> + Send + 'a>>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,14 +49,4 @@ pub enum McpError {
     Transport { message: String },
     #[error("MCP request {request_id} was cancelled")]
     Cancelled { request_id: String },
-}
-
-/// Implementations recheck registry enablement at dispatch and never replay uncertain calls.
-pub trait McpService: Send + Sync {
-    fn catalogue<'a>(&'a self, app_id: &'a AppId) -> McpFuture<'a, ToolCatalogue>;
-    fn refresh<'a>(&'a self, app_id: &'a AppId) -> McpFuture<'a, ToolCatalogue>;
-    fn call(&self, request: ToolRequest) -> McpFuture<'_, ToolResult>;
-    /// Dispatch only tools whose current metadata promises free discovery.
-    fn discover(&self, request: ToolRequest) -> McpFuture<'_, ToolResult>;
-    fn cancel<'a>(&'a self, request_id: &'a str) -> McpFuture<'a, ()>;
 }

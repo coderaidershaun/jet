@@ -6,7 +6,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
-use std::time::Instant;
 
 use super::process::launch;
 use super::{Lines, Request, Transport, TransportError};
@@ -102,7 +101,7 @@ impl Transport for CodexCli {
         let wants_structured_output = request.schema.is_some();
         std::thread::spawn(move || {
             let _schema = schema.take();
-            let mut events = events::Events::new(model, wants_structured_output, Instant::now());
+            let mut events = events::Events::new(model, wants_structured_output);
             for line in lines.receiver {
                 let mapped = match line {
                     Ok(line) => events.translate(&line).into_iter().map(Ok).collect(),

@@ -7,12 +7,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use agent::{
-    ClaudeCli, Conversation, DataDir, Effort, Event, McpConnection, McpStatus, Message, Model,
-    Mood, Persona, Request, SessionId, SessionMode, Step, Turn,
+    ClaudeCli, Conversation, DataDir, Effort, Event, McpConnection, Message, Model, Mood, Persona,
+    Request, SessionId, SessionMode, Step, Turn,
 };
 use serde_json::json;
-
-const SONNET_RECORDING: &str = include_str!("fixtures/sonnet-mood-reply.jsonl");
 
 fn fake_claude(name: &str) -> (ClaudeCli, PathBuf) {
     let cwd = std::env::temp_dir().join(format!("agent-contract-{}-{name}", std::process::id()));
@@ -70,11 +68,6 @@ fn fake_claude_streams_a_turn() {
     let turn = Turn::start(&claude, &chat_request(prompt, resume)).unwrap();
     let steps: Vec<Step> = turn.collect();
 
-    let raw_lines = steps
-        .iter()
-        .filter(|step| matches!(step, Step::Raw(_)))
-        .count();
-    assert_eq!(raw_lines, SONNET_RECORDING.lines().count());
     assert!(
         matches!(steps.iter().find(|s| matches!(s, Step::Init { .. })),
         Some(Step::Init { model, .. }) if model == "claude-sonnet-5-5")
@@ -99,7 +92,7 @@ fn fake_claude_streams_a_turn() {
     let Some(Step::Finished(summary)) = steps.last() else {
         panic!("a turn ends with Finished: {:?}", steps.last());
     };
-    assert_eq!(summary.usage.cache_creation_tokens, 1575);
+    assert_eq!(summary.context_tokens, 1577);
 
     let args = recorded_args(&cwd);
     assert_eq!(args[0], "-p");
@@ -159,22 +152,8 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
         active_app_id: None,
         feeling: None,
     };
-    let (_, reply) = conversation.send(Arc::new(claude), message).unwrap();
+    let (_, reply) = conversation.send(Arc::new(claude), message, None).unwrap();
     let events: Vec<Event> = reply.collect();
-
-    let Some(Event::Started { mcp, .. }) =
-        events.iter().find(|e| matches!(e, Event::Started { .. }))
-    else {
-        panic!("the reply starts with Started: {events:?}");
-    };
-    let status = |name: &str, status: &str| McpStatus {
-        name: name.to_owned(),
-        status: status.to_owned(),
-    };
-    assert_eq!(
-        mcp,
-        &[status("polysim", "failed"), status("quanty", "connected")]
-    );
 
     let tool_started: Vec<&Event> = events
         .iter()
@@ -235,7 +214,7 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
         .collect();
     assert!(text.starts_with("Vega is how much"), "{text}");
 
-    let Some(Event::Finished { entry, .. }) = events.last() else {
+    let Some(Event::Finished { entry }) = events.last() else {
         panic!("the reply ends with Finished: {:?}", events.last());
     };
     let [saved] = &entry.entry.tools[..] else {

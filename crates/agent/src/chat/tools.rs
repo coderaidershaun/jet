@@ -23,14 +23,6 @@ impl McpConnection {
     }
 }
 
-/// A server's state when the reply started, in Claude Code's words. Only `failed` means
-/// offline; `pending` is still starting.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct McpStatus {
-    pub name: String,
-    pub status: String,
-}
-
 /// One finished call of an MCP tool.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

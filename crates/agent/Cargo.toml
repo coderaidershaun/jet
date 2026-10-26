@@ -2,16 +2,7 @@
 name = "agent"
 version.workspace = true
 edition.workspace = true
-description = "Runs Jet's chat turns through Claude Code and keeps the thread, notes, and library connections"
-
-[lib]
-name = "agent"
-path = "src/lib.rs"
-
-# A stand-in for the Claude Code program: the contract tests spawn it instead of the real one.
-[[bin]]
-name = "fake-claude"
-path = "src/bin/fake-claude.rs"
+description = "Runs Jet's chat turns through Claude Code or Codex and keeps the thread, notes, and app connections"
 
 [dependencies]
 dotenvy = { workspace = true }

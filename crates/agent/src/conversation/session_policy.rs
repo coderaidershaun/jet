@@ -82,13 +82,11 @@ mod tests {
             .collect()
     }
 
-    fn started(events: &[Event]) -> (&str, bool) {
+    fn started_fresh(events: &[Event]) -> bool {
         events
             .iter()
             .find_map(|event| match event {
-                Event::Started {
-                    session_id, fresh, ..
-                } => Some((session_id.0.as_str(), *fresh)),
+                Event::Started { fresh } => Some(*fresh),
                 _ => None,
             })
             .expect("a reply always starts")
@@ -116,7 +114,7 @@ mod tests {
             notices(&events),
             ["Started a fresh conversation so your changes apply. Ada's memory is kept."]
         );
-        assert_eq!(started(&events), ("new-session", true));
+        assert!(started_fresh(&events));
         assert_eq!(chat.saved_session().session_id.0, "new-session");
     }
 
@@ -135,7 +133,7 @@ mod tests {
             notices(&events),
             ["Started a fresh conversation after a long break. Jet's memory is kept."]
         );
-        assert_eq!(started(&events), ("new-session", true));
+        assert!(started_fresh(&events));
         assert_eq!(chat.saved_session().session_id.0, "new-session");
     }
 
@@ -166,7 +164,7 @@ mod tests {
         }
         for events in [warm, cold_but_small] {
             assert!(notices(&events).is_empty());
-            assert!(!started(&events).1, "a resumed session is not fresh");
+            assert!(!started_fresh(&events), "a resumed session is not fresh");
         }
     }
 }

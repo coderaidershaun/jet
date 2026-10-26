@@ -1,5 +1,5 @@
 /target
-/crates/jet/gen/schemas
+.DS_Store
 .claude
 .codex
 .scratch

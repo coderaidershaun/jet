@@ -42,7 +42,6 @@ pub(crate) struct ActiveTurn {
     pub text: String,
     pub mood: Option<agent::Mood>,
     pub tools: Vec<Value>,
-    pub started: Option<Event>,
 }
 
 impl ActiveTurn {
@@ -50,7 +49,6 @@ impl ActiveTurn {
         match event {
             Event::Text { delta } => self.text.push_str(delta),
             Event::Mood { mood } => self.mood = Some(*mood),
-            Event::Started { .. } => self.started = Some(event.clone()),
             Event::ToolStarted { .. } => self.tools.push(json!(event)),
             Event::ToolFinished { id, .. } => {
                 let result = json!(event);

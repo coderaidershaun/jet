@@ -2,7 +2,7 @@
 use super::Server;
 use agent::{
     apps::AppId,
-    mcp::{McpService, ToolRequest, ToolTarget},
+    mcp::{ToolRequest, ToolTarget},
 };
 use axum::{
     Json, Router,
@@ -75,13 +75,8 @@ async fn discover(
 struct CancelRequest {
     request_id: String,
 }
-async fn cancel(
-    State(host): State<Server>,
-    Json(request): Json<CancelRequest>,
-) -> Result<Json<Value>, Error> {
+async fn cancel(State(host): State<Server>, Json(request): Json<CancelRequest>) -> Json<Value> {
     host.mcp
-        .cancel(&format!("browser:{}", request.request_id))
-        .await
-        .map_err(error)?;
-    Ok(Json(json!({})))
+        .cancel_request(&format!("browser:{}", request.request_id));
+    Json(json!({}))
 }

@@ -1,7 +1,7 @@
 //! Exercise shared metadata and calls against real SDK HTTP sessions.
 use agent::{
     apps::{AddApp, App, AppOverrides, McpOverride, Registry, RegistryCommand},
-    mcp::{HttpMcpClient, McpError, McpService, ToolRequest, ToolTarget},
+    mcp::{HttpMcpClient, McpError, ToolRequest, ToolTarget},
 };
 use rmcp::{
     RoleServer, ServerHandler,
@@ -287,7 +287,7 @@ async fn calls_validate_route_and_cancel_without_replay() {
     while world.fixture.calls.load(Ordering::SeqCst) < 4 {
         tokio::task::yield_now().await;
     }
-    world.client.cancel("cancel").await.unwrap();
+    world.client.cancel_request("cancel");
     assert!(matches!(
         task.await.unwrap(),
         Err(McpError::Cancelled { .. })
@@ -424,7 +424,7 @@ async fn calls_validate_route_and_cancel_without_replay() {
     let call = routing
         .client
         .call(routing.request("cancel-before-poll", "never"));
-    routing.client.cancel("cancel-before-poll").await.unwrap();
+    routing.client.cancel_request("cancel-before-poll");
     assert!(matches!(
         routing
             .client

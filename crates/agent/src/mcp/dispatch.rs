@@ -1,12 +1,13 @@
 //! Validate current schemas without replaying calls whose outcomes are uncertain.
 use super::{
-    DiscoveryMarker, HttpMcpClient, McpError, McpFuture, McpService, ToolRequest, ToolResult,
+    HttpMcpClient, McpError, ToolRequest, ToolResult,
     http::{DEADLINE, MAX_BYTES, failure, protocol},
 };
 use rmcp::{model::*, service::PeerRequestOptions};
 use serde_json::Value;
 use std::{
     collections::HashMap,
+    pin::Pin,
     sync::{Arc, Mutex, PoisonError},
     time::Duration,
 };
@@ -17,11 +18,13 @@ pub(super) enum Purpose {
     Discovery,
 }
 impl HttpMcpClient {
+    /// Registers the request ID now, not on the first poll, so a cancel sent before the first
+    /// poll still finds it. The callers must stay plain functions, not `async fn`.
     pub(super) fn prepare(
         &self,
         request: ToolRequest,
         purpose: Purpose,
-    ) -> McpFuture<'_, ToolResult> {
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, McpError>> + Send + '_>> {
         let (sender, receiver) = oneshot::channel();
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         if request.request_id.is_empty()
@@ -91,8 +94,7 @@ impl HttpMcpClient {
             && !tool
                 .meta
                 .get("jet/discovery")
-                .and_then(|marker| serde_json::from_value::<DiscoveryMarker>(marker.clone()).ok())
-                .is_some_and(|marker| marker.version == 1)
+                .is_some_and(|marker| marker["version"] == 1)
         {
             return Err(McpError::InvalidArguments {
                 message: "tool does not declare supported free discovery".into(),

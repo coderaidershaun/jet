@@ -1,10 +1,8 @@
-// Choose the real server bridge unless development explicitly requests the local fixture.
+// The page's connection to the Jet server.
 
-import { createFakeAgent } from './fake-agent.js';
 import { createBrowserAgent } from './browser-agent.js';
 
 /** @typedef {{ found: boolean, path: string | null, searched: string[] }} ClaudeStatus */
-/** The state of one MCP server when a reply started. Only `failed` means offline; `pending` is still starting. @typedef {{ name: string, status: string }} McpStatus */
 /** One finished call of an MCP tool. @typedef {{ id: string, server: string, tool: string, input: any, ok: boolean, result: any, summary: string, durationMs: number }} ToolCall */
 /** @typedef {{ model: string | null, usedTokens: number | null, limitTokens: number | null, estimated: boolean }} ContextStatus */
 /**
@@ -16,16 +14,15 @@ import { createBrowserAgent } from './browser-agent.js';
  */
 /** @typedef {{ memory: string, user: string, recent: string, limits?: { memory: number, user: number, recent: number } }} Notes */
 /** @typedef {{ kind: 'busy' | 'claudeMissing' | 'claudeFailed' | 'timeout' | 'io' | 'badLink', message: string }} Failure */
-/** @typedef {{ inputTokens: number, cacheReadTokens: number, cacheCreationTokens: number, cacheCreation1hTokens: number, outputTokens: number, thinkingTokens: number, model: string }} Usage */
 
 /**
- * @typedef { { kind: 'started', sessionId: string, model: string, fresh: boolean, mcp: McpStatus[] }
+ * @typedef { { kind: 'started', fresh: boolean }
  *   | { kind: 'notice', message: string }
  *   | { kind: 'mood', mood: string }
  *   | { kind: 'text', delta: string }
  *   | { kind: 'toolStarted', id: string, server: string, tool: string, input: any }
  *   | { kind: 'toolFinished', id: string, server: string, tool: string, ok: boolean, result: any, summary: string, durationMs: number }
- *   | { kind: 'finished', entry: ShownEntry, durationMs: number, costUsd: number, usage: Usage }
+ *   | { kind: 'finished', entry: ShownEntry }
  *   | { kind: 'failed', failure: Failure, entry: ShownEntry }
  *   | { kind: 'stopped', entry: ShownEntry }} AgentEvent
  */
@@ -39,14 +36,11 @@ import { createBrowserAgent } from './browser-agent.js';
  * @property {number} budgetUsd
  * @property {{ name: string, jobTitle: string, notes: string }} persona
  * @property {string} localTime
- * @property {string | null} claudePath
- * @property {string | null} codexPath
- * @property {import('./settings.js').Settings['mcp']} mcp
  */
 
 /**
  * @typedef {object} Agent
- * @property {() => Promise<{ claude: ClaudeStatus, dataDir: string, busy: boolean, context: ContextStatus }>} status
+ * @property {() => Promise<{ claude: ClaudeStatus, context: ContextStatus }>} status
  * @property {(text: string) => Promise<{ mood: string, scores: object }>} feel
  * @property {() => Promise<ShownEntry[]>} history
  * @property {(request: SendRequest, onEvent: (event: AgentEvent) => void) => Promise<ShownEntry>} send
@@ -63,5 +57,5 @@ import { createBrowserAgent } from './browser-agent.js';
 
 /** @returns {Agent} */
 export function connectAgent() {
-  return globalThis.__JET_FAKE__ === true ? createFakeAgent() : createBrowserAgent();
+  return createBrowserAgent();
 }

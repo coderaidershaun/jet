@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::chat::{McpStatus, Mood, SessionId, ToolCall, Usage};
+use crate::chat::{Mood, SessionId, ToolCall};
 pub use error::TurnError;
 use mood::{MoodSplitter, Split};
 use stream::{Line, ResultLine};
@@ -36,12 +36,9 @@ const TOOL_IDLE_FACTOR: u32 = 3;
 /// or `Failed`, and there is never more than one of them.
 #[derive(Debug)]
 pub enum Step {
-    /// A transport line before the steps made from it.
-    Raw(String),
     Init {
         session_id: SessionId,
         model: String,
-        mcp: Vec<McpStatus>,
     },
     Mood(Mood),
     Text(String),
@@ -62,9 +59,8 @@ pub enum Step {
 /// How a successful turn went.
 #[derive(Debug)]
 pub struct Summary {
-    pub duration_ms: u64,
-    pub cost_usd: f64,
-    pub usage: Usage,
+    /// Input, cache read and cache creation tokens of the request.
+    pub context_tokens: u64,
     pub context: crate::chat::ContextStatus,
     /// The model's final answer as plain text.
     pub result: String,
@@ -99,7 +95,6 @@ pub struct Turn {
     tools: ToolCalls,
     text: String,
     mood: Option<Mood>,
-    init_model: String,
     context: context::ContextReader,
     saw_delta: bool,
     needs_paragraph_break: bool,
@@ -127,7 +122,6 @@ impl Turn {
             tools: ToolCalls::new(),
             text: String::new(),
             mood: None,
-            init_model: String::new(),
             context: context::ContextReader::default(),
             saw_delta: false,
             needs_paragraph_break: false,
@@ -203,19 +197,9 @@ impl Turn {
     fn take_line(&mut self, line: String) {
         self.context.read(&line);
         let parsed = stream::parse(&line);
-        self.queued.push_back(Step::Raw(line));
         match parsed {
-            Line::Init {
-                session_id,
-                model,
-                mcp,
-            } => {
-                self.init_model.clone_from(&model);
-                self.queued.push_back(Step::Init {
-                    session_id,
-                    model,
-                    mcp,
-                });
+            Line::Init { session_id, model } => {
+                self.queued.push_back(Step::Init { session_id, model });
             }
             Line::MessageStart => self.begin_call(),
             Line::TextDelta(delta) => {
@@ -230,7 +214,7 @@ impl Turn {
         }
     }
 
-    fn take_result(&mut self, mut result: ResultLine) {
+    fn take_result(&mut self, result: ResultLine) {
         if let Some((subtype, message)) = result.failure() {
             return self.end(Step::Failed(TurnError::Reported { subtype, message }));
         }
@@ -239,13 +223,8 @@ impl Turn {
             let split = self.splitter.push(text);
             self.release(split);
         }
-        if result.usage.model.is_empty() {
-            result.usage.model.clone_from(&self.init_model);
-        }
         self.end(Step::Finished(Summary {
-            duration_ms: result.duration_ms,
-            cost_usd: result.cost_usd,
-            usage: result.usage,
+            context_tokens: result.context_tokens,
             context: self.context.finish(),
             result: result.result.unwrap_or_default(),
             structured_output: result.structured_output,
@@ -415,11 +394,6 @@ mod tests {
                 format!("The agent stopped responding after {minutes} minutes.")
             );
         }
-
-        let Some(Step::Finished(summary)) = cases[0].1.last() else {
-            panic!("the success case finishes");
-        };
-        assert_eq!(summary.usage.model, "claude-fake");
 
         // A result line ends the turn even if the process lingers.
         lines.push(result_line("ignored"));

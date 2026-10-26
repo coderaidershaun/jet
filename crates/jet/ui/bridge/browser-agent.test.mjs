@@ -122,16 +122,13 @@ test('browser bridge retries one identity, deduplicates events and resnapshots a
   assert.equal(checks.length, 0, 'replay cannot reauthorize a locally stopped request');
   unwatch();
 
-  const original = { storage: globalThis.sessionStorage, fake: globalThis.__JET_FAKE__, crypto: Object.getOwnPropertyDescriptor(globalThis, 'crypto') };
+  const original = { storage: globalThis.sessionStorage, crypto: Object.getOwnPropertyDescriptor(globalThis, 'crypto') };
   try {
     globalThis.sessionStorage = storage;
-    globalThis.__JET_FAKE__ = false;
     Object.defineProperty(globalThis, 'crypto', { configurable: true, value: { getRandomValues: (bytes) => bytes.fill(17) } });
     saved.clear();
     assert.equal(connectAgent().serverEvents, true);
-    globalThis.__JET_FAKE__ = true;
-    assert.equal(connectAgent().serverEvents, undefined);
-  } finally { globalThis.sessionStorage = original.storage; globalThis.__JET_FAKE__ = original.fake; Object.defineProperty(globalThis, 'crypto', original.crypto); }
+  } finally { globalThis.sessionStorage = original.storage; Object.defineProperty(globalThis, 'crypto', original.crypto); }
 });
 
 test('registered_app_images_keep_their_origin_and_reject_escape', async () => {

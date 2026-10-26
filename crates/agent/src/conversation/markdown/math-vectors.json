@@ -1,5 +1,5 @@
 {
-  "about": "Shared cases for the Markdown renderers: the app renders with Rust and the browser fallback renders with JavaScript, and both must turn each markdown into the html given here. Both tests delete every newline that comes directly before \"<\" or directly after \">\" in the result before comparing, so the html is written without them. The cases avoid what the two renderers do differently on purpose: headings, links, block quotes, quote marks in prose, backslash escapes outside math, indented code, tilde fences and trailing spaces.",
+  "about": "Cases for the Markdown renderer: each markdown must turn into the html given here. The test deletes every newline that comes directly before \"<\" or directly after \">\" in the result before comparing, so the html is written without them.",
   "vectors": [
     {
       "name": "inline math in prose, TeX trimmed",
