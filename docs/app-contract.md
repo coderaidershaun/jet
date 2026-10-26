@@ -294,7 +294,7 @@ stable ID is captured by the chat turn before feeling classification and remains
 part of the same request across transport retries. It never filters the registry.
 
 The bridge exposes `onRegistryChanged(listener)`, returning an unsubscribe
-function. Registry notifications trigger a fresh list; browser focus and every
-reconnect snapshot also refresh the list. Returning to Jet retains last selected
+function. Registry notifications trigger a fresh list; every reconnect snapshot
+also refreshes the list. Returning to Jet retains last selected
 app context. Removing that app clears context; removing the visible app returns
 to chat.

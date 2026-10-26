@@ -72,7 +72,6 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
     }
   }, true);
   narrow.addEventListener('change', () => { expanded = !narrow.matches && mode === 'chat'; paint(); });
-  window.addEventListener('focus', refresh);
   agent.onRegistryChanged?.(refresh);
   const api = {
     activeAppId: () => selected,

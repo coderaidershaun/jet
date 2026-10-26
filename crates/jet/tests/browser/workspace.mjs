@@ -62,7 +62,6 @@ if (input.includes('fail-before-init')) {
   await page.screenshot({ path: path.join(output, 'workspace-empty.png') });
   const api = async body => { const response = await context.request.post(origin + '/api/apps', { data: body }); assert.ok(response.ok(), await response.text()); return response.json(); };
   const apps = async () => (await context.request.get(origin + '/api/apps')).json();
-  const focusRefresh = () => page.evaluate(() => window.dispatchEvent(new Event('focus')));
   const nav = id => page.locator(`.app-list [data-app-id="${id}"]`);
   const frame = id => page.frameLocator(`.app-frame[data-app-id="${id}"] iframe`);
   const chat = async () => { await page.locator('#sheet').waitFor({ state: 'hidden' }); if (await page.locator('.workspace-shell').getAttribute('data-mode') !== 'chat') await page.locator('#jet-toggle').click(); };
@@ -136,7 +135,6 @@ if (input.includes('fail-before-init')) {
       const result = await api({ action: 'add', address, overrides: { label: `Scrollable notebook ${index}` } });
       extraApps.push(result.app);
     }
-    if (process.env.JOINT_FACADE !== '1') await focusRefresh();
     await page.setViewportSize({ width: 1440, height: 480 });
     await until(async () => await page.locator('.app-list button').count() === 10, 'Long app list reaches navigation');
     assert.ok(await page.locator('.app-list').evaluate(el => el.scrollHeight > el.clientHeight), 'Long app list can scroll vertically');
@@ -154,7 +152,6 @@ if (input.includes('fail-before-init')) {
     await nav(a.id).click();
   } finally {
     for (const app of extraApps) await api({ action: 'remove', id: app.id });
-    if (process.env.JOINT_FACADE !== '1') await focusRefresh();
     await until(async () => await page.locator('.app-list button').count() === 2, 'Long-list fixture apps are removed');
   }
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -174,7 +171,6 @@ if (input.includes('fail-before-init')) {
   await page.getByRole('button', { name: 'Collapse drawer', exact: true }).click();
   await page.getByRole('button', { name: 'Expand drawer', exact: true }).click();
   await api({ action: 'edit', id: a.id, overrides: { ...a.overrides, label: 'Renamed notebook', ui: first + '?reloaded=1' } });
-  if (process.env.JOINT_FACADE !== '1') await focusRefresh();
   await until(async () => (await nav(a.id).getAttribute('aria-label')) === 'Renamed notebook', 'Metadata refresh updates navigation');
   assert.ok(await page.evaluate(() => firstFrame === document.querySelectorAll('.app-frame iframe')[0]), 'Metadata refresh preserves the visited frame');
   assert.equal(await frame(a.id).getByLabel('Unsaved note').inputValue(), 'Unsent note A');
@@ -307,8 +303,7 @@ if (input.includes('fail-before-init')) {
   assert.match(await page.locator('.command-result').textContent(), /saved.*(unavailable|connect|request)/i);
   assert.equal(sends.length, 3);
   const changed = await api({ action: 'edit', id: b.id, overrides: { ...b.overrides, label: 'Renamed notebook' } });
-  if (process.env.JOINT_FACADE !== '1') await focusRefresh();
-  await until(async () => (await nav(b.id).getAttribute('aria-label')) === changed.app.label, 'Independent registry update must refresh browser without focus when facade is integrated');
+  await until(async () => (await nav(b.id).getAttribute('aria-label')) === changed.app.label, 'Independent registry update must refresh browser without focus');
   assert.equal(await page.locator('.app-list').getByRole('button', { name: 'Renamed notebook', exact: true }).count(), 2);
   if (process.env.JOINT_FACADE === '1') {
     const observed = (await readFile(path.join(scratch, 'provider-input.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
@@ -317,7 +312,6 @@ if (input.includes('fail-before-init')) {
   assert.equal(await page.locator('.app-list button').count(), 3);
   await nav(b.id).click();
   await api({ action: 'remove', id: b.id });
-  if (process.env.JOINT_FACADE !== '1') await focusRefresh();
   await until(() => page.locator('#page').isVisible(), 'Removing the visible app returns to chat');
   await slash('/app reload');
   await until(async () => /Choose an app/.test(await page.locator('.command-result').textContent()), 'Removing selected app clears context');

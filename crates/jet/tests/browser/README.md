@@ -99,8 +99,8 @@ Build the workspace and install fixture dependencies as above first. Screenshots
 viewport geometry and captured send/stop requests are written to the artifact
 directory. `JET_BINARY` optionally selects a previously built local Jet executable.
 
-`JOINT_FACADE=1` also requires automatic cross-client registry notifications,
-provider-observed selected app context and session continuity across app switches.
+`JOINT_FACADE=1` also requires provider-observed selected app context and session
+continuity across app switches.
 Run this mode for the integrated application acceptance gate.
 
 ## Commands and tool discovery
