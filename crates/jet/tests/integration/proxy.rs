@@ -214,6 +214,21 @@ fn registered_proxy_rejects_unsafe_routes_and_origins() {
         response.headers()["content-security-policy"],
         "frame-ancestors 'self'"
     );
+    // WebSocket upgrades pass the same checks and keep their frames.
+    let sockets = Command::new("node")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/socket-check.mjs"
+        ))
+        .args([&host.url, &id, &fixture.url])
+        .output()
+        .unwrap();
+    assert!(
+        sockets.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&sockets.stdout),
+        String::from_utf8_lossy(&sockets.stderr)
+    );
     host.post("/api/apps", json!({"action":"disable","id":id}));
     assert_eq!(host.get(&format!("/apps/{id}/headers"))["name"], "Policy");
     host.post("/api/apps", json!({"action":"remove","id":id}));
@@ -238,25 +253,5 @@ fn registered_proxy_rejects_unsafe_routes_and_origins() {
         .unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("--public-origin"));
-}
-
-#[test]
-fn registered_websocket_proxy_preserves_upgrade_and_frames() {
-    let host = Host::start();
-    let fixture = Fixture::start("Sockets");
-    let id = fixture.register(&host);
-    let output = Command::new("node")
-        .arg(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/socket-check.mjs"
-        ))
-        .args([&host.url, &id, &fixture.url])
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(jet::ServerConfig::from_args(["--public-origin", "file:///tmp"]).is_err());
 }

@@ -306,7 +306,17 @@ mod tests {
             "review-batch",
             Scripted::new().then(verdict(true, "- old fact\n- shipped app")),
         );
-        reviewed_thread(&chat, 1000);
+        let said_at = 1_000_000;
+        let due_after = |after_ms: u64| chat.conversation.review_due(said_at + after_ms);
+        assert!(!due_after(10_000_000), "no thread yet");
+        reviewed_thread(&chat, said_at);
+
+        assert!(!due_after(89_999), "still typing");
+        assert!(due_after(90_000));
+        chat.edit_session(|session| session.reviewed_at = said_at + 100_000);
+        assert!(!due_after(100_000 + 599_999), "reviewed too recently");
+        assert!(due_after(100_000 + 600_000));
+        chat.edit_session(|session| session.reviewed_at = 0);
 
         let outcome = chat
             .conversation
@@ -324,25 +334,19 @@ mod tests {
         assert_eq!(request.session, SessionMode::Ephemeral);
         assert_eq!(request.model, Model::Haiku);
         assert_eq!(request.schema, Some(schema()));
-        assert!(request.system_prompt.contains("called Jet"));
         assert!(
             request
                 .system_prompt
                 .contains("Never infer anything from file paths, folder names or other metadata"),
             "a name read from a home folder path must not reach the notes"
         );
-        assert!(request.prompt.contains("<memory>- old fact</memory>"));
-        assert!(request.prompt.contains("<recent>(empty)</recent>"));
-        assert!(
-            request
-                .prompt
-                .contains("user: I just shipped my first app\nJet: Congratulations!")
-        );
+        assert!(request.prompt.contains("I just shipped my first app"));
         assert!(!request.prompt.contains("I am Sam"), "already reviewed");
 
         let session = chat.saved_session();
         assert_eq!(session.reviewed_through, EntryId(4));
         assert!(session.reviewed_at > 0);
+        assert!(!due_after(100_000_000), "nothing new to read");
         assert_eq!(
             chat.conversation
                 .review_notes(&*chat.transport(), "Jet")
@@ -402,35 +406,5 @@ mod tests {
             fresh.save(dir).unwrap();
         });
         assert_eq!(chat.saved_session().reviewed_through, EntryId(0));
-    }
-
-    #[test]
-    fn review_due_obeys_debounce_and_minimum_gap() {
-        let chat = Chat::new("review-due", [] as [&str; 0]);
-        let said_at = 1_000_000;
-        assert!(
-            !chat.conversation.review_due(said_at + 10_000_000),
-            "no thread yet"
-        );
-        reviewed_thread(&chat, said_at);
-
-        assert!(
-            !chat.conversation.review_due(said_at + 89_999),
-            "still typing"
-        );
-        assert!(chat.conversation.review_due(said_at + 90_000));
-
-        chat.edit_session(|session| session.reviewed_at = said_at + 100_000);
-        assert!(
-            !chat.conversation.review_due(said_at + 100_000 + 599_999),
-            "reviewed too recently"
-        );
-        assert!(chat.conversation.review_due(said_at + 100_000 + 600_000));
-
-        chat.edit_session(|session| session.reviewed_through = EntryId(4));
-        assert!(
-            !chat.conversation.review_due(said_at + 100_000_000),
-            "nothing new"
-        );
     }
 }

@@ -107,3 +107,99 @@ pub fn now_ms() -> u64 {
             u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chat::{Entry, EntryId, MEMORY_LIMIT, Mood, Notes, Role, USER_LIMIT};
+
+    #[test]
+    fn saved_files_survive_a_crash_and_older_versions() {
+        // Notes are cut to their caps on a line boundary.
+        assert_eq!(notes::trim_to_limit("a\nbb\nccc", 4), "a\nbb");
+        assert_eq!(notes::trim_to_limit("ééééé\nnext", 3), "ééé");
+        let dir = DataDir::scratch("notes-caps");
+        let saved = Notes {
+            memory: "- fact\n".repeat(MEMORY_LIMIT),
+            user: "u".repeat(USER_LIMIT + 50),
+            recent: String::new(),
+        }
+        .save(&dir)
+        .unwrap();
+        assert!(saved.memory.chars().count() <= MEMORY_LIMIT);
+        assert!(saved.memory.ends_with("- fact"), "cut on a line boundary");
+        assert_eq!(saved.user.chars().count(), USER_LIMIT);
+        assert_eq!(Notes::load(&dir).unwrap(), saved);
+
+        // Notes and a session record written by an older version still load.
+        let old = DataDir::scratch("older-shape");
+        old.write("MEMORY.md", &"- old fact\n".repeat(MEMORY_LIMIT))
+            .unwrap();
+        let notes = Notes::load(&old).unwrap();
+        assert!(
+            notes.memory.starts_with("- old fact") && notes.memory.chars().count() <= MEMORY_LIMIT
+        );
+        assert_eq!((notes.user.as_str(), notes.recent.as_str()), ("", ""));
+        old.write(
+            "session.json",
+            r#"{"sessionId":"abc","startedAt":5,"lastRequestAt":7,"contextTokens":9}"#,
+        )
+        .unwrap();
+        let session = Session::load(&old).unwrap().unwrap();
+        assert_eq!(session.session_id.0, "abc");
+        assert_eq!((session.last_request_at, session.context_tokens), (7, 9));
+
+        // A half-written last line is skipped, then replaced by the next entry.
+        let dir = DataDir::scratch("transcript-torn");
+        let transcript = Transcript::open(&dir);
+        transcript.append(NewEntry::user("one"), 10).unwrap();
+        let reply = NewEntry {
+            role: Role::Jet,
+            mood: Some(Mood::Hello),
+            ..NewEntry::user("two")
+        };
+        transcript.append(reply, 20).unwrap();
+        let path = dir.path("transcript.jsonl");
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        std::io::Write::write_all(&mut file, br#"{"id":3,"role":"us"#).unwrap();
+
+        let entries = transcript.entries().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[1].text, "two");
+        for mood in Mood::ALL {
+            let entry = Entry {
+                mood: Some(mood),
+                ..entries[1].clone()
+            };
+            let json = serde_json::to_string(&entry).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Entry>(&json).unwrap().mood,
+                Some(mood)
+            );
+        }
+        for word in [
+            "happy", "excited", "thinking", "curious", "sorry", "alert", "annoyed", "unknown",
+        ] {
+            let mut json = serde_json::to_value(&entries[1]).unwrap();
+            json["mood"] = serde_json::json!(word);
+            let entry = serde_json::from_value::<Entry>(json).unwrap();
+            assert_eq!(entry.mood, Some(Mood::Neutral), "{word}");
+        }
+        let third = transcript.append(NewEntry::user("three"), 30).unwrap();
+        assert_eq!(third.id, EntryId(3));
+        assert_eq!(transcript.entries().unwrap().len(), 3);
+
+        // A bad line anywhere else is an error, not a silent gap.
+        let broken = std::fs::read_to_string(&path)
+            .unwrap()
+            .replacen("\"two\"", "tw0", 1);
+        std::fs::write(&path, broken).unwrap();
+        assert!(matches!(
+            transcript.entries(),
+            Err(MemoryError::Json { line: 2, .. })
+        ));
+    }
+}

@@ -166,13 +166,6 @@ pub(crate) fn tool_result_line(id: &str, content: &str) -> String {
     user_line(json!({"type": "tool_result", "tool_use_id": id, "content": content}))
 }
 
-/// One user line saying that a tool failed, and why.
-pub(crate) fn tool_error_line(id: &str, message: &str) -> String {
-    let block = json!({"type": "tool_result", "tool_use_id": id, "content": message,
-        "is_error": true});
-    user_line(block)
-}
-
 fn user_line(block: Value) -> String {
     json!({"type": "user", "message": {"role": "user", "content": [block]}}).to_string()
 }
@@ -202,4 +195,28 @@ pub(crate) fn structured_result_line(output: &Value) -> String {
 /// A whole successful reply: init, one text delta, result.
 pub(crate) fn reply_lines(session_id: &str, text: &str) -> Vec<String> {
     vec![init_line(session_id), delta_line(text), result_line(text)]
+}
+
+/// A whole reply of one call to the model whose text arrives in the given pieces.
+pub(crate) fn streamed_lines(pieces: &[&str]) -> Vec<String> {
+    let mut lines = vec![init_line("s1"), message_start_line()];
+    lines.extend(pieces.iter().map(|piece| delta_line(piece)));
+    lines.push(result_line("unused"));
+    lines
+}
+
+/// A whole reply with lines of kinds that this reader does not know in the middle.
+pub(crate) fn unknown_lines() -> Vec<String> {
+    let unknown = [
+        r#"{"type":"rate_limit_event","info":{}}"#,
+        r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"hm"}}}"#,
+        r#"{"type":"user","message":{"content":"hi"}}"#,
+        r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}"#,
+        r#"{"type":"system","subtype":"hook_started"}"#,
+        "not json at all",
+        "",
+    ];
+    let mut lines = reply_lines("s1", "Hi there");
+    lines.splice(1..1, unknown.map(String::from));
+    lines
 }

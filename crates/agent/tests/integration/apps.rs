@@ -1,5 +1,5 @@
 //! Keep saved app identities stable across edits and restarts.
-use agent::apps::{AddApp, AppOverrides, Registry, RegistryCommand};
+use agent::apps::{AddApp, AppOverrides, Registry, RegistryCommand, RegistryError};
 
 #[test]
 fn registry_lifecycle_survives_restart() {
@@ -63,11 +63,104 @@ fn registry_lifecycle_survives_restart() {
         std::fs::read_to_string(dir.path().join("MEMORY.md")).unwrap(),
         "keep me"
     );
+
+    // What an app announces never overrides what the user set, and a failed refresh keeps the app.
+    use agent::apps::{DiscoveryStatus, Embedding, McpOverride};
+    use serde_json::json;
+    let descriptor = |name| {
+        json!({"version":1,"name":name,"ui":"ui/","mcp":"mcp","embedding":"relative-paths"})
+            .to_string()
+    };
+    let (address, worker) = super::descriptor::server(vec![
+        (404, "missing".into()),
+        (200, descriptor("Discovered")),
+        (200, descriptor("Changed")),
+        (200, json!({"version":99}).to_string()),
+    ]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut registry = Registry::open(dir.path()).unwrap();
+    let added = registry
+        .execute(RegistryCommand::Add(AddApp {
+            address: address.clone(),
+            overrides: AppOverrides {
+                label: Some("Mine".into()),
+                ui: Some("manual/".into()),
+                ..Default::default()
+            },
+        }))
+        .unwrap();
+    assert_eq!(added.discovery, Some(DiscoveryStatus::Missing));
+    let id = added.app.unwrap().id;
+    let refresh = |registry: &mut Registry| {
+        registry
+            .execute(RegistryCommand::Refresh { id: id.clone() })
+            .unwrap()
+    };
+    let refreshed = refresh(&mut registry);
+    assert_eq!(refreshed.discovery, Some(DiscoveryStatus::Ready));
+    let app = refreshed.app.unwrap();
+    assert_eq!(app.label, "Mine");
+    assert_eq!(app.ui_url.as_str(), format!("{address}manual/"));
+    assert_eq!(app.mcp_url.unwrap().as_str(), format!("{address}mcp"));
+    assert_eq!(app.embedding, Embedding::RelativePaths);
+    let edited = registry
+        .execute(RegistryCommand::Edit {
+            id: id.clone(),
+            address: None,
+            overrides: Some(AppOverrides {
+                label: Some("Renamed".into()),
+                mcp: McpOverride::Disabled,
+                ..Default::default()
+            }),
+        })
+        .unwrap();
+    assert!(edited.app.unwrap().mcp_url.is_none());
+    let incompatible = refresh(&mut registry);
+    assert!(matches!(
+        incompatible.discovery,
+        Some(DiscoveryStatus::Incompatible { .. })
+    ));
+    assert_eq!(incompatible.app.unwrap().label, "Renamed");
+    worker.join().unwrap();
+    let unavailable = refresh(&mut registry);
+    assert!(matches!(
+        unavailable.discovery,
+        Some(DiscoveryStatus::Unavailable { .. })
+    ));
+    assert_eq!(unavailable.app.unwrap().id, id);
+    let saved = std::fs::read_to_string(dir.path().join("apps.json")).unwrap();
+    assert!(!saved.contains("Unavailable"));
+    assert_eq!(
+        Registry::open(dir.path()).unwrap().discovery_status(&id),
+        DiscoveryStatus::NotChecked
+    );
+
+    // Saved commands from an older version are refused, and the file they were in stays as it was.
+    let fresh = tempfile::tempdir().unwrap();
+    std::fs::write(fresh.path().join("settings.json"), r#"{"mcp":{"quanty":{"enabled":false,"command":"","cwd":null},"polysim":{"enabled":false,"command":"","cwd":null}}}"#).unwrap();
+    assert!(Registry::open(fresh.path()).unwrap().list().is_empty());
+    for (filename, content) in [
+        (
+            "apps.json",
+            r#"{"version":1,"apps":[{"command":"old-mcp"}]}"#,
+        ),
+        (
+            "settings.json",
+            r#"{"persona":{"name":"Ada"},"mcp":{"old":{"command":"old-mcp","enabled":false}}}"#,
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(filename);
+        std::fs::write(&path, content).unwrap();
+        let error = Registry::open(dir.path()).err().unwrap();
+        assert!(matches!(error, RegistryError::LegacyCommands { .. }));
+        assert!(error.to_string().contains("register running apps"));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), content);
+    }
 }
 
 #[test]
 fn normalized_addresses_deduplicate_and_invalid_inputs_do_not_mutate() {
-    use agent::apps::RegistryError;
     let dir = tempfile::tempdir().unwrap();
     let mut registry = Registry::open(dir.path()).unwrap();
     let add = |address: &str| {
@@ -116,140 +209,4 @@ fn normalized_addresses_deduplicate_and_invalid_inputs_do_not_mutate() {
     ));
     assert_eq!(registry.list().len(), 1);
     assert_eq!(Registry::open(dir.path()).unwrap().list().len(), 1);
-}
-
-#[test]
-fn discovery_refresh_preserves_overrides_and_reports_failures() {
-    use agent::apps::{DiscoveryStatus, Embedding, McpOverride};
-    use serde_json::json;
-    let descriptor = |name| {
-        json!({"version":1,"name":name,"ui":"ui/","mcp":"mcp","embedding":"relative-paths"})
-            .to_string()
-    };
-    let (address, worker) = super::descriptor::server(vec![
-        (404, "missing".into()),
-        (200, descriptor("Discovered")),
-        (200, descriptor("Changed")),
-        (200, json!({"version":99}).to_string()),
-        (
-            200,
-            json!({"version":1,"name":"UI only","ui":"./","embedding":"relative-paths"})
-                .to_string(),
-        ),
-    ]);
-    let dir = tempfile::tempdir().unwrap();
-    let mut registry = Registry::open(dir.path()).unwrap();
-    let added = registry
-        .execute(RegistryCommand::Add(AddApp {
-            address: address.clone(),
-            overrides: AppOverrides {
-                label: Some("Mine".into()),
-                ui: Some("manual/".into()),
-                ..Default::default()
-            },
-        }))
-        .unwrap();
-    assert_eq!(added.discovery, Some(DiscoveryStatus::Missing));
-    let id = added.app.unwrap().id;
-    let refreshed = registry
-        .execute(RegistryCommand::Refresh { id: id.clone() })
-        .unwrap();
-    assert_eq!(refreshed.discovery, Some(DiscoveryStatus::Ready));
-    let app = refreshed.app.unwrap();
-    assert_eq!(app.label, "Mine");
-    assert_eq!(app.ui_url.as_str(), format!("{address}manual/"));
-    assert_eq!(app.mcp_url.unwrap().as_str(), format!("{address}mcp"));
-    assert_eq!(app.embedding, Embedding::RelativePaths);
-    let edited = registry
-        .execute(RegistryCommand::Edit {
-            id: id.clone(),
-            address: None,
-            overrides: Some(AppOverrides {
-                label: Some("Renamed".into()),
-                mcp: McpOverride::Disabled,
-                ..Default::default()
-            }),
-        })
-        .unwrap();
-    assert!(edited.app.unwrap().mcp_url.is_none());
-    let incompatible = registry
-        .execute(RegistryCommand::Refresh { id: id.clone() })
-        .unwrap();
-    assert!(matches!(
-        incompatible.discovery,
-        Some(DiscoveryStatus::Incompatible { .. })
-    ));
-    assert_eq!(incompatible.app.unwrap().label, "Renamed");
-    let ui = registry
-        .execute(RegistryCommand::Refresh { id: id.clone() })
-        .unwrap()
-        .app
-        .unwrap();
-    assert!(ui.mcp_url.is_none());
-    worker.join().unwrap();
-    let unavailable = registry
-        .execute(RegistryCommand::Refresh { id: id.clone() })
-        .unwrap();
-    assert!(matches!(
-        unavailable.discovery,
-        Some(DiscoveryStatus::Unavailable { .. })
-    ));
-    assert_eq!(unavailable.app.unwrap().id, id);
-    registry
-        .execute(RegistryCommand::Edit {
-            id: id.clone(),
-            address: None,
-            overrides: Some(AppOverrides {
-                label: Some("Manual".into()),
-                ui: Some("manual/".into()),
-                mcp: McpOverride::Url("manual-mcp".into()),
-                embedding: Some(Embedding::Direct),
-            }),
-        })
-        .unwrap();
-    let cleared = registry
-        .execute(RegistryCommand::Edit {
-            id: id.clone(),
-            address: None,
-            overrides: Some(AppOverrides::default()),
-        })
-        .unwrap()
-        .app
-        .unwrap();
-    assert_eq!(cleared.label, address);
-    assert_eq!(cleared.ui_url.as_str(), address);
-    assert!(cleared.mcp_url.is_none());
-    assert_eq!(cleared.embedding, Embedding::External);
-    let saved = std::fs::read_to_string(dir.path().join("apps.json")).unwrap();
-    assert!(!saved.contains("Unavailable"));
-    assert_eq!(
-        Registry::open(dir.path()).unwrap().discovery_status(&id),
-        DiscoveryStatus::NotChecked
-    );
-}
-
-#[test]
-fn legacy_process_configuration_is_rejected_without_erasing_source() {
-    use agent::apps::RegistryError;
-    let fresh = tempfile::tempdir().unwrap();
-    std::fs::write(fresh.path().join("settings.json"), r#"{"mcp":{"quanty":{"enabled":false,"command":"","cwd":null},"polysim":{"enabled":false,"command":"","cwd":null}}}"#).unwrap();
-    assert!(Registry::open(fresh.path()).unwrap().list().is_empty());
-    for (filename, content) in [
-        (
-            "apps.json",
-            r#"{"version":1,"apps":[{"command":"old-mcp"}]}"#,
-        ),
-        (
-            "settings.json",
-            r#"{"persona":{"name":"Ada"},"mcp":{"old":{"command":"old-mcp","enabled":false}}}"#,
-        ),
-    ] {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(filename);
-        std::fs::write(&path, content).unwrap();
-        let error = Registry::open(dir.path()).err().unwrap();
-        assert!(matches!(error, RegistryError::LegacyCommands { .. }));
-        assert!(error.to_string().contains("register running apps"));
-        assert_eq!(std::fs::read_to_string(path).unwrap(), content);
-    }
 }

@@ -97,11 +97,10 @@ impl Transport for CodexCli {
         let (sender, receiver) = mpsc::channel();
         let stopper = lines.stopper.clone();
         let watcher = stopper.clone();
-        let model = request.model.alias().to_owned();
         let wants_structured_output = request.schema.is_some();
         std::thread::spawn(move || {
             let _schema = schema.take();
-            let mut events = events::Events::new(model, wants_structured_output);
+            let mut events = events::Events::new(wants_structured_output);
             for line in lines.receiver {
                 let mapped = match line {
                     Ok(line) => events.translate(&line).into_iter().map(Ok).collect(),

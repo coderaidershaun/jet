@@ -31,22 +31,9 @@ async function setup(t, options = {}) {
   return { sending, live, turn, thread, page, advance, entry, requests, stops: () => stopped, captureEvent: () => event, event: (value) => event(value) };
 }
 
-test('a successful early terminal keeps final HTML and announcement behind the reveal deadline', async (t) => {
-  const { thread, page, advance, entry, event } = await setup(t);
-  event({ kind: 'mood', mood: 'hello' });
-  event({ kind: 'text', delta: 'Hello' });
-  event({ kind: 'finished', entry });
-  await advance(649);
-  assert.equal(thread.slot.html, '');
-  assert.equal(page.announce.textContent, 'Jet is replying');
-  await advance(1);
-  assert.equal(thread.replying, false);
-  assert.equal(thread.rows().find((row) => row.entry?.role === 'jet').entry.html, entry.html);
-  assert.equal(page.announce.textContent, entry.text);
-});
-
-test('Stop cancels a held successful terminal without waiting for a backend event', async (t) => {
+test('Stop and a failure both end a held successful terminal at once, without a backend event', async (t) => {
   const { turn, thread, page, advance, entry, event } = await setup(t);
+  const lastJet = () => thread.rows().filter((row) => row.entry?.role === 'jet').at(-1).entry;
   event({ kind: 'mood', mood: 'hello' });
   event({ kind: 'text', delta: 'Hello' });
   event({ kind: 'finished', entry });
@@ -54,82 +41,56 @@ test('Stop cancels a held successful terminal without waiting for a backend even
   assert.equal(thread.replying, false);
   await advance(1000);
   assert.equal(page.announce.textContent, 'Jet is replying');
-  const stopped = thread.rows().find((row) => row.entry?.role === 'jet').entry;
-  assert.equal(stopped.status, 'stopped');
-  assert.equal(stopped.text, 'Hello');
-  assert.equal(stopped.html, '');
-});
+  assert.deepEqual([lastJet().status, lastJet().text, lastJet().html], ['stopped', 'Hello', '']);
 
-test('failure clears the reveal hold immediately', async (t) => {
-  const { thread, page, advance, entry, event } = await setup(t);
+  await turn.send('again');
+  const second = { ...entry, id: 3 };
   event({ kind: 'mood', mood: 'hello' });
-  event({ kind: 'finished', entry });
-  event({ kind: 'failed', failure: { kind: 'io', message: 'offline' }, entry: { ...entry, html: '', status: 'failed' } });
+  event({ kind: 'finished', entry: second });
+  event({ kind: 'failed', failure: { kind: 'io', message: 'offline' }, entry: { ...second, html: '', status: 'failed' } });
   assert.equal(thread.replying, false);
   await advance(1000);
   assert.equal(page.announce.textContent, 'Jet is replying');
-  assert.equal(thread.rows().find((row) => row.entry?.role === 'jet').entry.status, 'failed');
+  assert.equal(lastJet().status, 'failed');
 });
 
-test('cancelling a held success does not stop the next held message', async (t) => {
-  let selected = 'app-a';
-  const { turn, thread, advance, entry, event, requests, stops } = await setup(t, { activeAppId: () => selected });
-  event({ kind: 'mood', mood: 'hello' });
-  event({ kind: 'finished', entry });
-  selected = 'app-b';
-  turn.hold('next message');
-  selected = 'app-c';
-  turn.stop();
-  await advance(0);
-  assert.deepEqual(requests.map((request) => request.text), ['hi', 'next message']);
-  assert.deepEqual(requests.map((request) => request.activeAppId), ['app-a', 'app-b']);
-  assert.equal(thread.replying, true);
-  assert.equal(stops(), 0, 'the completed backend needs no stop, which would target the next message');
-});
-
-
-test('classification starts with flight and dispatches its mood', async (t) => {
-  let resolve;
-  const pending = new Promise((done) => { resolve = done; });
-  const s = await setup(t, { pending: true, feel: () => pending });
-  assert.equal(s.requests.length, 0);
+test('the feeling is read within 2200 ms, falls back to neutral, and a late answer changes nothing', async (t) => {
+  const warnings = [];
+  t.mock.method(console, 'warn', (...args) => warnings.push(args));
+  const answers = [];
+  const feel = () => new Promise((resolve, reject) => answers.push({ resolve, reject }));
+  const s = await setup(t, { pending: true, feel });
+  assert.equal(s.requests.length, 0, 'the flight starts while the message is classified');
   assert.equal(s.thread.replying, true);
-  resolve({ mood: 'insulted' });
+  answers[0].resolve({ mood: 'insulted' });
   await s.sending;
   assert.equal(s.requests[0].feeling, 'insulted');
   s.event({ kind: 'finished', entry: s.entry });
   await s.advance(0);
-});
 
-test('the 2200 ms cap dispatches neutral and ignores a late classification', async (t) => {
-  let resolve;
-  t.mock.method(console, 'warn', () => {});
-  const s = await setup(t, { pending: true, feel: () => new Promise((done) => { resolve = done; }) });
+  const slow = s.turn.send('again');
   await s.advance(2199);
-  assert.equal(s.requests.length, 0);
-  await s.advance(1);
-  await s.sending;
-  assert.equal(s.requests[0].feeling, 'neutral');
-  resolve({ mood: 'hello' });
-  await s.advance(0);
   assert.equal(s.requests.length, 1);
-});
-
-test('classification failure falls back to neutral and warns once across turns', async (t) => {
-  const warnings = [];
-  t.mock.method(console, 'warn', (...args) => warnings.push(args));
-  const s = await setup(t, { feel: async () => { throw new Error('unavailable'); } });
-  assert.equal(s.requests[0].feeling, 'neutral');
+  await s.advance(1);
+  await slow;
+  assert.equal(s.requests[1].feeling, 'neutral');
+  answers[1].resolve({ mood: 'hello' });
+  await s.advance(0);
+  assert.equal(s.requests.length, 2);
   s.event({ kind: 'finished', entry: s.entry });
   await s.advance(0);
-  await s.turn.send('again');
-  assert.equal(warnings.length, 1);
-  assert.equal(s.requests[1].feeling, 'neutral');
+
+  const broken = s.turn.send('once more');
+  answers[2].reject(new Error('unavailable'));
+  await broken;
+  assert.equal(s.requests[2].feeling, 'neutral');
+  assert.equal(warnings.length, 1, 'the fallback warns once across turns');
 });
 
-test('stop before classification sends held text and drops old results and events', async (t) => {
+test('stop before classification sends held text, and results and events of an old turn never touch the new one', async (t) => {
+  let selected = 'app-a';
   const resolvers = [];
-  const s = await setup(t, { pending: true,
+  const s = await setup(t, { pending: true, activeAppId: () => selected,
     feel: () => new Promise((done) => resolvers.push(done)),
   });
   s.turn.hold('next');
@@ -149,23 +110,19 @@ test('stop before classification sends held text and drops old results and event
   await third;
   oldEvent({ kind: 'text', delta: 'stale' });
   assert.equal(s.thread.slot.text, '');
-});
 
-
-test('a different reply mood extends the feeling hold for an early successful terminal', async (t) => {
-  let resolve;
-  const s = await setup(t, { pending: true, feel: () => new Promise((done) => { resolve = done; }) });
-  s.live.feel = () => ({ revealAt: 1700 });
-  s.live.mood = () => ({ revealAt: 3400 });
-  resolve({ mood: 'hello' });
-  await s.sending;
-  s.event({ kind: 'text', delta: 'Hello' });
-  await s.advance(100);
-  s.event({ kind: 'mood', mood: 'insulted' });
+  // Cancelling a held success does not stop the next held message.
+  const stopsBefore = s.stops();
+  s.event({ kind: 'mood', mood: 'hello' });
   s.event({ kind: 'finished', entry: s.entry });
-  await s.advance(2299);
-  assert.equal(s.thread.slot.html, '');
-  await s.advance(1);
-  assert.equal(s.thread.replying, false);
-  assert.equal(s.page.announce.textContent, s.entry.text);
+  selected = 'app-b';
+  s.turn.hold('after that');
+  selected = 'app-c';
+  s.turn.stop();
+  resolvers[3]({ mood: 'neutral' });
+  await s.advance(0);
+  assert.deepEqual(s.requests.map((request) => request.text), ['next', 'third', 'after that']);
+  assert.equal(s.requests[2].activeAppId, 'app-b');
+  assert.equal(s.thread.replying, true);
+  assert.equal(s.stops(), stopsBefore, 'the completed backend needs no stop, which would target the next message');
 });

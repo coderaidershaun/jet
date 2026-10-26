@@ -21,7 +21,7 @@ const everyClip = Object.entries(CLIPS).flatMap(([name, entry]) =>
   OPTIONS[name].map((options) => ({ name, entry, options, title: `${name} ${JSON.stringify(options)}` })),
 );
 
-test("every clip's tracks and phases run forward from every start", () => {
+test("every clip's tracks and phases run forward from every start, and any clip interrupting any clip ends at rest unless it is the hold", () => {
   for (const { entry, options, title } of everyClip) {
     for (const standing of [true, false]) {
       const clip = entry.build({ standing, eyeKind: 'round', reducedMotion: false }, options);
@@ -36,9 +36,7 @@ test("every clip's tracks and phases run forward from every start", () => {
       assert.equal(clip.total, ends.at(-1), `${where}: the clip ends with its last phase`);
     }
   }
-});
 
-test('any clip interrupting any clip ends at rest unless it is the hold', () => {
   for (const standing of [true, false]) {
     for (const next of everyClip) {
       for (const before of [null, ...everyClip]) {

@@ -1,6 +1,7 @@
 //! A deliberate live check of JEV's response and latency; never contacts it by default.
 
 #[test]
+#[ignore = "calls live JEV"]
 fn live_jev_classifies_within_the_backend_cap() {
     if std::env::var("REX_PROD_API").as_deref() != Ok("true") {
         return;

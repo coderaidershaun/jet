@@ -26,7 +26,7 @@ globalThis.document = {
 
 const descendants = (el) => el.children.flatMap((child) => [child, ...descendants(child)]);
 
-test('the view mounts once and only sets attributes', () => {
+test('the view mounts once and only sets attributes, and never an inline style', () => {
   const svg = new FakeElement('svg');
   const draw = mountJet(svg);
   const byClass = (name) => descendants(svg).filter((el) => el.getAttribute('class') === name);
@@ -47,6 +47,8 @@ test('the view mounts once and only sets attributes', () => {
   assert.equal(byClass('jet-body')[0].getAttribute('transform'), 'translate(0 0) translate(100 88) rotate(0) scale(1 1) translate(-100 -88)');
   assert.equal(byClass('jet-string')[0].getAttribute('opacity'), '0', 'the last frame had no string');
 
+  draw({ ...restingFrame(), lift: [0, 30], liftSpeed: [0, 200] }, { unitPx: 1 });
+  draw({ ...restingFrame(), form: 1 }, { unitPx: 1 });
   for (const el of [svg, ...descendants(svg)]) {
     assert.equal(el.getAttribute('style'), null, 'the page forbids inline styles');
     assert.deepEqual(el.style, {}, 'the page forbids inline styles');

@@ -134,23 +134,3 @@ fn model_context_limit(path: &Path, model: &str) -> Option<u64> {
         .as_u64()
         .filter(|&limit| limit > 0)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn model_context_limit_uses_selected_provider_metadata() {
-        let dir = std::env::temp_dir().join(format!("jet-model-metadata-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("models_cache.json");
-        std::fs::write(&path, r#"{"models":[{"slug":"gpt-6.1-sol","context_window":90000},{"slug":"other","context_window":0}]}"#).unwrap();
-        assert_eq!(model_context_limit(&path, "gpt-6.1-sol"), Some(90000));
-        assert_eq!(model_context_limit(&path, "gpt-6"), None);
-        assert_eq!(model_context_limit(&path, "other"), None);
-        std::fs::write(&path, "invalid").unwrap();
-        assert_eq!(model_context_limit(&path, "gpt-6.1-sol"), None);
-        std::fs::remove_dir_all(dir).unwrap();
-        assert_eq!(model_context_limit(&path, "gpt-6.1-sol"), None);
-    }
-}

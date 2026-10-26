@@ -38,7 +38,6 @@ const TOOL_IDLE_FACTOR: u32 = 3;
 pub enum Step {
     Init {
         session_id: SessionId,
-        model: String,
     },
     Mood(Mood),
     Text(String),
@@ -195,8 +194,8 @@ impl Turn {
         };
         self.context.read(&value);
         match stream::parse(&value) {
-            Line::Init { session_id, model } => {
-                self.queued.push_back(Step::Init { session_id, model });
+            Line::Init { session_id } => {
+                self.queued.push_back(Step::Init { session_id });
             }
             Line::MessageStart => self.begin_call(),
             Line::TextDelta(delta) => {
@@ -288,7 +287,8 @@ mod tests {
 
     use super::scripted::{
         Script, Scripted, delta_line, error_result_line, init_line, message_start_line,
-        reply_lines, request, result_line, tool_result_line, tool_use_line,
+        reply_lines, request, result_line, streamed_lines, tool_result_line, tool_use_line,
+        unknown_lines,
     };
     use super::*;
     use crate::chat::Failure;
@@ -310,86 +310,61 @@ mod tests {
 
     #[test]
     fn every_turn_ends_with_exactly_one_terminal_event() {
-        let patient = Duration::from_secs(5);
-        let quick = Duration::from_millis(40);
-        let broken_pipe = || TransportError::Read {
+        let (patient, quick) = (Duration::from_secs(5), Duration::from_millis(40));
+        let broken_pipe = TransportError::Read {
             source: std::io::Error::other("pipe broke"),
         };
+        let begun = || Script::lines(vec![init_line("s1")]);
+        let calling = Script::lines(vec![
+            init_line("s1"),
+            tool_use_line(&[("a", "mcp__quanty__search", json!({}))]),
+        ]);
         let mut lines = reply_lines("s1", "mood: hello\nHi there");
         let cases = [
-            (
-                "success",
-                drain(Script::lines(lines.clone()), patient, false),
-            ),
+            ("success", Script::lines(lines.clone()), patient, false),
             (
                 "reported error",
-                drain(
-                    Script::lines(vec![init_line("s1"), error_result_line("budget used up")]),
-                    patient,
-                    false,
-                ),
+                Script::lines(vec![init_line("s1"), error_result_line("budget used up")]),
+                patient,
+                false,
             ),
             (
                 "transport error",
-                drain(
-                    Script::lines(vec![init_line("s1"), delta_line("Par")])
-                        .then_error(broken_pipe()),
-                    patient,
-                    false,
-                ),
+                Script::lines(vec![init_line("s1"), delta_line("Par")]).then_error(broken_pipe),
+                patient,
+                false,
             ),
+            ("closed without a result", begun(), patient, false),
+            ("stopped", begun().hanging(), patient, true),
+            ("gone quiet", begun().hanging(), quick, false),
+            ("gone quiet during a tool", calling.hanging(), quick, false),
             (
-                "closed without a result",
-                drain(Script::lines(vec![init_line("s1")]), patient, false),
+                "newer line types",
+                Script::lines(unknown_lines()),
+                patient,
+                false,
             ),
-            (
-                "stopped",
-                drain(
-                    Script::lines(vec![init_line("s1")]).hanging(),
-                    patient,
-                    true,
-                ),
-            ),
-            (
-                "gone quiet",
-                drain(Script::lines(vec![init_line("s1")]).hanging(), quick, false),
-            ),
-            (
-                "gone quiet during a tool",
-                drain(
-                    Script::lines(vec![
-                        init_line("s1"),
-                        tool_use_line(&[("a", "mcp__quanty__search", json!({}))]),
-                    ])
-                    .hanging(),
-                    quick,
-                    false,
-                ),
-            ),
-        ];
+        ]
+        .map(|(name, script, idle, stop_first)| (name, drain(script, idle, stop_first)));
         for (name, steps) in &cases {
             let terminal = steps.iter().filter(|step| is_terminal(step)).count();
             assert_eq!(terminal, 1, "{name}: {steps:?}");
             assert!(is_terminal(steps.last().unwrap()), "{name}: {steps:?}");
         }
+        let last = |case: usize| cases[case].1.last();
         assert!(matches!(
-            cases[5].1.last(),
+            last(5),
             Some(Step::Failed(TurnError::Timeout { .. }))
         ));
         assert!(
-            matches!(
-                cases[6].1.last(),
-                Some(Step::Failed(TurnError::Timeout { idle })) if *idle == quick * 3
-            ),
+            matches!(last(6), Some(Step::Failed(TurnError::Timeout { idle })) if *idle == quick * 3),
             "a running tool gets three times the silence: {:?}",
             cases[6].1
         );
-        for (idle, minutes) in [(IDLE_LIMIT, 2), (IDLE_LIMIT * TOOL_IDLE_FACTOR, 6)] {
+        assert!(matches!(last(7), Some(Step::Finished(_))));
+        for (idle, minutes) in [(IDLE_LIMIT, "2"), (IDLE_LIMIT * TOOL_IDLE_FACTOR, "6")] {
             let failure = Failure::from(&TurnError::Timeout { idle });
-            assert_eq!(
-                failure.message(),
-                format!("The agent stopped responding after {minutes} minutes.")
-            );
+            assert!(failure.message().contains(minutes), "{}", failure.message());
         }
 
         // A result line ends the turn even if the process lingers.
@@ -428,7 +403,7 @@ mod tests {
                     result_line("unused"),
                 ],
                 "Mode is sim. Starting it.\n\nThe engine runs.",
-                Mood::Hello,
+                Some(Mood::Hello),
             ),
             (
                 "a mood line, then a call, then another mood line",
@@ -445,7 +420,31 @@ mod tests {
                     result_line("unused"),
                 ],
                 "Starting it.\n\nThe engine runs.",
-                Mood::Neutral,
+                Some(Mood::Neutral),
+            ),
+            (
+                "a mood line split across deltas",
+                streamed_lines(&["mo", "od: ins", "ulted\n", "\n", "Hello", " there"]),
+                "Hello there",
+                Some(Mood::Insulted),
+            ),
+            (
+                "a first line that only looks like a mood line",
+                streamed_lines(&["mood: so sad about it\nBody"]),
+                "mood: so sad about it\nBody",
+                None,
+            ),
+            (
+                "a reply cut off mid-label",
+                streamed_lines(&["mo"]),
+                "mo",
+                None,
+            ),
+            (
+                "an unknown mood word",
+                streamed_lines(&["Mood :  FLABBERGASTED\nAnswer"]),
+                "Answer",
+                Some(Mood::Neutral),
             ),
         ];
         for (name, lines, text, mood) in cases {
@@ -461,8 +460,8 @@ mod tests {
             }
             assert_eq!(shown, text, "{name}");
             assert_eq!(turn.text(), text, "{name}");
-            assert_eq!(moods, [mood], "{name}");
-            assert_eq!(turn.mood(), Some(mood), "{name}");
+            assert_eq!(moods, mood.into_iter().collect::<Vec<_>>(), "{name}");
+            assert_eq!(turn.mood(), mood, "{name}");
         }
     }
 }

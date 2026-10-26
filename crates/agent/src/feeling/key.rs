@@ -19,32 +19,3 @@ pub(super) fn discover(environment: Option<String>, directory: &Path) -> Option<
         .find(|(name, value)| name == VARIABLE && !value.trim().is_empty())
         .map(|(_, value)| value)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn key_discovery_prefers_environment_then_nearest_parent_without_mutation() {
-        let before = std::env::var_os(VARIABLE);
-        let root = tempfile::tempdir().unwrap();
-        let child = root.path().join("a/b");
-        std::fs::create_dir_all(&child).unwrap();
-        assert!(discover(None, &child).is_none());
-        std::fs::write(
-            root.path().join(".env"),
-            "export JEV_API_KEY='parent-test-value'\n",
-        )
-        .unwrap();
-        assert!(discover(None, &child).is_some_and(|key| key == "parent-test-value"));
-        assert!(
-            discover(Some("environment-test-value".into()), &child)
-                .is_some_and(|key| key == "environment-test-value")
-        );
-        std::fs::write(child.join(".env"), "JEV_API_KEY=nearest-test-value\n").unwrap();
-        assert!(discover(None, &child).is_some_and(|key| key == "nearest-test-value"));
-        std::fs::write(child.join(".env"), "OTHER=present\n").unwrap();
-        assert!(discover(None, &child).is_none());
-        assert!(std::env::var_os(VARIABLE) == before);
-    }
-}

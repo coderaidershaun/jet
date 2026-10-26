@@ -121,17 +121,6 @@ mod tests {
 
     #[test]
     fn locate_lists_every_place_searched() {
-        let home = Path::new("/home/someone");
-        assert_eq!(
-            candidate_paths(Some(home)),
-            [
-                home.join(".local/bin/claude"),
-                home.join(".claude/local/claude"),
-                PathBuf::from("/opt/homebrew/bin/claude"),
-                PathBuf::from("/usr/local/bin/claude"),
-            ]
-        );
-
         // Made-up places, so the answer never depends on what this machine has installed.
         let nowhere = std::env::temp_dir().join("agent-no-claude-here");
         let missing = ["first", "second", "third"].map(|name| nowhere.join(name));

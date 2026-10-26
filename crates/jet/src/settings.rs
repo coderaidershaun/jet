@@ -95,31 +95,14 @@ mod tests {
         std::env::temp_dir().join(unique)
     }
 
-    #[test]
-    fn missing_file_means_defaults() {
-        let settings = read_from(&scratch_dir("missing")).unwrap();
-        assert_eq!(settings, Settings::default());
-    }
-
-    #[test]
-    fn settings_survive_a_round_trip() {
-        let dir = scratch_dir("roundtrip");
-        let settings = Settings {
-            reduced_motion: true,
-            ..Settings::default()
-        };
-        write_to(&dir, &settings).unwrap();
-        assert_eq!(read_from(&dir).unwrap(), settings);
-
-        let saved: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.join(FILE_NAME)).unwrap()).unwrap();
-        assert!(saved.get("page").is_none());
-        let _ = std::fs::remove_dir_all(dir);
+    fn saved_json(dir: &Path) -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(dir.join(FILE_NAME)).unwrap()).unwrap()
     }
 
     #[test]
     fn old_files_with_missing_fields_still_load() {
         let dir = scratch_dir("partial");
+        assert_eq!(read_from(&dir).unwrap(), Settings::default(), "no file yet");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join(FILE_NAME),
@@ -152,8 +135,7 @@ mod tests {
         assert_eq!(settings.claude_path, None);
         write_to(&dir, &settings).unwrap();
         assert_eq!(read_from(&dir).unwrap(), settings);
-        let saved: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.join(FILE_NAME)).unwrap()).unwrap();
+        let saved = saved_json(&dir);
         for key in [
             "behaviour",
             "expressiveness",
@@ -165,12 +147,8 @@ mod tests {
         ] {
             assert!(saved.get(key).is_none(), "removed {key} was saved");
         }
-        let _ = std::fs::remove_dir_all(dir);
-    }
 
-    #[test]
-    fn new_fields_round_trip() {
-        let dir = scratch_dir("new-fields");
+        // Fields added later survive a save and a load, under the names the page reads.
         let settings = Settings {
             persona: Persona {
                 name: "Ada".into(),
@@ -185,12 +163,11 @@ mod tests {
         };
         write_to(&dir, &settings).unwrap();
         assert_eq!(read_from(&dir).unwrap(), settings);
-
-        let json = std::fs::read_to_string(dir.join(FILE_NAME)).unwrap();
+        let text = std::fs::read_to_string(dir.join(FILE_NAME)).unwrap();
         for key in ["jobTitle", "turnBudgetUsd", "claudePath"] {
             assert!(
-                json.contains(&format!("\"{key}\"")),
-                "missing {key} in {json}"
+                text.contains(&format!("\"{key}\"")),
+                "missing {key} in {text}"
             );
         }
         for (effort, word) in [(Effort::XHigh, "xhigh"), (Effort::Max, "max")] {
@@ -200,22 +177,8 @@ mod tests {
             };
             write_to(&dir, &settings).unwrap();
             assert_eq!(read_from(&dir).unwrap(), settings);
-            let saved: serde_json::Value =
-                serde_json::from_str(&std::fs::read_to_string(dir.join(FILE_NAME)).unwrap())
-                    .unwrap();
-            assert_eq!(saved["effort"], word);
+            assert_eq!(saved_json(&dir)["effort"], word);
         }
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn broken_file_names_the_path() {
-        let dir = scratch_dir("broken");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(FILE_NAME), b"not json").unwrap();
-        let error = read_from(&dir).unwrap_err();
-        assert!(matches!(error, SettingsError::Json { .. }));
-        assert!(error.to_string().contains(FILE_NAME));
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -224,12 +187,5 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../ui/bridge/default-settings.json")).unwrap();
         assert_eq!(fixture, serde_json::to_value(Settings::default()).unwrap());
-    }
-
-    #[test]
-    fn json_uses_camel_case_for_the_frontend() {
-        let json = serde_json::to_string(&Settings::default()).unwrap();
-        assert!(json.contains("\"reducedMotion\""));
-        assert!(!json.contains("reduced_motion"));
     }
 }

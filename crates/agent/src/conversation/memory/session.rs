@@ -65,17 +65,3 @@ impl Session {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_record_saved_with_the_old_start_time_still_loads() {
-        let saved = r#"{"sessionId":"abc","startedAt":5,"lastRequestAt":7,"contextTokens":9}"#;
-        let session: Session = serde_json::from_str(saved).unwrap();
-        assert_eq!(session.session_id.0, "abc");
-        assert_eq!(session.last_request_at, 7);
-        assert_eq!(session.context_tokens, 9);
-    }
-}

@@ -67,104 +67,117 @@ impl FreshReason {
 
 #[cfg(test)]
 mod tests {
+    use super::super::Message;
     use super::super::memory::now_ms;
     use super::super::test_support::{Chat, message};
     use super::*;
-    use crate::chat::{Event, Persona, SessionId};
+    use crate::chat::{Event, McpConnection, Model, Persona, SessionId};
 
-    fn notices(events: &[Event]) -> Vec<&str> {
-        events
-            .iter()
-            .filter_map(|event| match event {
-                Event::Notice { message } => Some(message.as_str()),
-                _ => None,
-            })
-            .collect()
+    const APP_ID: &str = "b5e97310-4825-4b89-ace2-e330a4ed8509";
+
+    fn connected(text: &str, token: &str) -> Message {
+        Message {
+            mcp: Some(McpConnection {
+                url: "http://localhost/mcp".into(),
+                token: token.into(),
+            }),
+            ..message(text)
+        }
     }
 
-    fn started_fresh(events: &[Event]) -> bool {
+    fn notices(events: &[Event]) -> usize {
         events
             .iter()
-            .find_map(|event| match event {
-                Event::Started { fresh } => Some(*fresh),
-                _ => None,
-            })
-            .expect("a reply always starts")
+            .filter(|event| matches!(event, Event::Notice { .. }))
+            .count()
     }
 
     #[test]
     fn stale_prompt_starts_a_fresh_session() {
-        let chat = Chat::new("policy-stale", ["old-session", "new-session"]);
-        let first = chat.send(message("hello"));
-        assert!(
-            notices(&first).is_empty(),
-            "the very first session needs no notice"
-        );
+        type Case = (&'static str, fn(&mut Session), fn(&mut Message), bool);
+        let cases: [Case; 6] = [
+            ("only the browser connection changed", |_| {}, |_| {}, false),
+            (
+                "persona changed",
+                |_| {},
+                |message| {
+                    message.persona = Persona {
+                        name: "Ada".into(),
+                        ..Persona::default()
+                    }
+                },
+                true,
+            ),
+            (
+                "model changed",
+                |_| {},
+                |message| message.model = Model::Opus,
+                true,
+            ),
+            (
+                "gone cold while big",
+                |session| {
+                    session.last_request_at = now_ms() - COLD_AFTER_MS - 1000;
+                    session.context_tokens = COLD_CONTEXT_TOKENS;
+                },
+                |_| {},
+                true,
+            ),
+            (
+                "warm while big",
+                |session| {
+                    session.last_request_at = now_ms() - 10 * 60 * 1000;
+                    session.context_tokens = 200_000;
+                },
+                |_| {},
+                false,
+            ),
+            (
+                "gone cold while small",
+                |session| {
+                    session.last_request_at = now_ms() - 3 * 60 * 60 * 1000;
+                    session.context_tokens = COLD_CONTEXT_TOKENS - 1;
+                },
+                |_| {},
+                false,
+            ),
+        ];
+        for (number, (name, edit_session, edit_message, fresh)) in cases.into_iter().enumerate() {
+            let chat = Chat::new(&format!("policy-{number}"), ["old-session", "new-session"]);
+            let first = chat.send(connected("hello", "first"));
+            assert_eq!(notices(&first), 0, "the very first session needs no notice");
+            chat.edit_session(edit_session);
+            let mut next = connected("hello again", "second");
+            next.active_app_id = Some(APP_ID.parse().unwrap());
+            edit_message(&mut next);
+            let events = chat.send(next);
 
-        let mut changed = message("hello again");
-        changed.persona = Persona {
-            name: "Ada".into(),
-            ..Persona::default()
-        };
-        let events = chat.send(changed);
-
-        assert_eq!(chat.requests()[1].session, SessionMode::New);
-        assert!(chat.requests()[1].prompt.starts_with("[local time: "));
-        assert_eq!(
-            notices(&events),
-            ["Started a fresh conversation so your changes apply. Ada's memory is kept."]
-        );
-        assert!(started_fresh(&events));
-        assert_eq!(chat.saved_session().session_id.0, "new-session");
-    }
-
-    #[test]
-    fn cold_resume_starts_fresh_above_threshold() {
-        let chat = Chat::new("policy-cold", ["old-session", "new-session"]);
-        chat.send(message("hello"));
-        chat.edit_session(|session| {
-            session.last_request_at = now_ms() - COLD_AFTER_MS - 1000;
-            session.context_tokens = COLD_CONTEXT_TOKENS;
-        });
-        let events = chat.send(message("still there?"));
-
-        assert_eq!(chat.requests()[1].session, SessionMode::New);
-        assert_eq!(
-            notices(&events),
-            ["Started a fresh conversation after a long break. Jet's memory is kept."]
-        );
-        assert!(started_fresh(&events));
-        assert_eq!(chat.saved_session().session_id.0, "new-session");
-    }
-
-    #[test]
-    fn warm_or_small_sessions_resume() {
-        let chat = Chat::new("policy-warm", ["old-session", "old-session", "old-session"]);
-        chat.send(message("hello"));
-
-        chat.edit_session(|session| {
-            session.last_request_at = now_ms() - 10 * 60 * 1000;
-            session.context_tokens = 200_000;
-        });
-        let warm = chat.send(message("warm and big"));
-
-        chat.edit_session(|session| {
-            session.last_request_at = now_ms() - 3 * 60 * 60 * 1000;
-            session.context_tokens = COLD_CONTEXT_TOKENS - 1;
-        });
-        let cold_but_small = chat.send(message("cold and small"));
-
-        let requests = chat.requests();
-        for request in &requests[1..] {
-            assert_eq!(
-                request.session,
+            let requests = chat.requests();
+            let expected = if fresh {
+                SessionMode::New
+            } else {
                 SessionMode::Resume(SessionId("old-session".into()))
+            };
+            assert_eq!(requests[1].session, expected, "{name}");
+            assert_eq!(
+                requests[1].prompt.starts_with("[local time: "),
+                fresh,
+                "{name}"
             );
-            assert!(!request.prompt.contains("[local time"));
-        }
-        for events in [warm, cold_but_small] {
-            assert!(notices(&events).is_empty());
-            assert!(!started_fresh(&events), "a resumed session is not fresh");
+            assert!(requests[1].prompt.contains("b5e97310"), "{name}");
+            assert!(!requests[1].system_prompt.contains("[local time"), "{name}");
+            if !fresh {
+                assert_eq!(
+                    requests[1].system_prompt, requests[0].system_prompt,
+                    "{name}"
+                );
+            }
+            let started = events.iter().find_map(|event| match event {
+                Event::Started { fresh } => Some(*fresh),
+                _ => None,
+            });
+            assert_eq!(started, Some(fresh), "{name}");
+            assert_eq!(notices(&events), usize::from(fresh), "{name}");
         }
     }
 }

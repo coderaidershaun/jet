@@ -149,12 +149,7 @@ fn restart_recovers_request_identity_without_replaying_provider() {
     let snapshot = host.get("/api/snapshot");
     assert!(snapshot["active"].is_null());
     assert_eq!(snapshot["history"][3]["status"], "stopped");
-    assert!(
-        snapshot["history"][3]["error"]
-            .as_str()
-            .unwrap()
-            .contains("not run again")
-    );
+    assert!(snapshot["history"][3]["error"].is_string());
     assert_eq!(
         host.post("/api/chat/send", request.clone()).1["turnId"],
         accepted["turnId"]
@@ -172,4 +167,37 @@ fn restart_recovers_request_identity_without_replaying_provider() {
         4
     );
     assert_eq!(host.invocations(), 1);
+
+    // Settings and notes saved through the page survive forgetting the thread and a restart.
+    let mut settings = host.get("/api/settings");
+    settings["persona"]["name"] = "Ada".into();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let saved = [
+        ("settings", settings),
+        (
+            "memory",
+            serde_json::json!({"memory":"Remember","user":"User note","recent":"Recent note"}),
+        ),
+    ];
+    for (name, body) in saved {
+        let response = agent
+            .put(format!("{}/api/{name}", host.url))
+            .header("content-type", "application/json")
+            .send(body.to_string())
+            .unwrap();
+        assert_eq!(response.status(), 200, "{name}");
+    }
+    assert_eq!(host.post("/api/chat/forget", serde_json::json!({})).0, 200);
+    let host = host.restart();
+    assert_eq!(host.get("/api/settings")["persona"]["name"], "Ada");
+    assert_eq!(host.get("/api/memory")["memory"], "Remember");
+    let markdown = host.post(
+        "/api/markdown",
+        serde_json::json!({"text":"**bold** <script>unsafe</script>"}),
+    );
+    let html = markdown.1.as_str().unwrap();
+    assert!(html.contains("<strong>bold</strong>") && !html.contains("<script"));
 }

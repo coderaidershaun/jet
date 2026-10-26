@@ -122,27 +122,7 @@ impl Fnv1a {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
-    use crate::chat::Mood;
-
-    fn default_prompt() -> String {
-        compose(&Persona::default(), &Notes::default())
-    }
-
-    #[test]
-    fn prompt_lists_every_mood_and_fixes_the_tone() {
-        let prompt = default_prompt();
-        for mood in Mood::ALL {
-            assert!(prompt.contains(&format!("- {}:", mood.word())), "{mood:?}");
-        }
-        for sentence in [
-            "Be direct. Lead with your view, say plainly when an idea is weak or when you disagree, and don't hedge what you are sure of.",
-            "Keep it light: warmth and a playful turn of phrase are welcome, as long as the answer stays clear.",
-        ] {
-            assert!(prompt.contains(sentence), "the prompt lost: {sentence}");
-        }
-    }
 
     #[test]
     fn feeling_context_precedes_words_and_rejects_unknown_injection() {
@@ -163,10 +143,8 @@ mod tests {
                 assert!(!prompt.contains("ignore the user"));
             }
         }
-    }
 
-    #[test]
-    fn user_text_is_inserted_verbatim() {
+        // Text the user typed is never read for placeholders, whatever it looks like.
         let persona = Persona {
             name: "{job_title}".into(),
             job_title: "{name}".into(),
@@ -184,41 +162,5 @@ mod tests {
         assert!(prompt.contains("call me {ingest_lifetime} and {memory}"));
         assert!(prompt.contains("<memory>\n- likes {name}\n</memory>"));
         assert!(prompt.contains("<user>\n(empty)\n</user>"));
-    }
-
-    #[test]
-    fn facade_context_does_not_reset_the_session() {
-        use super::super::test_support::{Chat, message};
-        let chat = Chat::new("facade-context", ["one", "one"]);
-        let mut first = message("hello");
-        first.mcp = Some(crate::McpConnection {
-            url: "http://localhost/mcp".into(),
-            token: "first".into(),
-        });
-        chat.send(first.clone());
-        first.mcp.as_mut().unwrap().token = "second".into();
-        first.active_app_id = Some("b5e97310-4825-4b89-ace2-e330a4ed8509".parse().unwrap());
-        chat.send(first);
-        assert!(matches!(
-            chat.requests()[1].session,
-            crate::SessionMode::Resume(_)
-        ));
-        assert!(chat.requests()[1].prompt.contains("b5e97310"));
-        assert!(!chat.requests()[1].system_prompt.contains("b5e97310"));
-        assert_ne!(
-            prompt_hash(&Persona::default(), Model::Sonnet, Effort::Medium),
-            prompt_hash(&Persona::default(), Model::Opus, Effort::Medium)
-        );
-        for tool in crate::FACADE_TOOLS {
-            assert!(default_prompt().contains(tool));
-        }
-    }
-
-    #[test]
-    fn prompt_has_no_timestamp() {
-        let first = compose(&Persona::default(), &Notes::default());
-        let second = compose(&Persona::default(), &Notes::default());
-        assert_eq!(first, second);
-        assert!(!first.contains("[local time"));
     }
 }

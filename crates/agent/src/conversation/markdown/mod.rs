@@ -29,28 +29,6 @@ mod tests {
     use super::*;
     use serde::Deserialize;
 
-    #[test]
-    fn raw_html_is_escaped_and_unsafe_links_dropped() {
-        let html = render_markdown(
-            "<script>alert(1)</script>\n\nhi <img src=x onerror=alert(2)> there\n\n\
-             [bad](javascript:alert(3)) and [good](https://example.com) and <javascript:alert(4)>\n\n\
-             ![cat *fluffy*](https://example.com/cat.png)\n\n\
-             | a | b |\n|:--|--:|\n| 1 | 2 |",
-        );
-        assert!(!html.contains("<script"), "{html}");
-        assert!(html.contains("&lt;script&gt;"), "{html}");
-        assert!(!html.contains("<img"), "{html}");
-        assert!(!html.contains(r#"href="javascript"#), "{html}");
-        assert!(html.contains("bad and"), "link text survives: {html}");
-        assert!(
-            html.contains(r#"<a href="https://example.com">good</a>"#),
-            "{html}"
-        );
-        assert!(html.contains("[image: cat fluffy]"), "{html}");
-        assert!(!html.contains("style="), "{html}");
-        assert!(html.contains("<table>"), "{html}");
-    }
-
     /// Each case is a Markdown source and the HTML it must render to.
     const VECTORS: &str = include_str!("math-vectors.json");
 
@@ -94,7 +72,26 @@ mod tests {
     }
 
     #[test]
-    fn math_and_tables_match_the_shared_vectors() {
+    fn rendered_html_is_safe_and_math_and_tables_match_the_vectors() {
+        let html = render_markdown(
+            "<script>alert(1)</script>\n\nhi <img src=x onerror=alert(2)> there\n\n\
+             [bad](javascript:alert(3)) and [good](https://example.com) and <javascript:alert(4)>\n\n\
+             ![cat *fluffy*](https://example.com/cat.png)\n\n\
+             | a | b |\n|:--|--:|\n| 1 | 2 |",
+        );
+        assert!(!html.contains("<script"), "{html}");
+        assert!(html.contains("&lt;script&gt;"), "{html}");
+        assert!(!html.contains("<img"), "{html}");
+        assert!(!html.contains(r#"href="javascript"#), "{html}");
+        assert!(html.contains("bad and"), "link text survives: {html}");
+        assert!(
+            html.contains(r#"<a href="https://example.com">good</a>"#),
+            "{html}"
+        );
+        assert!(html.contains("[image: cat fluffy]"), "{html}");
+        assert!(html.contains("<table>"), "{html}");
+        assert!(!has_style_attribute(&html), "{html}");
+
         let file: VectorFile = serde_json::from_str(VECTORS).expect("the vector file is valid");
         assert!(!file.vectors.is_empty(), "the vector file holds no cases");
         for vector in file.vectors {

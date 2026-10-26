@@ -3,6 +3,5 @@ mod chat;
 mod facade;
 mod mcp_fixture;
 mod proxy;
-mod settings;
 mod shutdown;
 mod support;

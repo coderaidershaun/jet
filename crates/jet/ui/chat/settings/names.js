@@ -4,7 +4,7 @@
 const TEMPLATE_ATTR = 'data-name-text';
 
 /** @param {string} template   `{name}` stands for the name */
-export function fillName(template, name) {
+function fillName(template, name) {
   return template.replaceAll('{name}', name);
 }
 

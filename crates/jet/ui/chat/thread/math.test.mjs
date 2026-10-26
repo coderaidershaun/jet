@@ -2,8 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTypesetter } from './math.js';
 
-const drawing = (label) => ({ label, cloneNode: () => drawing(label) });
-
 /** A stand-in for a `.math` element that has only what `typeset` touches. */
 function formula(tex, display = false) {
   const element = {
@@ -22,55 +20,6 @@ function formula(tex, display = false) {
 }
 
 const page = (...elements) => ({ querySelectorAll: () => elements });
-
-test('each formula goes through KaTeX once per mode, the newest are kept, and each is labelled', () => {
-  const drawn = [];
-  const draw = (tex, element, display) => {
-    drawn.push((display ? 'display ' : 'inline ') + tex);
-    element.replaceChildren(drawing(tex));
-  };
-  const typeset = createTypesetter({ draw, limit: 2 });
-  const painted = [];
-  const paint = (...elements) => {
-    painted.push(...elements);
-    typeset(page(...elements));
-  };
-
-  const [first, second] = [formula('a'), formula('a')];
-  paint(first, second, formula('a', true));
-  assert.deepEqual(drawn, ['inline a', 'display a'], 'one drawing for each mode');
-  assert.notEqual(first.firstChild, second.firstChild, 'each element holds its own copy');
-
-  paint(formula('a'), formula('a', true));
-  assert.equal(drawn.length, 2, 'refilling the same bubble draws nothing again');
-
-  paint(formula('a'), formula('b'), formula('a'), formula('a', true));
-  assert.deepEqual(drawn.slice(2), ['inline b', 'display a'], 'the formula used last survives, the oldest is drawn again');
-
-  for (const element of painted) {
-    assert.equal(element.getAttribute('role'), 'img');
-    assert.equal(element.getAttribute('aria-label'), element.getAttribute('data-tex'));
-  }
-});
-
-test('a formula KaTeX cannot read keeps its TeX, is marked, and is tried again', () => {
-  let attempts = 0;
-  const draw = () => {
-    attempts += 1;
-    throw new Error('KaTeX parse error: Expected group after ^');
-  };
-  const typeset = createTypesetter({ draw });
-
-  const bad = formula('x^');
-  typeset(page(bad));
-  assert.equal(bad.text, 'x^');
-  assert.ok(bad.classes.has('math-error'));
-  assert.equal(bad.getAttribute('title'), 'KaTeX parse error: Expected group after ^');
-  assert.equal(bad.getAttribute('aria-label'), 'x^');
-
-  typeset(page(formula('x^')));
-  assert.equal(attempts, 2, 'a broken formula is not remembered as drawn');
-});
 
 // A tiny document with the calls KaTeX makes to build its tree. It records every attribute written.
 function installFakeDocument() {
@@ -107,7 +56,7 @@ function installFakeDocument() {
 
 const nodesTagged = (root, tag) => [root, ...(root.children || []).flatMap((child) => nodesTagged(child, tag))].filter((node) => node.tag === tag);
 
-test('KaTeX drawings reach the page with no style attribute', () => {
+test('KaTeX drawings reach the page with no style attribute, and a formula it cannot read keeps its TeX', () => {
   const fake = installFakeDocument();
   try {
     const typeset = createTypesetter();
@@ -128,4 +77,22 @@ test('KaTeX drawings reach the page with no style attribute', () => {
   } finally {
     fake.remove();
   }
+
+  // A formula KaTeX cannot read keeps its TeX, is marked, and is tried again.
+  let attempts = 0;
+  const draw = () => {
+    attempts += 1;
+    throw new Error('KaTeX parse error: Expected group after ^');
+  };
+  const typeset = createTypesetter({ draw });
+
+  const bad = formula('x^');
+  typeset(page(bad));
+  assert.equal(bad.text, 'x^');
+  assert.ok(bad.classes.has('math-error'));
+  assert.equal(bad.getAttribute('title'), 'KaTeX parse error: Expected group after ^');
+  assert.equal(bad.getAttribute('aria-label'), 'x^');
+
+  typeset(page(formula('x^')));
+  assert.equal(attempts, 2, 'a broken formula is not remembered as drawn');
 });

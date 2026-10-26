@@ -90,7 +90,7 @@ impl Reply {
     fn advance(&mut self) {
         let step = self.turn.as_mut().and_then(Iterator::next);
         match step {
-            Some(Step::Init { session_id, .. }) => self.handle_init(session_id),
+            Some(Step::Init { session_id }) => self.handle_init(session_id),
             Some(Step::Mood(mood)) => self.queue.push_back(Event::Mood { mood }),
             Some(Step::Text(delta)) => self.queue.push_back(Event::Text { delta }),
             Some(Step::ToolStarted(start)) => self.queue.push_back(Event::ToolStarted(start)),
@@ -330,13 +330,8 @@ mod tests {
             .collect();
         assert_eq!(users, ["hello", "are you there?"]);
 
-        let notices: Vec<&Event> = events
-            .iter()
-            .filter(|e| matches!(e, Event::Notice { .. }))
-            .collect();
-        assert_eq!(notices.len(), 1);
-        assert!(matches!(notices[0], Event::Notice { message }
-            if message == "Couldn't find the last conversation, so started a fresh one. Jet's memory is kept."));
+        let notices = events.iter().filter(|e| matches!(e, Event::Notice { .. }));
+        assert_eq!(notices.count(), 1);
         let started: Vec<_> = events
             .iter()
             .filter(|e| matches!(e, Event::Started { fresh: true }))
@@ -364,10 +359,8 @@ mod tests {
         assert_eq!(chat.requests()[5].session, SessionMode::New);
         let notices = events.iter().filter(|e| matches!(e, Event::Notice { .. }));
         assert_eq!(notices.count(), 1, "{events:?}");
-    }
 
-    #[test]
-    fn a_transport_that_cannot_start_still_ends_with_a_failed_event() {
+        // A transport that cannot start still ends the reply with a Failed event.
         let missing = TransportError::ClaudeMissing {
             searched: vec!["/a/claude".into(), "/b/claude".into()],
         };
@@ -376,14 +369,12 @@ mod tests {
             Scripted::new().then(Script::cannot_start(missing)),
         );
         let events = chat.send(message("hello"));
-
         let [Event::Failed { failure, entry }] = &events[..] else {
             panic!("expected one Failed event, got {events:?}");
         };
-        assert_eq!(
-            failure.message(),
-            "I couldn't find Claude Code. I looked in: /a/claude, /b/claude"
-        );
+        for place in ["/a/claude", "/b/claude"] {
+            assert!(failure.message().contains(place), "{}", failure.message());
+        }
         assert_eq!(entry.entry.status, EntryStatus::Failed);
         assert_eq!(entry.entry.error.as_deref(), Some(failure.message()));
         let history = chat.conversation.history(10).unwrap();

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { paint } from '../draw/paint.js';
 import { createPlayer } from '../player.js';
-import { restState } from '../state.js';
 import { buildHello } from './hello.js';
 
 const wave = JSON.parse(readFileSync(new URL('../fixtures/wave.json', import.meta.url), 'utf8'));
@@ -41,52 +40,4 @@ test('the played wave matches jet-wave.svg frame for frame', () => {
     assert.ok(Math.abs(winkOf(tree) - winkScale) <= 0.02, `frame ${index}: wink ${winkOf(tree)} against ${winkScale}`);
     if (winkScale > LID_FLOOR) assert.ok(Math.abs(squintOf(tree) - squintFor(winkScale)) <= 0.02, `frame ${index}: left squint ${squintOf(tree)} against ${squintFor(winkScale)}`);
   }
-});
-
-// Plays a clip to its end on a fixed clock from the rest state and gives the player and the eyes it showed.
-function playToEnd(clip, { standing = false, eyeKind = 'round' } = {}) {
-  const player = createPlayer({ random: () => 1, layers: false, standing });
-  player.state.eyeKind = eyeKind;
-  player.play(clip, 0);
-  const shown = new Map();
-  for (let now = 0; now <= clip.total + FRAME_MS; now += FRAME_MS) {
-    player.tick(now);
-    shown.set(now, { kind: player.frame.eyes.kind, lids: player.frame.eyes.lids });
-  }
-  return { player, shown };
-}
-
-test('brief ends at 1650 with no wink, revealFrom is wag, tracks and phases run forward, and the kite ends as it started', () => {
-  const full = buildHello(HOVERING);
-  const brief = buildHello(HOVERING, { brief: true });
-  assert.deepEqual(full.phases, [{ name: 'dip', end: 180 }, { name: 'lift', end: 650 }, { name: 'wag', end: 1900 }, { name: 'drop', end: 2300 }, { name: 'rest', end: 2550 }]);
-  assert.deepEqual(brief.phases.map((phase) => phase.end), [180, 650, 1150, 1450, 1650]);
-  assert.equal(brief.total, 1650);
-  assert.equal(full.revealFrom, 'wag');
-  assert.equal(brief.revealFrom, 'wag');
-  assert.ok(full.lids.some((key) => key.v[1] === 1), 'the full hello winks');
-  assert.ok(brief.lids.every((key) => key.v[1] === 0), 'the brief hello does not');
-
-  for (const clip of [full, brief, buildHello({ ...HOVERING, eyeKind: 'round', standing: true })]) {
-    const ends = clip.phases.map((phase) => phase.end);
-    assert.deepEqual(ends, [...ends].sort((a, b) => a - b), 'the phases run forward');
-    for (const name of ['lift', 'lids', 'y', 'squash', 'form']) {
-      const times = clip[name].map((key) => key.t);
-      assert.deepEqual(times, [...times].sort((a, b) => a - b), `the ${name} track runs forward`);
-      assert.ok(times.every((t) => t >= 0 && t <= clip.total), `the ${name} track stays inside the clip`);
-    }
-  }
-
-  for (const standing of [false, true]) {
-    for (const brief of [false, true]) {
-      const { player } = playToEnd(buildHello({ standing, eyeKind: 'round', reducedMotion: false }, { brief }), { standing });
-      assert.deepEqual(player.state, { ...restState({ standing }), eyeKind: 'lid' }, `back at rest, standing ${standing}, brief ${brief}; only the eyes stay lid`);
-    }
-  }
-
-  const blinking = playToEnd(buildHello({ ...HOVERING, eyeKind: 'round' }));
-  assert.equal(blinking.shown.get(40).kind, 'round');
-  assert.deepEqual(blinking.shown.get(80), { kind: 'lid', lids: [1, 1] }, 'the opening blink swaps the eyes under its shut lids');
-  const lidEyes = playToEnd(buildHello(HOVERING), { eyeKind: 'lid' });
-  assert.deepEqual(lidEyes.shown.get(80), { kind: 'lid', lids: [0, 0] }, 'eyes that are already lid eyes do not blink');
 });

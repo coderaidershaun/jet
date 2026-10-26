@@ -20,7 +20,7 @@ fn fake(dir: &std::path::Path) -> CodexCli {
     CodexCli::at(env!("CARGO_BIN_EXE_fake-codex").into(), dir.into())
 }
 #[test]
-fn codex_stream_resume_schema_usage_and_tool_results() {
+fn codex_stream_resume_schema_usage_tool_results_and_terminal_errors() {
     let dir = tempfile::tempdir().unwrap();
     let cli = fake(dir.path());
     let mut req = request("hello");
@@ -90,11 +90,8 @@ fn codex_stream_resume_schema_usage_and_tool_results() {
         panic!("review failed");
     };
     assert_eq!(summary.structured_output, Some(json!({"ok":true})));
-}
-#[test]
-fn codex_errors_and_cancellation_are_terminal() {
-    let dir = tempfile::tempdir().unwrap();
-    let cli = fake(dir.path());
+
+    // However a run ends, the turn ends with one terminal step.
     for prompt in ["fail", "exit"] {
         let steps: Vec<_> = Turn::start(&cli, &request(prompt)).unwrap().collect();
         assert!(matches!(steps.last(), Some(Step::Failed(_))), "{steps:?}");
@@ -112,7 +109,7 @@ fn codex_errors_and_cancellation_are_terminal() {
 }
 #[test]
 #[ignore = "uses the locally signed-in Codex subscription"]
-fn live_codex_chat_and_resume() {
+fn live_codex_chat_resume_and_review_schema() {
     let dir = tempfile::tempdir().unwrap();
     let cli = CodexCli::locate(None, dir.path()).unwrap();
     let mut req = request("Remember the word marigold. Reply with just OK.");
@@ -122,7 +119,7 @@ fn live_codex_chat_and_resume() {
     let id = steps
         .iter()
         .find_map(|s| {
-            if let Step::Init { session_id, .. } = s {
+            if let Step::Init { session_id } = s {
                 Some(session_id.clone())
             } else {
                 None
@@ -140,14 +137,8 @@ fn live_codex_chat_and_resume() {
         "{}",
         summary.result
     );
-}
 
-#[test]
-#[ignore = "uses the locally signed-in Codex subscription"]
-fn live_codex_review_schema() {
-    let dir = tempfile::tempdir().unwrap();
-    let cli = CodexCli::locate(None, dir.path()).unwrap();
-    let mut req = request("Set changed to false and all three notes to empty strings.");
+    req = request("Set changed to false and all three notes to empty strings.");
     req.session = SessionMode::Ephemeral;
     req.model = cli.review_model();
     req.effort = Effort::Low;

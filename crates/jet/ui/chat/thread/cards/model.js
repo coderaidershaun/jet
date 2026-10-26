@@ -68,7 +68,7 @@ export function callState(call) {
 }
 
 /** 'p.145' when the book prints the page, else 'page 15': the place in the chapter, which is not a printed number. */
-export function pageLabel(item) {
+function pageLabel(item) {
   const { printed_page: printed, page } = recordOf(item);
   if (typeof printed === 'string' && printed !== '') return 'p.' + printed;
   return 'page ' + (page ?? '?');
@@ -83,7 +83,7 @@ export function sourceTitle(item) {
  * How a hit or a page piece is drawn, by its kind. `item` supplies the label, picture and language.
  * @returns {Show}
  */
-export function showOf(kind, text, item = {}) {
+function showOf(kind, text, item = {}) {
   const { label, picture, language } = recordOf(item);
   const words = stringOf(text);
   switch (kind) {

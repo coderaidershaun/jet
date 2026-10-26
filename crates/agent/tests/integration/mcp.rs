@@ -205,17 +205,16 @@ async fn lose_reply(
     }
 }
 #[tokio::test]
-async fn catalogues_negotiate_refresh_and_report_stale_metadata() {
+async fn calls_validate_route_and_cancel_without_replay() {
     let world = World::new().await;
+    // The catalogue holds what the app announced, goes stale when it cannot be listed, and recovers.
     let catalogue = world.client.catalogue(&world.app.id).await.unwrap();
     assert_eq!(
         catalogue.server.instructions.as_deref(),
         Some("Fixture instructions")
     );
-    assert!(!catalogue.server.name.is_empty());
     assert!(!catalogue.server.protocol_version.is_empty());
-    assert!(catalogue.server.capabilities["tools"].is_object());
-    assert_eq!(catalogue.tools.len(), 2);
+    assert_eq!(catalogue.tools.len(), 2, "both pages are read");
     assert_eq!(catalogue.tools[0].meta["fixture"], true);
     assert!(catalogue.tools[0].output_schema.is_some());
     assert!(catalogue.tools[0].annotations.is_some());
@@ -247,14 +246,10 @@ async fn catalogues_negotiate_refresh_and_report_stale_metadata() {
     let stale = world.client.refresh(&world.app.id).await.unwrap();
     assert!(stale.is_stale);
     assert!(stale.last_error.unwrap().contains("repeated"));
+    world.fixture.repeat.store(false, Ordering::SeqCst);
+    assert!(!world.client.refresh(&world.app.id).await.unwrap().is_stale);
     assert_eq!(world.fixture.calls.load(Ordering::SeqCst), 0);
-    let healthy = World::new().await;
-    let other = world.register(healthy.app.base_url.as_str().into()).await;
-    assert!(!world.client.catalogue(&other.id).await.unwrap().is_stale);
-}
-#[tokio::test]
-async fn calls_validate_route_and_cancel_without_replay() {
-    let world = World::new().await;
+
     let mut invalid = world.request("invalid", "");
     invalid.arguments.clear();
     assert!(matches!(

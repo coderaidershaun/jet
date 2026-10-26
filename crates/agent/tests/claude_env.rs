@@ -1,30 +1,14 @@
-//! The environment the real `ClaudeCli` gives Claude Code. This test changes the environment of
-//! its own process, so it lives in a file of its own, where no other test runs beside it.
+//! The environment and command line the real `ClaudeCli` gives Claude Code. This test changes the
+//! environment of its own process, so it lives in a file of its own, where no other test runs
+//! beside it.
 
-use std::path::{Path, PathBuf};
+mod support;
 
-use agent::{ClaudeCli, Effort, Model, Mood, Request, SessionId, SessionMode, Step, Turn};
+use std::path::Path;
+
+use agent::{FACADE_TOOLS, McpConnection, Mood, Request, SessionId, SessionMode, Step, Turn};
 use serde_json::json;
-
-fn fake_claude(name: &str) -> (ClaudeCli, PathBuf) {
-    let cwd = std::env::temp_dir().join(format!("agent-contract-{}-{name}", std::process::id()));
-    std::fs::remove_dir_all(&cwd).ok();
-    let program = PathBuf::from(env!("CARGO_BIN_EXE_fake-claude"));
-    (ClaudeCli::at(program, cwd.clone()), cwd)
-}
-
-fn chat_request(prompt: &str, session: SessionMode) -> Request {
-    Request {
-        prompt: prompt.to_owned(),
-        system_prompt: "You are Jet.".to_owned(),
-        model: Model::Sonnet,
-        effort: Effort::Medium,
-        budget_usd: 1.0,
-        session,
-        schema: None,
-        mcp: None,
-    }
-}
+use support::{chat_request, fake_claude};
 
 fn recorded_args(cwd: &Path) -> Vec<String> {
     let text = std::fs::read_to_string(cwd.join("fake-claude-args.json")).unwrap();
@@ -49,6 +33,7 @@ fn fake_claude_streams_a_turn() {
             ("CLAUDE_PID", "1"),
             ("CLAUDE_EFFORT", "high"),
             ("CLAUDE_CODE_FOO", "bar"),
+            ("CLAUDE_CONFIG_DIR", "/the/users/claude/folder"),
         ];
         for (name, value) in session {
             std::env::set_var(name, value);
@@ -56,14 +41,15 @@ fn fake_claude_streams_a_turn() {
     }
     let (claude, cwd) = fake_claude("streams");
     let prompt = "[local time: Tue 14 Oct 2026, 11:20]\nfixture:sonnet-mood-reply";
-    let resume = SessionMode::Resume(SessionId("abc-123".into()));
-    let turn = Turn::start(&claude, &chat_request(prompt, resume)).unwrap();
-    let steps: Vec<Step> = turn.collect();
+    let request = Request {
+        mcp: Some(McpConnection {
+            url: "http://localhost/mcp".into(),
+            token: "fixture".into(),
+        }),
+        ..chat_request(prompt, SessionMode::Resume(SessionId("abc-123".into())))
+    };
+    let steps: Vec<Step> = Turn::start(&claude, &request).unwrap().collect();
 
-    assert!(
-        matches!(steps.iter().find(|s| matches!(s, Step::Init { .. })),
-        Some(Step::Init { model, .. }) if model == "claude-sonnet-5-5")
-    );
     let mood_at = steps
         .iter()
         .position(|s| matches!(s, Step::Mood(Mood::Neutral)))
@@ -86,16 +72,38 @@ fn fake_claude_streams_a_turn() {
     };
     assert_eq!(summary.context_tokens, 1577);
 
+    // Claude Code must run with nothing but Jet's own tools and no settings of the user's.
     let args = recorded_args(&cwd);
+    let value_of = |flag: &str| &args[args.iter().position(|arg| arg == flag).unwrap() + 1];
     assert_eq!(args[0], "-p");
-    let at = |flag: &str| args.iter().position(|arg| arg == flag).unwrap();
-    assert_eq!(args[at("--system-prompt") + 1], "You are Jet.");
-    assert_eq!(
-        args[at("--tools") + 1],
-        "",
-        "the empty tool list is one empty argument"
+    assert_eq!(value_of("--system-prompt"), "You are Jet.");
+    for (flag, value) in [
+        ("--tools", ""),
+        ("--setting-sources", ""),
+        ("--permission-prompts", "none"),
+    ] {
+        assert_eq!(value_of(flag), value, "{flag}");
+    }
+    for flag in [
+        "--disable-slash-commands",
+        "--strict-mcp-config",
+        "--no-chrome",
+    ] {
+        assert!(args.iter().any(|arg| arg == flag), "{flag}");
+    }
+    assert!(
+        !args.iter().any(|arg| arg == "--safe-mode"),
+        "safe mode would drop the MCP servers"
+    );
+    assert!(value_of("--mcp-config").contains("http://localhost/mcp"));
+    let allowed: Vec<&str> = value_of("--allowedTools").split(',').collect();
+    assert_eq!(allowed.len(), FACADE_TOOLS.len());
+    assert!(
+        allowed.iter().all(|tool| tool.starts_with("mcp__jet__")),
+        "{allowed:?}"
     );
     assert_eq!(args[args.len() - 2..], ["--resume", "abc-123"]);
+
     let env = std::fs::read_to_string(cwd.join("fake-claude-env.json")).unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&env).unwrap(),
@@ -103,8 +111,9 @@ fn fake_claude_streams_a_turn() {
             "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h",
             "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
             "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+            "CLAUDE_CONFIG_DIR": "/the/users/claude/folder",
         }),
-        "of the Claude variables, only Jet's own settings reach the program"
+        "of the Claude variables, only Jet's own settings and the user's config folder reach the program"
     );
 
     let review = Request {

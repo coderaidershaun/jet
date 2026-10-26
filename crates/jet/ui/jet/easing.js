@@ -40,9 +40,6 @@ export const easeInOut = (u) => (u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3
 /** Fast first, slow at the end. @param {number} u 0..1 */
 export const easeOut = (u) => 1 - (1 - u) ** 3;
 
-/** Slow first, fast at the end. @param {number} u 0..1 */
-export const easeIn = (u) => u * u * u;
-
 /**
  * Runs past 1 and settles back; a bigger `overshoot` goes further past.
  * @param {number} [overshoot]

@@ -3,14 +3,12 @@
 use serde_json::{Value, json};
 
 pub(super) struct Events {
-    model: String,
     wants_structured_output: bool,
     result: String,
 }
 impl Events {
-    pub(super) fn new(model: String, wants_structured_output: bool) -> Self {
+    pub(super) fn new(wants_structured_output: bool) -> Self {
         Self {
-            model,
             wants_structured_output,
             result: String::new(),
         }
@@ -26,7 +24,6 @@ impl Events {
                 "type": "system",
                 "subtype": "init",
                 "session_id": event["thread_id"],
-                "model": self.model,
             })),
             "item.completed" if item["type"] == "agent_message" => {
                 self.result = item["text"].as_str().unwrap_or_default().to_owned();

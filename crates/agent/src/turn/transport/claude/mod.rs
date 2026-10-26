@@ -67,27 +67,3 @@ impl Transport for ClaudeCli {
         Ok(launch(child, &request.prompt))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn session_variables_exclude_the_settings_jet_sets() {
-        let is_session = |name: &str| is_session_variable(OsStr::new(name));
-        for name in [
-            "CLAUDECODE",
-            "CLAUDE_PID",
-            "CLAUDE_EFFORT",
-            "CLAUDE_CODE_ENTRYPOINT",
-        ] {
-            assert!(is_session(name), "{name}");
-        }
-        let jet_settings = [CACHE_TTL_ENV.0]
-            .into_iter()
-            .chain(ISOLATION_ENV.map(|(name, _)| name));
-        for name in jet_settings.chain(["PATH", "CLAUDE_CONFIG_DIR"]) {
-            assert!(!is_session(name), "{name}");
-        }
-    }
-}

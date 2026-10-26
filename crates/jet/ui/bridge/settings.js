@@ -14,7 +14,7 @@ import { requestJson } from './browser-agent.js';
  */
 
 /** Mirrors `Settings::default()` on the Rust side. @returns {Settings} */
-export function defaultSettings() {
+function defaultSettings() {
   return {
     reducedMotion: false,
     persona: { name: 'Jet', jobTitle: 'First-mate', notes: '' },
@@ -27,7 +27,7 @@ export function defaultSettings() {
 }
 
 /** Fills gaps in a saved object from the defaults, one level at a time. */
-export function merge(base, saved) {
+function merge(base, saved) {
   if (saved === null || typeof saved !== 'object' || Array.isArray(saved)) return base;
   const out = { ...base };
   for (const key of Object.keys(base)) {

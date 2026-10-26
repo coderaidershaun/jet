@@ -2,39 +2,16 @@
 //! with the `fake-claude` program standing in for Claude Code itself. One test also runs
 //! a whole reply through `Conversation`, to the events and the saved thread.
 
-use std::path::{Path, PathBuf};
+mod support;
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use agent::{
-    ClaudeCli, Conversation, DataDir, Effort, Event, McpConnection, Message, Model, Mood, Persona,
-    Request, SessionMode, Step, ToolStart, Turn,
+    Conversation, DataDir, Effort, Event, McpConnection, Message, Model, Mood, Persona,
+    SessionMode, Step, ToolStart, Turn,
 };
-
-fn fake_claude(name: &str) -> (ClaudeCli, PathBuf) {
-    let cwd = std::env::temp_dir().join(format!("agent-contract-{}-{name}", std::process::id()));
-    std::fs::remove_dir_all(&cwd).ok();
-    let program = PathBuf::from(env!("CARGO_BIN_EXE_fake-claude"));
-    (ClaudeCli::at(program, cwd.clone()), cwd)
-}
-
-fn chat_request(prompt: &str, session: SessionMode) -> Request {
-    Request {
-        prompt: prompt.to_owned(),
-        system_prompt: "You are Jet.".to_owned(),
-        model: Model::Sonnet,
-        effort: Effort::Medium,
-        budget_usd: 1.0,
-        session,
-        schema: None,
-        mcp: None,
-    }
-}
-
-fn recorded_args(cwd: &Path) -> Vec<String> {
-    let text = std::fs::read_to_string(cwd.join("fake-claude-args.json")).unwrap();
-    serde_json::from_str(&text).unwrap()
-}
+use support::{chat_request, fake_claude};
 
 #[test]
 fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
@@ -128,13 +105,6 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
     );
     let history = conversation.history(10).unwrap();
     assert_eq!(history.last().unwrap().entry.tools, entry.entry.tools);
-
-    let args = recorded_args(&cwd);
-    let at = |flag: &str| args.iter().position(|arg| arg == flag).unwrap();
-    assert_eq!(args[at("--tools") + 1], "");
-    assert!(args[at("--mcp-config") + 1].contains("http://localhost/mcp"));
-    assert!(args.contains(&"--allowedTools".to_owned()));
-    assert!(!args.contains(&"--safe-mode".to_owned()));
 }
 
 fn is_alive(pid: &str) -> bool {

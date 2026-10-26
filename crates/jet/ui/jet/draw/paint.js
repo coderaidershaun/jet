@@ -10,7 +10,7 @@ import { fold, speedLines } from '../parts/hand.js';
 import { clamp } from '../maths.js';
 import { BODY, CREASE, EYE, HAND, STRING } from './palette.js';
 
-export const STROKE_FLOOR_PX = 0.8;
+const STROKE_FLOOR_PX = 0.8;
 
 const STRING_WIDTH = 1.6;
 const CREASE_WIDTH = 1.6;

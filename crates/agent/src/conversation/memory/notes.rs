@@ -62,29 +62,3 @@ pub(crate) fn trim_to_limit(text: &str, limit: usize) -> String {
     }
     kept.join("\n")
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn notes_are_trimmed_to_their_caps_on_a_line_boundary() {
-        assert_eq!(trim_to_limit("a\nbb\nccc", 4), "a\nbb");
-        assert_eq!(trim_to_limit("short note", 100), "short note");
-        assert_eq!(trim_to_limit("ééééé\nnext", 3), "ééé");
-
-        let dir = DataDir::scratch("notes-caps");
-        let long_line = "- fact\n".repeat(MEMORY_LIMIT);
-        let saved = Notes {
-            memory: long_line,
-            user: "u".repeat(USER_LIMIT + 50),
-            recent: String::new(),
-        }
-        .save(&dir)
-        .unwrap();
-        assert!(saved.memory.chars().count() <= MEMORY_LIMIT);
-        assert!(saved.memory.ends_with("- fact"), "cut on a line boundary");
-        assert_eq!(saved.user.chars().count(), USER_LIMIT);
-        assert_eq!(Notes::load(&dir).unwrap(), saved);
-    }
-}

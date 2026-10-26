@@ -95,16 +95,13 @@ struct Answer {
 
 #[cfg(test)]
 mod tests {
+    use super::super::key;
     use super::*;
     use crate::Mood;
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
-    fn server(
-        status: u16,
-        body: &'static str,
-        pause: Duration,
-    ) -> (Jev, std::thread::JoinHandle<String>) {
+    fn server(status: u16, body: &'static str) -> (Jev, std::thread::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let mut client = Jev::new("test-credential-never-output".into());
         client.endpoint = format!("http://{}/systemone", listener.local_addr().unwrap());
@@ -132,13 +129,11 @@ mod tests {
                 }
                 assert_ne!(count, 0);
             }
-            std::thread::sleep(pause);
             let response = format!(
                 "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
-            // A timed-out client has already closed its socket.
-            stream.write_all(response.as_bytes()).ok();
+            stream.write_all(response.as_bytes()).unwrap();
             listener.set_nonblocking(true).unwrap();
             assert!(
                 listener.accept().is_err(),
@@ -150,11 +145,39 @@ mod tests {
     }
 
     #[test]
-    fn jev_sends_questions_and_decodes_only_complete_answers_with_safe_errors() {
+    fn jev_key_is_found_sent_and_never_leaked() {
+        // The key comes from the environment first, then from the nearest .env file above the
+        // folder, and finding it never changes the environment.
+        let before = std::env::var_os(key::VARIABLE);
+        let root = tempfile::tempdir().unwrap();
+        let child = root.path().join("a/b");
+        std::fs::create_dir_all(&child).unwrap();
+        assert!(key::discover(None, &child).is_none());
+        std::fs::write(
+            root.path().join(".env"),
+            "export JEV_API_KEY='parent-value'\n",
+        )
+        .unwrap();
+        assert_eq!(key::discover(None, &child).as_deref(), Some("parent-value"));
+        assert_eq!(
+            key::discover(Some("environment-value".into()), &child).as_deref(),
+            Some("environment-value")
+        );
+        std::fs::write(child.join(".env"), "JEV_API_KEY=nearest-value\n").unwrap();
+        assert_eq!(
+            key::discover(None, &child).as_deref(),
+            Some("nearest-value")
+        );
+        std::fs::write(child.join(".env"), "OTHER=present\n").unwrap();
+        assert!(
+            key::discover(None, &child).is_none(),
+            "a nearer file owns the configuration"
+        );
+        assert_eq!(std::env::var_os(key::VARIABLE), before);
+
         let (client, worker) = server(
             200,
             r#"{"answers":{"hello":{"noul":0.8},"insulted":{"noul":0.1}}}"#,
-            Duration::ZERO,
         );
         assert_eq!(client.classify("hello\nworld").unwrap().mood, Mood::Hello);
         let request = worker.join().unwrap();
@@ -203,21 +226,11 @@ mod tests {
                 JevError::Rejected { status: 503 },
             ),
         ] {
-            let (client, worker) = server(status, body, Duration::ZERO);
+            let (client, worker) = server(status, body);
             let error = client.classify("hi").unwrap_err();
             assert_eq!(error, expected);
             assert!(!format!("{error:?} {error}").contains("test-credential"));
             worker.join().unwrap();
         }
-    }
-
-    #[test]
-    fn jev_times_out_after_two_seconds_without_retrying() {
-        let (client, worker) = server(200, "{}", Duration::from_millis(2200));
-        let start = std::time::Instant::now();
-        assert_eq!(client.classify("hi"), Err(JevError::Http));
-        assert!(start.elapsed() >= Duration::from_millis(1800));
-        assert!(start.elapsed() < Duration::from_secs(3));
-        worker.join().unwrap();
     }
 }

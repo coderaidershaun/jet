@@ -70,32 +70,3 @@ pub fn feel_message(text: &str) -> Result<Feeling, JevError> {
     };
     Jev::new(key).classify(text)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn classification_uses_supported_scores_threshold_and_vocabulary_order() {
-        for (scores, expected) in [
-            (vec![("hello", 0.5), ("insulted", 0.5)], Mood::Hello),
-            (vec![("hello", 0.49), ("insulted", 0.8)], Mood::Insulted),
-            (
-                vec![("hello", f64::NAN), ("insulted", 1.1), ("other", 1.0)],
-                Mood::Neutral,
-            ),
-            (
-                vec![("hello", -0.1), ("insulted", f64::INFINITY)],
-                Mood::Neutral,
-            ),
-        ] {
-            let scores = scores
-                .into_iter()
-                .map(|(word, score)| (word.into(), score))
-                .collect();
-            assert_eq!(Feeling::from_scores(scores).mood, expected);
-        }
-        let moods: Vec<_> = QUESTIONS.iter().map(|(mood, _)| *mood).collect();
-        assert_eq!(moods, Mood::ALL[1..]);
-    }
-}
