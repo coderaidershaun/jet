@@ -3,7 +3,7 @@ mod connect;
 mod headers;
 mod target;
 
-use crate::{Server, ServerConfig, ServerError};
+use super::{Server, ServerConfig, ServerError};
 use agent::apps::{App, AppId, DiscoveryStatus};
 use axum::{
     Json, Router,

@@ -52,7 +52,7 @@ mod tests {
     }
 
     /// The cases the browser fallback runs too, so the two renderers cannot drift apart.
-    const VECTORS: &str = include_str!("../../../jet/ui/bridge/fixtures/math-vectors.json");
+    const VECTORS: &str = include_str!("../../../../jet/ui/bridge/fixtures/math-vectors.json");
 
     #[derive(Deserialize)]
     struct VectorFile {

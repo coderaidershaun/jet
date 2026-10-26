@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::process::launch;
-use super::transport::{Lines, Request, Transport, TransportError};
+use super::{Lines, Request, Transport, TransportError};
 use args::{CACHE_TTL_ENV, ISOLATION_ENV, args};
 
 /// Whether a variable is one that a running Claude Code session sets for its own tools.

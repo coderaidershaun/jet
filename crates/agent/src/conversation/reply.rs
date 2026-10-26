@@ -5,10 +5,10 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+use super::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
 use super::session_policy::FreshReason;
 use super::{Claim, shown};
 use crate::chat::{Entry, EntryId, EntryStatus, Event, Failure, McpStatus, Role, SessionId};
-use crate::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
 use crate::turn::{
     Request, SessionMode, Step, Stopper, Summary, Transport, TransportError, Turn, TurnError,
 };

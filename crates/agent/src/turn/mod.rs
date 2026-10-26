@@ -1,14 +1,9 @@
 //! One exchange with an agent: start a request and read it back as steps. A turn always ends
 //! in exactly one of finished, stopped or failed, so the caller never waits for nothing.
 
-mod claude;
-mod codex;
 mod context;
 mod error;
 mod mood;
-mod process;
-#[cfg(test)]
-pub(crate) mod scripted;
 mod stream;
 mod tools;
 mod transport;
@@ -20,13 +15,15 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::chat::{McpStatus, Mood, SessionId, ToolCall, Usage};
-pub use claude::ClaudeCli;
-pub use codex::CodexCli;
 pub use error::TurnError;
 use mood::{MoodSplitter, Split};
 use stream::{Line, ResultLine};
 use tools::ToolCalls;
-pub use transport::{Lines, Request, SessionMode, Stopper, Transport, TransportError};
+#[cfg(test)]
+pub(crate) use transport::scripted;
+pub use transport::{
+    ClaudeCli, CodexCli, Lines, Request, SessionMode, Stopper, Transport, TransportError,
+};
 
 /// How long the agent may stay silent before the turn gives up.
 const IDLE_LIMIT: Duration = Duration::from_secs(120);

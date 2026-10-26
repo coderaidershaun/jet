@@ -2,6 +2,8 @@
 //! forget the thread, edit the notes, and let the review keep them current.
 
 mod accepted;
+mod markdown;
+mod memory;
 mod persona;
 mod reply;
 mod review;
@@ -10,13 +12,14 @@ mod session_policy;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+pub use markdown::render_markdown;
+pub use memory::{DataDir, MemoryError, now_ms};
+use memory::{NewEntry, Session, Transcript};
 pub use reply::Reply;
 pub use review::{ReviewError, ReviewOutcome};
 use session_policy::decide;
 
 use crate::chat::{Effort, Entry, McpConnection, Model, Notes, Persona, Role, ShownEntry};
-use crate::markdown::render_markdown;
-use crate::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
 use crate::turn::{Request, SessionMode, Transport, Turn};
 
 /// Everything one message brings with it.

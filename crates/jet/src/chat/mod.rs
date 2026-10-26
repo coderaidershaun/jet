@@ -25,6 +25,7 @@ use review_timer::{ReviewTarget, ReviewTimer};
 
 pub(crate) struct ChatState {
     pub conversation: Conversation,
+    // SMELL: chat and facade import each other; the facade reaches back through a weak link that server::open sets.
     facade: Arc<crate::facade::Facade>,
     pub data_dir: PathBuf,
     runtime: Mutex<Runtime>,

@@ -2,7 +2,7 @@
 //! one. A fresh one is started when the user changed something baked into the prompt, when
 //! Claude lost the saved one, or when it has gone cold and would be expensive to read back.
 
-use crate::memory::Session;
+use super::memory::Session;
 use crate::turn::SessionMode;
 
 /// Claude keeps its prompt cache for an hour. A little earlier, a resume stops being cheap.
@@ -67,10 +67,10 @@ impl FreshReason {
 
 #[cfg(test)]
 mod tests {
+    use super::super::memory::now_ms;
     use super::super::test_support::{Chat, message};
     use super::*;
     use crate::chat::{Event, Persona, SessionId};
-    use crate::memory::now_ms;
 
     fn notices(events: &[Event]) -> Vec<&str> {
         events

@@ -48,7 +48,7 @@ pub(super) fn router(host: Server) -> Router {
         .route("/api/markdown", post(markdown))
         .route("/api/feel", post(feel))
         .route("/api/apps", get(apps).post(update_apps))
-        .merge(crate::proxy::router())
+        .merge(super::proxy::router())
         .fallback_service(ui)
         .with_state(host)
         .merge(facade)

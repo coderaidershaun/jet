@@ -1,8 +1,8 @@
 //! Recover accepted requests without repeating uncertain provider work.
 
+use super::memory::{MemoryError, NewEntry, Transcript, now_ms};
 use super::{Conversation, shown};
 use crate::chat::{EntryStatus, Role, ShownEntry};
-use crate::memory::{MemoryError, NewEntry, Transcript, now_ms};
 
 impl Conversation {
     /// Finds an accepted request even when its reply has already finished.

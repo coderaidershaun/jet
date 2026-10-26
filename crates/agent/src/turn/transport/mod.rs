@@ -1,11 +1,19 @@
 //! Providers expose the same request and line stream so turns can share cancellation and errors.
 
+mod claude;
+mod codex;
+mod process;
+#[cfg(test)]
+pub(crate) mod scripted;
+
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
 use crate::chat::{Effort, Model, SessionId};
+pub use claude::ClaudeCli;
+pub use codex::CodexCli;
 
 /// Starts one request and streams its output.
 pub trait Transport: Send + Sync {

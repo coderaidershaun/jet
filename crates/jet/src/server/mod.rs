@@ -1,6 +1,7 @@
 //! Share one host state between browser commands, event streams and app integrations.
 
 mod config;
+mod proxy;
 mod routes;
 mod tools;
 
@@ -30,7 +31,7 @@ pub enum ServerError {
 #[derive(Clone)]
 pub struct Server {
     pub(crate) chat: Arc<ChatState>,
-    pub(crate) proxy: crate::proxy::Proxy,
+    pub(crate) proxy: proxy::Proxy,
     pub mcp: Arc<HttpMcpClient>,
     pub(crate) facade: Arc<Facade>,
     pub registry: Arc<Mutex<Registry>>,
@@ -39,7 +40,7 @@ pub struct Server {
 
 impl Server {
     pub fn open(config: ServerConfig) -> Result<Self, ServerError> {
-        let proxy = crate::proxy::Proxy::new(&config)?;
+        let proxy = proxy::Proxy::new(&config)?;
         let registry = Arc::new(Mutex::new(Registry::open(&config.data_dir)?));
         let mcp = Arc::new(HttpMcpClient::new(registry.clone()));
         let facade = Facade::new(

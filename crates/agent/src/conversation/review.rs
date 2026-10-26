@@ -7,10 +7,10 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::memory::{MemoryError, Session, Transcript, now_ms};
 use super::persona::{fill, note_or_empty};
 use super::{Claim, Conversation};
 use crate::chat::{Effort, Entry, MEMORY_LIMIT, Notes, RECENT_LIMIT, Role, USER_LIMIT};
-use crate::memory::{MemoryError, Session, Transcript, now_ms};
 use crate::turn::{Request, SessionMode, Step, Summary, Transport, Turn, TurnError};
 
 const PROMPT: &str = include_str!("review.md");
@@ -257,10 +257,10 @@ fn schema() -> Value {
 
 #[cfg(test)]
 mod tests {
+    use super::super::memory::{DataDir, NewEntry};
     use super::super::test_support::Chat;
     use super::*;
     use crate::chat::{EntryId, Model, SessionId};
-    use crate::memory::{DataDir, NewEntry};
     use crate::turn::scripted::{Script, Scripted, structured_result_line};
 
     fn jet_says(text: &str) -> NewEntry {

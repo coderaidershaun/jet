@@ -6,7 +6,7 @@ use std::sync::{Mutex, mpsc};
 
 use serde_json::{Value, json};
 
-use super::transport::{Lines, Request, SessionMode, Stopper, Transport, TransportError};
+use super::{Lines, Request, SessionMode, Stopper, Transport, TransportError};
 use crate::chat::{Effort, Model};
 
 /// What one `start` call does.
