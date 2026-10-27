@@ -64,6 +64,11 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
     node.style.transform = '';
   }
 
+  function measure() {
+    endFlight();
+    return { first: anchorOf(node.getBoundingClientRect()), fromScale: scaleOf() };
+  }
+
   function frame(now) {
     if (flight) {
       applyFlight(now);
@@ -147,13 +152,10 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
     },
 
     /** Where Jet stands now. Take it before the page changes layout for a send. */
-    measure() {
-      endFlight();
-      return { first: anchorOf(node.getBoundingClientRect()), fromScale: scaleOf() };
-    },
+    measure,
 
     /** The send: Jet leaves where it stood and flies to the new lane. */
-    send(lane, now, { first, fromScale }) {
+    send(lane, now, takeoff) {
       cancelFades();
       const mine = generation;
       clearTimeout(helloTimer);
@@ -168,6 +170,9 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
         fadeOver(moveToLane, mine);
         return;
       }
+      // The send scrolls the thread, so a Jet in a lane leaves from where his line is now, or he would only hover while
+      // the thread moved under him. The hero spot moves with the layout, so it was measured before the send.
+      const { first, fromScale } = node.isConnected && !heroSlot.contains(node) ? measure() : takeoff;
       lane.append(node);
       scrollToBottom();
       const last = anchorOf(node.getBoundingClientRect());
