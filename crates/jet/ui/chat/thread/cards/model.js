@@ -3,6 +3,8 @@
 // back. It reads results that come from outside, so every field is checked and a
 // missing one shows as empty. Pure, with no DOM.
 
+import { KINDS, fileLinks, sizeOf } from '../../files.js';
+
 /**
  * One tool call as the thread keeps it. No `ok` yet: still running. `unfinished`: the reply ended first.
  * @typedef {{ id: string, server: string, tool: string, input: any, ok?: boolean, result?: any,
@@ -44,13 +46,8 @@ const HEALTH_SENTENCE = /\s*Call the `health` tool[^.]*\.?/;
 const FAILED_LINE = /FAILED/;
 const HEALTH_HINT = 'Ask for a health check to see which service is down.';
 const FILE_TOOL = 'jet/files_export';
-// A saved file is reached only by this shape of id, so a link is never built from anything else in a result.
-const FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const FILE_FORMATS = {
-  pdf: { tag: 'PDF', label: 'PDF', writing: 'a PDF' },
-  markdown: { tag: 'MD', label: 'Markdown', writing: 'a Markdown file' },
-  html: { tag: 'HTML', label: 'HTML page', writing: 'an HTML page' },
-};
+const READ_TOOL = 'jet/files_read';
+const LIST_TOOL = 'jet/files_list';
 
 const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 const recordOf = (value) => (isRecord(value) ? value : {});
@@ -69,16 +66,10 @@ function textOf(value) {
   return value === undefined ? '' : JSON.stringify(value);
 }
 
-/** The format of a file call, from its input while it runs and from its result when it is done. */
+/** The format of a file Jet writes, from the call's input while it runs and from its result when it is done. */
 function fileFormatOf(call) {
   const named = stringOf(recordOf(call.result).format) || stringOf(recordOf(call.input).format);
-  return Object.hasOwn(FILE_FORMATS, named) ? FILE_FORMATS[named] : null;
-}
-
-function sizeOf(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return Object.hasOwn(KINDS, named) && KINDS[named].writing ? KINDS[named] : null;
 }
 
 /** @param {ShownCall} call @returns {CallState} */
@@ -220,6 +211,10 @@ function lineOf(call, earlier) {
     }
     case 'quanty/ingest_status':
       return 'Checking the ingest';
+    case READ_TOOL:
+      return 'Reading a file';
+    case LIST_TOOL:
+      return 'Listing files';
     case FILE_TOOL: {
       const writing = fileFormatOf(call)?.writing;
       const title = orNull(input.title);
@@ -321,13 +316,37 @@ function readIngest(result, input, call) {
 /** The saved file of a finished export. A result without a UUID id is not a file, and no link is made from it. */
 function readFile(result, input, call) {
   const format = fileFormatOf(call);
-  if (typeof result.id !== 'string' || !FILE_ID.test(result.id) || !format) return { problem: "This file can't be found." };
-  const id = result.id.toLowerCase();
+  const links = fileLinks(result.id);
+  if (!links || !format) return { problem: "This file can't be found." };
   const title = orNull(result.title) ?? orNull(input.title) ?? 'Document';
   const name = orNull(result.name) ?? title;
   const meta = joined(format.label, typeof result.bytes === 'number' ? sizeOf(result.bytes) : '');
-  const body = { kind: 'file', name, title, tag: format.tag, meta, download: '/api/files/' + id, view: '/api/files/' + id + '/view' };
+  const body = { kind: 'file', name, title, tag: format.tag, meta, download: links.download, view: links.view };
   return { outcome: meta, tone: 'ok', body };
+}
+
+const grouped = (n) => n.toLocaleString('en-US');
+
+/** What a read of an attached file gave back, in one line and with no body: the file, and the part of it that was read. */
+function readAttached(result) {
+  const name = orNull(result.name);
+  if (typeof result.mime === 'string') {
+    const size = typeof result.width === 'number' && typeof result.height === 'number' ? result.width + ' × ' + result.height + ' ' : '';
+    return { outcome: joined(name, size + 'picture'), tone: 'quiet', body: null };
+  }
+  const unit = stringOf(result.unit);
+  const [start, end, total] = ['start', 'end', 'total'].map((key) => (typeof result[key] === 'number' ? result[key] : null));
+  let part = '';
+  if (unit && start !== null && end !== null && total !== null) {
+    if (end < start) part = 'nothing from ' + grouped(start) + ' · ' + grouped(total) + ' ' + unit + ' in all';
+    else if (end === start) part = unit.replace(/s$/, '') + ' ' + grouped(start) + ' of ' + grouped(total);
+    else part = unit + ' ' + grouped(start) + '–' + grouped(end) + ' of ' + grouped(total);
+  }
+  return { outcome: joined(name, part) || 'read', tone: 'quiet', body: null };
+}
+
+function readFileList(result) {
+  return { outcome: count(listOf(result.files).length, 'file'), tone: 'quiet', body: null };
 }
 
 /** The sentence a failed call gave back, from a result that may be text or an error record. */
@@ -344,7 +363,10 @@ export function citationSources(call) {
 }
 
 function readerFor(call) {
-  if (call.server + '/' + call.tool === FILE_TOOL) return readFile;
+  const key = call.server + '/' + call.tool;
+  if (key === FILE_TOOL) return readFile;
+  if (key === READ_TOOL) return readAttached;
+  if (key === LIST_TOOL) return readFileList;
   if (!isRecord(call.result)) return readGeneric;
   const legacy = READERS[call.server + '/' + call.tool];
   if (legacy) return legacy;
@@ -380,8 +402,8 @@ export function cardOf(call, earlier = []) {
 
   if (state === 'running') return card;
   if (state === 'unfinished') return ended('stopped');
-  if (state === 'failed' && card.key === FILE_TOOL) {
-    const failedName = "Couldn't write the " + (fileFormatOf(call)?.label ?? 'file');
+  if (state === 'failed' && (card.key === FILE_TOOL || card.key === READ_TOOL)) {
+    const failedName = card.key === READ_TOOL ? "Couldn't read the file" : "Couldn't write the " + (fileFormatOf(call)?.label ?? 'file');
     const meta = joined('failed', time);
     return { ...card, name: failedName, meta, head: failedName + ' · ' + meta, tone: 'invalid', advice: messageOf(call.result) };
   }

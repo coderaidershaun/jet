@@ -56,7 +56,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       composerView.setHeld(null);
       const appId = heldAppId;
       heldAppId = null;
-      turn.send(held, appId);
+      turn.send(held.text, appId, held.attachments);
     }
   }
 
@@ -110,9 +110,10 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     else paint();
   }
 
-  function request(text, appId) {
+  function request(text, appId, attachments) {
     return {
       text,
+      ...(attachments.length > 0 && { attachments: attachments.map((file) => file.id) }),
       activeAppId: appId,
       model: settings.model,
       effort: settings.effort,
@@ -131,7 +132,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       reveal?.end();
       const held = thread.held;
       thread.load(snapshot.history);
-      if (held !== null) thread.hold(held);
+      if (held !== null) thread.hold(held.text, held.attachments);
       active = null;
       reveal = null;
       pendingEntry = null;
@@ -170,16 +171,19 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       if (active && active.turnId === envelope.turn?.turnId && thread.slot) onEvent(envelope.event);
     },
 
-    /** Sends a message: the bubble, the new slot, the flight, then the agent. */
-    async send(text, appId = activeAppId()) {
+    /**
+     * Sends a message: the bubble, the new slot, the flight, then the agent.
+     * @param {import('./thread/store.js').Attachment[]} [attachments]   the uploaded files that go with it
+     */
+    async send(text, appId = activeAppId(), attachments = []) {
       const mine = { dispatched: false, cancelFeeling: null };
       active = mine;
       const now = performance.now();
-      const message = request(text, appId);
+      const message = request(text, appId, attachments);
       if (agent.serverEvents) { message.requestId = randomId(); mine.requestId = message.requestId; }
       const takeoff = live.measure();
       follow.onSend();
-      thread.addUser(text);
+      thread.addUser(text, undefined, attachments);
       thread.openSlot();
       composer.sent();
       composer.replying = true;
@@ -202,7 +206,8 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         warned = true;
         console.warn('Feeling classification unavailable; continuing with neutral.');
       };
-      const feeling = await new Promise((resolve) => {
+      // A message of files alone has no words to read a feeling from.
+      const feeling = text.trim() === '' ? 'neutral' : await new Promise((resolve) => {
         let settled = false;
         const finish = (word) => {
           if (settled) return;
@@ -247,8 +252,8 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     },
 
     retry() {
-      const text = thread.lastUserText();
-      if (text !== null && !thread.replying) turn.send(text);
+      const last = thread.lastUser();
+      if (last !== null && !thread.replying) turn.send(last.text, undefined, last.attachments);
     },
 
     stop() {
@@ -268,16 +273,19 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       endReply();
     },
 
-    hold(text, appId = activeAppId()) {
+    hold(text, appId = activeAppId(), attachments = []) {
       heldAppId = appId;
-      thread.hold(text);
+      thread.hold(text, attachments);
       composerView.setHeld(thread.held);
     },
 
+    /** Puts the held text back in the field. @returns {import('./thread/store.js').Attachment[]} the held files, for the tray to take back */
     cancelHold() {
       heldAppId = null;
-      composerView.setText(thread.cancelHold());
+      const back = thread.cancelHold();
+      composerView.setText(back.text);
       composerView.setHeld(null);
+      return back.attachments;
     },
   };
   return turn;

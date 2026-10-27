@@ -7,4 +7,5 @@ mod server;
 mod settings;
 
 pub use chat::BridgeError;
+pub use files::{READ_FILE_ARGUMENT, run_file_reader};
 pub use server::{Server, ServerConfig, ServerError};

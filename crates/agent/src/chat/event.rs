@@ -83,6 +83,7 @@ mod tests {
             id: EntryId(id),
             role: Role::Jet,
             text: "Friday looks fine".into(),
+            attachments: Vec::new(),
             mood: None,
             status,
             error: None,

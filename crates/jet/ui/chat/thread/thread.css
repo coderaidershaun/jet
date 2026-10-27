@@ -35,6 +35,24 @@
 .row-user .bubble { background: var(--bubble-user); color: var(--on-user); max-width: min(560px, 78%, calc(100% - var(--lane) - 8px)); }
 .row-user .body { white-space: pre-wrap; }
 
+/* A sent message is its files above its bubble, in one column on the right. */
+.sent { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 0; max-width: min(560px, 78%, calc(100% - var(--lane) - 8px)); }
+.row-user .sent .bubble { max-width: 100%; }
+.attachments { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 100%; }
+.attachments:empty { display: none; }
+.attach-row { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 100%; }
+.attach-thumb { display: block; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; line-height: 0; }
+.attach-image { display: block; min-width: 48px; min-height: 48px; max-width: 160px; max-height: 120px; object-fit: cover; }
+.attach-chip {
+  display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; min-height: 44px; padding: 7px 14px 7px 10px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; color: var(--fg); text-decoration: none;
+}
+a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22); }
+.attach-text { display: flex; flex-direction: column; min-width: 0; }
+.attach-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; line-height: 18px; }
+.attach-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; line-height: 16px; }
+.sent-time { font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; color: var(--muted); }
+
 .row-jet:not(.first) .bubble { border-top-left-radius: 6px; }
 .row-jet:not(.last) .bubble { border-bottom-left-radius: 6px; }
 .row-jet.last .bubble { border-bottom-left-radius: 4px; }

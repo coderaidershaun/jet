@@ -6,9 +6,10 @@ use agent::{
 };
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    body::Bytes,
+    extract::{DefaultBodyLimit, Path, Query, State},
     http::{
-        HeaderValue,
+        HeaderValue, StatusCode,
         header::{
             CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_SECURITY_POLICY, CONTENT_TYPE,
             X_CONTENT_TYPE_OPTIONS,
@@ -31,7 +32,7 @@ use tower_http::services::ServeDir;
 use super::Server;
 use crate::{
     chat::{Accepted, AgentStatus, BridgeError, SendRequest, Snapshot, lock},
-    files::FileFormat,
+    files::{About, FileKind, MAX_FILE_BYTES},
     settings,
 };
 
@@ -58,7 +59,11 @@ pub(super) fn router(host: Server) -> Router {
         .route("/api/markdown", post(markdown))
         .route("/api/feel", post(feel))
         .route("/api/apps", get(apps).post(update_apps))
-        .route("/api/files/{id}", get(download_file))
+        .route(
+            "/api/files",
+            post(upload_file).layer(DefaultBodyLimit::max(UPLOAD_BODY_LIMIT)),
+        )
+        .route("/api/files/{id}", get(download_file).delete(remove_file))
         .route("/api/files/{id}/view", get(view_file))
         .merge(super::proxy::router())
         .fallback_service(ui)
@@ -177,6 +182,33 @@ async fn update_apps(
     .await
 }
 
+/// A little over the largest file, so that the exact limit is enforced where the file is kept and
+/// the page gets its message instead of a bare refusal.
+const UPLOAD_BODY_LIMIT: usize = MAX_FILE_BYTES + 64 * 1024;
+
+#[derive(Deserialize)]
+struct UploadName {
+    name: String,
+}
+/// Keeps the request body as an upload. The file is hidden from Jet until a message carries it.
+// SMELL: each upload is held in memory whole until it is written, and nothing limits how many
+// arrive at once, so the server's memory grows with the bytes that visitors are sending.
+async fn upload_file(
+    State(host): State<Server>,
+    Query(query): Query<UploadName>,
+    body: Bytes,
+) -> Result<Json<About>, BridgeError> {
+    Ok(Json(host.files.upload(&query.name, Vec::from(body)).await?))
+}
+/// Deletes an upload that was never sent.
+async fn remove_file(
+    State(host): State<Server>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, BridgeError> {
+    on_worker(move || Ok(host.files.remove(&id)?)).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Even an HTML file opened on Jet's own address can run nothing and load nothing.
 const FILE_POLICY: &str = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'";
 
@@ -206,8 +238,8 @@ async fn serve_file(
 ) -> Result<Response, BridgeError> {
     let file = on_worker(move || Ok(host.files.open(&id)?)).await?;
     let content_type = match disposition {
-        Disposition::Attachment => file.format.download_type(),
-        Disposition::Inline => file.format.view_type(),
+        Disposition::Attachment => file.kind.download_type(),
+        Disposition::Inline => file.kind.view_type(),
     };
     let headers = [
         (CONTENT_TYPE, HeaderValue::from_static(content_type)),
@@ -219,9 +251,10 @@ async fn serve_file(
         (X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
         (CACHE_CONTROL, HeaderValue::from_static("private, no-cache")),
     ];
-    // A PDF gets no policy because Chrome's PDF viewer stays blank under one. Jet's own writer
-    // puts no script in a PDF, so nothing is lost.
-    let policy = (file.format != FileFormat::Pdf).then(|| {
+    // A PDF gets no policy because Chrome's PDF viewer stays blank under one. The risk is small:
+    // browsers keep a PDF's scripts inside the viewer, this address has no login or cookie, and
+    // `nosniff` stops any other file being treated as a PDF.
+    let policy = (file.kind != FileKind::Pdf).then(|| {
         [(
             CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(FILE_POLICY),

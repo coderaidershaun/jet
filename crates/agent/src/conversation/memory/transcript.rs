@@ -4,7 +4,7 @@
 use std::io::{Seek, SeekFrom, Write};
 
 use super::{DataDir, MemoryError};
-use crate::chat::{Entry, EntryId, EntryStatus, Mood, Role, ToolCall, TurnIdentity};
+use crate::chat::{Attachment, Entry, EntryId, EntryStatus, Mood, Role, ToolCall, TurnIdentity};
 
 const FILE_NAME: &str = "transcript.jsonl";
 
@@ -13,6 +13,7 @@ pub(crate) struct NewEntry {
     pub turn: Option<TurnIdentity>,
     pub role: Role,
     pub text: String,
+    pub attachments: Vec<Attachment>,
     pub mood: Option<Mood>,
     pub status: EntryStatus,
     pub error: Option<String>,
@@ -25,6 +26,7 @@ impl NewEntry {
             turn: None,
             role: Role::User,
             text: text.to_owned(),
+            attachments: Vec::new(),
             mood: None,
             status: EntryStatus::Complete,
             error: None,
@@ -39,6 +41,7 @@ impl NewEntry {
             id,
             role: self.role,
             text: self.text,
+            attachments: self.attachments,
             mood: self.mood,
             status: self.status,
             error: self.error,

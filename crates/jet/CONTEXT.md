@@ -54,8 +54,9 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Source** — one item a library search or answer gives back, numbered from 1, with its document, page and kind. _Avoid_: result (that is the whole reply of a tool), hit (that is what a source holds).
 - **Citation** — `[n]` in Jet's text, shown as a chip that opens source n of the nearest card above it. _Avoid_: reference, footnote.
 - **MCP client** — the shared host-owned HTTP service used by chat and tool browsing. It never starts app processes.
-- **Facade** — the seven stable MCP tools exposed to each provider: six route by app ID and real tool name, and `files_export` writes a File.
-- **File** — a PDF, Markdown or HTML document Jet wrote for the user to download, kept under `files/` in the data directory until Forget. The thread shows it as a Card with Open and Download.
+- **Facade** — the nine stable MCP tools exposed to each provider: six route by app ID and real tool name, `files_export` writes a File, and `files_list` and `files_read` list and read the Files Jet can see.
+- **File** — a document Jet wrote for the user to download (PDF, Markdown or HTML), or one the user attached, kept under `files/` in the data directory until Forget. The thread shows a written File as a Card with Open and Download, and an attached one as a chip on the user's bubble.
+- **Attachment** — a file the user attached to a message; Jet sees its details only, and reads it with `files_read` when asked. It is hidden from Jet until the message that carries it is sent.
 - **Turn binding** — temporary server-issued correlation connecting facade actions to the initiating browser. It expires on completion, failure or Stop.
 - **Tool catalogue** — an app’s MCP tool definitions and server metadata, shared by the assistant and Tools browser.
 - **Workspace** — the main content showing Jet chat, a selected app, or the tool browser. Last selected app identity adds context without limiting available tools.

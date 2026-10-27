@@ -27,6 +27,10 @@ pub enum BridgeError {
     InvalidRequest(String),
     #[error("{0}")]
     NotFound(String),
+    #[error("{0}")]
+    Unsupported(String),
+    #[error("{0}")]
+    TooLarge(String),
     #[error("server is shutting down")]
     ShuttingDown,
 }
@@ -41,6 +45,8 @@ impl BridgeError {
             BridgeError::Cancelled => "cancelled",
             BridgeError::InvalidRequest(_) => "invalidRequest",
             BridgeError::NotFound(_) => "notFound",
+            BridgeError::Unsupported(_) => "unsupported",
+            BridgeError::TooLarge(_) => "tooLarge",
             BridgeError::ShuttingDown => "shuttingDown",
         }
     }
@@ -69,6 +75,13 @@ impl From<FileError> for BridgeError {
     fn from(error: FileError) -> BridgeError {
         match error {
             FileError::NotFound(_) => BridgeError::NotFound(error.to_string()),
+            FileError::Unsupported(_) | FileError::Unreadable(_) => {
+                BridgeError::Unsupported(error.to_string())
+            }
+            FileError::TooLarge(_) | FileError::StoreFull => {
+                BridgeError::TooLarge(error.to_string())
+            }
+            FileError::NoSuchSheet(_) => BridgeError::InvalidRequest(error.to_string()),
             other => BridgeError::Io(other.to_string()),
         }
     }
@@ -91,6 +104,8 @@ impl axum::response::IntoResponse for BridgeError {
             Self::Busy | Self::Conflict | Self::Cancelled => StatusCode::CONFLICT,
             Self::InvalidRequest(_) => StatusCode::BAD_REQUEST,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
+            Self::Unsupported(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Self::TooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
             Self::ShuttingDown => StatusCode::SERVICE_UNAVAILABLE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };

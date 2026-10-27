@@ -10,6 +10,7 @@ import { clockTime } from '../clock.js';
 import { typeset } from './math.js';
 import { callState } from './cards/model.js';
 import { createCardList, linkCitations, openSource } from './cards/view.js';
+import { fillAttachments } from './attachments.js';
 
 const LOGIN_HINT = /log ?in/i;
 const doneCalls = (calls) => calls.filter((call) => callState(call) === 'done');
@@ -25,7 +26,7 @@ const doneCalls = (calls) => calls.filter((call) => callState(call) === 'done');
  * }} options
  */
 export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follow, handlers }) {
-  /** @type {Map<string, { el: HTMLElement, lane: HTMLElement | null, cards: ReturnType<typeof createCardList> | null, signature: string }>} */
+  /** @type {Map<string, { el: HTMLElement, lane: HTMLElement | null, cards: ReturnType<typeof createCardList> | null, files: HTMLElement | null, stamp: HTMLElement | null, signature: string }>} */
   const nodes = new Map();
   let liveKey = null;
 
@@ -58,6 +59,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     return box;
   }
 
+  const isFilesAlone = (entry) => entry.text.trim() === '' && (entry.attachments ?? []).length > 0;
   const isWaiting = (entry) => entry.status === 'waiting' || (entry.status === 'streaming' && entry.html === '');
 
   // `known` holds the finished calls up to this row, so a chip can find its card.
@@ -73,6 +75,8 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
 
     if (row.type === 'user') {
       body.textContent = entry.text;
+      // A message of files alone has no bubble; its time sits under the files instead.
+      bubble.hidden = isFilesAlone(entry);
     } else if (entry.status === 'failed') {
       bubble.classList.add('is-error');
       body.append(errorBody(row, isFinal));
@@ -103,25 +107,36 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     if (row.type === 'lane') return;
     const calls = row.type === 'jet' ? row.entry.tools ?? [] : [];
     if (record.cards) record.cards.sync(calls, earlier);
+    if (record.files) {
+      fillAttachments(record.files, row.entry.attachments ?? []);
+      record.stamp.hidden = !isFilesAlone(row.entry);
+      record.stamp.textContent = clockTime(row.entry.at);
+    }
     fillBubble(el.querySelector('.bubble'), row, isFinal, [...earlier, ...doneCalls(calls)]);
   }
 
   function create(row) {
-    if (row.type === 'day') return { el: h('div', { class: 'pill pill-day', text: row.label }), lane: null, cards: null, signature: '' };
-    if (row.type === 'notice') return { el: h('div', { class: 'pill pill-notice', role: 'status', text: row.message }), lane: null, cards: null, signature: '' };
-    const lane = row.type === 'user' ? null : h('div', { class: 'lane' });
+    if (row.type === 'day') return { el: h('div', { class: 'pill pill-day', text: row.label }), lane: null, cards: null, files: null, stamp: null, signature: '' };
+    if (row.type === 'notice') return { el: h('div', { class: 'pill pill-notice', role: 'status', text: row.message }), lane: null, cards: null, files: null, stamp: null, signature: '' };
+    if (row.type === 'user') {
+      const files = h('div', { class: 'attachments' });
+      const stamp = h('span', { class: 'sent-time', hidden: true });
+      return { el: h('div', {}, h('div', { class: 'sent' }, files, h('div', { class: 'bubble' }), stamp)), lane: null, cards: null, files, stamp, signature: '' };
+    }
+    const lane = h('div', { class: 'lane' });
     if (row.type !== 'jet') {
-      return { el: h('div', {}, lane, row.type === 'lane' ? null : h('div', { class: 'bubble' })), lane, cards: null, signature: '' };
+      return { el: h('div', {}, lane, row.type === 'lane' ? null : h('div', { class: 'bubble' })), lane, cards: null, files: null, stamp: null, signature: '' };
     }
     const cardsEl = h('div', { class: 'cards' });
     const cards = createCardList(cardsEl, { render: handlers.render, readImage: handlers.readImage, seal: sealCode });
-    return { el: h('div', {}, lane, h('div', { class: 'reply' }, cardsEl, h('div', { class: 'bubble' }))), lane, cards, signature: '' };
+    return { el: h('div', {}, lane, h('div', { class: 'reply' }, cardsEl, h('div', { class: 'bubble' }))), lane, cards, files: null, stamp: null, signature: '' };
   }
 
   const signatureOf = (row, isFinal) => {
     const { entry, failure } = row;
     const calls = entry ? (entry.tools ?? []).map((call) => call.id + ':' + callState(call)).join(' ') : '';
-    const shown = entry && [entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at, calls];
+    const files = row.type === 'user' ? (entry.attachments ?? []).map((file) => file.id) : '';
+    const shown = entry && [entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at, calls, files];
     return JSON.stringify([row.type, row.label, row.message, row.first, row.last, isFinal, shown, failure && failure.kind]);
   };
 

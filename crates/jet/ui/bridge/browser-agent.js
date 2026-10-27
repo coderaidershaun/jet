@@ -1,4 +1,5 @@
 import { readAppImage } from './images.js';
+import { uploadFile } from './uploads.js';
 
 // Browser connections observe server-owned turns; reconnecting never starts another reply.
 
@@ -127,6 +128,12 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     saveMemory: (notes) => call('/api/memory', notes, 'PUT'),
     renderMarkdown: (text) => call('/api/markdown', { text }),
     readAppImage: (appId, path) => readAppImage(call, appId, path),
+    uploadFile,
+    async removeFile(id) {
+      // The server answers 204 with no body, which `call` could not read.
+      const response = await fetcher('/api/files/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (!response.ok && response.status !== 404) throw { kind: 'io', message: 'The file could not be removed.' };
+    },
     async openLink(url) {
       if (!/^(https?:|mailto:)/i.test(url.trim())) throw { kind: 'badLink', message: 'Only web and mail links can be opened.' };
       globalThis.open(url, '_blank', 'noopener,noreferrer');

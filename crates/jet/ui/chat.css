@@ -18,6 +18,10 @@
   --file-pdf: #ff8a70;
   --file-html: #f2b154;
   --file-md: #8cc4ff;
+  --file-xlsx: #6fcf97;
+  --file-csv: #4fd1c5;
+  --file-txt: #b8c4ce;
+  --file-image: #c792ea;
   --focus: #8cc4ff;
   --font: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

@@ -35,6 +35,7 @@ const ICONS = {
   down: 'M12 5v14M5 12l7 7 7-7',
   download: 'M12 4v11M7 10.5l5 5 5-5M5 20h14',
   chevron: 'M6 9l6 6 6-6',
+  plus: 'M12 5v14M5 12h14',
 };
 const FILLED = new Set(['stop']);
 

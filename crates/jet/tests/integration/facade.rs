@@ -1,7 +1,7 @@
 //! Prove real provider processes use the global facade and turn-bound browser actions.
 use super::{
     mcp_fixture::Fixture,
-    support::{Host, request},
+    support::{Host, host, request, send, wait_file},
 };
 use serde_json::{Value, json};
 use std::{
@@ -9,28 +9,6 @@ use std::{
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
-fn host() -> Host {
-    let host = Host::start();
-    let bins = std::path::Path::new(env!("CARGO_BIN_EXE_jet"))
-        .parent()
-        .unwrap();
-    std::fs::write(
-        host.dir.path().join("settings.json"),
-        json!({"claudePath":bins.join("fake-claude"),"codexPath":bins.join("fake-codex")})
-            .to_string(),
-    )
-    .unwrap();
-    host
-}
-fn send(host: &Host, id: &str, model: &str, script: Value, active: Value) -> Value {
-    let mut req = request(id);
-    req["model"] = json!(model);
-    req["text"] = json!(format!("facade:{script}"));
-    req["activeAppId"] = active;
-    let (status, value) = host.post("/api/chat/send", req);
-    assert_eq!(status, 200, "{value}");
-    value
-}
 fn replay(host: &Host) -> Vec<Value> {
     let snapshot = host.get("/api/snapshot");
     let last = snapshot["cursor"].as_u64().unwrap();
@@ -60,18 +38,6 @@ fn replay(host: &Host) -> Vec<Value> {
         }
     }
     events
-}
-fn wait_file(host: &Host, name: &str) -> Value {
-    let deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        if let Ok(text) = std::fs::read_to_string(host.dir.path().join(name))
-            && let Ok(value) = serde_json::from_str(&text)
-        {
-            return value;
-        }
-        assert!(Instant::now() < deadline, "missing {name}");
-        std::thread::sleep(Duration::from_millis(10));
-    }
 }
 #[test]
 fn both_providers_use_global_facade_without_resetting_conversation() {

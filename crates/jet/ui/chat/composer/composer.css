@@ -14,15 +14,74 @@
   background: none; border: 0;
 }
 
-/* Ten pixels of padding and the one-pixel border make a 44 px field.
-   The field grows with its text up to 198 px, which holds eight lines, and then scrolls. */
-textarea#field {
-  flex: 1; min-width: 0; min-height: 44px; max-height: 198px; padding: 10px 16px;
+/* The box, not the field, wears the border and the focus ring, because it holds the tray of files as well as the + button and the field.
+   One line is 44 px: the field's 42 px and the one-pixel border above and below. The field grows with its text up to 196 px, which holds eight lines, and then scrolls. */
+.field-box {
+  position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 22px;
+}
+.field-box.has-tray { border-radius: 20px; }
+.field-box:has(#field:focus-visible) { outline: 2px solid var(--focus); }
+.field-line { display: flex; align-items: flex-end; }
+
+textarea#field {
+  flex: 1; min-width: 0; min-height: 42px; max-height: 196px; padding: 10px 16px 10px 6px;
+  background: none; border: 0; border-radius: 0 22px 22px 0; outline: 0;
   font-size: 16px; line-height: 22px; resize: none; display: block;
 }
 textarea#field::placeholder { color: var(--muted); }
-textarea#field:focus-visible { outline-offset: 0; }
+
+/* The 3 px margins centre the 36 px button on a one-line field and keep it at the foot as the field grows.
+   The ::after makes the press target 44 px across. */
+.attach {
+  position: relative; display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin: 3px 0 3px 4px; padding: 0;
+  background: none; border: 0; border-radius: 50%; color: var(--muted);
+  transition: background 120ms, color 120ms;
+}
+.attach::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
+.attach:hover, .attach:focus-visible { background: rgba(255, 255, 255, .06); color: var(--fg); }
+.attach .icon { width: 20px; height: 20px; }
+
+/* The 12 px padding above leaves room for the × that overhangs each chip. */
+.tray { display: flex; gap: 8px; margin: 0; padding: 12px 12px 4px; list-style: none; overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
+.chip { position: relative; flex: none; animation: rise 160ms ease-out; }
+.chip-body {
+  position: relative; display: flex; align-items: center; gap: 10px; height: 52px; max-width: 240px; padding: 0 14px 0 10px; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+}
+.chip.is-picture .chip-body { width: 52px; padding: 0; border-radius: 10px; }
+.chip-thumb { display: block; width: 100%; height: 100%; object-fit: cover; }
+.chip-text { display: flex; flex-direction: column; min-width: 0; max-width: 180px; }
+.chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; line-height: 18px; }
+.chip-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; line-height: 16px; }
+.chip[data-state="uploading"] .chip-body > :not(.chip-bar) { opacity: .7; }
+.chip[data-state="failed"] .chip-body { border-color: rgba(255, 123, 114, .5); }
+.chip[data-state="failed"] .chip-meta { color: var(--danger); }
+
+.chip-bar { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 2px; appearance: none; border: 0; background: none; accent-color: var(--accent); }
+.chip-bar::-webkit-progress-bar { background: none; }
+.chip-bar::-webkit-progress-value { background: var(--accent); }
+.chip-bar::-moz-progress-bar { background: var(--accent); }
+.chip:not([data-state="uploading"]) .chip-bar { display: none; }
+
+/* The ::after makes the press target of the 22 px circle 44 px across. */
+.chip-remove {
+  position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 50%; color: var(--fg);
+}
+.chip-remove::after { content: ""; position: absolute; inset: -11px; border-radius: 50%; }
+.chip-remove:hover { background: #1d2c38; }
+.chip-remove .icon { width: 12px; height: 12px; }
+.tray-note { margin: 0; padding: 4px 16px 0; color: var(--danger); font-size: 12px; line-height: 16px; }
+.reduced .chip { animation: none; }
+
+/* Files dragged over the page: the box turns into a place to drop them. */
+.drop-label {
+  position: absolute; inset: 0; display: none; place-items: center; margin: 0;
+  background: rgba(23, 35, 45, .96); border-radius: inherit; color: var(--link-jet); font-size: 14px; font-weight: 600; pointer-events: none;
+}
+.composer.is-dropping .field-box { border-style: dashed; border-color: var(--accent); background: rgba(61, 139, 255, .08); }
+.composer.is-dropping .drop-label { display: grid; }
 
 /* The 3 px bottom margin centres the 38 px button on a one-line 44 px field and keeps it at the foot as the field grows.
    The ::after makes the press target 44 px across. */
@@ -41,5 +100,9 @@ textarea#field:focus-visible { outline-offset: 0; }
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 22px;
   font-size: 13px; color: var(--muted);
 }
+.held-files { white-space: pre; }
 .held .icon-button { position: relative; width: 36px; height: 36px; margin: 4px 0; color: var(--fg); }
 .held .icon-button::after { content: ""; position: absolute; inset: -4px; }
+@media (prefers-reduced-motion: reduce) {
+  .chip { animation: none; }
+}

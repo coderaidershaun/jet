@@ -19,13 +19,17 @@ pub use reply::Reply;
 pub use review::{REVIEW_QUIET, ReviewError, ReviewOutcome};
 use session_policy::decide;
 
-use crate::chat::{Effort, Entry, McpConnection, Model, Notes, Persona, Role, ShownEntry};
+use crate::chat::{
+    Attachment, Effort, Entry, McpConnection, Model, Notes, Persona, Role, ShownEntry,
+};
 use crate::turn::{Request, SessionMode, Transport, Turn};
 
 /// Everything one message brings with it.
 #[derive(Debug, Clone)]
 pub struct Message {
     pub text: String,
+    /// The files sent with the text. Jet is shown their details, not their contents.
+    pub attachments: Vec<Attachment>,
     pub persona: Persona,
     pub model: Model,
     pub effort: Effort,
@@ -108,6 +112,7 @@ impl Conversation {
 
         let mut user = NewEntry::user(&message.text);
         user.turn = identity.clone();
+        user.attachments = message.attachments.clone();
         let user_entry = Transcript::open(&self.dir).append(user, now)?;
         let words = persona::message_words(&message);
         let prompt = match decision.mode {
@@ -211,6 +216,7 @@ mod test_support {
     pub(super) fn message(text: &str) -> Message {
         Message {
             text: text.to_owned(),
+            attachments: Vec::new(),
             persona: Persona::default(),
             model: Model::Sonnet,
             effort: Effort::Medium,

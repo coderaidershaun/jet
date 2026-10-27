@@ -81,9 +81,12 @@ export function createComposerView({ page, composer, field, button, heldChip, he
       handlers.input?.(text);
     },
 
-    setHeld(text) {
-      heldChip.hidden = text === null;
-      heldChip.title = text ?? '';
+    /** Shows the message held until Jet finishes: its text as the tooltip, and how many files it carries. @param {{ text: string, attachments: unknown[] } | null} held */
+    setHeld(held) {
+      heldChip.hidden = held === null;
+      heldChip.title = held?.text ?? '';
+      const files = held?.attachments.length ?? 0;
+      heldChip.querySelector('.held-files').textContent = files === 0 ? '' : ' · ' + files + (files === 1 ? ' file' : ' files');
     },
 
     setPlaceholder(text) {

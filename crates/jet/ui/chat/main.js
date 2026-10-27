@@ -8,6 +8,8 @@ import { h, icon } from '../dom.js';
 import { connectAgent } from '../bridge/agent.js';
 import { displayName, loadSettings, saveSettings } from '../bridge/settings.js';
 import { createComposer } from './composer/state.js';
+import { createTray } from './composer/tray.js';
+import { createTrayView } from './composer/tray-view.js';
 import { createComposerView } from './composer/view.js';
 import { createDrawerView } from './drawer/view.js';
 import { createSheet } from './settings/sheet.js';
@@ -44,7 +46,11 @@ async function start() {
   const thread = createThread();
   thread.load(history);
   const follow = createFollow();
-  const composer = createComposer({ empty: history.length === 0 });
+  const tray = createTray({
+    held: () => thread.held?.attachments.length ?? 0,
+    preview: { make: (file) => URL.createObjectURL(file), revoke: (url) => URL.revokeObjectURL(url) },
+  });
+  const composer = createComposer({ empty: history.length === 0, tray });
   $('gear').append(icon('gear'));
   $('context-toggle').append(icon('chevron'));
   $('held-cancel').append(icon('close'));
@@ -67,7 +73,9 @@ async function start() {
 
   function submit(text) {
     const appId = workspace.activeAppId();
-    return commands.submit(text, () => composer.replying ? turn.hold(text, appId) : turn.send(text, appId));
+    // The files leave the tray at once, so the chips go as the message does. A command carries none.
+    const attachments = text.trimStart().startsWith('/') ? [] : trayView.take();
+    return commands.submit(text, () => composer.replying ? turn.hold(text, appId, attachments) : turn.send(text, appId, attachments));
   }
 
   const composerView = createComposerView({
@@ -85,8 +93,22 @@ async function start() {
       input: (text) => { commandMenu?.input(text); live.typing(); },
       keydown: (event) => commandMenu?.keydown(event),
       stop: () => turn.stop(),
-      cancelHold: () => turn.cancelHold(),
+      cancelHold: () => trayView.restore(turn.cancelHold()),
     },
+  });
+
+  const trayView = createTrayView({
+    box: $('field-box'),
+    trayEl: $('tray'),
+    composerEl: $('composer'),
+    dropTarget: document.querySelector('.main'),
+    attachButton: $('attach'),
+    input: $('attach-input'),
+    field: $('field'),
+    tray,
+    agent,
+    refresh: composerView.refresh,
+    announce: (message) => { $('announce').textContent = message; },
   });
 
   commandMenu = createCommandMenu({ field: $('field'), container: $('composer'), commands, setText: composerView.setText });
@@ -168,6 +190,7 @@ async function start() {
     view.render([]);
     composer.reset();
     composerView.setHeld(null);
+    trayView.take();
     composerView.setLayout('centred');
     live.showHero();
     sheet.close();

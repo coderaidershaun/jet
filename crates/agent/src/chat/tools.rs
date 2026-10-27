@@ -12,7 +12,7 @@ pub struct McpConnection {
 /// The request header that carries `McpConnection::token`.
 pub const TURN_HEADER: &str = "x-jet-turn";
 
-pub const FACADE_TOOLS: [&str; 7] = [
+pub const FACADE_TOOLS: [&str; 9] = [
     "apps_list",
     "apps_update",
     "apps_open",
@@ -20,6 +20,8 @@ pub const FACADE_TOOLS: [&str; 7] = [
     "tools_describe",
     "tools_call",
     "files_export",
+    "files_list",
+    "files_read",
 ];
 
 impl McpConnection {

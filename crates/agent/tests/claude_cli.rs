@@ -19,6 +19,7 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
     let conversation = Conversation::new(DataDir::new(cwd.join("data")));
     let message = Message {
         text: "fixture:quanty-search-reply".to_owned(),
+        attachments: Vec::new(),
         persona: Persona::default(),
         model: Model::Sonnet,
         effort: Effort::Medium,

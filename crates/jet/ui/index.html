@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="./chat.css">
 <link rel="stylesheet" href="./chat/drawer/drawer.css">
 <link rel="stylesheet" href="./chat/thread/thread.css">
+<link rel="stylesheet" href="./chat/files.css">
 <link rel="stylesheet" href="./chat/thread/cards/cards.css">
 <link rel="stylesheet" href="./chat/stage/stage.css">
 <link rel="stylesheet" href="./chat/composer/composer.css">
@@ -63,13 +64,21 @@
 
     <div class="composer" id="composer">
       <div class="held" id="held" hidden>
-        <span id="held-text">Sends when Jet finishes</span>
+        <span class="held-label"><span id="held-text">Sends when Jet finishes</span><span class="held-files"></span></span>
         <button class="icon-button" id="held-cancel" type="button" aria-label="Cancel the held message"></button>
       </div>
       <div class="composer-row">
-        <textarea id="field" rows="1" aria-label="Message" placeholder="Message Jet" enterkeyhint="send"></textarea>
+        <div class="field-box" id="field-box">
+          <ul class="tray" id="tray" aria-label="Files to send" hidden></ul>
+          <div class="field-line">
+            <button class="attach" id="attach" type="button" aria-label="Attach files" title="Attach files"></button>
+            <textarea id="field" rows="1" aria-label="Message" placeholder="Message Jet" enterkeyhint="send"></textarea>
+          </div>
+          <p class="drop-label" aria-hidden="true">Drop files to attach</p>
+        </div>
         <button class="send" id="send" type="button" aria-label="Send" disabled></button>
       </div>
+      <input type="file" id="attach-input" multiple hidden>
     </div>
 
   </div>

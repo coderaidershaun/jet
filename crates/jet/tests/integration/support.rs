@@ -94,6 +94,37 @@ impl Host {
             serde_json::from_str(&response.body_mut().read_to_string().unwrap()).unwrap(),
         )
     }
+    /// Uploads a file as the raw request body, the way the page does. The name travels in the
+    /// query, percent-encoded.
+    pub fn upload(&self, name: &str, bytes: &[u8]) -> (u16, Value) {
+        let name: String = url::form_urlencoded::byte_serialize(name.as_bytes()).collect();
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .into();
+        let mut response = agent
+            .post(format!("{}/api/files?name={name}", self.url))
+            .header("content-type", "application/octet-stream")
+            .send(bytes)
+            .unwrap();
+        let status = response.status().as_u16();
+        (
+            status,
+            serde_json::from_str(&response.body_mut().read_to_string().unwrap()).unwrap(),
+        )
+    }
+    pub fn delete(&self, path: &str) -> u16 {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .into();
+        agent
+            .delete(format!("{}{path}", self.url))
+            .call()
+            .unwrap()
+            .status()
+            .as_u16()
+    }
     pub fn until(&self, condition: impl Fn(&Value) -> bool) -> Value {
         let deadline = Instant::now() + Duration::from_secs(8);
         loop {
@@ -126,6 +157,40 @@ impl Drop for Host {
     }
 }
 
+pub fn host() -> Host {
+    let host = Host::start();
+    let bins = std::path::Path::new(env!("CARGO_BIN_EXE_jet"))
+        .parent()
+        .unwrap();
+    std::fs::write(
+        host.dir.path().join("settings.json"),
+        json!({"claudePath":bins.join("fake-claude"),"codexPath":bins.join("fake-codex")})
+            .to_string(),
+    )
+    .unwrap();
+    host
+}
+pub fn send(host: &Host, id: &str, model: &str, script: Value, active: Value) -> Value {
+    let mut req = request(id);
+    req["model"] = json!(model);
+    req["text"] = json!(format!("facade:{script}"));
+    req["activeAppId"] = active;
+    let (status, value) = host.post("/api/chat/send", req);
+    assert_eq!(status, 200, "{value}");
+    value
+}
+pub fn wait_file(host: &Host, name: &str) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        if let Ok(text) = std::fs::read_to_string(host.dir.path().join(name))
+            && let Ok(value) = serde_json::from_str(&text)
+        {
+            return value;
+        }
+        assert!(Instant::now() < deadline, "missing {name}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
 pub fn request(id: &str) -> Value {
     json!({"requestId":id,"clientId":"browser-a","text":"hang","model":"sonnet","effort":"medium","budgetUsd":1.0,"persona":{"name":"Jet","jobTitle":"First mate","notes":""},"localTime":"Friday","feeling":"neutral"})
 }

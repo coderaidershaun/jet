@@ -2,7 +2,7 @@
 //! shape it. The prompt holds no clock, so the same inputs always give the same bytes and
 //! Claude's prompt cache keeps hitting.
 
-use crate::chat::{Effort, Model, Notes, Persona};
+use crate::chat::{Attachment, Effort, Model, Notes, Persona};
 
 const TEMPLATE: &str = include_str!("persona.md");
 
@@ -43,7 +43,42 @@ pub(super) fn message_words(message: &super::Message) -> String {
         ));
     }
     words.push_str(&message.text);
+    if !message.attachments.is_empty() {
+        if !message.text.trim().is_empty() {
+            words.push_str("\n\n");
+        }
+        words.push_str(&attachment_words(&message.attachments));
+    }
     words
+}
+
+/// The details of the attached files and the instruction to leave them alone until asked.
+/// The contents are never put in the prompt.
+fn attachment_words(attachments: &[Attachment]) -> String {
+    let mut words = String::from(
+        "[Attached files: only these details are shown; call files_read with an id when the user asks about their contents]",
+    );
+    for file in attachments {
+        words.push_str(&format!(
+            "\n- {} · {} · {} · id {}",
+            file.name,
+            file.details,
+            size_words(file.bytes),
+            file.id
+        ));
+    }
+    words
+}
+
+/// Rounded the way the page rounds, so Jet and the user see the same size.
+fn size_words(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * 1024;
+    match bytes {
+        0..KB => format!("{bytes} B"),
+        KB..MB => format!("{} KB", (bytes + KB / 2) / KB),
+        _ => format!("{:.1} MB", bytes as f64 / MB as f64),
+    }
 }
 
 pub(super) fn prompt_hash(persona: &Persona, model: Model, effort: Effort) -> String {

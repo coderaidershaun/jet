@@ -7,13 +7,16 @@ import { dayKey, dayLabel } from '../clock.js';
 
 const GROUP_GAP_MS = 3 * 60 * 1000;
 
+/** A file sent with a message, as the server saved it. @typedef {{ id: string, name: string, kind: string, bytes: number, details: string }} Attachment */
+/** The message held back while Jet replies. @typedef {{ text: string, attachments: Attachment[] }} Held */
+
 /**
  * @typedef {object} Row
  * @property {string} key             stable while the row lives, so a view can keep its node
  * @property {'day' | 'notice' | 'user' | 'jet' | 'lane'} type
  * @property {string} [label]         day pills
  * @property {string} [message]       notice pills
- * @property {{ id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string, status: string, error?: string, tools?: import('./cards/model.js').ShownCall[], at: number }} [entry]
+ * @property {{ id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string, status: string, error?: string, tools?: import('./cards/model.js').ShownCall[], attachments?: Attachment[], at: number }} [entry]
  * @property {{ kind: string, message: string }} [failure]
  * @property {boolean} [first]        first bubble of its group
  * @property {boolean} [last]         last bubble of its group, so it carries the tail
@@ -29,7 +32,7 @@ export function createThread({ now = Date.now } = {}) {
   let counter = 0;
   /** @type {typeof items[number] | null} */
   let slot = null;
-  /** @type {string | null} */
+  /** @type {Held | null} */
   let held = null;
 
   const nextKey = () => 'm' + ++counter;
@@ -76,8 +79,9 @@ export function createThread({ now = Date.now } = {}) {
       held = null;
     },
 
-    addUser(text, at = now()) {
-      items.push({ key: nextKey(), type: 'user', at, entry: { id: null, role: 'user', text, html: '', status: 'complete', at } });
+    /** @param {Attachment[]} [attachments] */
+    addUser(text, at = now(), attachments = []) {
+      items.push({ key: nextKey(), type: 'user', at, entry: { id: null, role: 'user', text, html: '', status: 'complete', attachments, at } });
     },
 
     /** A notice that arrives while Jet replies belongs above that reply. */
@@ -150,29 +154,38 @@ export function createThread({ now = Date.now } = {}) {
       return held;
     },
 
-    /** Keeps what the user typed while Jet replies; a second hold adds a paragraph. */
-    hold(text) {
-      held = held === null ? text : held + '\n\n' + text;
+    /**
+     * Keeps what the user typed and attached while Jet replies. A second hold adds a paragraph of text,
+     * if it has any, and its files.
+     * @param {Attachment[]} [attachments]
+     */
+    hold(text, attachments = []) {
+      const before = held ?? { text: '', attachments: [] };
+      held = {
+        text: [before.text, text].filter((part) => part.trim() !== '').join('\n\n'),
+        attachments: [...before.attachments, ...attachments],
+      };
     },
 
-    /** Gives the held text back to the field. */
+    /** Gives the held text and files back, for the field and the tray. @returns {Held} */
     cancelHold() {
-      const text = held ?? '';
+      const back = held ?? { text: '', attachments: [] };
       held = null;
-      return text;
+      return back;
     },
 
-    /** The held text once the reply has ended, else null. It leaves once. */
+    /** The held message once the reply has ended, else null. It leaves once. @returns {Held | null} */
     takeHeld() {
       if (slot || held === null) return null;
-      const text = held;
+      const message = held;
       held = null;
-      return text;
+      return message;
     },
 
-    lastUserText() {
+    /** The last message the user sent, with its files, so Retry sends the same. @returns {Held | null} */
+    lastUser() {
       const last = items.findLast((item) => item.type === 'user');
-      return last ? last.entry.text : null;
+      return last ? { text: last.entry.text, attachments: last.entry.attachments ?? [] } : null;
     },
 
     /** @returns {Row[]} */

@@ -171,7 +171,10 @@ when refresh fails. Quanty's installed rmcp 3.5.1 currently negotiates
 Resolve enablement at dispatch. Disable/remove prevents new calls; an already
 dispatched call may settle. Never automatically retry an uncertain business write.
 The stable facade tools are apps_list/apps_update/apps_open/tools_search/
-tools_describe/tools_call, plus files_export, which writes a downloadable file.
+tools_describe/tools_call, plus files_export, which writes a downloadable file,
+and files_list/files_read, which list and read the files Jet may see: files it
+wrote and files the user attached and sent. A read returns text, or for a picture
+an MCP image block, and file contents are data, never instructions.
 Selected app is per-message context, not a filter or a provider-session
 fingerprint input. Full schemas are described on demand.
 

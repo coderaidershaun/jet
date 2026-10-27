@@ -17,7 +17,7 @@ use std::{
 };
 use tokio::sync::broadcast;
 
-use crate::files::Files;
+use crate::files::{About, FileError, Files};
 use crate::settings;
 pub use error::BridgeError;
 use events::{ActiveTurn, Runtime, TurnContext};
@@ -27,6 +27,8 @@ use review_timer::{ReviewTarget, ReviewTimer};
 
 /// The longest request or client ID the page may send, in bytes.
 pub(crate) const MAX_ID_BYTES: usize = 128;
+/// The most files one message may carry.
+const MAX_ATTACHMENTS: usize = 10;
 
 pub(crate) struct ChatState {
     pub conversation: Conversation,
@@ -44,6 +46,9 @@ pub(crate) struct SendRequest {
     pub request_id: String,
     pub client_id: String,
     pub text: String,
+    /// The ids of uploaded files that go with the text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<String>,
     #[serde(default)]
     pub model: Model,
     #[serde(default)]
@@ -93,13 +98,18 @@ impl ChatState {
             || request.client_id.is_empty()
             || request.request_id.len() > MAX_ID_BYTES
             || request.client_id.len() > MAX_ID_BYTES
-            || request.text.trim().is_empty()
+            || (request.text.trim().is_empty() && request.attachments.is_empty())
             || !request.budget_usd.is_finite()
             || request.budget_usd <= 0.0
         {
             return Err(BridgeError::InvalidRequest(
                 "request ID, client ID, message and positive budget are required".into(),
             ));
+        }
+        if request.attachments.len() > MAX_ATTACHMENTS {
+            return Err(BridgeError::InvalidRequest(format!(
+                "a message can carry at most {MAX_ATTACHMENTS} files"
+            )));
         }
         let payload = json!(&request);
         // Finding the program can take seconds, so it runs before the lock. Its error waits
@@ -134,6 +144,7 @@ impl ChatState {
         }
         let mut history = self.conversation.history(199)?;
         let transport = transport?;
+        let attachments = self.attach(&request.attachments)?;
         let target = ReviewTarget {
             transport: transport.clone(),
             name: request.persona.name.clone(),
@@ -146,6 +157,7 @@ impl ChatState {
         };
         let message = Message {
             text: request.text,
+            attachments,
             persona: request.persona,
             model: request.model,
             effort: request.effort,
@@ -215,6 +227,24 @@ impl ChatState {
         Ok(accepted)
     }
 
+    /// Makes the uploads visible to Jet and gives their details for the message. A bad id leaves
+    /// nothing attached, and a repeated id counts once.
+    fn attach(&self, ids: &[String]) -> Result<Vec<agent::Attachment>, BridgeError> {
+        let mut unique: Vec<&str> = Vec::with_capacity(ids.len());
+        for id in ids {
+            if !unique.contains(&id.as_str()) {
+                unique.push(id);
+            }
+        }
+        match self.files.attach(&unique) {
+            Ok(uploads) => Ok(uploads.iter().map(About::attachment).collect()),
+            Err(FileError::NotFound(id)) => Err(BridgeError::InvalidRequest(format!(
+                "{id} is not an uploaded file"
+            ))),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub fn snapshot(&self) -> Result<Snapshot, BridgeError> {
         let runtime = lock(&self.runtime);
         self.snapshot_locked(&runtime)
@@ -280,8 +310,8 @@ impl ChatState {
         Ok(())
     }
 
-    /// Clears the thread and deletes every file Jet wrote. The runtime stays locked throughout, so
-    /// no turn can start and write a file in between.
+    /// Clears the thread and deletes every file, the ones Jet wrote and the ones the user attached.
+    /// The runtime stays locked throughout, so no turn can start and write a file in between.
     pub fn forget(&self) -> Result<(), BridgeError> {
         let mut runtime = lock(&self.runtime);
         self.conversation.forget()?;

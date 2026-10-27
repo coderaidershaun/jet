@@ -114,6 +114,20 @@ pub struct TurnIdentity {
     pub request: serde_json::Value,
 }
 
+/// A file the user attached to a message, as Jet is told about it: what it is called and a few
+/// details, never its contents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attachment {
+    pub id: String,
+    pub name: String,
+    /// The kind of file, such as `pdf` or `xlsx`.
+    pub kind: String,
+    pub bytes: u64,
+    /// Pages, sheets, rows or pixel size, worked out when the file was uploaded.
+    pub details: String,
+}
+
 /// One message in the saved thread. `at` is Unix milliseconds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -123,6 +137,9 @@ pub struct Entry {
     pub id: EntryId,
     pub role: Role,
     pub text: String,
+    /// The files attached to a user message. Older lines have none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<Attachment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mood: Option<Mood>,
     pub status: EntryStatus,

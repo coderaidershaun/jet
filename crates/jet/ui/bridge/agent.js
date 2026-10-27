@@ -9,7 +9,7 @@ import { createBrowserAgent } from './browser-agent.js';
  * `id` is null only for an entry that was never saved, such as a send that failed before a reply began.
  * @typedef {{
  *   id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string,
- *   status: 'complete' | 'stopped' | 'failed', error?: string, tools?: ToolCall[], at: number,
+ *   status: 'complete' | 'stopped' | 'failed', error?: string, tools?: ToolCall[], attachments?: import('../chat/thread/store.js').Attachment[], at: number,
  * }} ShownEntry
  */
 /** @typedef {{ memory: string, user: string, recent: string, limits?: { memory: number, user: number, recent: number } }} Notes */
@@ -31,6 +31,7 @@ import { createBrowserAgent } from './browser-agent.js';
  * @typedef {object} SendRequest
  * @property {string | null} [feeling]
  * @property {string} text
+ * @property {string[]} [attachments]   the ids of uploaded files
  * @property {string} model
  * @property {string} effort
  * @property {number} budgetUsd
@@ -51,6 +52,9 @@ import { createBrowserAgent } from './browser-agent.js';
  * @property {(notes: { memory: string, user: string, recent: string }) => Promise<Notes>} saveMemory
  * @property {(text: string) => Promise<string>} renderMarkdown
  * @property {(appId: string, path: string) => Promise<string>} readAppImage   rejects when no registered image route is available
+ * @property {(file: File, onProgress?: (fraction: number) => void) => Promise<import('../chat/thread/store.js').Attachment>} uploadFile
+ *   saves a file the user chose, hidden from Jet until a message carries it; rejects with a reason fit to show
+ * @property {(id: string) => Promise<void>} removeFile   deletes an upload that was never sent
  * @property {(url: string) => Promise<void>} openLink
  * @property {(listener: (notes: Notes) => void) => () => void} onMemoryUpdated   returns the way to stop listening
  * @property {(listener: (connected: boolean) => void) => () => void} onConnectionChanged   fires only when the server is lost or found again

@@ -235,6 +235,7 @@ impl Reply {
             turn: self.context.identity.clone(),
             role: Role::Jet,
             text: turn.map(|turn| turn.text().to_owned()).unwrap_or_default(),
+            attachments: Vec::new(),
             mood: turn.and_then(Turn::mood),
             status,
             error,

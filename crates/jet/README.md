@@ -1,6 +1,6 @@
 # Jet browser host
 
-`cargo run -p jet -- --listen 127.0.0.1:8787 --data-dir ./jet-data` serves the chat in a normal browser. `jet --help` lists deployment options. The data directory owns settings, transcript, session, notes, the app registry and the files Jet has written. `--ui-dir` points to the static `ui/` directory when the executable is copied elsewhere.
+`cargo run -p jet -- --listen 127.0.0.1:8787 --data-dir ./jet-data` serves the chat in a normal browser. `jet --help` lists deployment options. The data directory owns settings, transcript, session, notes, the app registry and the files: the ones Jet has written and the ones the user attached. `--ui-dir` points to the static `ui/` directory when the executable is copied elsewhere.
 
 The [root guide](../../README.md) covers registration, commands, Quanty launch and
 existing-data reuse. Chat starts in the main content beside one drawer. Selecting
@@ -22,7 +22,14 @@ The browser uses JSON commands and one server-sent event stream:
 - `GET/PUT /api/settings`, `GET/PUT /api/memory`.
 - `GET /api/status`, `POST /api/markdown`, `POST /api/feel`.
 - `GET/POST /api/apps`: the deterministic registry operations documented in the app contract.
-- `GET /api/files/{id}` and `GET /api/files/{id}/view`: a file written by `files_export`, as a download and for opening in a tab. The id must be a UUID; anything else is 404. Responses carry `nosniff`. HTML and Markdown also carry a `sandbox` content security policy; a PDF carries none, because Chrome's PDF viewer stays blank under one.
+- `POST /api/files?name=<name>`: saves an uploaded file, sent as the raw request body, and returns its details (`id`, `name`, `kind`, `bytes`, `details`, `origin`, `attached`, `at`). The name's extension and the first bytes of the file must agree on one of PDF, Markdown, HTML, `.xlsx`, CSV, text, PNG, JPEG, GIF or WebP, or the answer is 415. A file over 32 MiB, or one that would take the store past 2 GiB, is 413. A file the reader process cannot describe is refused with 415 and not kept. The file stays hidden from Jet until a message names its id.
+- `DELETE /api/files/{id}`: deletes an upload that was never sent (204). A file that was sent, one Jet wrote, or an id that is not a UUID is 404.
+- `GET /api/files/{id}` and `GET /api/files/{id}/view`: a file Jet wrote or one that was uploaded, as a download and for opening in a tab. The id must be a UUID; anything else is 404. Responses carry `nosniff`. Everything except a PDF also carries a `sandbox` content security policy; a PDF carries none, because Chrome's PDF viewer stays blank under one.
+- `POST /api/chat/send` also takes `attachments`, a list of at most 10 upload ids. The text may be blank when there are attachments. An id that is not an upload is 400.
+
+## The file reader
+
+Every parse of a stored file (its details at upload, and `files_read`) runs in a child of the running program started as `jet --read-file`, and never in the server itself. The child sets `RLIMIT_AS` to 2 GiB before it reads the job from standard input, and prints one JSON answer; the server allows 30 seconds and 16 MiB of output, runs two children at a time, and kills a child that is late. A crash, an abort from a failed allocation or a hang therefore gives only a refused file. The child sets the core dump limit to 1, not 0, because the host sends core dumps to a helper program that the kernel skips only at 1.
 
 Provider paths come from server settings. Process-command MCP configuration is rejected; the host never launches legacy app processes.
 

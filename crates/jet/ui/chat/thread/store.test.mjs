@@ -67,19 +67,28 @@ test('a reply slot ends as finished, failed or stopped, and a message held meanw
   thread.addUser('first', at(14, 9, 4));
   thread.openSlot(at(14, 9, 4));
 
-  thread.hold('and also this');
+  const report = { id: '3f1c9a52-7b0e-4d6a-8f21-5c9e0b7a41d3', name: 'Q3 report.pdf', kind: 'pdf', bytes: 2400000, details: '12 pages' };
+  thread.hold('and also this', [report]);
   thread.hold('one more thing');
-  assert.equal(thread.held, 'and also this\n\none more thing');
+  assert.deepEqual(thread.held, { text: 'and also this\n\none more thing', attachments: [report] });
   assert.equal(thread.takeHeld(), null, 'nothing is released while the reply runs');
 
   thread.finish(entry(5, 'jet', at(14, 9, 5)));
-  assert.equal(thread.takeHeld(), 'and also this\n\none more thing');
+  assert.deepEqual(thread.takeHeld(), { text: 'and also this\n\none more thing', attachments: [report] });
   assert.equal(thread.held, null);
   assert.equal(thread.takeHeld(), null, 'it is released once');
 
   thread.openSlot(at(14, 9, 6));
-  thread.hold('changed my mind');
-  assert.equal(thread.cancelHold(), 'changed my mind');
+  thread.hold('changed my mind', [report]);
+  assert.deepEqual(thread.cancelHold(), { text: 'changed my mind', attachments: [report] });
   assert.equal(thread.held, null);
-  assert.equal(thread.cancelHold(), '');
+  assert.deepEqual(thread.cancelHold(), { text: '', attachments: [] });
+
+  // A held message of files alone gets no empty paragraph, and Retry gets the files back.
+  thread.hold('', [report]);
+  thread.hold('', [report]);
+  assert.deepEqual(thread.held, { text: '', attachments: [report, report] });
+  thread.cancelHold();
+  thread.addUser('', at(14, 9, 7), [report]);
+  assert.deepEqual(thread.lastUser(), { text: '', attachments: [report] });
 });

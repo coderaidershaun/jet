@@ -1,7 +1,7 @@
 //! Route provider requests through the host registry and shared HTTP client.
 use super::{Binding, Facade, HEADER, tools};
 use crate::chat::lock;
-use crate::files::ExportRequest;
+use crate::files::{ExportRequest, Range, Reading};
 use agent::{
     apps::{AppId, RegistryCommand},
     mcp::{ToolRequest, ToolTarget},
@@ -50,6 +50,13 @@ impl ServerHandler for Handler {
         let binding = self.0.binding(&token).ok_or_else(expired)?;
         let arguments = Value::Object(params.arguments.unwrap_or_default());
         tools::validate(&params.name, &arguments)?;
+        if params.name == "files_read" {
+            return Ok(match self.read_file(&arguments).await {
+                Ok(result) => result,
+                Err(error) => CallToolResult::structured_error(json!({"error":error})),
+            }
+            .into());
+        }
         let result = self
             .execute(&params.name, arguments, &token, binding, context)
             .await;
@@ -68,6 +75,42 @@ fn message(error: impl Display) -> Value {
     json!({"message":error.to_string()})
 }
 impl Handler {
+    /// Reads part of a file. A picture comes back as an image block with its facts beside it as
+    /// text, and no structured result, so the picture's bytes never reach the saved transcript.
+    async fn read_file(&self, arguments: &Value) -> Result<CallToolResult, Value> {
+        let number = |key: &str| {
+            arguments[key]
+                .as_u64()
+                .and_then(|number| usize::try_from(number).ok())
+        };
+        let range = Range {
+            sheet: arguments["sheet"].as_str().map(str::to_owned),
+            start: number("start"),
+            count: number("count"),
+        };
+        let id = arguments["id"].as_str().unwrap_or_default();
+        let (about, reading) = self.0.files.read(id, &range).await.map_err(message)?;
+        Ok(match reading {
+            Reading::Image {
+                data,
+                width,
+                height,
+            } => {
+                let facts = json!({"id":about.id,"name":about.name,"mime":"image/jpeg","width":width,"height":height});
+                CallToolResult::success(vec![
+                    ContentBlock::image(data, "image/jpeg"),
+                    ContentBlock::text(facts.to_string()),
+                ])
+            }
+            text => {
+                let mut reading = json!(text);
+                reading["id"] = json!(about.id);
+                reading["name"] = json!(about.name);
+                CallToolResult::structured(reading)
+            }
+        })
+    }
+
     async fn execute(
         &self,
         name: &str,
@@ -210,6 +253,13 @@ impl Handler {
                     .map_err(message)?
                     .map_err(message)?;
                 Ok(json!(saved))
+            }
+            "files_list" => {
+                let files = self.0.files.clone();
+                let listed = tokio::task::spawn_blocking(move || files.list())
+                    .await
+                    .map_err(message)?;
+                Ok(json!({"files": listed}))
             }
             _ => Err(message("unknown facade tool")),
         }

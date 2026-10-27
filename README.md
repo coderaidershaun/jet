@@ -60,7 +60,7 @@ Old process-command app settings are rejected with re-registration instructions 
 
 The server owns the active reply. Closing a tab, reconnecting or hiding the interface does not cancel it; Stop does. A browser request ID is saved with the accepted transcript entry before provider dispatch. Retrying a lost acknowledgment returns that same turn. After a server crash, unfinished accepted turns are marked interrupted and never rerun automatically.
 
-An authoritative history/current-turn snapshot and bounded event replay restore browsers after reload. Settings and memory are saved on the server. Source images use the originating app’s stable mount, even after switching workspaces. Unsupported images, including historical filesystem references, show an unavailable fallback; Jet never reads arbitrary server files; `/api/files/{id}` serves only a file Jet wrote, found by its UUID.
+An authoritative history/current-turn snapshot and bounded event replay restore browsers after reload. Settings and memory are saved on the server. Source images use the originating app’s stable mount, even after switching workspaces. Unsupported images, including historical filesystem references, show an unavailable fallback; Jet never reads arbitrary server files; `/api/files/{id}` serves only a file Jet wrote or the user uploaded, found by its UUID.
 
 ## Apps and workspace
 
@@ -101,9 +101,17 @@ run directly without a model request; unknown commands show help.
 Ordinary-language app management uses the same registry through the assistant.
 Complete explicit commands execute without a second confirmation.
 
+## Attaching files
+
+The **+** at the left of the message box opens a picker for PDF, Markdown, HTML, Excel (`.xlsx`), CSV, text and image (PNG, JPEG, GIF, WebP) files. Dragging files onto the chat and pasting them into the field attach them too. Each file shows as a chip in the box and uploads at once; Send waits until every upload is done, and a chip that failed must be removed with its **×** first. A message may be files alone.
+
+Jet sees an upload only after the message that carries it is sent, and then only its details (name, size, and pages, sheets, rows or pixel size) with an instruction to leave the file alone until asked. When the user asks about a file's contents, Jet reads it with `files_read`: PDFs by page, workbooks and CSV by row, other text by line, and pictures as a picture. A file you remove before sending is deleted from the server. The thread keeps the files on the message, and Forget deletes them all.
+
+Jet is served publicly with no login, so every path is bounded: 32 MiB for a file, 10 files for a message and 2 GiB for the store of files. The extension and the first bytes must both match one of the kinds above, and a file Jet cannot read is refused. Every read of a stored file runs in a child process of the `jet` program (`jet --read-file`) with a 2 GiB memory cap and a 30 second limit, two at a time, so a file built to exhaust memory or to hang ends only that child. Uploads stay on disk until Forget, and an upload that was never sent counts toward the 2 GiB.
+
 ## App tools
 
-Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees only seven stable tools: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, and `files_export`. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live under `files/` in the data directory until Forget. Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
+Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees only nine stable tools: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list` and `files_read`. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live under `files/` in the data directory until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
 
 Tools shows searchable summaries, actual input/output schemas, annotations, server identity, capabilities and instructions. Refresh retries failed metadata; stale results remain visibly marked. Only explicitly marked free discovery operations can expand into a hierarchy. Inspect a leaf or use Ask Jet to draft a request; browsing never executes ordinary business tools. In particular, normal Quanty search can cost money.
 

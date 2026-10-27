@@ -4,6 +4,7 @@
 // nothing.
 
 import { h, icon } from '../../../dom.js';
+import { fileSheet } from '../../files.js';
 import { findSource, splitCitations } from './cite.js';
 import { callState, cardOf } from './model.js';
 import { fillShow } from './show.js';
@@ -193,7 +194,7 @@ function bodyOf(card, parts) {
 /** The card of a written file: what it is, and two links built from its id alone. */
 function fileCard(card) {
   const { body } = card;
-  const sheet = h('span', { class: 'file-sheet', 'data-format': body.tag.toLowerCase(), 'aria-hidden': 'true' }, h('span', { class: 'file-tag', text: body.tag }));
+  const sheet = fileSheet(body.tag);
   const open = h('a', { class: 'file-action', href: body.view, target: '_blank', rel: 'noopener', 'data-file': true, 'aria-label': 'Open ' + body.name, text: 'Open' });
   const download = h('a', { class: 'file-action file-primary', href: body.download, download: body.name, 'data-file': true, 'aria-label': 'Download ' + body.name }, icon('download'), 'Download');
   return h(
@@ -218,6 +219,8 @@ function defaultCard(card, parts) {
       card.hint ? h('p', { class: 'card-hint', text: card.hint }) : null,
     );
   }
+  // A call with nothing to unfold, such as a read of an attached file, is one line.
+  if (!card.body) return h('div', { class: 'card card-ended', 'data-tone': card.tone, ...cardData(card) }, head('p', card));
   const { nodes, fill } = bodyOf(card, parts);
   const details = h('details', { class: 'card', 'data-tone': card.tone, ...cardData(card) }, head('summary', card), h('div', { class: 'card-body' }, ...nodes));
   if (fill) onFirstOpen(details, fill);

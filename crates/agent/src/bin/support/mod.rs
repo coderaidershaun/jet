@@ -3,6 +3,8 @@ mod client;
 mod events;
 use serde_json::Value;
 pub fn run(args: &[String], input: &str, codex: bool) -> bool {
+    // Tests read this to see exactly what the model was sent, even when no script follows.
+    std::fs::write("facade-prompt.txt", input).unwrap();
     let Some(script) = input.lines().find_map(|line| line.strip_prefix("facade:")) else {
         return false;
     };
