@@ -1,6 +1,7 @@
 //! Route provider requests through the host registry and shared HTTP client.
 use super::{Binding, Facade, HEADER, tools};
 use crate::chat::lock;
+use crate::files::ExportRequest;
 use agent::{
     apps::{AppId, RegistryCommand},
     mcp::{ToolRequest, ToolTarget},
@@ -200,6 +201,15 @@ impl Handler {
                 }
                 let result = result.map_err(|e| json!(e))?;
                 Ok(json!(result))
+            }
+            "files_export" => {
+                let request: ExportRequest = serde_json::from_value(arguments).map_err(message)?;
+                let files = self.0.files.clone();
+                let saved = tokio::task::spawn_blocking(move || files.export(request))
+                    .await
+                    .map_err(message)?
+                    .map_err(message)?;
+                Ok(json!(saved))
             }
             _ => Err(message("unknown facade tool")),
         }

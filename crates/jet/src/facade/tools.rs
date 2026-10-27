@@ -3,6 +3,13 @@ use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Value, json};
 use std::sync::LazyLock;
 
+const FILES_EXPORT_DESCRIPTION: &str = "Write a file the user can download: a PDF, a Markdown file or an HTML page, from Markdown you compose. Headings, lists, tables, code, footnotes and maths written as in chat. Number sources in order and cite them as [n]. The chat shows a download card, so do not repeat the document in your reply.";
+/// The longest document, in characters. Even at four bytes a character, one call stays well under
+/// the 4 MiB that the MCP server reads from one request.
+// SMELL: the whole document also stays in the transcript as the call's input, so every reload
+// sends it to the browser again, although the card shows only its title.
+const MARKDOWN_LIMIT: usize = 200_000;
+
 static TOOLS: LazyLock<Vec<Tool>> = LazyLock::new(|| {
     let target = json!({"appId":{"type":"string","format":"uuid"},"tool":{"type":"string"}});
     [
@@ -12,6 +19,13 @@ static TOOLS: LazyLock<Vec<Tool>> = LazyLock::new(|| {
         ("tools_search", "Search concise tool summaries across all enabled apps. Use tools_describe for schemas.", object(json!({"query":{"type":"string"}}),json!([]))),
         ("tools_describe", "Read a real tool schema and its server instructions.", object(target,json!(["appId","tool"]))),
         ("tools_call", "Validate and call a real tool once. Discover its schema first.", object(json!({"appId":{"type":"string","format":"uuid"},"tool":{"type":"string"},"arguments":{"type":"object"}}),json!(["appId","tool","arguments"]))),
+        ("files_export", FILES_EXPORT_DESCRIPTION, object(json!({
+            "format":{"enum":["pdf","markdown","html"]},
+            "title":{"type":"string","minLength":1,"maxLength":200},
+            "subtitle":{"type":"string","maxLength":300},
+            "markdown":{"type":"string","minLength":1,"maxLength":MARKDOWN_LIMIT},
+            "sources":{"type":"array","maxItems":200,"items":{"type":"string","maxLength":1000}}
+        }),json!(["format","title","markdown"]))),
     ].into_iter().map(|(name, description, schema)| {
         let read_only = matches!(name, "apps_list" | "tools_search" | "tools_describe");
         Tool::new(name, description, schema.as_object().cloned().unwrap_or_default())

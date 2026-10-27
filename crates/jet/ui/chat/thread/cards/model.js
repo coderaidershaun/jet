@@ -28,7 +28,8 @@
  *   | { kind: 'page', title: string, place: string, pieces: Piece[] }
  *   | { kind: 'documents', documents: { title: string, authors: string, pages: string }[], unreadable: string[] }
  *   | { kind: 'health', lines: { text: string, ok: boolean }[] }
- *   | { kind: 'fields', fields: Field[] }} Body
+ *   | { kind: 'fields', fields: Field[] }
+ *   | { kind: 'file', name: string, title: string, tag: string, meta: string, download: string, view: string }} Body
  */
 /**
  * @typedef {{ id: string, key: string, call: ShownCall, state: CallState, line: string, name: string, meta: string,
@@ -42,6 +43,14 @@ const CLOSE_QUOTE = '”';
 const HEALTH_SENTENCE = /\s*Call the `health` tool[^.]*\.?/;
 const FAILED_LINE = /FAILED/;
 const HEALTH_HINT = 'Ask for a health check to see which service is down.';
+const FILE_TOOL = 'jet/files_export';
+// A saved file is reached only by this shape of id, so a link is never built from anything else in a result.
+const FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const FILE_FORMATS = {
+  pdf: { tag: 'PDF', label: 'PDF', writing: 'a PDF' },
+  markdown: { tag: 'MD', label: 'Markdown', writing: 'a Markdown file' },
+  html: { tag: 'HTML', label: 'HTML page', writing: 'an HTML page' },
+};
 
 const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 const recordOf = (value) => (isRecord(value) ? value : {});
@@ -58,6 +67,18 @@ const seconds = (ms) => (ms < 10000 ? (ms / 1000).toFixed(1) : Math.round(ms / 1
 function textOf(value) {
   if (typeof value === 'string') return value;
   return value === undefined ? '' : JSON.stringify(value);
+}
+
+/** The format of a file call, from its input while it runs and from its result when it is done. */
+function fileFormatOf(call) {
+  const named = stringOf(recordOf(call.result).format) || stringOf(recordOf(call.input).format);
+  return Object.hasOwn(FILE_FORMATS, named) ? FILE_FORMATS[named] : null;
+}
+
+function sizeOf(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 /** @param {ShownCall} call @returns {CallState} */
@@ -199,6 +220,12 @@ function lineOf(call, earlier) {
     }
     case 'quanty/ingest_status':
       return 'Checking the ingest';
+    case FILE_TOOL: {
+      const writing = fileFormatOf(call)?.writing;
+      const title = orNull(input.title);
+      if (!writing) return 'Writing a file';
+      return title ? 'Writing ' + quoted(title) + ' as ' + writing : 'Writing ' + writing;
+    }
     default:
       return 'Calling ' + call.server + ' · ' + call.tool;
   }
@@ -291,6 +318,24 @@ function readIngest(result, input, call) {
   return { outcome, tone, body: { kind: 'fields', fields } };
 }
 
+/** The saved file of a finished export. A result without a UUID id is not a file, and no link is made from it. */
+function readFile(result, input, call) {
+  const format = fileFormatOf(call);
+  if (typeof result.id !== 'string' || !FILE_ID.test(result.id) || !format) return { problem: "This file can't be found." };
+  const id = result.id.toLowerCase();
+  const title = orNull(result.title) ?? orNull(input.title) ?? 'Document';
+  const name = orNull(result.name) ?? title;
+  const meta = joined(format.label, typeof result.bytes === 'number' ? sizeOf(result.bytes) : '');
+  const body = { kind: 'file', name, title, tag: format.tag, meta, download: '/api/files/' + id, view: '/api/files/' + id + '/view' };
+  return { outcome: meta, tone: 'ok', body };
+}
+
+/** The sentence a failed call gave back, from a result that may be text or an error record. */
+function messageOf(result) {
+  const record = recordOf(result);
+  return orNull(recordOf(record.error).message) ?? orNull(record.message) ?? orNull(record.error) ?? textOf(result);
+}
+
 /** Numbered sources are a result format, independent of an app's registered ID. */
 export function citationSources(call) {
   if (callState(call) !== 'done' || !isRecord(call.result)) return [];
@@ -299,6 +344,7 @@ export function citationSources(call) {
 }
 
 function readerFor(call) {
+  if (call.server + '/' + call.tool === FILE_TOOL) return readFile;
   if (!isRecord(call.result)) return readGeneric;
   const legacy = READERS[call.server + '/' + call.tool];
   if (legacy) return legacy;
@@ -334,6 +380,11 @@ export function cardOf(call, earlier = []) {
 
   if (state === 'running') return card;
   if (state === 'unfinished') return ended('stopped');
+  if (state === 'failed' && card.key === FILE_TOOL) {
+    const failedName = "Couldn't write the " + (fileFormatOf(call)?.label ?? 'file');
+    const meta = joined('failed', time);
+    return { ...card, name: failedName, meta, head: failedName + ' · ' + meta, tone: 'invalid', advice: messageOf(call.result) };
+  }
   if (state === 'failed') {
     const advice = textOf(call.result);
     const hinted = HEALTH_SENTENCE.test(advice);
@@ -342,6 +393,7 @@ export function cardOf(call, earlier = []) {
 
   const input = recordOf(call.input);
   const read = readerFor(call);
-  const { outcome, tone, body } = read(recordOf(call.result), input, call);
+  const { outcome, tone, body, problem } = read(recordOf(call.result), input, call);
+  if (problem) return { ...ended(joined('failed', time)), state: 'failed', tone: 'invalid', advice: problem };
   return { ...ended(joined(outcome, time)), tone, body };
 }

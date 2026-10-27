@@ -6,6 +6,7 @@ mod routes;
 mod tools;
 
 use crate::facade::Facade;
+use crate::files::Files;
 use agent::{apps::Registry, mcp::HttpMcpClient};
 use axum::Router;
 use std::{
@@ -36,6 +37,7 @@ pub struct Server {
     pub(crate) proxy: proxy::Proxy,
     pub mcp: Arc<HttpMcpClient>,
     pub(crate) facade: Arc<Facade>,
+    pub(crate) files: Files,
     pub registry: Arc<Mutex<Registry>>,
     pub config: ServerConfig,
 }
@@ -45,12 +47,14 @@ impl Server {
         let proxy = proxy::Proxy::new(&config)?;
         let registry = Arc::new(Mutex::new(Registry::open(&config.data_dir)?));
         let mcp = Arc::new(HttpMcpClient::new(registry.clone()));
+        let files = Files::new(&config.data_dir);
         let facade = Facade::new(
             registry.clone(),
             mcp.clone(),
+            files.clone(),
             format!("http://{}/mcp", config.listen),
         );
-        let chat = ChatState::open(config.data_dir.clone(), facade.clone())?;
+        let chat = ChatState::open(config.data_dir.clone(), facade.clone(), files.clone())?;
         *crate::chat::lock(&facade.chat) = Arc::downgrade(&chat);
         let events = crate::chat::lock(&registry).subscribe();
         let weak = Arc::downgrade(&chat);
@@ -73,6 +77,7 @@ impl Server {
             registry,
             mcp,
             facade,
+            files,
             config,
         })
     }

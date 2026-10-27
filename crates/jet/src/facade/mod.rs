@@ -3,6 +3,7 @@ mod handler;
 mod tools;
 
 use crate::chat::{ChatState, lock};
+use crate::files::Files;
 use agent::{McpConnection, TurnIdentity, apps::Registry, mcp::HttpMcpClient};
 use axum::{
     Router,
@@ -30,16 +31,23 @@ pub(crate) struct Binding {
 pub(crate) struct Facade {
     pub registry: Arc<Mutex<Registry>>,
     pub mcp: Arc<HttpMcpClient>,
+    files: Files,
     pub chat: Mutex<Weak<ChatState>>,
     url: Mutex<String>,
     bindings: Mutex<HashMap<String, Binding>>,
     sessions: Mutex<HashMap<String, String>>,
 }
 impl Facade {
-    pub fn new(registry: Arc<Mutex<Registry>>, mcp: Arc<HttpMcpClient>, url: String) -> Arc<Self> {
+    pub fn new(
+        registry: Arc<Mutex<Registry>>,
+        mcp: Arc<HttpMcpClient>,
+        files: Files,
+        url: String,
+    ) -> Arc<Self> {
         Arc::new(Self {
             registry,
             mcp,
+            files,
             chat: Mutex::new(Weak::new()),
             url: Mutex::new(url),
             bindings: Mutex::new(HashMap::new()),

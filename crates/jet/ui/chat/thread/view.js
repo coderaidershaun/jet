@@ -138,6 +138,8 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
 
   rowsEl.addEventListener('click', (event) => {
     const target = /** @type {HTMLElement} */ (event.target);
+    // A link to a saved file is left to the browser, which opens it in a new tab or saves it.
+    if (target.closest('a[data-file]')) return;
     const link = target.closest('a[href]');
     if (link) {
       event.preventDefault();

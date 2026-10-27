@@ -33,6 +33,7 @@ const ICONS = {
   stop: 'M7 7h10v10H7z',
   close: 'M6 6l12 12M18 6L6 18',
   down: 'M12 5v14M5 12l7 7 7-7',
+  download: 'M12 4v11M7 10.5l5 5 5-5M5 20h14',
   chevron: 'M6 9l6 6 6-6',
 };
 const FILLED = new Set(['stop']);

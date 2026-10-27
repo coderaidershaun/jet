@@ -24,6 +24,12 @@ pub(super) struct Math {
 }
 
 #[derive(Clone, Copy, PartialEq)]
+enum Money {
+    Plain,
+    Escaped,
+}
+
+#[derive(Clone, Copy, PartialEq)]
 enum Delimiter {
     Paren,
     Bracket,
@@ -49,6 +55,16 @@ impl Protected {
     /// single `$` is money, never math. A delimiter that does not open math also becomes a marker,
     /// so the parser cannot swallow its backslash.
     pub(super) fn new(text: &str) -> Protected {
+        Protected::scan(text, Money::Plain)
+    }
+
+    /// Like [`Protected::new`], but each single `$` outside code is written as `\$` into the
+    /// text, so a Markdown reader that reads `$` as math sees money.
+    pub(super) fn with_money_escaped(text: &str) -> Protected {
+        Protected::scan(text, Money::Escaped)
+    }
+
+    fn scan(text: &str, money: Money) -> Protected {
         let text = text.replace([OPEN, CLOSE], "\u{FFFD}");
         let mut scanner = Scanner {
             text: &text,
@@ -57,6 +73,7 @@ impl Protected {
             out: String::with_capacity(text.len()),
             markers: Vec::new(),
             no_closer_before: [0; 3],
+            money,
         };
         scanner.run();
         Protected {
@@ -77,6 +94,7 @@ struct Scanner<'t> {
     /// kind before that point cannot close either, so a paragraph full of unclosed openers is
     /// searched once and not once for each opener.
     no_closer_before: [usize; 3],
+    money: Money,
 }
 
 impl Scanner<'_> {
@@ -90,6 +108,10 @@ impl Scanner<'_> {
                 b'`' => self.copy_code_span(),
                 b'\\' => self.backslash(),
                 b'$' if self.bytes.get(self.at + 1) == Some(&b'$') => self.dollars(),
+                b'$' if self.money == Money::Escaped => {
+                    self.out.push_str("\\$");
+                    self.at += 1;
+                }
                 _ => self.copy_to(self.at + self.width_at(self.at)),
             }
         }

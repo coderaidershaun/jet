@@ -84,6 +84,27 @@ impl Protected {
         out
     }
 
+    /// The text with each formula written as `$..$` (inline) or `$$..$$` (display), and each
+    /// delimiter that opened no math as the text it was.
+    pub(super) fn dollar_text(&self) -> String {
+        let mut text = String::with_capacity(self.text.len());
+        for piece in self.pieces(&self.text) {
+            match piece {
+                Piece::Plain(plain) => text.push_str(plain),
+                Piece::Marker(Marker {
+                    math: Some(math), ..
+                }) => {
+                    let fence = if math.display { "$$" } else { "$" };
+                    text.push_str(fence);
+                    text.push_str(&math.tex);
+                    text.push_str(fence);
+                }
+                Piece::Marker(Marker { source, math: None }) => text.push_str(source),
+            }
+        }
+        text
+    }
+
     /// The `<div>` for a paragraph that holds one display formula and nothing else.
     fn display_block(&self, text: &str) -> Option<Event<'static>> {
         let [

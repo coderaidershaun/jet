@@ -24,6 +24,15 @@ pub fn render_markdown(text: &str) -> String {
     out
 }
 
+/// Rewrites chat math (`\( \)`, `\[ \]`, `$$ $$`) as the `$ $` and `$$ $$` that a Markdown file
+/// reader takes, and writes each single `$`, which chat treats as money, as `\$`. Code spans and
+/// fences come back byte for byte, and a delimiter that opens no math stays as written.
+// SMELL: the scanner knows code fences and code spans, but not indented code, autolinks or raw
+// HTML, so a `$` in one of those gains a backslash and chat math there is rewritten.
+pub fn dollar_math(text: &str) -> String {
+    Protected::with_money_escaped(text).dollar_text()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,6 +78,24 @@ mod tests {
                         .is_some_and(|rest| rest.trim_start().starts_with('='))
             })
         })
+    }
+
+    #[test]
+    fn dollar_math_matches_chat_math() {
+        assert_eq!(
+            dollar_math("Let \\( x^2 \\) hold, then\n\n\\[\nE = mc^2\n\\]\n\nand $$a+b$$ too."),
+            "Let $x^2$ hold, then\n\n$$E = mc^2$$\n\nand $$a+b$$ too."
+        );
+        assert_eq!(
+            dollar_math("It costs $5 or $10, not \\$7."),
+            "It costs \\$5 or \\$10, not \\$7."
+        );
+        let code = "Use `\\(a\\) $5` and\n\n```\n$x$ \\[y\\]\n```\n";
+        assert_eq!(dollar_math(code), code);
+        assert_eq!(
+            dollar_math("An open \\( never closes, nor does \\[ this"),
+            "An open \\( never closes, nor does \\[ this"
+        );
     }
 
     #[test]

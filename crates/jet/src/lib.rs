@@ -2,6 +2,7 @@
 
 mod chat;
 mod facade;
+mod files;
 mod server;
 mod settings;
 

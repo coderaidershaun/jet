@@ -360,3 +360,108 @@ fn facade_actions_expire_with_the_initiating_turn() {
         1
     );
 }
+#[test]
+fn exported_file_downloads_and_forget_removes_it() {
+    let host = host();
+    let markdown = "# Smile\n\nThe variance is \\( \\sigma^2 \\) and a cost of $5.\n\n\\[\nC - P = S - K e^{-rT}\n\\]\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n";
+    let script = json!([
+        {"tool":"files_export","arguments":{
+            "format":"pdf","title":"Volatility smile","markdown":markdown,"sources":["Hull, p. 7"]
+        }},
+        {"tool":"files_export","arguments":{
+            "format":"html","title":"Volatility smile","markdown":markdown
+        }},
+        {"tool":"files_export","arguments":{
+            "format":"markdown","title":"Volatility smile","markdown":markdown
+        }}
+    ]);
+    send(&host, "export", "sonnet", script, Value::Null);
+    let snapshot = host.until(|value| {
+        value["active"].is_null()
+            && value["history"]
+                .as_array()
+                .is_some_and(|history| history.len() == 2)
+    });
+    assert_eq!(snapshot["history"][1]["status"], "complete", "{snapshot}");
+    let result = &snapshot["history"][1]["tools"][0]["result"];
+    assert_eq!(result["name"], "Volatility smile.pdf", "{result}");
+    assert_eq!(result["format"], "pdf");
+    let id = result["id"].as_str().unwrap().to_owned();
+    let page = &snapshot["history"][1]["tools"][1]["result"];
+    assert_eq!(page["name"], "Volatility smile.html", "{page}");
+    let page_id = page["id"].as_str().unwrap().to_owned();
+    let notes_id = snapshot["history"][1]["tools"][2]["result"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let fetch = |path: &str| {
+        let mut response = agent.get(format!("{}{path}", host.url)).call().unwrap();
+        let status = response.status().as_u16();
+        let header = |name: &str| {
+            response
+                .headers()
+                .get(name)
+                .map(|value| value.to_str().unwrap().to_owned())
+                .unwrap_or_default()
+        };
+        let headers = (
+            header("content-type"),
+            header("content-disposition"),
+            header("content-security-policy"),
+            header("x-content-type-options"),
+        );
+        (status, headers, response.body_mut().read_to_vec().unwrap())
+    };
+
+    let (status, (content_type, disposition, policy, nosniff), body) =
+        fetch(&format!("/api/files/{id}"));
+    assert_eq!(status, 200);
+    assert_eq!(content_type, "application/pdf");
+    assert!(disposition.starts_with("attachment;"), "{disposition}");
+    assert!(
+        disposition.contains("filename=\"Volatility smile.pdf\""),
+        "{disposition}"
+    );
+    assert_eq!(policy, "", "a PDF must load in the browser's own viewer");
+    assert_eq!(nosniff, "nosniff");
+    assert!(body.starts_with(b"%PDF-"));
+
+    let (status, (_, disposition, policy, _), _) = fetch(&format!("/api/files/{id}/view"));
+    assert_eq!(status, 200);
+    assert!(disposition.starts_with("inline;"), "{disposition}");
+    assert_eq!(policy, "", "a PDF must load in the browser's own viewer");
+
+    let (status, (_, disposition, policy, nosniff), body) =
+        fetch(&format!("/api/files/{page_id}/view"));
+    assert_eq!(status, 200);
+    assert!(disposition.starts_with("inline;"), "{disposition}");
+    assert!(policy.contains("sandbox"), "{policy}");
+    assert_eq!(nosniff, "nosniff");
+    let html = String::from_utf8(body).unwrap();
+    for formula in ["\\sigma^2", "C - P = S - K e^{-rT}"] {
+        assert!(
+            html.contains(&format!("<img class=\"math\" alt=\"{formula}\"")),
+            "chat maths must be typeset: {formula}"
+        );
+    }
+    assert!(html.contains("a cost of $5."), "a single $ is money");
+
+    let (status, (content_type, _, policy, _), _) = fetch(&format!("/api/files/{notes_id}/view"));
+    assert_eq!(status, 200);
+    assert_eq!(content_type, "text/plain; charset=utf-8");
+    assert!(policy.contains("sandbox"), "{policy}");
+
+    assert_eq!(fetch("/api/files/not-an-id").0, 404);
+    assert_eq!(fetch("/api/files/..%2Fsettings.json").0, 404);
+
+    assert_eq!(host.post("/api/chat/forget", json!({})).0, 200);
+    assert_eq!(fetch(&format!("/api/files/{id}")).0, 404);
+    assert_eq!(fetch(&format!("/api/files/{page_id}")).0, 404);
+    assert_eq!(fetch(&format!("/api/files/{notes_id}")).0, 404);
+    assert!(!host.dir.path().join("files").exists());
+}

@@ -3,7 +3,7 @@
 // Rows and pieces are drawn the first time they are opened, so a closed card costs
 // nothing.
 
-import { h } from '../../../dom.js';
+import { h, icon } from '../../../dom.js';
 import { findSource, splitCitations } from './cite.js';
 import { callState, cardOf } from './model.js';
 import { fillShow } from './show.js';
@@ -190,6 +190,21 @@ function bodyOf(card, parts) {
   }
 }
 
+/** The card of a written file: what it is, and two links built from its id alone. */
+function fileCard(card) {
+  const { body } = card;
+  const sheet = h('span', { class: 'file-sheet', 'data-format': body.tag.toLowerCase(), 'aria-hidden': 'true' }, h('span', { class: 'file-tag', text: body.tag }));
+  const open = h('a', { class: 'file-action', href: body.view, target: '_blank', rel: 'noopener', 'data-file': true, 'aria-label': 'Open ' + body.name, text: 'Open' });
+  const download = h('a', { class: 'file-action file-primary', href: body.download, download: body.name, 'data-file': true, 'aria-label': 'Download ' + body.name }, icon('download'), 'Download');
+  return h(
+    'div',
+    { class: 'card card-file', 'data-tone': card.tone, ...cardData(card) },
+    sheet,
+    h('div', { class: 'file-what' }, h('p', { class: 'file-title', text: body.title }), h('p', { class: 'file-meta', title: body.name, text: body.meta })),
+    h('div', { class: 'file-actions' }, open, download),
+  );
+}
+
 function defaultCard(card, parts) {
   if (card.state === 'unfinished') {
     return h('div', { class: 'card card-ended', ...cardData(card) }, h('span', { class: 'card-line', text: card.line + ' · stopped' }));
@@ -215,6 +230,7 @@ function defaultCard(card, parts) {
  * @param {Omit<Parts, 'readImage'> & { readImage: (appId: string, path: string) => Promise<string> }} parts
  */
 export function renderResultCard(card, parts) {
+  if (card.state === 'done' && card.body?.kind === 'file') return fileCard(card);
   return defaultCard(card, { ...parts, readImage: (path) => parts.readImage(card.call.server, path) });
 }
 
@@ -251,6 +267,7 @@ export function createCardList(container, parts) {
         if (!record || record.state !== state) {
           const card = cardOf(call, above);
           const el = state === 'running' ? runningCard(card) : renderResultCard(card, parts);
+          if (record?.state === 'running' && card.body?.kind === 'file') el.classList.add('is-arriving');
           record?.el.replaceWith(el);
           record = { el, state };
           kept.set(call.id, record);

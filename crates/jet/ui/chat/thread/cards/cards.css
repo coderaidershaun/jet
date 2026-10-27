@@ -116,3 +116,57 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 }
 .cite::after { content: ""; position: absolute; inset: -4px -2px; }
 .cite:hover { background: rgba(61, 139, 255, .38); }
+
+/* The card of a written file: a paper sheet, the title and size, and the two ways to take it. */
+.card-file { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; max-width: 560px; padding: 12px; }
+.card-file.is-arriving { animation: file-arrive 260ms ease-out both; }
+.card-file.is-arriving .file-sheet { animation: file-drop 420ms cubic-bezier(.2, .9, .3, 1.2) both; }
+@keyframes file-arrive { from { opacity: 0; transform: translateY(4px); } }
+@keyframes file-drop { from { opacity: 0; transform: translateY(-8px) rotate(-6deg); } }
+.reduced .card-file.is-arriving, .reduced .card-file.is-arriving .file-sheet { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .card-file.is-arriving, .card-file.is-arriving .file-sheet { animation: none; }
+}
+
+/* A sheet of light paper. The ::before folds its top-right corner, the ::after draws two faint rules, and the tag is a band in the colour of the format. */
+.file-sheet {
+  position: relative; flex: none; width: 36px; height: 46px; overflow: hidden; border-radius: 3px; background: #e8edf1;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+  --file-colour: var(--muted);
+}
+.file-sheet[data-format="pdf"] { --file-colour: var(--file-pdf); }
+.file-sheet[data-format="html"] { --file-colour: var(--file-html); }
+.file-sheet[data-format="md"] { --file-colour: var(--file-md); }
+.file-sheet::before {
+  content: ""; position: absolute; top: 0; right: 0; width: 10px; height: 10px;
+  background: linear-gradient(225deg, transparent 50%, #b9c3cc 50%);
+}
+.file-sheet::after {
+  content: ""; position: absolute; left: 6px; right: 6px; top: 16px; height: 9px;
+  background: repeating-linear-gradient(to bottom, rgba(11, 20, 27, .16) 0 2px, transparent 2px 6px);
+}
+.file-tag {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 14px; background: var(--file-colour); color: var(--ground);
+  font: 700 9px/14px var(--mono); text-align: center; letter-spacing: .02em;
+}
+
+.file-what { flex: 1 1 180px; min-width: 0; }
+.file-title {
+  margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  font-size: 14px; font-weight: 600; line-height: 20px;
+}
+.file-meta { margin: 0; color: var(--muted); font-size: 12px; line-height: 16px; }
+
+.file-actions { display: flex; gap: 8px; margin-left: auto; }
+.file-action {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 16px;
+  background: rgba(255, 255, 255, .06); border: 1px solid var(--line); border-radius: 20px;
+  color: var(--fg); font-size: 14px; font-weight: 600; line-height: 20px; text-decoration: none;
+}
+/* The ::after makes each 40px pill a 44px touch target without moving it. */
+.file-action::after { content: ""; position: absolute; inset: -2px 0; }
+.file-action:hover { background: rgba(255, 255, 255, .12); }
+.file-action .icon { width: 18px; height: 18px; }
+/* SMELL: white text on the accent blue has a contrast of about 3.3 to 1, under the 4.5 to 1 that text this size needs. */
+.file-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.file-primary:hover { background: #5a9dff; }

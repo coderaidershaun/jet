@@ -6,11 +6,17 @@ use agent::{
 };
 use axum::{
     Json, Router,
-    extract::{Query, State},
-    http::{HeaderValue, header::CACHE_CONTROL},
+    extract::{Path, Query, State},
+    http::{
+        HeaderValue,
+        header::{
+            CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_SECURITY_POLICY, CONTENT_TYPE,
+            X_CONTENT_TYPE_OPTIONS,
+        },
+    },
     middleware,
     response::{
-        Response, Sse,
+        IntoResponse, Response, Sse,
         sse::{Event, KeepAlive},
     },
     routing::{get, get_service, post},
@@ -25,6 +31,7 @@ use tower_http::services::ServeDir;
 use super::Server;
 use crate::{
     chat::{Accepted, AgentStatus, BridgeError, SendRequest, Snapshot, lock},
+    files::FileFormat,
     settings,
 };
 
@@ -51,6 +58,8 @@ pub(super) fn router(host: Server) -> Router {
         .route("/api/markdown", post(markdown))
         .route("/api/feel", post(feel))
         .route("/api/apps", get(apps).post(update_apps))
+        .route("/api/files/{id}", get(download_file))
+        .route("/api/files/{id}/view", get(view_file))
         .merge(super::proxy::router())
         .fallback_service(ui)
         .with_state(host)
@@ -60,10 +69,14 @@ pub(super) fn router(host: Server) -> Router {
 async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, BridgeError> + Send + 'static,
 ) -> Result<Json<T>, BridgeError> {
+    on_worker(work).await.map(Json)
+}
+async fn on_worker<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, BridgeError> + Send + 'static,
+) -> Result<T, BridgeError> {
     tokio::task::spawn_blocking(work)
         .await
         .map_err(|error| BridgeError::Io(format!("request worker failed: {error}")))?
-        .map(Json)
 }
 
 async fn status(State(host): State<Server>) -> Result<Json<AgentStatus>, BridgeError> {
@@ -162,6 +175,85 @@ async fn update_apps(
             .map_err(|error| BridgeError::InvalidRequest(error.to_string()))
     })
     .await
+}
+
+/// Even an HTML file opened on Jet's own address can run nothing and load nothing.
+const FILE_POLICY: &str = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'";
+
+#[derive(Clone, Copy, PartialEq)]
+enum Disposition {
+    Attachment,
+    Inline,
+}
+
+async fn download_file(
+    State(host): State<Server>,
+    Path(id): Path<String>,
+) -> Result<Response, BridgeError> {
+    serve_file(host, id, Disposition::Attachment).await
+}
+async fn view_file(
+    State(host): State<Server>,
+    Path(id): Path<String>,
+) -> Result<Response, BridgeError> {
+    serve_file(host, id, Disposition::Inline).await
+}
+
+async fn serve_file(
+    host: Server,
+    id: String,
+    disposition: Disposition,
+) -> Result<Response, BridgeError> {
+    let file = on_worker(move || Ok(host.files.open(&id)?)).await?;
+    let content_type = match disposition {
+        Disposition::Attachment => file.format.download_type(),
+        Disposition::Inline => file.format.view_type(),
+    };
+    let headers = [
+        (CONTENT_TYPE, HeaderValue::from_static(content_type)),
+        (
+            CONTENT_DISPOSITION,
+            content_disposition(&file.name, disposition)
+                .ok_or_else(|| BridgeError::Io("the file name cannot be sent".into()))?,
+        ),
+        (X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
+        (CACHE_CONTROL, HeaderValue::from_static("private, no-cache")),
+    ];
+    // A PDF gets no policy because Chrome's PDF viewer stays blank under one. Jet's own writer
+    // puts no script in a PDF, so nothing is lost.
+    let policy = (file.format != FileFormat::Pdf).then(|| {
+        [(
+            CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(FILE_POLICY),
+        )]
+    });
+    Ok((headers, policy, file.contents).into_response())
+}
+
+/// The disposition with a plain ASCII `filename` for old browsers and the exact name in
+/// `filename*`, percent-encoded.
+fn content_disposition(name: &str, disposition: Disposition) -> Option<HeaderValue> {
+    let kind = match disposition {
+        Disposition::Attachment => "attachment",
+        Disposition::Inline => "inline",
+    };
+    let is_plain = |c: char| c == ' ' || (c.is_ascii_graphic() && !matches!(c, '"' | '\\'));
+    let plain: String = name
+        .chars()
+        .map(|c| if is_plain(c) { c } else { '_' })
+        .collect();
+    let mut encoded = String::new();
+    for byte in name.bytes() {
+        if byte.is_ascii_alphanumeric() || b"!#$&+-.^_`|~".contains(&byte) {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    HeaderValue::from_str(&format!(
+        "{kind}; filename=\"{plain}\"; filename*=UTF-8''{encoded}"
+    ))
+    .ok()
 }
 
 #[derive(Deserialize)]

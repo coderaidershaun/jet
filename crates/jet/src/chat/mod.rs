@@ -17,6 +17,7 @@ use std::{
 };
 use tokio::sync::broadcast;
 
+use crate::files::Files;
 use crate::settings;
 pub use error::BridgeError;
 use events::{ActiveTurn, Runtime, TurnContext};
@@ -31,6 +32,7 @@ pub(crate) struct ChatState {
     pub conversation: Conversation,
     // SMELL: chat and facade import each other; the facade reaches back through a weak link that server::open sets.
     facade: Arc<crate::facade::Facade>,
+    files: Files,
     pub data_dir: PathBuf,
     runtime: Mutex<Runtime>,
     review: ReviewTimer,
@@ -67,12 +69,14 @@ impl ChatState {
     pub fn open(
         data_dir: PathBuf,
         facade: Arc<crate::facade::Facade>,
+        files: Files,
     ) -> Result<Arc<Self>, BridgeError> {
         let conversation = Conversation::new(DataDir::new(data_dir.clone()));
         conversation.recover_interrupted()?;
         Ok(Arc::new(Self {
             conversation,
             facade,
+            files,
             data_dir,
             runtime: Mutex::new(Runtime::new()),
             review: ReviewTimer::new(),
@@ -276,10 +280,13 @@ impl ChatState {
         Ok(())
     }
 
+    /// Clears the thread and deletes every file Jet wrote. The runtime stays locked throughout, so
+    /// no turn can start and write a file in between.
     pub fn forget(&self) -> Result<(), BridgeError> {
         let mut runtime = lock(&self.runtime);
         self.conversation.forget()?;
         runtime.publish(None, json!({"kind":"historyChanged"}));
+        self.files.clear()?;
         Ok(())
     }
 

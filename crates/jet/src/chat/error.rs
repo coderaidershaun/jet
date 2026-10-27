@@ -3,6 +3,7 @@
 use agent::{ConversationError, Failure, MemoryError, TransportError, TurnError};
 use serde::Serialize;
 
+use crate::files::FileError;
 use crate::settings::SettingsError;
 
 /// Why a command failed. The page reads `kind` to decide what to show.
@@ -24,6 +25,8 @@ pub enum BridgeError {
     Cancelled,
     #[error("{0}")]
     InvalidRequest(String),
+    #[error("{0}")]
+    NotFound(String),
     #[error("server is shutting down")]
     ShuttingDown,
 }
@@ -37,6 +40,7 @@ impl BridgeError {
             BridgeError::Conflict => "conflict",
             BridgeError::Cancelled => "cancelled",
             BridgeError::InvalidRequest(_) => "invalidRequest",
+            BridgeError::NotFound(_) => "notFound",
             BridgeError::ShuttingDown => "shuttingDown",
         }
     }
@@ -61,6 +65,15 @@ impl From<ConversationError> for BridgeError {
     }
 }
 
+impl From<FileError> for BridgeError {
+    fn from(error: FileError) -> BridgeError {
+        match error {
+            FileError::NotFound(_) => BridgeError::NotFound(error.to_string()),
+            other => BridgeError::Io(other.to_string()),
+        }
+    }
+}
+
 impl From<TransportError> for BridgeError {
     fn from(error: TransportError) -> BridgeError {
         let failure = Failure::from(&TurnError::from(error));
@@ -77,6 +90,7 @@ impl axum::response::IntoResponse for BridgeError {
         let status = match self {
             Self::Busy | Self::Conflict | Self::Cancelled => StatusCode::CONFLICT,
             Self::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::ShuttingDown => StatusCode::SERVICE_UNAVAILABLE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };

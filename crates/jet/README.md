@@ -1,6 +1,6 @@
 # Jet browser host
 
-`cargo run -p jet -- --listen 127.0.0.1:8787 --data-dir ./jet-data` serves the chat in a normal browser. `jet --help` lists deployment options. The data directory owns settings, transcript, session, notes and the app registry. `--ui-dir` points to the static `ui/` directory when the executable is copied elsewhere.
+`cargo run -p jet -- --listen 127.0.0.1:8787 --data-dir ./jet-data` serves the chat in a normal browser. `jet --help` lists deployment options. The data directory owns settings, transcript, session, notes, the app registry and the files Jet has written. `--ui-dir` points to the static `ui/` directory when the executable is copied elsewhere.
 
 The [root guide](../../README.md) covers registration, commands, Quanty launch and
 existing-data reuse. Chat starts in the main content beside one drawer. Selecting
@@ -18,10 +18,11 @@ The browser uses JSON commands and one server-sent event stream:
 - `GET /api/snapshot`: history, active turn, server epoch and event cursor.
 - `GET /api/events?epoch=...&cursor=...`: bounded replay followed by live events. A stale cursor or a new epoch produces a fresh snapshot.
 - `POST /api/chat/send`: client-generated `requestId`, `clientId`, message/model/persona fields. Returns the accepted server `turnId` and user entry. Reusing a request ID with different content returns conflict.
-- `POST /api/chat/stop`: `requestId` of the request to cancel; `POST /api/chat/forget` clears the conversation.
+- `POST /api/chat/stop`: `requestId` of the request to cancel; `POST /api/chat/forget` clears the conversation and deletes the files Jet wrote.
 - `GET/PUT /api/settings`, `GET/PUT /api/memory`.
 - `GET /api/status`, `POST /api/markdown`, `POST /api/feel`.
 - `GET/POST /api/apps`: the deterministic registry operations documented in the app contract.
+- `GET /api/files/{id}` and `GET /api/files/{id}/view`: a file written by `files_export`, as a download and for opening in a tab. The id must be a UUID; anything else is 404. Responses carry `nosniff`. HTML and Markdown also carry a `sandbox` content security policy; a PDF carries none, because Chrome's PDF viewer stays blank under one.
 
 Provider paths come from server settings. Process-command MCP configuration is rejected; the host never launches legacy app processes.
 
