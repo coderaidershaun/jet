@@ -14,6 +14,42 @@ For access from another computer, choose a reachable listen address. `--public-o
 
 Jet targets a trusted single-user deployment. Authentication is deferred. App processes run independently; Jet does not install, launch or stop them.
 
+## This server's deployment
+
+Jet's system service is `jet.service`; it starts at boot and restarts on failure.
+The installed executable is `/home/ubuntu/.local/bin/jet`, with persistent data in
+`/home/ubuntu/.local/share/jet` and UI assets from this checkout. Nginx forwards
+HTTPS on port 443 to Jet on `127.0.0.1:8787`, with buffering disabled for event
+streams and WebSocket forwarding enabled. UFW permits TCP ports 443 and 80;
+port 80 redirects to HTTPS and supports certificate validation.
+
+The deployment files are [the systemd unit](deploy/jet.service) and
+[the Nginx site](deploy/jet.nginx.conf). The configured public origin is
+`https://xchainanalytics.com`.
+Public DNS points this name to `5.175.217.125`. Nginx uses a trusted Let's Encrypt
+certificate under `/etc/letsencrypt/live/xchainanalytics.com/`; Certbot's enabled
+renewal timer maintains it automatically. The live Nginx site is
+`/etc/nginx/sites-available/jet`.
+Jet has no authentication, so use this public deployment only with the access
+policy appropriate to your trusted single-user setup.
+
+To update the executable and restart Jet:
+
+```sh
+cargo build -p jet --release --locked
+install -m 0755 target/release/jet /home/ubuntu/.local/bin/jet.new
+mv /home/ubuntu/.local/bin/jet.new /home/ubuntu/.local/bin/jet
+sudo systemctl restart jet
+sudo systemctl status jet --no-pager
+sudo journalctl -u jet -n 50 --no-pager
+```
+
+Quanty is registered at `http://127.0.0.1:7878/`. Its independently managed user
+service has a `jet-integration.conf` drop-in enabling `--trusted-integration`
+on loopback. Its descriptor and MCP endpoint are available independently of the
+WASM UI bundle. If the UI reports that the bundle is missing, finish Quanty's UI
+build, rebuild and deploy its server, then use `/app reload Quanty` to reload the app.
+
 ## Existing data
 
 Point `--data-dir` at an existing conversation directory, or a copy. It contains `transcript.jsonl`, `session.json`, `MEMORY.md`, `USER.md` and `RECENT.md`. Copy the old desktop `settings.json` from its configuration directory into the selected data directory to retain provider/persona settings. Old transcript entries remain readable.
@@ -83,19 +119,89 @@ Connections and catalogue refreshes have 15-second deadlines; calls have a 120-s
 
 Quanty normally listens on `127.0.0.1:7878`. Jet integration needs its explicit
 loopback-only trusted mode; ordinary password/token modes remain available for
-standalone use. With a built Quanty checkout and its WASM bundle:
+standalone use.
 
-```sh
-/path/to/quanty/target/debug/quanty --home /path/to/your/library \
-  --listen 127.0.0.1:7878 --trusted-integration
-```
+For a working integration, prepare Quanty independently of Jet:
+
+1. **Build the browser UI before the server.** Install Rust/Cargo, the
+   `wasm32-unknown-unknown` target, and Trunk following Quanty's README. From the
+   Quanty checkout, run:
+
+   ```sh
+   rustup target add wasm32-unknown-unknown
+   (cd crates/web-ui && trunk build --release)
+   cargo build --release --locked -p server
+   ```
+
+   The server embeds `crates/web-ui/dist` at build time. Repeat both builds after
+   a UI change, install the new server executable, and restart Quanty. A server
+   built without the bundle can expose its descriptor and MCP tools while `/`
+   returns HTTP 503 with “The UI bundle is not built.” Successful tool discovery
+   does not establish that the browser UI is ready. Keep Trunk's `public_url`
+   set to `"./"` so assets work below Jet's `/apps/{id}/` mount.
+
+2. **Prepare the library and its dependencies.** Normal library operations need
+   Qdrant and FalkorDB, with persistent storage and matching connection settings
+   in Quanty's `.env`. The usual local ports are Qdrant gRPC `6334` (HTTP `6333`)
+   and FalkorDB `6379`; these stores stay on loopback. Configure
+   `EMBEDDING_GEMINI_API_KEY` for embeddings, `CONVERTER_JEV_API_KEY` for PDF math
+   conversion, and Poppler for PDF processing. On a host with an IPv6 address,
+   check that Google serves it: if Gemini answers `User location is not supported`
+   over IPv6 and `200` over IPv4, set `EMBEDDING_GEMINI_IPV4_ONLY=true` in
+   Quanty's `.env` (see Quanty's `docs/troubleshooting.md`). Install and sign in to the selected
+
+   Codex or Claude CLI as the account running Quanty; keep `ANTHROPIC_API_KEY`
+   unset for Quanty's subscription-based Claude use. These requirements depend
+   on the operation; the isolated fixture below needs none of them. Use Quanty's
+   health display to check stores and model tools; a responding HTTP process or
+   MCP catalogue alone does not validate keys or library readiness.
+
+3. **Run in trusted integration mode on loopback.** Leave `QUANTY_PASSWORD` and
+   `QUANTY_MCP_TOKEN` unset or empty in both the service environment and the
+   library's `.env`. Trusted mode rejects configured credentials and a non-loopback
+   listener. Unsetting shell variables alone is insufficient when `.env` still
+   supplies them. Keep the library/home path explicit, since it selects `.env`
+   and library data. With the release build above:
+
+   ```sh
+   /path/to/quanty/target/release/quanty --home /path/to/your/library \
+     --listen 127.0.0.1:7878 --trusted-integration
+   ```
+
+4. **Keep Quanty running independently.** Jet only registers and forwards to it.
+   Its service needs the correct home/working directory, `.env`, executable and
+   `PATH`, plus persistent store services. On this server, inspect
+   `systemctl --user status quanty quanty-stores` and
+   `journalctl --user -u quanty -n 50 --no-pager`. The user services need lingering
+   enabled to survive logout and start at boot. After changing a unit or drop-in,
+   run `systemctl --user daemon-reload` and restart Quanty.
+
+5. **Verify UI and tools separately, then register.** On the Jet server:
+
+   ```sh
+   curl --fail http://127.0.0.1:7878/
+   curl --fail http://127.0.0.1:7878/jet-app.json
+   ```
+
+   Expect the UI to return HTTP 200 and the descriptor to declare
+   `embedding: "relative-paths"`, `ui: "./"` and `mcp: "mcp"`. In Jet, run
+   `/app add 7878 "Quanty"` once; for an existing registration, use
+   `/app reload Quanty`. Open `/tools Quanty` to check MCP discovery without
+   executing paid searches. On this deployment, 18 tools were discovered with
+   no stale/error status. Finally open Quanty in Jet and check its UI renders.
+
+For HTTPS Jet, set `--public-origin` to the actual public HTTPS origin (here,
+`https://xchainanalytics.com`). Only Jet's reverse proxy needs public ports 443
+and 80; Quanty remains on loopback HTTP and needs no separate public port or
+certificate. The proxy must support streaming and WebSockets. Trusted Quanty
+inherits Jet's access boundary; Jet currently has no authentication.
 
 For a free, isolated trial, use a separate port and fresh home. This does not
 replace an already running Quanty:
 
 ```sh
 QUANTY_TEST_HOME=$(mktemp -d /tmp/quanty-jet-acceptance.XXXXXX)
-env -i PATH="$PATH" /path/to/quanty/target/debug/quanty \
+env -i PATH="$PATH" /path/to/quanty/target/release/quanty \
   --home "$QUANTY_TEST_HOME" --listen 127.0.0.1:18878 \
   --fixture black-scholes --trusted-integration
 ```
