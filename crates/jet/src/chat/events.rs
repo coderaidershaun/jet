@@ -1,6 +1,6 @@
 //! Reconnect browsers from an authoritative snapshot and a bounded tail of events.
 
-use agent::{Event, ShownEntry, TurnIdentity};
+use agent::{Event, ShownEntry, TurnIdentity, mcp::ToolTarget};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::VecDeque;
@@ -79,6 +79,28 @@ impl ActiveTurn {
             }
             _ => {}
         }
+    }
+
+    /// Finds the id of the first still-running call that names the same app, tool and arguments
+    /// as the model sent.
+    pub(super) fn running_call_id(&self, target: &ToolTarget, arguments: &Value) -> Option<String> {
+        // The card keeps the app id as the model wrote it, so it is compared as an id, not as text.
+        let names_app = |server: &Value| {
+            server
+                .as_str()
+                .and_then(|server| server.parse::<agent::apps::AppId>().ok())
+                .is_some_and(|server| server == target.app_id)
+        };
+        let is_this_call = |tool: &&Value| {
+            tool["kind"] == "toolStarted"
+                && names_app(&tool["server"])
+                && tool["tool"] == target.tool
+                && tool["input"] == *arguments
+        };
+        self.tools
+            .iter()
+            .filter(is_this_call)
+            .find_map(|tool| tool["id"].as_str().map(str::to_owned))
     }
 }
 

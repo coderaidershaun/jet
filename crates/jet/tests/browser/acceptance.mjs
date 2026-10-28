@@ -145,7 +145,7 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
   assert.ok(await page.locator('[data-tool="search"]').isVisible());
   assert.equal(await quanty(new URL(quantyUrl).host), quantyUrl);
   await page.getByRole('button', { name: 'Refresh tools', exact: true }).click();
-  await until(async () => /2 tools available/.test(await page.locator('.tools-status').innerText()), 'Restarted app refresh recovers');
+  await until(async () => /5 tools available/.test(await page.locator('.tools-status').innerText()), 'Restarted app refresh recovers');
   await send(`/app disable ${a.id}`);
   await until(async () => !(await apps()).find(app => app.id === a.id).enabled, 'Disable command saves');
   await send('facade:' + JSON.stringify(call(a.id))); await finish();

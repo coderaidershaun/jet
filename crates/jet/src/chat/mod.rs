@@ -367,25 +367,7 @@ impl ChatState {
         if active.identity.turn_id != binding.turn_id {
             return;
         }
-        // The card keeps the app id as the model wrote it, so it is compared as an id, not as text.
-        let names_app = |server: &Value| {
-            server
-                .as_str()
-                .and_then(|server| server.parse::<agent::apps::AppId>().ok())
-                .is_some_and(|server| server == target.app_id)
-        };
-        let is_this_call = |tool: &&Value| {
-            tool["kind"] == "toolStarted"
-                && names_app(&tool["server"])
-                && tool["tool"] == target.tool
-                && tool["input"] == *arguments
-        };
-        let Some(id) = active
-            .tools
-            .iter()
-            .filter(is_this_call)
-            .find_map(|tool| tool["id"].as_str().map(str::to_owned))
-        else {
+        let Some(id) = active.running_call_id(target, arguments) else {
             return;
         };
         let identity = active.identity.clone();

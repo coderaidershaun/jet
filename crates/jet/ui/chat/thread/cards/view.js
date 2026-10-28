@@ -5,7 +5,7 @@
 
 import { h, icon } from '../../../dom.js';
 import { fileSheet } from '../../files.js';
-import { blocksBody, fieldNodes } from './blocks.js';
+import { blocksBody, fieldNodes } from './block-view.js';
 import { findSource, splitCitations } from './cite.js';
 import { RUNNING } from './job.js';
 import { callState, cardOf } from './model.js';

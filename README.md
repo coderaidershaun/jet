@@ -214,8 +214,10 @@ env -i PATH="$PATH" /path/to/quanty/target/release/quanty \
   --fixture black-scholes --trusted-integration
 ```
 
-Add `18878` in Jet. The trusted fixture exposes free `fixture_page` and `search`
-tools, including a figure for source cards and citations. Normal search is
+Add `18878` in Jet. The trusted fixture exposes free tools: `catalog` lists them
+by group, `search` and `fixture_page` read a built-in sample with a figure for
+source cards and citations, and a fake `ingest_pdf` starts a job that
+`watch_job` follows through the stages of a real ingest. Normal search is
 unchanged. This fixture needs no accounts, ingestion or paid provider calls;
 asking a real chat provider to use it still uses that provider.
 
