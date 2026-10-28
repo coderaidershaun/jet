@@ -271,11 +271,13 @@ refused with 502 and is never called. It is cancelled by `POST /api/tools/cancel
 with the same `requestId`. Everything the tool returns is data.
 
 A job result is an object with `job_id` and `state` (`running`, `done`, `failed`,
-`stopped` or `already_ingested`). While `running` it may carry
-`stage: {name, words, share}`: the card draws `<progress>` from `share` (0 to 1, or
-`null` for a stage that does not count) and shows `words` beside it. `kind`, `media`,
-`file`, `document_id`, `items`, `cost_usd`, `summary` and `error` fill the card's fields.
-A `stage` that is only text is still read.
+`stopped` or `already_ingested`). It may carry `progress`, how much of the whole job
+is done from 0 to 1. While `running` it may carry `stage: {name, words, share}`, where
+`share` is how much of that stage is done (0 to 1, or `null` for a stage that does not
+count). The card draws `<progress>` from `progress` when it is a finite number, else from
+`share`, and shows `words` beside it. `kind`, `media`, `file`, `document_id`, `items`,
+`cost_usd`, `summary` and `error` fill the card's fields. A `stage` that is only text is
+still read.
 
 ## Groups and cost: `quanty/group` and `quanty/cost`
 

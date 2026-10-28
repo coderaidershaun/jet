@@ -49,6 +49,12 @@ test('job cards read the Job shape and the old shape', () => {
   assert.equal(cardOf(call('job_status', { ...running, stage: { name: 'x', words: 'x', share: -2 } })).job.share, 0);
   assert.equal(cardOf(call('ingest_pdf', { state: 'running' })).meta, 'running · 0.8 s');
 
+  // The bar draws the progress of the whole job, and the share of the stage only when it is missing.
+  assert.equal(cardOf(call('job_status', { ...running, progress: 0.42 })).job.share, 0.42);
+  assert.equal(cardOf(call('job_status', { ...running, progress: 1.7 })).job.share, 1);
+  assert.equal(cardOf(call('job_status', { ...running, progress: 0 })).job.share, 0);
+  assert.equal(cardOf(call('job_status', { ...running, progress: 'half' })).job.share, 0.375);
+
   // While a job tool runs, its card says which.
   const line = (tool, input = {}) => cardOf({ id: 'r', server: APP, tool, input }).line;
   assert.equal(line('job_status'), 'Checking a job');

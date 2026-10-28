@@ -7,23 +7,31 @@ import { count, isRecord, joined, numberOrNull, orNull, recordOf } from './guard
 /** The state of a job still at work. Every other state ends it. */
 export const RUNNING = 'running';
 
-/** @typedef {{ id: string, state: string, share: number | null, words: string | null }} JobView */
+/**
+ * What the card draws of a job. `share` is how much the bar shows: of the whole job, or of the stage
+ * for a server that gives no `progress`.
+ * @typedef {{ id: string, state: string, share: number | null, words: string | null }} JobView
+ */
 
 /** A result that is a job: a `job_id` and a `state`, both text. */
 export const isJob = (result) => isRecord(result) && typeof result.job_id === 'string' && typeof result.state === 'string';
+
+const clamped = (share) => (share === null ? null : Math.min(1, Math.max(0, share)));
 
 /** The words and the share of a stage, from the object of the new shape or the string of the old one. */
 function stageOf(stage) {
   if (typeof stage === 'string') return { words: orNull(stage), share: null };
   const record = recordOf(stage);
-  const share = numberOrNull(record.share);
-  return { words: orNull(record.words) ?? orNull(record.name), share: share === null ? null : Math.min(1, Math.max(0, share)) };
+  return { words: orNull(record.words) ?? orNull(record.name), share: clamped(numberOrNull(record.share)) };
 }
 
 /** What the card draws of a job beside its fields, or null when the result is not a job. @returns {JobView | null} */
 export function jobOf(result) {
   if (!isJob(result)) return null;
-  const { words, share } = stageOf(result.stage);
+  const { words, share: stageShare } = stageOf(result.stage);
+  // The share of a stage starts again at 0 in each stage, so the bar draws the progress of the whole
+  // job when the server gives it.
+  const share = clamped(numberOrNull(result.progress)) ?? stageShare;
   return { id: result.job_id, state: result.state, share, words };
 }
 
