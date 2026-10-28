@@ -117,10 +117,19 @@ export function createThread({ now = Date.now } = {}) {
       entry.status = 'streaming';
     },
 
-    /** A tool call has started; it shows as running until it finishes. */
-    startTool({ id, server, tool, input }) {
+    /** A tool call has started; it shows as running until it finishes. One restored from a snapshot may already have progress. */
+    startTool({ id, server, tool, input, progress }) {
       const entry = requireSlot('start a tool call').entry;
-      entry.tools = [...(entry.tools ?? []), { id, server, tool, input }];
+      entry.tools = [...(entry.tools ?? []), { id, server, tool, input, ...(progress && { progress }) }];
+    },
+
+    /** A running call says how far it has got. A call that is unknown or no longer running is left as it is. */
+    progressTool({ id, progress, total, message }) {
+      const entry = slot?.entry;
+      if (!entry) return;
+      entry.tools = (entry.tools ?? []).map((call) => (call.id === id && call.ok === undefined && !call.unfinished
+        ? { ...call, progress: { progress, total: total ?? null, message: message ?? null } }
+        : call));
     },
 
     /** A call came back; it takes the place of the running one. */
@@ -129,7 +138,11 @@ export function createThread({ now = Date.now } = {}) {
       const calls = entry.tools ?? [];
       const outcome = { ok, result, summary, durationMs };
       entry.tools = calls.some((call) => call.id === id)
-        ? calls.map((call) => (call.id === id ? { ...call, ...outcome } : call))
+        ? calls.map((call) => {
+          if (call.id !== id) return call;
+          const { progress: _, ...running } = call;
+          return { ...running, ...outcome };
+        })
         : [...calls, { id, server, tool, input: null, ...outcome }];
     },
 

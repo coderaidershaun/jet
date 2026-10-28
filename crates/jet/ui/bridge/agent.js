@@ -21,6 +21,7 @@ import { createBrowserAgent } from './browser-agent.js';
  *   | { kind: 'mood', mood: string }
  *   | { kind: 'text', delta: string }
  *   | { kind: 'toolStarted', id: string, server: string, tool: string, input: any }
+ *   | { kind: 'toolProgress', id: string, progress: number, total: number | null, message: string | null }
  *   | { kind: 'toolFinished', id: string, server: string, tool: string, input: any, ok: boolean, result: any, summary: string, durationMs: number }
  *   | { kind: 'finished', entry: ShownEntry }
  *   | { kind: 'failed', failure: Failure, entry: ShownEntry }

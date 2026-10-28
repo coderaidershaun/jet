@@ -22,6 +22,7 @@ const doneCalls = (calls) => calls.filter((call) => callState(call) === 'done');
  *   handlers: {
  *     retry: () => void, openSettings: (section: string) => void, openLink: (url: string) => void,
  *     render: (text: string) => Promise<string>, readImage: (appId: string, path: string) => Promise<string>,
+ *     watchJob: (call: import('./cards/model.js').ShownCall, onJob: (job: object) => void) => () => void,
  *   },
  * }} options
  */
@@ -128,13 +129,13 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
       return { el: h('div', {}, lane, row.type === 'lane' ? null : h('div', { class: 'bubble' })), lane, cards: null, files: null, stamp: null, signature: '' };
     }
     const cardsEl = h('div', { class: 'cards' });
-    const cards = createCardList(cardsEl, { render: handlers.render, readImage: handlers.readImage, seal: sealCode });
+    const cards = createCardList(cardsEl, { render: handlers.render, readImage: handlers.readImage, seal: sealCode, watchJob: handlers.watchJob });
     return { el: h('div', {}, lane, h('div', { class: 'reply' }, cardsEl, h('div', { class: 'bubble' }))), lane, cards, files: null, stamp: null, signature: '' };
   }
 
   const signatureOf = (row, isFinal) => {
     const { entry, failure } = row;
-    const calls = entry ? (entry.tools ?? []).map((call) => call.id + ':' + callState(call)).join(' ') : '';
+    const calls = entry ? (entry.tools ?? []).map((call) => call.id + ':' + callState(call) + (call.progress ? JSON.stringify(call.progress) : '')).join(' ') : '';
     const files = row.type === 'user' ? (entry.attachments ?? []).map((file) => file.id) : '';
     const shown = entry && [entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at, calls, files];
     return JSON.stringify([row.type, row.label, row.message, row.first, row.last, isFinal, shown, failure && failure.kind]);
@@ -208,6 +209,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
       });
       for (const [key, record] of nodes) {
         if (seen.has(key)) continue;
+        record.cards?.dispose();
         record.el.remove();
         nodes.delete(key);
       }

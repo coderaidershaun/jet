@@ -75,6 +75,9 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       case 'toolFinished':
         thread.finishTool(event);
         break;
+      case 'toolProgress':
+        thread.progressTool(event);
+        break;
       case 'mood':
         thread.setMood(event.mood);
         reveal.holdUntil(live.mood(event.mood, now).revealAt);

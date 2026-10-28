@@ -6,6 +6,7 @@
 import { h, icon } from '../../../dom.js';
 import { fileSheet } from '../../files.js';
 import { findSource, splitCitations } from './cite.js';
+import { RUNNING } from './job.js';
 import { callState, cardOf } from './model.js';
 import { fillShow } from './show.js';
 
@@ -13,8 +14,10 @@ const SKIPPED_BY_CITATIONS = 'code, pre, a, button, .math';
 const CITED_FOR_MS = 1600;
 
 /**
- * What the cards need from the page: the Markdown renderer, the picture reader and the code sealer.
- * @typedef {{ render: (text: string) => Promise<string>, readImage: (path: string) => Promise<string>, seal: (body: HTMLElement) => void }} Parts
+ * What the cards need from the page: the Markdown renderer, the picture reader and the code sealer, and
+ * optionally the way to follow a running job: `watchJob(call, onJob)` hears each report and returns how to stop.
+ * @typedef {{ render: (text: string) => Promise<string>, readImage: (path: string) => Promise<string>, seal: (body: HTMLElement) => void,
+ *   watchJob?: (call: import('./model.js').ShownCall, onJob: (job: object) => void) => () => void }} Parts
  */
 
 const cardData = (card) => ({ 'data-call': card.id, 'data-state': card.state, 'data-key': card.key });
@@ -187,9 +190,12 @@ function bodyOf(card, parts) {
     case 'health':
       return { nodes: [h('ul', { class: 'health' }, ...body.lines.map((line) => h('li', { 'data-tone': line.ok ? 'ok' : 'invalid', text: line.text })))] };
     default:
-      return { nodes: [h('dl', { class: 'fields' }, ...body.fields.flatMap((field) => [h('dt', { text: field.term }), h('dd', {}, field.pre ? h('pre', { text: field.text }) : field.text)]))] };
+      return { nodes: [h('dl', { class: 'fields' }, ...fieldNodes(body.fields))] };
   }
 }
+
+/** The term and the text of each field of a result with no card of its own. */
+const fieldNodes = (fields) => fields.flatMap((field) => [h('dt', { text: field.term }), h('dd', {}, field.pre ? h('pre', { text: field.text }) : field.text)]);
 
 /** The card of a written file: what it is, and two links built from its id alone. */
 function fileCard(card) {
@@ -237,13 +243,47 @@ export function renderResultCard(card, parts) {
   return defaultCard(card, { ...parts, readImage: (path) => parts.readImage(card.call.server, path) });
 }
 
+/** The line of a call that is running, with a bar and the words of its latest report once it has sent one. */
 function runningCard(card) {
+  const { progress } = card;
   return h(
     'div',
     { class: 'card card-running', 'aria-busy': 'true', ...cardData(card) },
     h('span', { class: 'spinner', 'aria-hidden': 'true' }),
     h('span', { class: 'card-line', title: card.line, text: card.line }),
+    progress && h('progress', { class: 'card-bar', max: progress.max, value: progress.value, 'aria-label': card.line }),
+    progress?.words && h('span', { class: 'card-words', title: progress.words, text: progress.words }),
   );
+}
+
+/**
+ * The card of a job a tool started. While the job runs, a bar and the words of its stage show without
+ * opening the card, and `update` brings the card up to date in place, so its open state stays.
+ */
+function jobCard(card) {
+  const meta = h('span', { class: 'card-meta' });
+  const bar = h('progress', { class: 'job-bar', max: 1, 'aria-label': card.name });
+  const words = h('span', { class: 'job-words' });
+  const stage = h('span', { class: 'job' }, bar, words);
+  const fields = h('dl', { class: 'fields' });
+  const el = h(
+    'details',
+    { class: 'card card-job', ...cardData(card) },
+    h('summary', { class: 'card-head' }, h('span', { class: 'card-name', text: card.name }), ' · ', meta, stage),
+    h('div', { class: 'card-body' }, fields),
+  );
+  const update = (next) => {
+    if (!next.job || next.body?.kind !== 'fields') return;
+    el.setAttribute('data-tone', next.tone);
+    meta.textContent = next.meta;
+    fields.replaceChildren(...fieldNodes(next.body.fields));
+    stage.hidden = next.job.state !== RUNNING;
+    if (next.job.share === null) bar.removeAttribute('value');
+    else bar.setAttribute('value', String(next.job.share));
+    words.textContent = next.job.words ?? '';
+  };
+  update(card);
+  return { el, update };
 }
 
 /**
@@ -253,8 +293,14 @@ function runningCard(card) {
  * @param {Omit<Parts, 'readImage'> & { readImage: (appId: string, path: string) => Promise<string> }} parts
  */
 export function createCardList(container, parts) {
-  /** @type {Map<string, { el: HTMLElement, state: string }>} */
+  /** @type {Map<string, { el: HTMLElement, state: string, progressKey: string, stop: (() => void) | null }>} */
   const kept = new Map();
+  function remove(id) {
+    const record = kept.get(id);
+    record.stop?.();
+    record.el.remove();
+    kept.delete(id);
+  }
   return {
     /**
      * @param {import('./model.js').ShownCall[]} calls   this reply's calls, in order
@@ -266,23 +312,32 @@ export function createCardList(container, parts) {
       calls.forEach((call, i) => {
         present.add(call.id);
         const state = callState(call);
+        // A running card has no open state to keep, so it is built again whenever its report changes.
+        const progressKey = state === 'running' ? JSON.stringify(call.progress ?? null) : '';
         let record = kept.get(call.id);
-        if (!record || record.state !== state) {
+        if (!record || record.state !== state || record.progressKey !== progressKey) {
           const card = cardOf(call, above);
-          const el = state === 'running' ? runningCard(card) : renderResultCard(card, parts);
+          const job = state === 'done' && card.job ? jobCard(card) : null;
+          const el = job ? job.el : state === 'running' ? runningCard(card) : renderResultCard(card, parts);
           if (record?.state === 'running' && card.body?.kind === 'file') el.classList.add('is-arriving');
+          record?.stop?.();
           record?.el.replaceWith(el);
-          record = { el, state };
+          record = { el, state, progressKey, stop: null };
+          if (job && card.job.state === RUNNING && parts.watchJob) {
+            record.stop = parts.watchJob(call, (report) => job.update(cardOf({ ...call, result: report }, [])));
+          }
           kept.set(call.id, record);
         }
         if (container.children[i] !== record.el) container.insertBefore(record.el, container.children[i] ?? null);
         if (state === 'done') above.push(call);
       });
-      for (const [id, record] of kept) {
-        if (present.has(id)) continue;
-        record.el.remove();
-        kept.delete(id);
-      }
+      for (const id of kept.keys()) if (!present.has(id)) remove(id);
+    },
+
+    /** Stops following the jobs of the cards, for a reply that has left the page. */
+    dispose() {
+      for (const record of kept.values()) record.stop?.();
+      kept.clear();
     },
   };
 }

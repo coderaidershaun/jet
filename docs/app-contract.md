@@ -157,7 +157,7 @@ not a durable replay log; reconnecting consumers fetch a fresh list.
 ## One MCP service
 
 `agent::mcp::HttpMcpClient` is the one shared client: `catalogue(app_id)`,
-`refresh(app_id)`, `call(ToolRequest)`, `discover(ToolRequest)` and
+`refresh(app_id)`, `call(ToolRequest)`, `discover(ToolRequest)`, `status(ToolRequest)`, `call_with_progress(ToolRequest, sender)` and
 `cancel_request(request_id)`. Catalogue preserves
 server metadata, full schemas, annotations and `_meta`, plus stale/error state.
 ToolRequest includes request identity, `{appId, tool}` and an argument object.
@@ -235,6 +235,65 @@ cycle/depth/result handling in the explorer: at most 16 levels, 200 nodes per re
 and 256 KiB of displayed raw data. Ancestor cycles use canonical arguments;
 cancellation prevents late responses from reopening an abandoned path. These are Jet conventions, not standard
 MCP discovery claims. The fixture provides two discovery levels and one leaf.
+
+## Live progress
+
+Jet sends a progress token with every tool call (the client library sets a new one on
+each request) and reads `notifications/progress` for it. A tool that sends
+`{progress, total?, message?}` while it runs gets a bar on the running card: `progress`
+of `total`, or a bar that only waits when there is no total, and `message` beside it.
+Jet drops a number that is not finite, cuts a message to 300 characters and drops an
+update when its queue of 16 is full. The report is transient: it reaches open pages and a
+page that reconnects during the call, and it is never saved in the transcript. The
+call keeps its 120 second deadline; progress does not extend it.
+
+## Jobs that outlive the reply: `jet/job`
+
+A tool that starts long work, and the tool that reports on it, mark themselves:
+
+```json
+{"jet/job":{"version":1,"statusTool":"job_status","idField":"job_id"}}
+```
+
+`statusTool` names a tool of the same app, and `idField` names the field of the
+start tool's result that holds the job's id. When a call to a marked tool comes back
+with a job in state `running`, the chat page keeps its card up to date after the
+reply has ended: every 5 seconds, from 5 seconds after the result, it asks `statusTool`
+for `{[idField]: id}` through `POST /api/apps/{id}/status` and stops when the state is
+anything but `running` or after 3 failed asks in a row. Only a call whose `server` is
+an app ID is followed, so calls saved by name are not. Open pages ask on their own, so a
+page opened after a reply ends follows a job whose saved result says `running`.
+
+The route takes `{requestId, tool, arguments}`, like discovery, and answers
+`{"result": ToolResult}`. It calls a tool only when its current metadata carries
+`jet/job` with `version: 1` **and** `annotations.readOnlyHint: true`; any other tool is
+refused with 502 and is never called. It is cancelled by `POST /api/tools/cancel`
+with the same `requestId`. Everything the tool returns is data.
+
+A job result is an object with `job_id` and `state` (`running`, `done`, `failed`,
+`stopped` or `already_ingested`). While `running` it may carry
+`stage: {name, words, share}`: the card draws `<progress>` from `share` (0 to 1, or
+`null` for a stage that does not count) and shows `words` beside it. `kind`, `media`,
+`file`, `document_id`, `items`, `cost_usd`, `summary` and `error` fill the card's fields.
+A `stage` that is only text is still read.
+
+## Handing a file to a tool: `$file`
+
+A model gives a tool a file of the conversation by writing an object with the single key
+`$file` where the tool wants the file's address:
+
+```json
+{"appId":"…","tool":"ingest_pdf","arguments":{"pdf_url":{"$file":"<file id>"},"file_name":"a.pdf"}}
+```
+
+Before the arguments are checked against the tool's schema, Jet replaces every object
+that is exactly `{"$file": "<string>"}`, at any depth, with the string
+`{origin}/api/files/{id}`, with the id in its usual hyphenated form. An object with other
+keys is left as it is. `{origin}` is `--public-origin` when it is set, else the origin Jet
+is listening on. The id must name a
+file Jet can see (an upload that was sent with a message, or a file Jet wrote). Otherwise
+the call is not sent, and the model is told: `` `$file` names no file in this conversation:
+<id>. Use files_list to find the file's id. ``
 
 ## Frame and drawer ownership
 

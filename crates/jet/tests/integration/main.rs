@@ -6,3 +6,4 @@ mod mcp_fixture;
 mod proxy;
 mod shutdown;
 mod support;
+mod tool_calls;

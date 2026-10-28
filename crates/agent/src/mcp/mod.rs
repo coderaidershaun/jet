@@ -8,4 +8,4 @@ mod service;
 
 pub use catalogue::{ServerMetadata, ToolDefinition, ToolTarget};
 pub use http::HttpMcpClient;
-pub use service::{McpError, ToolCatalogue, ToolRequest, ToolResult};
+pub use service::{McpError, Progress, ToolCatalogue, ToolRequest, ToolResult};

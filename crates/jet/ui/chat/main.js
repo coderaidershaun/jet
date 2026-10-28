@@ -6,6 +6,7 @@ import { createToolBrowser } from '../workspace/tools.js';
 import { createWorkspace } from '../workspace/shell.js';
 import { h, icon } from '../dom.js';
 import { connectAgent } from '../bridge/agent.js';
+import { requestJson } from '../bridge/browser-agent.js';
 import { displayName, loadSettings, saveSettings } from '../bridge/settings.js';
 import { createComposer } from './composer/state.js';
 import { createTray } from './composer/tray.js';
@@ -17,6 +18,7 @@ import { createLive } from './stage/live.js';
 import { createFollow } from './thread/scroll.js';
 import { createThread } from './thread/store.js';
 import { createThreadView } from './thread/view.js';
+import { createJobWatcher } from './thread/cards/job-watch.js';
 import { createTurn } from './turn.js';
 
 const $ = (id) => document.getElementById(id);
@@ -43,6 +45,7 @@ async function start() {
   const applyReduced = () => document.documentElement.classList.toggle('reduced', reducedMotion());
   applyReduced();
 
+  const jobs = createJobWatcher({ request: (path, body) => requestJson(path, body) });
   const thread = createThread();
   thread.load(history);
   const follow = createFollow();
@@ -68,6 +71,7 @@ async function start() {
       openLink: (url) => agent.openLink(url).catch(warn('the link could not be opened')),
       render: (text) => agent.renderMarkdown(text),
       readImage: (appId, path) => agent.readAppImage(appId, path),
+      watchJob: jobs.watch,
     },
   });
 

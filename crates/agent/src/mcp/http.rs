@@ -1,8 +1,9 @@
 //! Keep one negotiated HTTP connection per registered endpoint.
-use super::{McpError, ToolCatalogue, ToolRequest, ToolResult, dispatch::Purpose};
+use super::{McpError, Progress, ToolCatalogue, ToolRequest, ToolResult, dispatch::Purpose};
 use crate::apps::{AppId, Registry};
 use rmcp::{
     ClientHandler, RoleClient, ServiceExt,
+    model::{ProgressNotificationParam, ProgressToken},
     service::{NotificationContext, RunningService},
 };
 use std::{
@@ -13,16 +14,48 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, mpsc};
 
 pub(super) const DEADLINE: Duration = Duration::from_secs(15);
 pub(super) const MAX_BYTES: usize = 2 * 1024 * 1024;
 
+pub(super) type ProgressListeners = Arc<Mutex<HashMap<ProgressToken, mpsc::Sender<Progress>>>>;
+
+/// What one connection hears from its server. The progress tokens belong to the connection, so
+/// the listeners do too.
 #[derive(Clone, Default)]
-pub(super) struct Notifications(pub Arc<AtomicU64>);
+pub(super) struct Notifications {
+    tool_list_changes: Arc<AtomicU64>,
+    pub(super) listeners: ProgressListeners,
+}
+impl Notifications {
+    /// How many times the server has said its tool list changed.
+    pub(super) fn tool_list_generation(&self) -> u64 {
+        self.tool_list_changes.load(Ordering::SeqCst)
+    }
+}
 impl ClientHandler for Notifications {
     async fn on_tool_list_changed(&self, _: NotificationContext<RoleClient>) {
-        self.0.fetch_add(1, Ordering::SeqCst);
+        self.tool_list_changes.fetch_add(1, Ordering::SeqCst);
+    }
+    // Progress is lossy: a full queue or a call nobody listens to just drops the update.
+    async fn on_progress(
+        &self,
+        notification: ProgressNotificationParam,
+        _: NotificationContext<RoleClient>,
+    ) {
+        let token = notification.progress_token.clone();
+        let Some(progress) = Progress::from_notification(notification) else {
+            return;
+        };
+        if let Some(listener) = self
+            .listeners
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&token)
+        {
+            let _ = listener.try_send(progress);
+        }
     }
 }
 pub(super) struct Connection {
@@ -61,14 +94,31 @@ impl HttpMcpClient {
         &self,
         request: ToolRequest,
     ) -> impl Future<Output = Result<ToolResult, McpError>> + Send {
-        self.prepare(request, Purpose::Call)
+        self.prepare(request, Purpose::Call, None)
+    }
+    /// Like [`call`](Self::call), and every progress update the tool sends while it runs goes to
+    /// `progress`. An update is dropped when the channel is full.
+    pub fn call_with_progress(
+        &self,
+        request: ToolRequest,
+        progress: mpsc::Sender<Progress>,
+    ) -> impl Future<Output = Result<ToolResult, McpError>> + Send {
+        self.prepare(request, Purpose::Call, Some(progress))
     }
     /// Dispatch only tools whose current metadata promises free discovery.
     pub fn discover(
         &self,
         request: ToolRequest,
     ) -> impl Future<Output = Result<ToolResult, McpError>> + Send {
-        self.prepare(request, Purpose::Discovery)
+        self.prepare(request, Purpose::Discovery, None)
+    }
+    /// Dispatch only tools whose current metadata marks them as a job and promises they only
+    /// read.
+    pub fn status(
+        &self,
+        request: ToolRequest,
+    ) -> impl Future<Output = Result<ToolResult, McpError>> + Send {
+        self.prepare(request, Purpose::Status, None)
     }
     pub(super) fn endpoint(&self, id: &AppId) -> Result<String, McpError> {
         let registry = self

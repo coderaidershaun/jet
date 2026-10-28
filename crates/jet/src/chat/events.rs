@@ -53,8 +53,28 @@ impl ActiveTurn {
             Event::ToolFinished(call) => {
                 let started = self.tools.iter_mut().find(|tool| tool["id"] == call.id);
                 match (started, json!(event)) {
-                    (Some(Value::Object(tool)), Value::Object(finished)) => tool.extend(finished),
+                    (Some(Value::Object(tool)), Value::Object(finished)) => {
+                        tool.extend(finished);
+                        tool.remove("progress");
+                    }
                     (_, finished) => self.tools.push(finished),
+                }
+            }
+            Event::ToolProgress {
+                id,
+                progress,
+                total,
+                message,
+            } => {
+                let running = self
+                    .tools
+                    .iter_mut()
+                    .find(|tool| tool["id"] == *id && tool["kind"] == "toolStarted");
+                if let Some(Value::Object(tool)) = running {
+                    tool.insert(
+                        "progress".into(),
+                        json!({"progress":progress,"total":total,"message":message}),
+                    );
                 }
             }
             _ => {}

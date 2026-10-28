@@ -194,3 +194,33 @@ pub fn wait_file(host: &Host, name: &str) -> Value {
 pub fn request(id: &str) -> Value {
     json!({"requestId":id,"clientId":"browser-a","text":"hang","model":"sonnet","effort":"medium","budgetUsd":1.0,"persona":{"name":"Jet","jobTitle":"First mate","notes":""},"localTime":"Friday","feeling":"neutral"})
 }
+pub fn replay(host: &Host) -> Vec<Value> {
+    let snapshot = host.get("/api/snapshot");
+    let last = snapshot["cursor"].as_u64().unwrap();
+    if last == 0 {
+        return Vec::new();
+    }
+    let mut response = ureq::get(format!(
+        "{}/api/events?epoch={}&cursor=0",
+        host.url,
+        snapshot["epoch"].as_str().unwrap()
+    ))
+    .call()
+    .unwrap();
+    let mut reader = BufReader::new(response.body_mut().as_reader());
+    let mut events = Vec::new();
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        if let Some(data) = line.strip_prefix("data: ") {
+            let event: Value = serde_json::from_str(data).unwrap();
+            if event["kind"] == "event" {
+                events.push(event["data"]["event"].clone());
+                if event["data"]["cursor"].as_u64() == Some(last) {
+                    break;
+                }
+            }
+        }
+    }
+    events
+}

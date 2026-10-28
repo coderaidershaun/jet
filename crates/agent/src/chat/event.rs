@@ -54,6 +54,14 @@ pub enum Event {
     ToolStarted(ToolStart),
     /// The call with the same `id` came back.
     ToolFinished(ToolCall),
+    /// The running call with this `id` reported how far it has got. Transient: the page and a
+    /// reconnecting snapshot show it, but the saved transcript never holds it.
+    ToolProgress {
+        id: String,
+        progress: f64,
+        total: Option<f64>,
+        message: Option<String>,
+    },
     /// A fresh conversation began for a reason the user should hear about.
     Notice {
         message: String,
@@ -138,6 +146,16 @@ mod tests {
                        "tool": "search", "input": {"question": "What is vega?"}, "ok": true,
                        "result": {"results": [1, 2]},
                        "summary": "quanty · search · 2 results", "durationMs": 950}),
+            ),
+            (
+                Event::ToolProgress {
+                    id: "toolu_1".into(),
+                    progress: 40.0,
+                    total: Some(100.0),
+                    message: Some("converting 12 of 32 pages".into()),
+                },
+                json!({"kind": "toolProgress", "id": "toolu_1", "progress": 40.0, "total": 100.0,
+                       "message": "converting 12 of 32 pages"}),
             ),
             (
                 Event::Notice { message: text() },

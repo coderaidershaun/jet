@@ -1,5 +1,5 @@
 //! Route provider requests through the host registry and shared HTTP client.
-use super::{Binding, Facade, HEADER, tools};
+use super::{Binding, Facade, HEADER, handoff, tools};
 use crate::chat::lock;
 use crate::files::{ExportRequest, Range, Reading};
 use agent::{
@@ -7,11 +7,14 @@ use agent::{
     mcp::{ToolRequest, ToolTarget},
 };
 use rmcp::{RoleServer, ServerHandler, model::*, service::RequestContext};
-use serde_json::{Value, json};
-use std::{fmt::Display, sync::Arc};
+use serde_json::{Map, Value, json};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
+use tokio::sync::mpsc;
 
 const SEARCHED_APP_LIMIT: usize = 128;
 const FOUND_TOOL_LIMIT: usize = 200;
+/// The progress updates that may wait for the chat. Further ones are dropped.
+const PROGRESS_QUEUE: usize = 16;
 
 #[derive(Clone)]
 pub(super) struct Handler(pub Arc<Facade>);
@@ -109,6 +112,86 @@ impl Handler {
                 CallToolResult::structured(reading)
             }
         })
+    }
+
+    /// The arguments for the tool, with each `{"$file": id}` replaced by the address of that file.
+    /// A file the model cannot see is refused here, so the tool is never called with its address.
+    async fn with_file_addresses(&self, arguments: &Value) -> Result<Map<String, Value>, Value> {
+        let ids: Vec<String> = handoff::file_ids(arguments)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let mut addressed = arguments.clone();
+        if !ids.is_empty() {
+            let files = self.0.files.clone();
+            let visible = tokio::task::spawn_blocking(move || {
+                ids.into_iter()
+                    .map(|id| match files.visible_id(&id) {
+                        Some(file) => Ok((id, file)),
+                        None => Err(id),
+                    })
+                    .collect::<Result<HashMap<_, _>, _>>()
+            })
+            .await
+            .map_err(message)?
+            .map_err(|id| {
+                message(format!(
+                    "`$file` names no file in this conversation: {id}. Use files_list to find the file's id."
+                ))
+            })?;
+            let origin = self.0.origin().map_err(message)?;
+            handoff::swap_for_addresses(&mut addressed, &origin, &visible);
+        }
+        match addressed {
+            Value::Object(fields) => Ok(fields),
+            _ => Ok(Map::new()),
+        }
+    }
+
+    async fn tools_call(
+        &self,
+        arguments: Value,
+        token: &str,
+        binding: Binding,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Value, Value> {
+        let target: ToolTarget = serde_json::from_value(arguments.clone()).map_err(message)?;
+        // The chat finds the card of this call by what the model wrote, before any `$file` swap.
+        let sent = arguments["arguments"].clone();
+        let request_id = format!("{}:{}", binding.turn_id, context.id);
+        let request = ToolRequest {
+            request_id: request_id.clone(),
+            target: target.clone(),
+            arguments: self.with_file_addresses(&sent).await?,
+        };
+        let (progress_sender, mut progress) = mpsc::channel(PROGRESS_QUEUE);
+        let call = {
+            let mut bindings = lock(&self.0.bindings);
+            bindings
+                .get_mut(token)
+                .ok_or_else(|| message("initiating turn expired"))?
+                .calls
+                .insert(request_id.clone());
+            self.0.mcp.call_with_progress(request, progress_sender)
+        };
+        tokio::pin!(call);
+        let result = loop {
+            tokio::select! {
+                result = &mut call => break result,
+                Some(update) = progress.recv() => {
+                    let chat = lock(&self.0.chat).upgrade();
+                    if let Some(chat) = chat {
+                        chat.tool_progress(&binding, &target, &sent, update);
+                    }
+                }
+                _ = context.ct.cancelled() => { self.0.mcp.cancel_request(&request_id); return Err(json!({"kind":"cancelled","requestId":request_id})); }
+            }
+        };
+        if let Some(binding) = lock(&self.0.bindings).get_mut(token) {
+            binding.calls.remove(&request_id);
+        }
+        let result = result.map_err(|e| json!(e))?;
+        Ok(json!(result))
     }
 
     async fn execute(
@@ -214,37 +297,7 @@ impl Handler {
                     json!({"appId":target.app_id,"tool":tool,"server":catalogue.server,"isStale":catalogue.is_stale,"lastError":catalogue.last_error}),
                 )
             }
-            "tools_call" => {
-                let target: ToolTarget =
-                    serde_json::from_value(arguments.clone()).map_err(message)?;
-                let request_id = format!("{}:{}", binding.turn_id, context.id);
-                let request = ToolRequest {
-                    request_id: request_id.clone(),
-                    target,
-                    arguments: arguments["arguments"]
-                        .as_object()
-                        .cloned()
-                        .unwrap_or_default(),
-                };
-                let call = {
-                    let mut bindings = lock(&self.0.bindings);
-                    bindings
-                        .get_mut(token)
-                        .ok_or_else(|| message("initiating turn expired"))?
-                        .calls
-                        .insert(request_id.clone());
-                    self.0.mcp.call(request)
-                };
-                let result = tokio::select! {
-                    result = call => result,
-                    _ = context.ct.cancelled() => { self.0.mcp.cancel_request(&request_id); return Err(json!({"kind":"cancelled","requestId":request_id})); }
-                };
-                if let Some(binding) = lock(&self.0.bindings).get_mut(token) {
-                    binding.calls.remove(&request_id);
-                }
-                let result = result.map_err(|e| json!(e))?;
-                Ok(json!(result))
-            }
+            "tools_call" => self.tools_call(arguments, token, binding, context).await,
             "files_export" => {
                 let request: ExportRequest = serde_json::from_value(arguments).map_err(message)?;
                 let files = self.0.files.clone();

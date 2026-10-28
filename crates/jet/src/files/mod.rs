@@ -138,6 +138,15 @@ impl Files {
             .collect()
     }
 
+    /// The id in its usual written form when it names a file Jet can see: one it wrote, or an
+    /// upload that was sent. `None` for any other id.
+    pub fn visible_id(&self, id: &str) -> Option<Uuid> {
+        let (uuid, folder) = self.folder(id).ok()?;
+        about_in(&folder, uuid)
+            .is_ok_and(|about| about.attached)
+            .then_some(uuid)
+    }
+
     /// Every file Jet can see: the files it wrote and the uploads that were sent, newest first.
     pub fn list(&self) -> Vec<About> {
         let Ok(entries) = std::fs::read_dir(&self.root) else {

@@ -3,6 +3,7 @@ use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Value, json};
 use std::sync::LazyLock;
 
+const TOOLS_CALL_DESCRIPTION: &str = "Validate and call a real tool once. Discover its schema first. To give a tool a file from this conversation, put {\"$file\": \"<file id>\"} where the tool wants the file's URL; Jet puts the file's address there.";
 const FILES_EXPORT_DESCRIPTION: &str = "Write a file the user can download: a PDF, a Markdown file or an HTML page, from Markdown you compose. Headings, lists, tables, code, footnotes and maths written as in chat. Number sources in order and cite them as [n]. The chat shows a download card, so do not repeat the document in your reply.";
 /// The longest document, in characters. Even at four bytes a character, one call stays well under
 /// the 4 MiB that the MCP server reads from one request.
@@ -20,7 +21,7 @@ static TOOLS: LazyLock<Vec<Tool>> = LazyLock::new(|| {
         ("apps_open", "Open an app in the browser that initiated this turn.", object(json!({"appId":{"type":"string","format":"uuid"}}),json!(["appId"]))),
         ("tools_search", "Search concise tool summaries across all enabled apps. Use tools_describe for schemas.", object(json!({"query":{"type":"string"}}),json!([]))),
         ("tools_describe", "Read a real tool schema and its server instructions.", object(target,json!(["appId","tool"]))),
-        ("tools_call", "Validate and call a real tool once. Discover its schema first.", object(json!({"appId":{"type":"string","format":"uuid"},"tool":{"type":"string"},"arguments":{"type":"object"}}),json!(["appId","tool","arguments"]))),
+        ("tools_call", TOOLS_CALL_DESCRIPTION, object(json!({"appId":{"type":"string","format":"uuid"},"tool":{"type":"string"},"arguments":{"type":"object"}}),json!(["appId","tool","arguments"]))),
         ("files_export", FILES_EXPORT_DESCRIPTION, object(json!({
             "format":{"enum":["pdf","markdown","html"]},
             "title":{"type":"string","minLength":1,"maxLength":200},

@@ -7,6 +7,7 @@ mod review_timer;
 
 use agent::{
     Conversation, DataDir, Effort, Event, Message, Model, Persona, ShownEntry, TurnIdentity,
+    mcp::{Progress, ToolTarget},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -347,6 +348,55 @@ impl ChatState {
         }
         runtime.publish(None, json!({"kind":"appOpened","appId":app_id,"turnId":binding.turn_id,"requestId":binding.request_id,"clientId":binding.client_id}));
         Ok(())
+    }
+
+    /// Shows how far a running tool call has got, on the card of that call. The facade only knows
+    /// the request it forwarded, so the card is the first still-running one of this turn that names
+    /// the same app, tool and arguments as the model sent. Anything that matches nothing is dropped.
+    pub fn tool_progress(
+        &self,
+        binding: &crate::facade::Binding,
+        target: &ToolTarget,
+        arguments: &Value,
+        progress: Progress,
+    ) {
+        let mut runtime = lock(&self.runtime);
+        let Some(active) = &mut runtime.active else {
+            return;
+        };
+        if active.identity.turn_id != binding.turn_id {
+            return;
+        }
+        // The card keeps the app id as the model wrote it, so it is compared as an id, not as text.
+        let names_app = |server: &Value| {
+            server
+                .as_str()
+                .and_then(|server| server.parse::<agent::apps::AppId>().ok())
+                .is_some_and(|server| server == target.app_id)
+        };
+        let is_this_call = |tool: &&Value| {
+            tool["kind"] == "toolStarted"
+                && names_app(&tool["server"])
+                && tool["tool"] == target.tool
+                && tool["input"] == *arguments
+        };
+        let Some(id) = active
+            .tools
+            .iter()
+            .filter(is_this_call)
+            .find_map(|tool| tool["id"].as_str().map(str::to_owned))
+        else {
+            return;
+        };
+        let identity = active.identity.clone();
+        let event = Event::ToolProgress {
+            id,
+            progress: progress.progress,
+            total: progress.total,
+            message: progress.message,
+        };
+        active.apply(&event);
+        runtime.publish(Some(identity), json!(event));
     }
 
     pub fn memory_updated(&self, notes: agent::Notes) {

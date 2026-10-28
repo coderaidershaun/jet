@@ -1,44 +1,13 @@
 //! Prove real provider processes use the global facade and turn-bound browser actions.
 use super::{
     mcp_fixture::Fixture,
-    support::{Host, host, request, send, wait_file},
+    support::{host, replay, request, send, wait_file},
 };
 use serde_json::{Value, json};
 use std::{
-    io::{BufRead, BufReader},
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
-fn replay(host: &Host) -> Vec<Value> {
-    let snapshot = host.get("/api/snapshot");
-    let last = snapshot["cursor"].as_u64().unwrap();
-    if last == 0 {
-        return Vec::new();
-    }
-    let mut response = ureq::get(format!(
-        "{}/api/events?epoch={}&cursor=0",
-        host.url,
-        snapshot["epoch"].as_str().unwrap()
-    ))
-    .call()
-    .unwrap();
-    let mut reader = BufReader::new(response.body_mut().as_reader());
-    let mut events = Vec::new();
-    loop {
-        let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
-        if let Some(data) = line.strip_prefix("data: ") {
-            let event: Value = serde_json::from_str(data).unwrap();
-            if event["kind"] == "event" {
-                events.push(event["data"]["event"].clone());
-                if event["data"]["cursor"].as_u64() == Some(last) {
-                    break;
-                }
-            }
-        }
-    }
-    events
-}
 #[test]
 fn both_providers_use_global_facade_without_resetting_conversation() {
     for model in ["sonnet", "gpt-6.1-sol"] {

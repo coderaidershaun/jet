@@ -53,6 +53,7 @@ impl Server {
             mcp.clone(),
             files.clone(),
             format!("http://{}/mcp", config.listen),
+            config.public_origin.clone(),
         );
         let chat = ChatState::open(config.data_dir.clone(), facade.clone(), files.clone())?;
         *crate::chat::lock(&facade.chat) = Arc::downgrade(&chat);

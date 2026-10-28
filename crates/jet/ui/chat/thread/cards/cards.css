@@ -35,6 +35,15 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .card-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-running .card-line { flex: 1 1 auto; }
 
+.card-bar { flex: none; width: 96px; height: 8px; accent-color: var(--accent); }
+.card-words { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The bar of a job that is still going, in the head of its card so it shows with the card closed. */
+.job { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.job[hidden] { display: none; }
+.job-bar { flex: 0 1 240px; min-width: 60px; height: 8px; accent-color: var(--accent); }
+.job-words { min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+
 .spinner {
   flex: none; width: 12px; height: 12px; border: 2px solid rgba(61, 139, 255, .25); border-top-color: var(--accent);
   border-radius: 50%; animation: spin 900ms linear infinite;

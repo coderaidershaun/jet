@@ -1,5 +1,6 @@
 //! Bind the stable provider tool surface to one initiating browser turn.
 mod handler;
+mod handoff;
 mod tools;
 
 use crate::chat::{ChatState, lock};
@@ -34,6 +35,7 @@ pub(crate) struct Facade {
     files: Files,
     pub chat: Mutex<Weak<ChatState>>,
     url: Mutex<String>,
+    public_origin: Option<String>,
     bindings: Mutex<HashMap<String, Binding>>,
     sessions: Mutex<HashMap<String, String>>,
 }
@@ -43,6 +45,7 @@ impl Facade {
         mcp: Arc<HttpMcpClient>,
         files: Files,
         url: String,
+        public_origin: Option<String>,
     ) -> Arc<Self> {
         Arc::new(Self {
             registry,
@@ -50,12 +53,23 @@ impl Facade {
             files,
             chat: Mutex::new(Weak::new()),
             url: Mutex::new(url),
+            public_origin,
             bindings: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
         })
     }
     pub fn set_url(&self, url: String) {
         *lock(&self.url) = url;
+    }
+    /// The origin that serves Jet's files to other programs: the public origin when one is set,
+    /// else the origin of the address the server is really listening on.
+    fn origin(&self) -> Result<String, url::ParseError> {
+        if let Some(origin) = &self.public_origin {
+            return Ok(origin.clone());
+        }
+        Ok(url::Url::parse(&lock(&self.url))?
+            .origin()
+            .ascii_serialization())
     }
     pub fn bind(&self, identity: &TurnIdentity) -> McpConnection {
         let token = uuid::Uuid::new_v4().to_string();

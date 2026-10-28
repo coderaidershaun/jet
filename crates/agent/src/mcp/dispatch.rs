@@ -1,7 +1,7 @@
 //! Validate current schemas without replaying calls whose outcomes are uncertain.
 use super::{
-    HttpMcpClient, McpError, ToolRequest, ToolResult,
-    http::{DEADLINE, MAX_BYTES, failure, protocol},
+    HttpMcpClient, McpError, Progress, ToolDefinition, ToolRequest, ToolResult,
+    http::{DEADLINE, MAX_BYTES, ProgressListeners, failure, protocol},
 };
 use rmcp::{model::*, service::PeerRequestOptions};
 use serde_json::Value;
@@ -11,11 +11,41 @@ use std::{
     sync::{Arc, Mutex, PoisonError},
     time::Duration,
 };
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 type PendingCalls = Arc<Mutex<HashMap<String, Option<oneshot::Sender<()>>>>>;
 pub(super) enum Purpose {
     Call,
     Discovery,
+    Status,
+}
+impl Purpose {
+    /// Refuses a tool that does not promise what this purpose needs, before anything is sent.
+    fn allows(&self, tool: &ToolDefinition) -> Result<(), McpError> {
+        let refusal = match self {
+            Purpose::Call => return Ok(()),
+            Purpose::Discovery => (!carries(tool, "jet/discovery"))
+                .then_some("tool does not declare supported free discovery"),
+            Purpose::Status => {
+                let read_only = tool
+                    .annotations
+                    .as_ref()
+                    .is_some_and(|annotations| annotations["readOnlyHint"] == true);
+                (!(carries(tool, "jet/job") && read_only))
+                    .then_some("tool does not declare a supported read-only job status")
+            }
+        };
+        refusal.map_or(Ok(()), |message| {
+            Err(McpError::InvalidArguments {
+                message: message.into(),
+            })
+        })
+    }
+}
+/// Whether the tool carries the Jet marker `key` in the one version Jet supports.
+fn carries(tool: &ToolDefinition, key: &str) -> bool {
+    tool.meta
+        .get(key)
+        .is_some_and(|marker| marker["version"] == 1)
 }
 impl HttpMcpClient {
     /// Registers the request ID now, not on the first poll, so a cancel sent before the first
@@ -24,6 +54,7 @@ impl HttpMcpClient {
         &self,
         request: ToolRequest,
         purpose: Purpose,
+        progress: Option<mpsc::Sender<Progress>>,
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, McpError>> + Send + '_>> {
         let (sender, receiver) = oneshot::channel();
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
@@ -44,13 +75,14 @@ impl HttpMcpClient {
             wire: None,
             purpose,
         };
-        Box::pin(self.dispatch(request, receiver, guard))
+        Box::pin(self.dispatch(request, receiver, guard, progress))
     }
     async fn dispatch(
         &self,
         request: ToolRequest,
         mut cancelled: oneshot::Receiver<()>,
         mut guard: PendingCall,
+        progress: Option<mpsc::Sender<Progress>>,
     ) -> Result<ToolResult, McpError> {
         let catalogue = tokio::select! {
             result = self.catalogue(&request.target.app_id) => result?,
@@ -73,13 +105,7 @@ impl HttpMcpClient {
             .catalogue
             .as_ref()
             .ok_or_else(|| failure("catalogue missing before dispatch"))?;
-        if connection.generation
-            != connection
-                .running
-                .service()
-                .0
-                .load(std::sync::atomic::Ordering::SeqCst)
-        {
+        if connection.generation != connection.running.service().tool_list_generation() {
             return Err(failure("catalogue changed; rediscover before retrying"));
         }
         let tool = catalogue
@@ -90,16 +116,7 @@ impl HttpMcpClient {
                 app_id: request.target.app_id.clone(),
                 tool: request.target.tool.clone(),
             })?;
-        if matches!(guard.purpose, Purpose::Discovery)
-            && !tool
-                .meta
-                .get("jet/discovery")
-                .is_some_and(|marker| marker["version"] == 1)
-        {
-            return Err(McpError::InvalidArguments {
-                message: "tool does not declare supported free discovery".into(),
-            });
-        }
+        guard.purpose.allows(tool)?;
         let validator = jsonschema::validator_for(&tool.input_schema).map_err(|error| {
             McpError::InvalidArguments {
                 message: format!("unsupported tool schema: {error}"),
@@ -121,6 +138,7 @@ impl HttpMcpClient {
         }
         let running = connection.running.clone();
         let peer = running.peer().clone();
+        let listeners = running.service().listeners.clone();
         drop(state);
         let call = ClientRequest::CallToolRequest(CallToolRequest::new(
             CallToolRequestParams::new(request.target.tool).with_arguments(request.arguments),
@@ -136,6 +154,12 @@ impl HttpMcpClient {
         .map_err(failure)?
         .map_err(protocol)?;
         guard.wire = Some((peer, handle.id.clone()));
+        // The client library puts a fresh progress token on every request, so the token to
+        // listen for is read from the handle, never made up here.
+        // SMELL: the request is already on the wire when the listener is added, so a tool that
+        // reports progress before this line runs loses that first update.
+        let _listening = progress
+            .map(|sender| Listening::start(&listeners, handle.progress_token.clone(), sender));
         let response = tokio::select! {
             response = handle.await_response() => { guard.wire = None; response.map_err(protocol) },
             _ = cancelled => Err(McpError::Cancelled { request_id:request.request_id.clone() }),
@@ -168,6 +192,35 @@ impl HttpMcpClient {
             structured_content: result.structured_content,
             is_error: result.is_error.unwrap_or(false),
         })
+    }
+}
+/// Sends the progress of one request to a channel, until it is dropped.
+struct Listening {
+    listeners: ProgressListeners,
+    token: ProgressToken,
+}
+impl Listening {
+    fn start(
+        listeners: &ProgressListeners,
+        token: ProgressToken,
+        sender: mpsc::Sender<Progress>,
+    ) -> Self {
+        listeners
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(token.clone(), sender);
+        Self {
+            listeners: listeners.clone(),
+            token,
+        }
+    }
+}
+impl Drop for Listening {
+    fn drop(&mut self) {
+        self.listeners
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.token);
     }
 }
 struct PendingCall {

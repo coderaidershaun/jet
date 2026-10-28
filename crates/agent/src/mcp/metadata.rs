@@ -5,7 +5,7 @@ use super::{
 };
 use crate::apps::AppId;
 use rmcp::model::*;
-use std::{collections::HashSet, sync::atomic::Ordering};
+use std::collections::HashSet;
 impl HttpMcpClient {
     pub(super) async fn load(&self, id: &AppId, refresh: bool) -> Result<ToolCatalogue, McpError> {
         let endpoint = self.endpoint(id)?;
@@ -15,7 +15,7 @@ impl HttpMcpClient {
             connection.endpoint != endpoint || connection.running.is_closed()
         });
         let changed = state.connection.as_ref().is_some_and(|connection| {
-            connection.generation != connection.running.service().0.load(Ordering::SeqCst)
+            connection.generation != connection.running.service().tool_list_generation()
         });
         if !refresh
             && !changed
@@ -32,7 +32,7 @@ impl HttpMcpClient {
                 .connection
                 .as_mut()
                 .ok_or_else(|| failure("connection missing"))?;
-            let generation = connection.running.service().0.load(Ordering::SeqCst);
+            let generation = connection.running.service().tool_list_generation();
             let catalogue = tokio::time::timeout(DEADLINE, read(connection))
                 .await
                 .map_err(failure)??;

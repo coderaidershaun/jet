@@ -4,11 +4,15 @@
 // missing one shows as empty. Pure, with no DOM.
 
 import { KINDS, fileLinks, sizeOf } from '../../files.js';
+import { count, isRecord, joined, listOf, numberOrNull, orNull, recordOf, stringOf, stringsOf } from './guard.js';
+import { isJob, jobOf, readIngest } from './job.js';
 
 /**
  * One tool call as the thread keeps it. No `ok` yet: still running. `unfinished`: the reply ended first.
+ * `progress` is the latest report of a running call.
  * @typedef {{ id: string, server: string, tool: string, input: any, ok?: boolean, result?: any,
- *   summary?: string, durationMs?: number, unfinished?: boolean }} ShownCall
+ *   summary?: string, durationMs?: number, unfinished?: boolean,
+ *   progress?: { progress: number, total: number | null, message: string | null } }} ShownCall
  */
 /** @typedef {'running' | 'done' | 'failed' | 'unfinished'} CallState */
 /**
@@ -34,8 +38,13 @@ import { KINDS, fileLinks, sizeOf } from '../../files.js';
  *   | { kind: 'file', name: string, title: string, tag: string, meta: string, download: string, view: string }} Body
  */
 /**
+ * How far a running call is, for the bar: `value` of `max`, both null when it cannot say, and the words beside it.
+ * @typedef {{ value: number | null, max: number | null, words: string | null }} Bar
+ */
+/**
  * @typedef {{ id: string, key: string, call: ShownCall, state: CallState, line: string, name: string, meta: string,
- *   head: string, tone: 'ok' | 'invalid' | 'quiet', advice: string | null, hint: string | null, body: Body | null }} Card
+ *   head: string, tone: 'ok' | 'invalid' | 'quiet', advice: string | null, hint: string | null, body: Body | null,
+ *   progress: Bar | null, job: import('./job.js').JobView | null }} Card
  */
 
 const OPEN_QUOTE = '“';
@@ -49,15 +58,7 @@ const FILE_TOOL = 'jet/files_export';
 const READ_TOOL = 'jet/files_read';
 const LIST_TOOL = 'jet/files_list';
 
-const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
-const recordOf = (value) => (isRecord(value) ? value : {});
-const listOf = (value) => (Array.isArray(value) ? value : []);
-const stringOf = (value) => (typeof value === 'string' ? value : '');
-const stringsOf = (value) => listOf(value).filter((item) => typeof item === 'string');
-const orNull = (value) => (typeof value === 'string' && value !== '' ? value : null);
-const joined = (...parts) => parts.filter(Boolean).join(' · ');
 const quoted = (text) => OPEN_QUOTE + text + CLOSE_QUOTE;
-const count = (n, noun) => n + ' ' + noun + (n === 1 ? '' : 's');
 const seconds = (ms) => (ms < 10000 ? (ms / 1000).toFixed(1) : Math.round(ms / 1000).toString()) + ' s';
 
 /** The result as text, for advice and for a result that is not an object. */
@@ -191,6 +192,20 @@ function titleOfDocument(documentId, earlier) {
 function lineOf(call, earlier) {
   const input = recordOf(call.input);
   const asked = orNull(input.question);
+  switch (call.tool) {
+    case 'ingest_pdf': {
+      const file = stringOf(input.path).split(/[\\/]/).pop() || stringOf(input.file_name);
+      return file ? 'Adding a PDF · ' + file : 'Adding a PDF';
+    }
+    case 'ingest_status':
+      return 'Checking the ingest';
+    case 'job_status':
+      return 'Checking a job';
+    case 'watch_job':
+      return 'Watching a job';
+    default:
+      break;
+  }
   switch (call.server + '/' + call.tool) {
     case 'quanty/search':
       return asked ? 'Searching quanty · ' + quoted(asked) : 'Searching quanty';
@@ -205,12 +220,6 @@ function lineOf(call, earlier) {
       return 'Listing the library';
     case 'quanty/health':
       return 'Checking the library';
-    case 'quanty/ingest_pdf': {
-      const file = stringOf(input.path).split(/[\\/]/).pop() || stringOf(input.file_name);
-      return file ? 'Adding a PDF · ' + file : 'Adding a PDF';
-    }
-    case 'quanty/ingest_status':
-      return 'Checking the ingest';
     case READ_TOOL:
       return 'Reading a file';
     case LIST_TOOL:
@@ -288,29 +297,10 @@ function readHealth(result) {
   return { outcome: healthy ? 'healthy' : 'not healthy', tone: healthy ? 'ok' : 'invalid', body: { kind: 'health', lines } };
 }
 
-function readIngest(result, input, call) {
-  const state = orNull(result.state);
-  const items = typeof result.items === 'number' ? result.items : null;
-  const cost = typeof result.cost_usd === 'number' ? '$' + result.cost_usd.toFixed(2) : null;
-  const entries = [
-    ['State', state && state.replace(/_/g, ' ')], ['Stage', orNull(result.stage)], ['Media', orNull(result.media)], ['File', orNull(result.file)],
-    ['Document', orNull(result.document_id)], ['Items', items === null ? null : String(items)], ['Cost', cost],
-  ];
-  const fields = entries.filter(([, text]) => text).map(([term, text]) => ({ term, text }));
-  const summary = orNull(result.summary);
-  if (summary) fields.push({ term: 'Summary', text: summary, pre: true });
-  const error = orNull(result.error);
-  if (error) fields.push({ term: 'Error', text: error });
-
-  const outcomes = {
-    running: joined('running', orNull(result.stage)),
-    done: joined('done', items === null ? '' : count(items, 'item')),
-    already_ingested: 'already in the library',
-    failed: 'failed',
-  };
-  const outcome = state ? (Object.hasOwn(outcomes, state) ? outcomes[state] : state) : readGeneric(result, {}, call).outcome;
-  const tone = state === 'failed' ? 'invalid' : state === 'done' || state === 'already_ingested' ? 'ok' : 'quiet';
-  return { outcome, tone, body: { kind: 'fields', fields } };
+/** A job result. One with no state words its outcome like any other result that has no reader. */
+function readJob(result, input, call) {
+  const read = readIngest(result);
+  return read.outcome ? read : { ...read, outcome: readGeneric(result, input, call).outcome };
 }
 
 /** The saved file of a finished export. A result without a UUID id is not a file, and no link is made from it. */
@@ -368,8 +358,9 @@ function readerFor(call) {
   if (key === READ_TOOL) return readAttached;
   if (key === LIST_TOOL) return readFileList;
   if (!isRecord(call.result)) return readGeneric;
-  const legacy = READERS[call.server + '/' + call.tool];
-  if (legacy) return legacy;
+  const named = READERS[call.server + '/' + call.tool] ?? TOOL_READERS[call.tool];
+  if (named) return named;
+  if (isJob(call.result)) return readJob;
   if (citationSources(call).length) return call.tool === 'search' ? readSearch : readAnswer;
   if (call.tool === 'read_page' && Array.isArray(call.result.pieces) && typeof call.result.document_id === 'string') return readPage;
   return readGeneric;
@@ -381,9 +372,24 @@ const READERS = {
   'quanty/read_page': readPage,
   'quanty/list_documents': readDocuments,
   'quanty/health': readHealth,
-  'quanty/ingest_pdf': readIngest,
-  'quanty/ingest_status': readIngest,
 };
+
+// These tools are read the same way on any server, because through the facade a server is an app ID.
+const TOOL_READERS = {
+  ingest_pdf: readJob,
+  ingest_status: readJob,
+  job_status: readJob,
+  watch_job: readJob,
+};
+
+/** The bar of a running call from its latest report, which is data, so a number that is not one reads as unknown. */
+function barOf(report) {
+  if (!isRecord(report)) return null;
+  const progress = numberOrNull(report.progress);
+  const total = numberOrNull(report.total);
+  const isCounted = progress !== null && total !== null && total > 0;
+  return { value: isCounted ? Math.min(total, Math.max(0, progress)) : null, max: isCounted ? total : null, words: orNull(report.message) };
+}
 
 /**
  * The card of a call. `earlier` holds the finished calls above it, oldest first, so a page can name its document.
@@ -397,10 +403,13 @@ export function cardOf(call, earlier = []) {
   const name = call.server + ' · ' + call.tool;
   const line = lineOf(call, earlier);
   const time = typeof call.durationMs === 'number' ? seconds(call.durationMs) : '';
-  const card = { id: call.id, key: call.server + '/' + call.tool, call, state, line, name, meta: '', head: line, tone: 'quiet', advice: null, hint: null, body: null };
+  const card = {
+    id: call.id, key: call.server + '/' + call.tool, call, state, line, name, meta: '', head: line, tone: 'quiet', advice: null, hint: null, body: null,
+    progress: null, job: null,
+  };
   const ended = (meta) => ({ ...card, meta, head: name + ' · ' + meta });
 
-  if (state === 'running') return card;
+  if (state === 'running') return { ...card, progress: barOf(call.progress) };
   if (state === 'unfinished') return ended('stopped');
   if (state === 'failed' && (card.key === FILE_TOOL || card.key === READ_TOOL)) {
     const failedName = card.key === READ_TOOL ? "Couldn't read the file" : "Couldn't write the " + (fileFormatOf(call)?.label ?? 'file');
@@ -417,5 +426,5 @@ export function cardOf(call, earlier = []) {
   const read = readerFor(call);
   const { outcome, tone, body, problem } = read(recordOf(call.result), input, call);
   if (problem) return { ...ended(joined('failed', time)), state: 'failed', tone: 'invalid', advice: problem };
-  return { ...ended(joined(outcome, time)), tone, body };
+  return { ...ended(joined(outcome, time)), tone, body, job: read === readJob ? jobOf(call.result) : null };
 }
