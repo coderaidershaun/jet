@@ -1,9 +1,13 @@
 //! Validate current schemas without replaying calls whose outcomes are uncertain.
 use super::{
     HttpMcpClient, McpError, Progress, ToolDefinition, ToolRequest, ToolResult,
-    http::{DEADLINE, MAX_BYTES, ProgressListeners, failure, protocol},
+    http::{DEADLINE, MAX_BYTES, Notifications, ProgressListeners, failure, protocol},
 };
-use rmcp::{model::*, service::PeerRequestOptions};
+use rmcp::{
+    Peer, RoleClient,
+    model::*,
+    service::{PeerRequestOptions, RequestHandle},
+};
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -138,28 +142,13 @@ impl HttpMcpClient {
         }
         let running = connection.running.clone();
         let peer = running.peer().clone();
-        let listeners = running.service().listeners.clone();
         drop(state);
         let call = ClientRequest::CallToolRequest(CallToolRequest::new(
             CallToolRequestParams::new(request.target.tool).with_arguments(request.arguments),
         ));
-        let handle = tokio::time::timeout(
-            DEADLINE,
-            peer.send_cancellable_request(
-                call,
-                PeerRequestOptions::with_timeout(Duration::from_secs(120)),
-            ),
-        )
-        .await
-        .map_err(failure)?
-        .map_err(protocol)?;
+        let (handle, _listening) =
+            send_and_listen(&peer, running.service(), call, progress).await?;
         guard.wire = Some((peer, handle.id.clone()));
-        // The client library puts a fresh progress token on every request, so the token to
-        // listen for is read from the handle, never made up here.
-        // SMELL: the request is already on the wire when the listener is added, so a tool that
-        // reports progress before this line runs loses that first update.
-        let _listening = progress
-            .map(|sender| Listening::start(&listeners, handle.progress_token.clone(), sender));
         let response = tokio::select! {
             response = handle.await_response() => { guard.wire = None; response.map_err(protocol) },
             _ = cancelled => Err(McpError::Cancelled { request_id:request.request_id.clone() }),
@@ -193,6 +182,38 @@ impl HttpMcpClient {
             is_error: result.is_error.unwrap_or(false),
         })
     }
+}
+/// Sends the call and starts listening for its progress. The client library picks the progress
+/// token as it sends, so the token is known only afterwards. Progress updates wait on the
+/// registering lock until the listener is in place, so none is lost.
+async fn send_and_listen(
+    peer: &Peer<RoleClient>,
+    notifications: &Notifications,
+    call: ClientRequest,
+    progress: Option<mpsc::Sender<Progress>>,
+) -> Result<(RequestHandle<RoleClient>, Option<Listening>), McpError> {
+    let (registering, handle) = tokio::time::timeout(DEADLINE, async {
+        let registering = notifications.registering.write().await;
+        let handle = peer
+            .send_cancellable_request(
+                call,
+                PeerRequestOptions::with_timeout(Duration::from_secs(120)),
+            )
+            .await?;
+        Ok::<_, rmcp::ServiceError>((registering, handle))
+    })
+    .await
+    .map_err(failure)?
+    .map_err(protocol)?;
+    let listening = progress.map(|sender| {
+        Listening::start(
+            &notifications.listeners,
+            handle.progress_token.clone(),
+            sender,
+        )
+    });
+    drop(registering);
+    Ok((handle, listening))
 }
 /// Sends the progress of one request to a channel, until it is dropped.
 struct Listening {

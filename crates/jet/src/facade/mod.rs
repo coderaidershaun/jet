@@ -4,7 +4,7 @@ mod handoff;
 mod marks;
 mod tools;
 
-use crate::chat::{ChatState, lock};
+use crate::chat::{ChatState, TurnContext, TurnTools, lock};
 use crate::files::Files;
 use agent::{McpConnection, TurnIdentity, apps::Registry, mcp::HttpMcpClient};
 use axum::{
@@ -24,10 +24,8 @@ use std::{
 
 pub(crate) const HEADER: &str = agent::TURN_HEADER;
 #[derive(Clone)]
-pub(crate) struct Binding {
-    pub turn_id: String,
-    pub request_id: String,
-    pub client_id: String,
+struct Binding {
+    turn: TurnContext,
     calls: HashSet<String>,
 }
 pub(crate) struct Facade {
@@ -72,49 +70,8 @@ impl Facade {
             .origin()
             .ascii_serialization())
     }
-    pub fn bind(&self, identity: &TurnIdentity) -> McpConnection {
-        let token = uuid::Uuid::new_v4().to_string();
-        lock(&self.bindings).insert(
-            token.clone(),
-            Binding {
-                turn_id: identity.turn_id.clone(),
-                request_id: identity.request_id.clone(),
-                client_id: identity.client_id.clone(),
-                calls: HashSet::new(),
-            },
-        );
-        McpConnection {
-            url: lock(&self.url).clone(),
-            token,
-        }
-    }
-    pub fn binding(&self, token: &str) -> Option<Binding> {
+    fn binding(&self, token: &str) -> Option<Binding> {
         lock(&self.bindings).get(token).cloned()
-    }
-    pub fn revoke(&self, request: &str) {
-        let mut bindings = lock(&self.bindings);
-        let tokens: Vec<_> = bindings
-            .iter()
-            .filter(|(_, binding)| binding.request_id == request)
-            .map(|(token, _)| token.clone())
-            .collect();
-        for token in tokens {
-            if let Some(binding) = bindings.remove(&token) {
-                for id in binding.calls {
-                    self.mcp.cancel_request(&id);
-                }
-            }
-            lock(&self.sessions).retain(|_, bound| bound != &token);
-        }
-    }
-    pub fn shutdown(&self) {
-        let requests: Vec<_> = lock(&self.bindings)
-            .values()
-            .map(|binding| binding.request_id.clone())
-            .collect();
-        for request in requests {
-            self.revoke(&request);
-        }
     }
     pub fn router(self: &Arc<Self>) -> Router {
         let state = self.clone();
@@ -126,6 +83,47 @@ impl Facade {
         Router::new()
             .nest_service("/mcp", service)
             .layer(middleware::from_fn_with_state(self.clone(), authorize))
+    }
+}
+impl TurnTools for Facade {
+    fn bind(&self, identity: &TurnIdentity) -> McpConnection {
+        let token = uuid::Uuid::new_v4().to_string();
+        lock(&self.bindings).insert(
+            token.clone(),
+            Binding {
+                turn: TurnContext::from(identity),
+                calls: HashSet::new(),
+            },
+        );
+        McpConnection {
+            url: lock(&self.url).clone(),
+            token,
+        }
+    }
+    fn revoke(&self, request_id: &str) {
+        let mut bindings = lock(&self.bindings);
+        let tokens: Vec<_> = bindings
+            .iter()
+            .filter(|(_, binding)| binding.turn.request_id == request_id)
+            .map(|(token, _)| token.clone())
+            .collect();
+        for token in tokens {
+            if let Some(binding) = bindings.remove(&token) {
+                for id in binding.calls {
+                    self.mcp.cancel_request(&id);
+                }
+            }
+            lock(&self.sessions).retain(|_, bound| bound != &token);
+        }
+    }
+    fn shutdown(&self) {
+        let requests: Vec<_> = lock(&self.bindings)
+            .values()
+            .map(|binding| binding.turn.request_id.clone())
+            .collect();
+        for request in requests {
+            self.revoke(&request);
+        }
     }
 }
 async fn authorize(State(facade): State<Arc<Facade>>, request: Request, next: Next) -> Response {

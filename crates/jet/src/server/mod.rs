@@ -5,6 +5,7 @@ mod proxy;
 mod routes;
 mod tools;
 
+use crate::chat::TurnTools;
 use crate::facade::Facade;
 use crate::files::Files;
 use agent::{apps::Registry, mcp::HttpMcpClient};

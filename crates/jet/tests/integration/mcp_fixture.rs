@@ -21,6 +21,8 @@ pub struct App {
     pub hold_list: Arc<AtomicBool>,
     pub listing: Arc<AtomicBool>,
     pub cancelled: Arc<AtomicBool>,
+    /// How many `twin` calls have arrived. Each call is named by its arrival number.
+    twins: Arc<AtomicUsize>,
 }
 impl ServerHandler for App {
     fn get_info(&self) -> ServerConfig {
@@ -65,6 +67,7 @@ impl ServerHandler for App {
         let no_arguments = json!({"type":"object","additionalProperties":false});
         tools.extend([
             other("progress", json!({}), no_arguments.clone(), json!({})),
+            other("twin", json!({}), no_arguments.clone(), json!({})),
             other("job_status", json!({"readOnlyHint":true}), no_arguments.clone(), free_job),
             other("job_write", json!({"readOnlyHint":false}), no_arguments, paid_job),
             other(
@@ -87,6 +90,7 @@ impl ServerHandler for App {
         self.calls.fetch_add(1, Ordering::SeqCst);
         match params.name.as_ref() {
             "progress" => return self.report_progress(&context).await,
+            "twin" => return self.report_twin(&context).await,
             "job_status" | "job_write" => {
                 return Ok(CallToolResult::structured(json!({"job_id":"job-1","kind":"ingest","state":"running","stage":{"name":"converting","words":"converting 12 of 32 pages","done":12,"total":32,"share":0.375}})).into());
             }
@@ -135,6 +139,24 @@ impl App {
             }
         }
         Ok(CallToolResult::structured(json!({"finished":true})).into())
+    }
+    /// Sends its first progress update before doing anything else, then four more, and answers with
+    /// the number of the call. Every message names the call, so a card shows whose progress it has.
+    async fn report_twin(
+        &self,
+        context: &RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, rmcp::ErrorData> {
+        let call = self.twins.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Some(token) = context.meta.get_progress_token() {
+            for step in 1..=5 {
+                let update = ProgressNotificationParam::new(token.clone(), f64::from(step))
+                    .with_total(5.0)
+                    .with_message(format!("call {call} step {step}"));
+                context.peer.notify_progress(update).await.ok();
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+        Ok(CallToolResult::structured(json!({"call":call})).into())
     }
 }
 pub struct Fixture {

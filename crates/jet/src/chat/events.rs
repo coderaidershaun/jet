@@ -1,5 +1,6 @@
 //! Reconnect browsers from an authoritative snapshot and a bounded tail of events.
 
+use super::BridgeError;
 use agent::{Event, ShownEntry, TurnIdentity, mcp::ToolTarget};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -7,13 +8,15 @@ use std::collections::VecDeque;
 use tokio::sync::broadcast;
 
 const REPLAY_LIMIT: usize = 512;
+/// The `kind` of a card whose call has not finished.
+const TOOL_STARTED: &str = "toolStarted";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct TurnContext {
-    pub(super) request_id: String,
+    pub(crate) request_id: String,
     pub(super) client_id: String,
-    pub(super) turn_id: String,
+    pub(crate) turn_id: String,
 }
 
 impl From<&TurnIdentity> for TurnContext {
@@ -24,6 +27,15 @@ impl From<&TurnIdentity> for TurnContext {
             turn_id: identity.turn_id.clone(),
         }
     }
+}
+
+/// A tool call that has not finished, with what it tells about the card it belongs to.
+pub(crate) struct RunningCall<'a> {
+    /// The id of the call's card, when the provider gives one.
+    pub card_id: Option<&'a str>,
+    pub target: &'a ToolTarget,
+    /// The arguments as the model wrote them.
+    pub arguments: &'a Value,
 }
 
 #[derive(Clone, Serialize)]
@@ -45,6 +57,16 @@ pub(crate) struct ActiveTurn {
 }
 
 impl ActiveTurn {
+    pub(super) fn new(identity: TurnContext, user: ShownEntry) -> Self {
+        Self {
+            identity,
+            user,
+            text: String::new(),
+            mood: None,
+            tools: Vec::new(),
+        }
+    }
+
     pub fn apply(&mut self, event: &Event) {
         match event {
             Event::Text { delta } => self.text.push_str(delta),
@@ -69,7 +91,7 @@ impl ActiveTurn {
                 let running = self
                     .tools
                     .iter_mut()
-                    .find(|tool| tool["id"] == *id && tool["kind"] == "toolStarted");
+                    .find(|tool| tool["id"] == *id && tool["kind"] == TOOL_STARTED);
                 if let Some(Value::Object(tool)) = running {
                     tool.insert(
                         "progress".into(),
@@ -81,9 +103,23 @@ impl ActiveTurn {
         }
     }
 
+    /// The id of the still-running card the call belongs to. A call that names its card gets that
+    /// card or nothing, never another one that merely looks the same.
+    pub(super) fn card_of(&self, call: &RunningCall) -> Option<String> {
+        match call.card_id {
+            Some(card_id) => self
+                .tools
+                .iter()
+                .any(|tool| tool["id"] == card_id && tool["kind"] == TOOL_STARTED)
+                .then(|| card_id.to_owned()),
+            // SMELL: Codex names no card for a call, so two identical Codex calls at once still share the first card.
+            None => self.running_call_id(call.target, call.arguments),
+        }
+    }
+
     /// Finds the id of the first still-running call that names the same app, tool and arguments
     /// as the model sent.
-    pub(super) fn running_call_id(&self, target: &ToolTarget, arguments: &Value) -> Option<String> {
+    fn running_call_id(&self, target: &ToolTarget, arguments: &Value) -> Option<String> {
         // The card keeps the app id as the model wrote it, so it is compared as an id, not as text.
         let names_app = |server: &Value| {
             server
@@ -92,7 +128,7 @@ impl ActiveTurn {
                 .is_some_and(|server| server == target.app_id)
         };
         let is_this_call = |tool: &&Value| {
-            tool["kind"] == "toolStarted"
+            tool["kind"] == TOOL_STARTED
                 && names_app(&tool["server"])
                 && tool["tool"] == target.tool
                 && tool["input"] == *arguments
@@ -137,6 +173,44 @@ impl Runtime {
             closing: false,
             cancelled_requests: VecDeque::new(),
         }
+    }
+
+    /// Says why no turn may start for this request now, if there is a reason.
+    pub fn check_can_start(&self, request_id: &str) -> Result<(), BridgeError> {
+        if self.closing {
+            return Err(BridgeError::ShuttingDown);
+        }
+        if self.cancelled_requests.iter().any(|id| id == request_id) {
+            return Err(BridgeError::Cancelled);
+        }
+        if self.active.is_some() {
+            return Err(BridgeError::Busy);
+        }
+        Ok(())
+    }
+
+    /// Makes the turn the active one and tells the browsers it was accepted, with the thread so
+    /// far and the user's message.
+    pub fn start(
+        &mut self,
+        active: ActiveTurn,
+        stopper: agent::Stopper,
+        mut history: Vec<ShownEntry>,
+    ) {
+        let identity = active.identity.clone();
+        history.push(active.user.clone());
+        self.active = Some(active);
+        self.stopper = Some(stopper);
+        let snapshot = Snapshot {
+            epoch: self.epoch.clone(),
+            cursor: self.cursor + 1,
+            history,
+            active: self.active.clone(),
+        };
+        self.publish(
+            Some(identity),
+            json!({"kind":"accepted", "snapshot":snapshot}),
+        );
     }
 
     pub fn cancel_request(&mut self, request_id: &str) {

@@ -1,6 +1,6 @@
 //! Route provider requests through the host registry and shared HTTP client.
 use super::{Binding, Facade, HEADER, handoff, marks, tools};
-use crate::chat::lock;
+use crate::chat::{RunningCall, lock};
 use crate::files::{ExportRequest, Range, Reading};
 use agent::{
     apps::{AppId, RegistryCommand},
@@ -156,13 +156,22 @@ impl Handler {
         context: RequestContext<RoleServer>,
     ) -> Result<Value, Value> {
         let target: ToolTarget = serde_json::from_value(arguments.clone()).map_err(message)?;
-        // The chat finds the card of this call by what the model wrote, before any `$file` swap.
+        // A call that names no card has its card found by the arguments the model wrote, so they
+        // are kept from before any `$file` swap.
         let sent = arguments["arguments"].clone();
-        let request_id = format!("{}:{}", binding.turn_id, context.id);
+        let request_id = format!("{}:{}", binding.turn.turn_id, context.id);
         let request = ToolRequest {
             request_id: request_id.clone(),
             target: target.clone(),
             arguments: self.with_file_addresses(&sent).await?,
+        };
+        let running = RunningCall {
+            card_id: context
+                .meta
+                .get(agent::TOOL_USE_META)
+                .and_then(Value::as_str),
+            target: &target,
+            arguments: &sent,
         };
         let (progress_sender, mut progress) = mpsc::channel(PROGRESS_QUEUE);
         let call = {
@@ -181,7 +190,7 @@ impl Handler {
                 Some(update) = progress.recv() => {
                     let chat = lock(&self.0.chat).upgrade();
                     if let Some(chat) = chat {
-                        chat.tool_progress(&binding, &target, &sent, update);
+                        chat.tool_progress(&binding.turn, &running, update);
                     }
                 }
                 _ = context.ct.cancelled() => { self.0.mcp.cancel_request(&request_id); return Err(json!({"kind":"cancelled","requestId":request_id})); }
@@ -223,7 +232,7 @@ impl Handler {
                 let chat = lock(&self.0.chat)
                     .upgrade()
                     .ok_or_else(|| message("host closed"))?;
-                chat.open_app(&binding, &id).map_err(message)?;
+                chat.open_app(&binding.turn, &id).map_err(message)?;
                 Ok(json!({"appId":id,"opened":true}))
             }
             "tools_search" => {

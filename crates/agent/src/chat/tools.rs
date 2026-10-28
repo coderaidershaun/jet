@@ -12,6 +12,10 @@ pub struct McpConnection {
 /// The request header that carries `McpConnection::token`.
 pub const TURN_HEADER: &str = "x-jet-turn";
 
+/// The request metadata key where Claude Code names the tool use a call belongs to. Its value is
+/// the id of the call's card.
+pub const TOOL_USE_META: &str = "claudecode/toolUseId";
+
 pub const FACADE_TOOLS: [&str; 9] = [
     "apps_list",
     "apps_update",

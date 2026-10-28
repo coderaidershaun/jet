@@ -2,7 +2,7 @@
 //! the page can read the status of the job it started.
 use super::{
     mcp_fixture::Fixture,
-    support::{host, replay, request, wait_file},
+    support::{Host, host, replay, request, wait_file},
 };
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
@@ -100,4 +100,79 @@ fn job_progress_status_route_and_file_handoff() {
     assert_eq!(status["result"]["structuredContent"]["job_id"], "job-1");
     assert_eq!(status["result"]["structuredContent"]["state"], "running");
     assert_eq!(fixture.app.calls.load(Ordering::SeqCst), 3);
+}
+
+fn add_fixture_app(host: &Host, fixture: &Fixture) -> Value {
+    host.post("/api/apps", json!({"action":"add","address":fixture.url}))
+        .1["app"]["id"]
+        .clone()
+}
+fn call_twin(app: &Value) -> Value {
+    json!({"tool":"tools_call","arguments":{"appId":app,"tool":"twin","arguments":{}}})
+}
+/// Sends the script as one turn and waits for the turn to end.
+fn run_turn(host: &Host, script: Value) {
+    let mut message = request("progress");
+    message["text"] = json!(format!("facade:{script}"));
+    let (status, accepted) = host.post("/api/chat/send", message);
+    assert_eq!(status, 200, "{accepted}");
+    let snapshot = host.until(|value| {
+        value["active"].is_null()
+            && value["history"]
+                .as_array()
+                .is_some_and(|history| history.len() == 2)
+    });
+    assert_eq!(snapshot["history"][1]["status"], "complete", "{snapshot}");
+}
+
+#[test]
+fn first_progress_update_reaches_its_card() {
+    let fixture = Fixture::start();
+    let host = host();
+    let app = add_fixture_app(&host, &fixture);
+    run_turn(&host, json!([call_twin(&app)]));
+
+    let updates: Vec<Value> = replay(&host)
+        .into_iter()
+        .filter(|event| event["kind"] == "toolProgress")
+        .collect();
+    let first = updates.first().expect("no progress reached the page");
+    assert_eq!(first["id"], "facade-0", "{first}");
+    assert_eq!(first["progress"], 1.0, "the first update was lost: {first}");
+    assert_eq!(first["message"], "call 1 step 1", "{first}");
+}
+
+#[test]
+fn identical_calls_at_once_each_show_their_own_progress() {
+    let fixture = Fixture::start();
+    let host = host();
+    let app = add_fixture_app(&host, &fixture);
+    run_turn(
+        &host,
+        json!([{"together":[call_twin(&app), call_twin(&app)]}]),
+    );
+
+    let results = wait_file(&host, "facade-results.json");
+    let updates: Vec<Value> = replay(&host)
+        .into_iter()
+        .filter(|event| event["kind"] == "toolProgress")
+        .collect();
+    for (part, result) in results.as_array().unwrap().iter().enumerate() {
+        let call = result["structuredContent"]["structuredContent"]["call"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("no call number in {result}"));
+        let card = format!("facade-0-{part}");
+        let own: Vec<&Value> = updates
+            .iter()
+            .filter(|update| update["id"] == card)
+            .collect();
+        assert!(!own.is_empty(), "card {card} got no progress: {updates:?}");
+        for update in own {
+            let message = update["message"].as_str().unwrap();
+            assert!(
+                message.starts_with(&format!("call {call} ")),
+                "card {card} belongs to call {call} but shows: {update}"
+            );
+        }
+    }
 }

@@ -11,7 +11,7 @@ pub use context::ContextStatus;
 pub use event::{Event, Failure};
 pub use model::{Effort, Model};
 pub(crate) use tools::content_value;
-pub use tools::{FACADE_TOOLS, McpConnection, TURN_HEADER, ToolCall, ToolStart};
+pub use tools::{FACADE_TOOLS, McpConnection, TOOL_USE_META, TURN_HEADER, ToolCall, ToolStart};
 
 /// The longest MEMORY note, in characters.
 pub const MEMORY_LIMIT: usize = 2200;

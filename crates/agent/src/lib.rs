@@ -11,7 +11,7 @@ mod turn;
 pub use chat::{
     Attachment, ContextStatus, Effort, Entry, EntryId, EntryStatus, Event, FACADE_TOOLS, Failure,
     MEMORY_LIMIT, McpConnection, Model, Mood, Notes, Persona, RECENT_LIMIT, Role, SessionId,
-    ShownEntry, TURN_HEADER, ToolCall, ToolStart, TurnIdentity, USER_LIMIT,
+    ShownEntry, TOOL_USE_META, TURN_HEADER, ToolCall, ToolStart, TurnIdentity, USER_LIMIT,
 };
 pub use conversation::{
     Conversation, ConversationError, DataDir, MemoryError, Message, REVIEW_QUIET, Reply,

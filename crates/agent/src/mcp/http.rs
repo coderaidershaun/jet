@@ -14,7 +14,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::{Mutex as AsyncMutex, mpsc};
+use tokio::sync::{Mutex as AsyncMutex, RwLock, mpsc};
 
 pub(super) const DEADLINE: Duration = Duration::from_secs(15);
 pub(super) const MAX_BYTES: usize = 2 * 1024 * 1024;
@@ -27,6 +27,9 @@ pub(super) type ProgressListeners = Arc<Mutex<HashMap<ProgressToken, mpsc::Sende
 pub(super) struct Notifications {
     tool_list_changes: Arc<AtomicU64>,
     pub(super) listeners: ProgressListeners,
+    /// A call holds this for writing from before it is sent until its listener is in place. A
+    /// progress update waits on it, so none can be handled before the listener exists.
+    pub(super) registering: Arc<RwLock<()>>,
 }
 impl Notifications {
     /// How many times the server has said its tool list changed.
@@ -44,6 +47,7 @@ impl ClientHandler for Notifications {
         notification: ProgressNotificationParam,
         _: NotificationContext<RoleClient>,
     ) {
+        let _registered = self.registering.read().await;
         let token = notification.progress_token.clone();
         let Some(progress) = Progress::from_notification(notification) else {
             return;

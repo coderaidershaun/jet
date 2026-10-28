@@ -4,10 +4,11 @@ mod error;
 mod events;
 mod provider;
 mod review_timer;
+mod turn_tools;
 
 use agent::{
-    Conversation, DataDir, Effort, Event, Message, Model, Persona, ShownEntry, TurnIdentity,
-    mcp::{Progress, ToolTarget},
+    Conversation, DataDir, Effort, Event, Message, Model, Persona, Reply, ShownEntry, TurnIdentity,
+    mcp::Progress,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -21,20 +22,22 @@ use tokio::sync::broadcast;
 use crate::files::{About, FileError, Files};
 use crate::settings;
 pub use error::BridgeError;
-use events::{ActiveTurn, Runtime, TurnContext};
-pub(crate) use events::{Envelope, Snapshot};
+use events::{ActiveTurn, Runtime};
+pub(crate) use events::{Envelope, RunningCall, Snapshot, TurnContext};
 pub(crate) use provider::AgentStatus;
 use review_timer::{ReviewTarget, ReviewTimer};
+pub(crate) use turn_tools::TurnTools;
 
 /// The longest request or client ID the page may send, in bytes.
 pub(crate) const MAX_ID_BYTES: usize = 128;
 /// The most files one message may carry.
 const MAX_ATTACHMENTS: usize = 10;
+/// How many entries of the thread a snapshot shows, the newest ones.
+const SHOWN_HISTORY: usize = 200;
 
 pub(crate) struct ChatState {
     pub conversation: Conversation,
-    // SMELL: chat and facade import each other; the facade reaches back through a weak link that server::open sets.
-    facade: Arc<crate::facade::Facade>,
+    tools: Arc<dyn TurnTools>,
     files: Files,
     pub data_dir: PathBuf,
     runtime: Mutex<Runtime>,
@@ -63,6 +66,29 @@ pub(crate) struct SendRequest {
     pub active_app_id: Option<agent::apps::AppId>,
 }
 
+impl SendRequest {
+    fn check(&self) -> Result<(), BridgeError> {
+        if self.request_id.is_empty()
+            || self.client_id.is_empty()
+            || self.request_id.len() > MAX_ID_BYTES
+            || self.client_id.len() > MAX_ID_BYTES
+            || (self.text.trim().is_empty() && self.attachments.is_empty())
+            || !self.budget_usd.is_finite()
+            || self.budget_usd <= 0.0
+        {
+            return Err(BridgeError::InvalidRequest(
+                "request ID, client ID, message and positive budget are required".into(),
+            ));
+        }
+        if self.attachments.len() > MAX_ATTACHMENTS {
+            return Err(BridgeError::InvalidRequest(format!(
+                "a message can carry at most {MAX_ATTACHMENTS} files"
+            )));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Accepted {
@@ -74,14 +100,14 @@ pub(crate) struct Accepted {
 impl ChatState {
     pub fn open(
         data_dir: PathBuf,
-        facade: Arc<crate::facade::Facade>,
+        tools: Arc<dyn TurnTools>,
         files: Files,
     ) -> Result<Arc<Self>, BridgeError> {
         let conversation = Conversation::new(DataDir::new(data_dir.clone()));
         conversation.recover_interrupted()?;
         Ok(Arc::new(Self {
             conversation,
-            facade,
+            tools,
             files,
             data_dir,
             runtime: Mutex::new(Runtime::new()),
@@ -95,23 +121,7 @@ impl ChatState {
     }
 
     pub fn send(self: &Arc<Self>, request: SendRequest) -> Result<Accepted, BridgeError> {
-        if request.request_id.is_empty()
-            || request.client_id.is_empty()
-            || request.request_id.len() > MAX_ID_BYTES
-            || request.client_id.len() > MAX_ID_BYTES
-            || (request.text.trim().is_empty() && request.attachments.is_empty())
-            || !request.budget_usd.is_finite()
-            || request.budget_usd <= 0.0
-        {
-            return Err(BridgeError::InvalidRequest(
-                "request ID, client ID, message and positive budget are required".into(),
-            ));
-        }
-        if request.attachments.len() > MAX_ATTACHMENTS {
-            return Err(BridgeError::InvalidRequest(format!(
-                "a message can carry at most {MAX_ATTACHMENTS} files"
-            )));
-        }
+        request.check()?;
         let payload = json!(&request);
         // Finding the program can take seconds, so it runs before the lock. Its error waits
         // until the other checks have passed.
@@ -119,37 +129,75 @@ impl ChatState {
             .map_err(BridgeError::from)
             .and_then(|saved| provider::transport_for(request.model, &saved, &self.data_dir));
         let mut runtime = lock(&self.runtime);
-        if let Some(user) = self.conversation.accepted_request(&request.request_id)? {
-            let identity = user
-                .entry
-                .turn
-                .as_ref()
-                .expect("accepted requests carry identity");
-            if identity.request != payload {
-                return Err(BridgeError::Conflict);
-            }
-            return Ok(Accepted {
-                turn_id: identity.turn_id.clone(),
-                request_id: identity.request_id.clone(),
-                user,
-            });
+        if let Some(accepted) = self.accepted_before(&request.request_id, &payload)? {
+            return Ok(accepted);
         }
-        if runtime.closing {
-            return Err(BridgeError::ShuttingDown);
-        }
-        if runtime.cancelled_requests.contains(&request.request_id) {
-            return Err(BridgeError::Cancelled);
-        }
-        if runtime.active.is_some() {
-            return Err(BridgeError::Busy);
-        }
-        let mut history = self.conversation.history(199)?;
+        runtime.check_can_start(&request.request_id)?;
+        // One fewer than a snapshot shows, because the new user entry is added to these.
+        let history = self.conversation.history(SHOWN_HISTORY - 1)?;
         let transport = transport?;
         let attachments = self.attach(&request.attachments)?;
         let target = ReviewTarget {
             transport: transport.clone(),
             name: request.persona.name.clone(),
         };
+        let (identity, message) = self.bind_new_turn(request, payload, attachments);
+        let (user, reply) = self
+            .conversation
+            .send(transport, message, Some(identity.clone()))
+            .inspect_err(|_| {
+                self.tools.revoke(&identity.request_id);
+            })?;
+        let identity = TurnContext::from(&identity);
+        self.review.note_activity();
+        runtime.start(
+            ActiveTurn::new(identity.clone(), user.clone()),
+            reply.stopper(),
+            history,
+        );
+        let accepted = Accepted {
+            turn_id: identity.turn_id.clone(),
+            request_id: identity.request_id.clone(),
+            user,
+        };
+        let host = self.clone();
+        std::thread::spawn(move || host.follow_reply(reply, &identity, target));
+        Ok(accepted)
+    }
+
+    /// The answer to a request that was accepted before, if it was. The same request ID with a
+    /// different request is a conflict.
+    fn accepted_before(
+        &self,
+        request_id: &str,
+        payload: &Value,
+    ) -> Result<Option<Accepted>, BridgeError> {
+        let Some(user) = self.conversation.accepted_request(request_id)? else {
+            return Ok(None);
+        };
+        let identity = user
+            .entry
+            .turn
+            .as_ref()
+            .expect("accepted requests carry identity");
+        if identity.request != *payload {
+            return Err(BridgeError::Conflict);
+        }
+        Ok(Some(Accepted {
+            turn_id: identity.turn_id.clone(),
+            request_id: identity.request_id.clone(),
+            user,
+        }))
+    }
+
+    /// Makes the identity of a new turn and its message for the provider. The turn is bound to the
+    /// tool server here, so the message carries the connection the provider calls.
+    fn bind_new_turn(
+        &self,
+        request: SendRequest,
+        payload: Value,
+        attachments: Vec<agent::Attachment>,
+    ) -> (TurnIdentity, Message) {
         let identity = TurnIdentity {
             request_id: request.request_id,
             client_id: request.client_id,
@@ -164,68 +212,43 @@ impl ChatState {
             effort: request.effort,
             budget_usd: request.budget_usd,
             local_time: request.local_time,
-            mcp: Some(self.facade.bind(&identity)),
+            mcp: Some(self.tools.bind(&identity)),
             active_app_id: request.active_app_id,
             feeling: request.feeling,
         };
-        let (user, mut reply) = self
-            .conversation
-            .send(transport, message, Some(identity.clone()))
-            .inspect_err(|_| {
-                self.facade.revoke(&identity.request_id);
-            })?;
-        let identity = TurnContext::from(&identity);
-        self.review.note_activity();
-        runtime.active = Some(ActiveTurn {
-            identity: identity.clone(),
-            user: user.clone(),
-            text: String::new(),
-            mood: None,
-            tools: Vec::new(),
-        });
-        runtime.stopper = Some(reply.stopper());
-        history.push(user.clone());
-        let snapshot = Snapshot {
-            epoch: runtime.epoch.clone(),
-            cursor: runtime.cursor + 1,
-            history,
-            active: runtime.active.clone(),
-        };
-        runtime.publish(
-            Some(identity.clone()),
-            json!({"kind":"accepted", "snapshot":snapshot}),
-        );
-        let host = self.clone();
-        let accepted = Accepted {
-            turn_id: identity.turn_id.clone(),
-            request_id: identity.request_id.clone(),
-            user,
-        };
-        std::thread::spawn(move || {
-            for event in reply.by_ref() {
-                let terminal = matches!(
-                    event,
-                    Event::Finished { .. } | Event::Failed { .. } | Event::Stopped { .. }
-                );
-                let mut runtime = lock(&host.runtime);
-                if let Some(active) = &mut runtime.active {
-                    active.apply(&event);
-                }
-                runtime.publish(Some(identity.clone()), json!(event));
-                if terminal {
-                    host.facade.revoke(&identity.request_id);
-                    runtime.active = None;
-                    runtime.stopper = None;
-                }
+        (identity, message)
+    }
+
+    /// Publishes each event of the reply until it ends, then lets go of the turn and schedules the
+    /// review of the thread.
+    fn follow_reply(
+        self: Arc<Self>,
+        mut reply: Reply,
+        identity: &TurnContext,
+        target: ReviewTarget,
+    ) {
+        for event in reply.by_ref() {
+            let terminal = matches!(
+                event,
+                Event::Finished { .. } | Event::Failed { .. } | Event::Stopped { .. }
+            );
+            let mut runtime = lock(&self.runtime);
+            if let Some(active) = &mut runtime.active {
+                active.apply(&event);
             }
-            host.facade.revoke(&identity.request_id);
-            drop(reply);
-            let runtime = lock(&host.runtime);
-            if !runtime.closing {
-                host.review.schedule(host.clone(), target);
+            runtime.publish(Some(identity.clone()), json!(event));
+            if terminal {
+                self.tools.revoke(&identity.request_id);
+                runtime.active = None;
+                runtime.stopper = None;
             }
-        });
-        Ok(accepted)
+        }
+        self.tools.revoke(&identity.request_id);
+        drop(reply);
+        let runtime = lock(&self.runtime);
+        if !runtime.closing {
+            self.review.schedule(self.clone(), target);
+        }
     }
 
     /// Makes the uploads visible to Jet and gives their details for the message. A bad id leaves
@@ -252,7 +275,7 @@ impl ChatState {
     }
 
     fn snapshot_locked(&self, runtime: &Runtime) -> Result<Snapshot, BridgeError> {
-        let mut history = self.conversation.history(200)?;
+        let mut history = self.conversation.history(SHOWN_HISTORY)?;
         if let Some(active) = &runtime.active {
             history.retain(|entry| {
                 !(entry.entry.role == agent::Role::Jet
@@ -299,7 +322,7 @@ impl ChatState {
         }
         let mut runtime = lock(&self.runtime);
         runtime.cancel_request(request_id);
-        self.facade.revoke(request_id);
+        self.tools.revoke(request_id);
         if runtime
             .active
             .as_ref()
@@ -333,41 +356,35 @@ impl ChatState {
     }
     pub fn open_app(
         &self,
-        binding: &crate::facade::Binding,
+        turn: &TurnContext,
         app_id: &agent::apps::AppId,
     ) -> Result<(), BridgeError> {
         let mut runtime = lock(&self.runtime);
         if runtime.closing
-            || runtime.cancelled_requests.contains(&binding.request_id)
-            || !runtime.active.as_ref().is_some_and(|turn| {
-                turn.identity.turn_id == binding.turn_id
-                    && turn.identity.client_id == binding.client_id
+            || runtime.cancelled_requests.contains(&turn.request_id)
+            || !runtime.active.as_ref().is_some_and(|active| {
+                active.identity.turn_id == turn.turn_id
+                    && active.identity.client_id == turn.client_id
             })
         {
             return Err(BridgeError::Cancelled);
         }
-        runtime.publish(None, json!({"kind":"appOpened","appId":app_id,"turnId":binding.turn_id,"requestId":binding.request_id,"clientId":binding.client_id}));
+        runtime.publish(None, json!({"kind":"appOpened","appId":app_id,"turnId":turn.turn_id,"requestId":turn.request_id,"clientId":turn.client_id}));
         Ok(())
     }
 
-    /// Shows how far a running tool call has got, on the card of that call. The facade only knows
-    /// the request it forwarded, so the card is the first still-running one of this turn that names
-    /// the same app, tool and arguments as the model sent. Anything that matches nothing is dropped.
-    pub fn tool_progress(
-        &self,
-        binding: &crate::facade::Binding,
-        target: &ToolTarget,
-        arguments: &Value,
-        progress: Progress,
-    ) {
+    /// Shows how far a running tool call has got, on its card. A call that names no card gets the
+    /// first still-running card of this turn with the same app, tool and arguments. Progress that
+    /// finds no card is dropped.
+    pub fn tool_progress(&self, turn: &TurnContext, call: &RunningCall, progress: Progress) {
         let mut runtime = lock(&self.runtime);
         let Some(active) = &mut runtime.active else {
             return;
         };
-        if active.identity.turn_id != binding.turn_id {
+        if active.identity.turn_id != turn.turn_id {
             return;
         }
-        let Some(id) = active.running_call_id(target, arguments) else {
+        let Some(id) = active.card_of(call) else {
             return;
         };
         let identity = active.identity.clone();
@@ -386,7 +403,7 @@ impl ChatState {
     }
 
     pub fn shutdown(&self) {
-        self.facade.shutdown();
+        self.tools.shutdown();
         {
             let mut runtime = lock(&self.runtime);
             runtime.closing = true;
