@@ -11,3 +11,7 @@ export const joined = (...parts) => parts.filter(Boolean).join(' · ');
 export const count = (n, noun) => n + ' ' + noun + (n === 1 ? '' : 's');
 /** A finite number, else null. */
 export const numberOrNull = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+/** '3' for a number, else nothing. */
+export const numeral = (value) => (numberOrNull(value) === null ? '' : String(value));
+/** '3 pages' for a number, else nothing. */
+export const counted = (value, noun) => (numberOrNull(value) === null ? '' : count(value, noun));

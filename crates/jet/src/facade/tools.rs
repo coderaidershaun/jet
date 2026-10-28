@@ -19,7 +19,7 @@ static TOOLS: LazyLock<Vec<Tool>> = LazyLock::new(|| {
         ("apps_list", "List all registered apps and stable IDs.", object(json!({}),json!([]))),
         ("apps_update", "Apply an explicit typed registry action and return its persisted outcome.", object(json!({"command":command_schema()}),json!(["command"]))),
         ("apps_open", "Open an app in the browser that initiated this turn.", object(json!({"appId":{"type":"string","format":"uuid"}}),json!(["appId"]))),
-        ("tools_search", "Search concise tool summaries across all enabled apps. Use tools_describe for schemas.", object(json!({"query":{"type":"string"}}),json!([]))),
+        ("tools_search", "Search concise tool summaries across all enabled apps. A query word may be a tool's group. Use tools_describe for schemas.", object(json!({"query":{"type":"string"}}),json!([]))),
         ("tools_describe", "Read a real tool schema and its server instructions.", object(target,json!(["appId","tool"]))),
         ("tools_call", TOOLS_CALL_DESCRIPTION, object(json!({"appId":{"type":"string","format":"uuid"},"tool":{"type":"string"},"arguments":{"type":"object"}}),json!(["appId","tool","arguments"]))),
         ("files_export", FILES_EXPORT_DESCRIPTION, object(json!({

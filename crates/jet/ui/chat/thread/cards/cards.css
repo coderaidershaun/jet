@@ -107,6 +107,19 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .documents { display: block; max-width: 100%; overflow-x: auto; overflow-wrap: normal; border-collapse: collapse; font-size: 12px; line-height: 16px; }
 .documents th, .documents td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 
+/* The research cards: lists of rows, an outline whose depth is an attribute (the page forbids style attributes), and results inside a result. */
+.block-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 10px 6px 2px; font-size: 13px; line-height: 18px; }
+.block-heading .row-meta { font-weight: 400; }
+.rows { margin: 0; padding: 0 6px; list-style: none; }
+.rows li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; padding: 3px 0; }
+.row-text { min-width: 0; }
+.row-meta { color: var(--muted); font-size: 12px; line-height: 16px; }
+.row-detail { flex-basis: 100%; color: var(--muted); font-size: 12px; line-height: 16px; }
+.outline li[data-depth="1"] { padding-left: 16px; }
+.outline li[data-depth="2"] { padding-left: 32px; }
+.outline li[data-depth="3"] { padding-left: 48px; }
+.part { margin-top: 8px; padding-top: 2px; border-top: 1px solid var(--line); }
+
 .health { margin: 0; padding: 4px 6px; list-style: none; }
 .health li { position: relative; padding: 3px 0 3px 18px; }
 .health li::before { content: ""; position: absolute; left: 4px; top: 10px; width: 7px; height: 7px; background: var(--ok); border-radius: 50%; }

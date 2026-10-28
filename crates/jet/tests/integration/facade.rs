@@ -25,7 +25,11 @@ fn both_providers_use_global_facade_without_resetting_conversation() {
             {"tool":"tools_call","arguments":{"appId":id,"tool":"echo","arguments":{"words":"real"}}},
             {"tool":"apps_update","arguments":{"command":{"action":"add","address":second.url}}},
             {"tool":"tools_search","arguments":{"query":"echo"}},
-            {"tool":"apps_open","arguments":{"appId":id}}
+            {"tool":"apps_open","arguments":{"appId":id}},
+            {"tool":"tools_search","arguments":{"query":"jobs"}},
+            {"tool":"tools_search","arguments":{"query":"JOBS write"}},
+            {"tool":"tools_describe","arguments":{"appId":id,"tool":"job_write"}},
+            {"tool":"tools_describe","arguments":{"appId":id,"tool":"job_status"}}
         ]);
         send(&host, "first", model, script, Value::Null);
         let snapshot = host.until(|value| {
@@ -63,6 +67,35 @@ fn both_providers_use_global_facade_without_resetting_conversation() {
                 .len(),
             2
         );
+        assert!(
+            results[1]["structuredContent"]["tools"][0]
+                .get("group")
+                .is_none(),
+            "a tool with no group mark has no group"
+        );
+        let by_group = results[7]["structuredContent"]["tools"].as_array().unwrap();
+        assert_eq!(by_group.len(), 4, "two jobs tools in each of two apps");
+        assert!(by_group.iter().all(|tool| tool["group"] == "jobs"));
+        assert!(
+            by_group
+                .iter()
+                .all(|tool| tool["tool"].as_str().unwrap().starts_with("job_"))
+        );
+        let by_words = results[8]["structuredContent"]["tools"].as_array().unwrap();
+        assert_eq!(
+            by_words.len(),
+            2,
+            "every word must match, so only job_write"
+        );
+        assert!(by_words.iter().all(|tool| tool["tool"] == "job_write"));
+        let paid = &results[9]["structuredContent"];
+        assert_eq!(paid["group"], "jobs");
+        assert_eq!(paid["cost"], "paid (ingest)");
+        let free = &results[10]["structuredContent"];
+        assert_eq!(free["group"], "jobs");
+        assert_eq!(free["cost"], "free");
+        assert!(results[2]["structuredContent"].get("group").is_none());
+        assert!(results[2]["structuredContent"].get("cost").is_none());
         assert_eq!(host.get("/api/apps").as_array().unwrap().len(), 2);
         assert_eq!(fixture.app.calls.load(Ordering::SeqCst), 1);
         let calls = snapshot["history"][1]["tools"].as_array().unwrap();

@@ -52,6 +52,10 @@ impl ServerHandler for App {
             tools.push(tool("branch", json!({"jet/discovery":{"version":1}})));
         }
         let job = json!({"jet/job":{"version":1,"statusTool":"job_status","idField":"job_id"}});
+        // The group word is in no name or description, so only the mark can match it.
+        let free_job =
+            json!({"jet/job":job["jet/job"],"quanty/group":"jobs","quanty/cost":{"paid":false}});
+        let paid_job = json!({"jet/job":job["jet/job"],"quanty/group":"jobs","quanty/cost":{"paid":true,"who":"ingest"}});
         let other = |name,
                      annotations: serde_json::Value,
                      schema: serde_json::Value,
@@ -61,8 +65,8 @@ impl ServerHandler for App {
         let no_arguments = json!({"type":"object","additionalProperties":false});
         tools.extend([
             other("progress", json!({}), no_arguments.clone(), json!({})),
-            other("job_status", json!({"readOnlyHint":true}), no_arguments.clone(), job.clone()),
-            other("job_write", json!({"readOnlyHint":false}), no_arguments, job),
+            other("job_status", json!({"readOnlyHint":true}), no_arguments.clone(), free_job),
+            other("job_write", json!({"readOnlyHint":false}), no_arguments, paid_job),
             other(
                 "fetch",
                 json!({}),

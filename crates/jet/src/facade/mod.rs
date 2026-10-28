@@ -1,6 +1,7 @@
 //! Bind the stable provider tool surface to one initiating browser turn.
 mod handler;
 mod handoff;
+mod marks;
 mod tools;
 
 use crate::chat::{ChatState, lock};

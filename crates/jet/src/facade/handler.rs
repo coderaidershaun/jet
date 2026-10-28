@@ -1,5 +1,5 @@
 //! Route provider requests through the host registry and shared HTTP client.
-use super::{Binding, Facade, HEADER, handoff, tools};
+use super::{Binding, Facade, HEADER, handoff, marks, tools};
 use crate::chat::lock;
 use crate::files::{ExportRequest, Range, Reading};
 use agent::{
@@ -233,10 +233,7 @@ impl Handler {
                     .filter(|app| app.enabled && app.mcp_url.is_some())
                     .map(|app| app.id.clone())
                     .collect();
-                let query = arguments["query"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_lowercase();
+                let query = marks::Query::new(arguments["query"].as_str().unwrap_or_default());
                 let mut found = Vec::new();
                 let mut errors = Vec::new();
                 let mut truncated = ids.len() > SEARCHED_APP_LIMIT;
@@ -262,15 +259,12 @@ impl Handler {
                                     truncated = true;
                                     break;
                                 }
-                                if format!(
-                                    "{} {}",
-                                    tool.name,
-                                    tool.description.as_deref().unwrap_or_default()
-                                )
-                                .to_lowercase()
-                                .contains(&query)
-                                {
-                                    found.push(json!({"appId":id,"tool":tool.name,"description":tool.description}));
+                                if query.matches(&tool) {
+                                    let mut row = json!({"appId":id,"tool":tool.name,"description":tool.description});
+                                    if let Some(group) = marks::group(&tool) {
+                                        row["group"] = json!(group);
+                                    }
+                                    found.push(row);
                                 }
                             }
                         }
@@ -293,9 +287,14 @@ impl Handler {
                     .into_iter()
                     .find(|tool| tool.name == target.tool)
                     .ok_or_else(|| message("tool is not listed"))?;
-                Ok(
-                    json!({"appId":target.app_id,"tool":tool,"server":catalogue.server,"isStale":catalogue.is_stale,"lastError":catalogue.last_error}),
-                )
+                let mut described = json!({"appId":target.app_id,"tool":tool,"server":catalogue.server,"isStale":catalogue.is_stale,"lastError":catalogue.last_error});
+                if let Some(group) = marks::group(&tool) {
+                    described["group"] = json!(group);
+                }
+                if let Some(cost) = marks::cost(&tool) {
+                    described["cost"] = json!(cost);
+                }
+                Ok(described)
             }
             "tools_call" => self.tools_call(arguments, token, binding, context).await,
             "files_export" => {

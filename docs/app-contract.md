@@ -277,6 +277,26 @@ A job result is an object with `job_id` and `state` (`running`, `done`, `failed`
 `file`, `document_id`, `items`, `cost_usd`, `summary` and `error` fill the card's fields.
 A `stage` that is only text is still read.
 
+## Groups and cost: `quanty/group` and `quanty/cost`
+
+A tool may carry two marks in its `_meta`. `quanty/group` is a string that names the
+tool's group, such as `"library"`. `quanty/cost` is `{"paid": false}` for a tool that costs
+nothing, or `{"paid": true, "who": "ask"}` for one that spends money, where `who` is a
+string that says who is paid.
+
+`tools_search` splits the query into words, lowercases them, and returns a tool when each
+word is part of its name, its description or its group, so a group word alone finds the
+tools of that group. Each result row carries `group` when the tool has one.
+`tools_describe` shows `group` beside the tool, and `cost` as `"free"`, `"paid"` or
+`"paid (<who>)"`. A mark that is missing, or that has any other form, is ignored.
+
+The chat draws the results of quanty's research tools (`document_overview`,
+`document_outline`, `read_section`, `read_pages`, `read_item`, `read_many`, `list_media`,
+`check_pdf`, `concept`, `concept_neighbours`, `concept_path`, `concept_items`,
+`compare_documents`, `find_concepts` and `similar_items`) as readable cards. It finds the
+tool by name, so the cards also show for a call made through the facade. A result of a
+shape the card does not know stays generic.
+
 ## Handing a file to a tool: `$file`
 
 A model gives a tool a file of the conversation by writing an object with the single key

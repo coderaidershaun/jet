@@ -5,6 +5,7 @@
 
 import { h, icon } from '../../../dom.js';
 import { fileSheet } from '../../files.js';
+import { blocksBody, fieldNodes } from './blocks.js';
 import { findSource, splitCitations } from './cite.js';
 import { RUNNING } from './job.js';
 import { callState, cardOf } from './model.js';
@@ -187,15 +188,14 @@ function bodyOf(card, parts) {
           ...body.unreadable.map((line) => h('p', { class: 'card-note', text: line })),
         ],
       };
+    case 'blocks':
+      return blocksBody(body, parts);
     case 'health':
       return { nodes: [h('ul', { class: 'health' }, ...body.lines.map((line) => h('li', { 'data-tone': line.ok ? 'ok' : 'invalid', text: line.text })))] };
     default:
       return { nodes: [h('dl', { class: 'fields' }, ...fieldNodes(body.fields))] };
   }
 }
-
-/** The term and the text of each field of a result with no card of its own. */
-const fieldNodes = (fields) => fields.flatMap((field) => [h('dt', { text: field.term }), h('dd', {}, field.pre ? h('pre', { text: field.text }) : field.text)]);
 
 /** The card of a written file: what it is, and two links built from its id alone. */
 function fileCard(card) {

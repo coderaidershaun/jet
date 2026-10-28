@@ -4,8 +4,11 @@
 // missing one shows as empty. Pure, with no DOM.
 
 import { KINDS, fileLinks, sizeOf } from '../../files.js';
+import { CONCEPT_READERS } from './concepts.js';
 import { count, isRecord, joined, listOf, numberOrNull, orNull, recordOf, stringOf, stringsOf } from './guard.js';
 import { isJob, jobOf, readIngest } from './job.js';
+import { LIBRARY_READERS } from './library.js';
+import { pageLabel, pageTitle, piecesOf, showOf } from './pieces.js';
 
 /**
  * One tool call as the thread keeps it. No `ok` yet: still running. `unfinished`: the reply ended first.
@@ -35,6 +38,7 @@ import { isJob, jobOf, readIngest } from './job.js';
  *   | { kind: 'documents', documents: { title: string, authors: string, pages: string }[], unreadable: string[] }
  *   | { kind: 'health', lines: { text: string, ok: boolean }[] }
  *   | { kind: 'fields', fields: Field[] }
+ *   | { kind: 'blocks', blocks: import('./block.js').Block[] }
  *   | { kind: 'file', name: string, title: string, tag: string, meta: string, download: string, view: string }} Body
  */
 /**
@@ -80,44 +84,9 @@ export function callState(call) {
   return call.ok ? 'done' : 'failed';
 }
 
-/** 'p.145' when the book prints the page, else 'page 15': the place in the chapter, which is not a printed number. */
-function pageLabel(item) {
-  const { printed_page: printed, page } = recordOf(item);
-  if (typeof printed === 'string' && printed !== '') return 'p.' + printed;
-  return 'page ' + (page ?? '?');
-}
-
 /** 'Option Volatility & Pricing, chapter 9: Risk Measurement II · p.145' */
 export function sourceTitle(item) {
   return joined(stringOf(recordOf(item).document), pageLabel(item));
-}
-
-/**
- * How a hit or a page piece is drawn, by its kind. `item` supplies the label, picture and language.
- * @returns {Show}
- */
-function showOf(kind, text, item = {}) {
-  const { label, picture, language } = recordOf(item);
-  const words = stringOf(text);
-  switch (kind) {
-    case 'chunk':
-    case 'text':
-      return { as: 'markdown', text: words };
-    case 'footnote':
-      return { as: 'markdown', text: words, footnote: true };
-    case 'heading':
-      return { as: 'heading', text: words };
-    case 'formula':
-      return { as: 'formula', tex: words.trim(), label: orNull(label) };
-    case 'table':
-      return { as: 'table', text: words, label: orNull(label) };
-    case 'figure':
-      return { as: 'figure', picture: orNull(picture), text: words, label: orNull(label) };
-    case 'code':
-      return { as: 'code', text: words, language: orNull(language), label: orNull(label) };
-    default:
-      return { as: 'plain', text: words };
-  }
 }
 
 function reasonTag(reason) {
@@ -149,27 +118,6 @@ function rowOf(raw, index) {
     title: sourceTitle(item),
     show: showOf(item.kind, item.text, item),
   };
-}
-
-/** @returns {Piece[]} */
-function piecesOf(pieces) {
-  let previous = '';
-  return listOf(pieces).map((raw, index) => {
-    const piece = recordOf(raw);
-    const section = listOf(piece.section).join(' › ');
-    const crumb = section !== '' && section !== previous ? section : null;
-    previous = section;
-    return { n: typeof piece.number === 'number' ? piece.number : index + 1, kind: stringOf(piece.kind), crumb, show: showOf(piece.kind, piece.content, piece) };
-  });
-}
-
-function pageTitle(page) {
-  const title = orNull(page.document_title);
-  if (title) return title;
-  const chapter = typeof page.chapter_number === 'number'
-    ? 'chapter ' + page.chapter_number + (page.chapter_name ? ': ' + stringOf(page.chapter_name) : '')
-    : '';
-  return [stringOf(page.media), chapter].filter(Boolean).join(', ');
 }
 
 /** The title of a document that a call above already named, else null. */
@@ -358,7 +306,8 @@ function readerFor(call) {
   if (key === READ_TOOL) return readAttached;
   if (key === LIST_TOOL) return readFileList;
   if (!isRecord(call.result)) return readGeneric;
-  const named = READERS[call.server + '/' + call.tool] ?? TOOL_READERS[call.tool];
+  // A tool may be named like a built-in of every object, such as `valueOf`, so only the map's own keys count.
+  const named = READERS[call.server + '/' + call.tool] ?? (Object.hasOwn(TOOL_READERS, call.tool) ? TOOL_READERS[call.tool] : null);
   if (named) return named;
   if (isJob(call.result)) return readJob;
   if (citationSources(call).length) return call.tool === 'search' ? readSearch : readAnswer;
@@ -380,6 +329,8 @@ const TOOL_READERS = {
   ingest_status: readJob,
   job_status: readJob,
   watch_job: readJob,
+  ...LIBRARY_READERS,
+  ...CONCEPT_READERS,
 };
 
 /** The bar of a running call from its latest report, which is data, so a number that is not one reads as unknown. */
@@ -424,7 +375,9 @@ export function cardOf(call, earlier = []) {
 
   const input = recordOf(call.input);
   const read = readerFor(call);
-  const { outcome, tone, body, problem } = read(recordOf(call.result), input, call);
+  // A reader answers null for a result of a shape it does not know, and the plain fields show it.
+  const result = recordOf(call.result);
+  const { outcome, tone, body, problem } = read(result, input, call) ?? readGeneric(result, input, call);
   if (problem) return { ...ended(joined('failed', time)), state: 'failed', tone: 'invalid', advice: problem };
   return { ...ended(joined(outcome, time)), tone, body, job: read === readJob ? jobOf(call.result) : null };
 }
