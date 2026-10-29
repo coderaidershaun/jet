@@ -17,11 +17,11 @@ export async function requestJson(path, body, method = body === undefined ? 'GET
   return value;
 }
 
-/** Posts JSON and reads the answer as raw audio. A refusal is thrown as `{ kind, message }`, like any other call. */
-async function requestAudio(path, body, fetcher, signal) {
+/** Posts a body to a voice route and reads the answer. A refusal is thrown as `{ kind, message }`, like any other call. */
+async function postVoice(path, { contentType, body, read }, fetcher, signal) {
   let response;
   try {
-    response = await fetcher(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
+    response = await fetcher(path, { method: 'POST', headers: { 'Content-Type': contentType }, body, signal });
   } catch (error) {
     throw { kind: 'network', message: error.message ?? String(error) };
   }
@@ -29,8 +29,17 @@ async function requestAudio(path, body, fetcher, signal) {
     const refusal = await response.json().catch(() => ({}));
     throw { kind: refusal.kind ?? 'http', message: refusal.message ?? 'The voice request failed.' };
   }
-  try { return await response.arrayBuffer(); }
+  try { return await read(response); }
   catch (error) { throw { kind: 'network', message: error.message ?? String(error) }; }
+}
+
+const requestAudio = (path, body, fetcher, signal) => postVoice(path, { contentType: 'application/json', body: JSON.stringify(body), read: (response) => response.arrayBuffer() }, fetcher, signal);
+
+/** The words in a clip of 16 kHz 16-bit mono sound. Only the bytes the view covers are sent, not the whole buffer behind it. */
+function requestWords(pcm, vocabulary, fetcher, signal) {
+  const query = vocabulary.map((term) => 'vocabulary=' + encodeURIComponent(term)).join('&');
+  const body = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength);
+  return postVoice('/api/voice/hear' + (query ? '?' + query : ''), { contentType: 'audio/L16;rate=16000;channels=1', body, read: (response) => response.json() }, fetcher, signal);
 }
 
 export function randomId() {
@@ -144,6 +153,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     saveMemory: (notes) => call('/api/memory', notes, 'PUT'),
     renderMarkdown: (text) => call('/api/markdown', { text }),
     voiceStatus: () => call('/api/voice'),
+    hear: (pcm, vocabulary, signal) => requestWords(pcm, vocabulary, fetcher, signal),
     speech: (text, signal, mood) => requestAudio('/api/voice/speech', mood ? { text, mood } : { text }, fetcher, signal),
     readAppImage: (appId, path) => readAppImage(call, appId, path),
     uploadFile,

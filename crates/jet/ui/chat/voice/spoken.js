@@ -5,7 +5,8 @@
 // and can drift inside a long clip. That is why a clip holds at most two sentences and words show
 // early, never late. A clip that fails or comes late shows its words, so voice never costs text.
 
-import { createReveal, realClock } from '../thread/throttle.js';
+import { realClock } from '../clock.js';
+import { createReveal } from '../thread/throttle.js';
 import { nextBatch, segment, speechText } from './segment.js';
 
 const LEAD_MS = 200;

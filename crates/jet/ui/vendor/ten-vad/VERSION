@@ -1,0 +1,25 @@
+ten-vad (TEN VAD, voice activity detection compiled to WebAssembly)
+Source: https://github.com/TEN-framework/ten-vad
+Pinned commit: d68ab71c8d5fbd8f98e97ae7c9986af76b5d72b1 (newest on main when fetched, 2026-10-29; committed 2026-10-09, "Update version")
+License: Apache License 2.0 with additional conditions, see LICENSE. Parts derive from BSD-2-Clause and BSD-3-Clause code, see NOTICES.
+Copied unchanged from that commit, fetched from raw.githubusercontent.com/TEN-framework/ten-vad/<commit>/<path>:
+  ten_vad.js      lib/Web/ten_vad.js
+  ten_vad.wasm    lib/Web/ten_vad.wasm
+  ten_vad.d.ts    lib/Web/ten_vad.d.ts
+  LICENSE         LICENSE
+  NOTICES         NOTICES
+
+Check the files from this folder with: sha256sum -c VERSION   (the other lines of this file are skipped with a warning)
+03d862b922867b8c3406a0c17791e256ed3d76f197d88c1996c4aebfb79f688e  LICENSE
+83a1d666450e06c846be76efcdd311294c28d07417bed0cb119d6400ba3cdc3b  NOTICES
+4f41f449b52f7c4a1066fe2a56c9bc137c8f79ac88678bd779bdb5178298009f  ten_vad.d.ts
+6ad8404430c1fb33b5910032b971e1a4f1d4ca3c9bf76fe456f0b5dcd9e97c7e  ten_vad.js
+1ec0b9640683987e15a4e54e4ce5642b2447c6e5d82b1be889b5099c75434fc3  ten_vad.wasm
+
+What the licence says, in short. The code is Apache 2.0, plus these extra conditions:
+  1. Do not deploy it in a way that competes with Agora's offerings, or that lets others compete with them (for example by letting a third party build or deploy their own applications with it).
+  2. Deploy it only to build and run your own applications, for your own benefit and the benefit of your direct end users. A "Powered by ten-vad" notice is optional.
+  3. Derivative works of the code stay under this same licence.
+  4. The code also holds parts derived from BSD-2-Clause (LPCNet, Mozilla) and BSD-3-Clause code, named in NOTICES.
+Jet is one person's own app with that person as its user, so these conditions are met.
+The glue file does not export getValue, so the page reads results from HEAP32 and HEAPF32 directly. It is not edited.
