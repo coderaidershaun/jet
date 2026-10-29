@@ -28,9 +28,10 @@ const BLOCKED_MESSAGE = 'The browser blocked sound; click the speaker to allow i
  *   player: { ready: () => boolean, now: () => number, outputLatency: () => number, play: (pcm: ArrayBuffer, at: number) => { start: number, end: number }, silence: () => void },
  *   clock?: { now: () => number, after: (fn: () => void, ms: number) => () => void },
  *   onState?: (state: { speaking: boolean, problem?: string | null }) => void,
+ *   cues?: import('./segment.js').Cue[],
  * }} options   `speak` rejects with `{ kind, message }`; `problem` is a message when the voice failed and null once a clip plays again
  */
-export function createSpokenReveal({ render, paint, speak, player, clock = realClock, onState = () => {} }) {
+export function createSpokenReveal({ render, paint, speak, player, clock = realClock, onState = () => {}, cues = [] }) {
   let renderMs = null;
   const reveal = createReveal({
     render: async (text) => {
@@ -115,7 +116,7 @@ export function createSpokenReveal({ render, paint, speak, player, clock = realC
   function segmentNow(now) {
     if (full === segmentedText && finishing === segmentedFinished) return;
     if (!finishing && now - lastSegmentAt < SEGMENT_EVERY_MS) return;
-    parts = segment(full, finishing);
+    parts = segment(full, finishing, cues);
     segmentedText = full;
     segmentedFinished = finishing;
     lastSegmentAt = now;

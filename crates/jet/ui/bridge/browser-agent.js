@@ -144,7 +144,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     saveMemory: (notes) => call('/api/memory', notes, 'PUT'),
     renderMarkdown: (text) => call('/api/markdown', { text }),
     voiceStatus: () => call('/api/voice'),
-    speech: (text, signal) => requestAudio('/api/voice/speech', { text }, fetcher, signal),
+    speech: (text, signal, mood) => requestAudio('/api/voice/speech', mood ? { text, mood } : { text }, fetcher, signal),
     readAppImage: (appId, path) => readAppImage(call, appId, path),
     uploadFile,
     async removeFile(id) {

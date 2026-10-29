@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 pub(crate) use markdown::spoken_words;
-pub use markdown::{dollar_math, render_markdown};
+pub use markdown::{CUES, Cue, dollar_math, render_markdown};
 pub use memory::{DataDir, MemoryError, now_ms};
 use memory::{NewEntry, Session, Transcript};
 pub use reply::Reply;
@@ -42,6 +42,8 @@ pub struct Message {
     pub active_app_id: Option<crate::apps::AppId>,
     /// A supported mood word supplied by the message classifier.
     pub feeling: Option<String>,
+    /// True when the user hears this reply spoken aloud.
+    pub spoken: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -226,6 +228,7 @@ mod test_support {
             mcp: None,
             active_app_id: None,
             feeling: None,
+            spoken: false,
         }
     }
 

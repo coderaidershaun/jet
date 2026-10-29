@@ -1,7 +1,9 @@
-//! Keeps a reply from carrying anything that runs: raw HTML becomes text, links are limited
-//! to web and mail addresses, and images become text.
+//! Keeps a reply from carrying anything that runs: raw HTML becomes text (except a vocal cue,
+//! which is dropped), links are limited to web and mail addresses, and images become text.
 
 use pulldown_cmark::{Event, Tag, TagEnd};
+
+use super::cues::{is_cue, only_cues};
 
 pub(super) fn make_safe<'a>(
     events: impl Iterator<Item = Event<'a>>,
@@ -9,6 +11,9 @@ pub(super) fn make_safe<'a>(
     let mut in_dropped_link = false;
     let mut in_image = false;
     events.filter_map(move |event| match event {
+        Event::InlineHtml(raw) if is_cue(&raw) => None,
+        // A line of only cues that could not join a line of words is read as an HTML block.
+        Event::Html(raw) if only_cues(&raw) => None,
         Event::Html(raw) | Event::InlineHtml(raw) => Some(Event::Text(raw)),
         Event::Start(Tag::Link { dest_url, .. }) if !is_allowed_link(&dest_url) => {
             in_dropped_link = true;

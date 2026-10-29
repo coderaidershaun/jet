@@ -205,10 +205,26 @@ fn restart_recovers_request_identity_without_replaying_provider() {
     let voice = host.get("/api/voice");
     assert_eq!(voice["available"], false);
     assert_eq!(voice["reason"], "Voice is turned off on this server");
+    assert_eq!(voice["hear"]["available"], false);
+    assert_eq!(
+        voice["hear"]["reason"],
+        "Voice is turned off on this server"
+    );
+    let cues = voice["cues"].as_array().unwrap();
+    assert!(
+        cues.iter()
+            .any(|cue| cue["tag"] == "<laugh>" && cue["weight"].as_u64().unwrap() > 0)
+    );
     let speech = host.post(
         "/api/voice/speech",
         serde_json::json!({"text":"Hello there."}),
     );
     assert_eq!(speech.0, 503);
     assert_eq!(speech.1["kind"], "notConfigured");
+    let hear = host.post_bytes(
+        "/api/voice/hear?vocabulary=Jet&vocabulary=Quanty",
+        &[0; 3200],
+    );
+    assert_eq!(hear.0, 503);
+    assert_eq!(hear.1["kind"], "notConfigured");
 }

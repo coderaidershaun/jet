@@ -1,6 +1,7 @@
 //! Turns a reply into HTML the chat page can insert as it is, so nothing a reply contains can run.
 //! Math is left as inert elements that carry its TeX, for the page to typeset.
 
+mod cues;
 mod protect;
 mod restore;
 mod safe;
@@ -11,6 +12,7 @@ use pulldown_cmark::{Options, Parser, TextMergeStream, html};
 
 use protect::Protected;
 
+pub use cues::{CUES, Cue};
 pub(crate) use speech::spoken_words;
 
 /// Renders Markdown (tables, strikethrough and task lists included) to safe HTML. Math comes back
@@ -18,7 +20,7 @@ pub(crate) use speech::spoken_words;
 pub fn render_markdown(text: &str) -> String {
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
-    let protected = Protected::new(text);
+    let protected = Protected::new(&cues::inline_cues(text));
     let parser = TextMergeStream::new(Parser::new_ext(&protected.text, options));
     // `make_safe` turns every HTML event into text, so the table and math markup come after it.
     let events = table::mark_number_columns(safe::make_safe(parser).collect());
@@ -119,6 +121,12 @@ mod tests {
             "{html}"
         );
         assert!(html.contains("[image: cat fluffy]"), "{html}");
+        let cues = render_markdown("Ha <laugh> yes <zap>.\n\n<sigh>\nNext paragraph.");
+        assert!(!cues.contains("laugh") && !cues.contains("sigh"), "{cues}");
+        assert!(cues.contains("Next paragraph."), "{cues}");
+        assert!(cues.contains("&lt;zap&gt;"), "{cues}");
+        let alone = render_markdown("```\nx\n```\n<sigh>");
+        assert!(!alone.contains("sigh"), "{alone}");
         assert!(html.contains("<table>"), "{html}");
         assert!(!has_style_attribute(&html), "{html}");
 

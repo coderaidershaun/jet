@@ -7,7 +7,7 @@ fn gemini_speaks_with_the_configured_voice() {
         return;
     }
     let start = std::time::Instant::now();
-    let pcm = agent::voice::speak("Hello, I am Jet, and this is my voice.")
+    let pcm = agent::voice::speak("Hello, I am Jet, and this is my voice.", None)
         .expect("live Gemini speech failed; check GEMINI_API_KEY and GEMINI_VOICE_ID");
     let elapsed = start.elapsed();
     let seconds = pcm.len() as f64 / 2.0 / f64::from(agent::voice::SAMPLE_RATE);

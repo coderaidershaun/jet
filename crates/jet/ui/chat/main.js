@@ -37,7 +37,7 @@ async function start() {
     agent.status(),
     agent.voiceStatus().catch((error) => {
       console.warn('the voice status could not be read:', error);
-      return { available: false, reason: 'The voice could not be reached' };
+      return { available: false, reason: 'The voice could not be reached', cues: [] };
     }),
   ]);
 
@@ -190,10 +190,13 @@ async function start() {
     live.speaking(state.speaking);
     if ('problem' in state) voiceToggle.setProblem(state.problem);
   };
+  const cues = voiceStatus.cues ?? [];
   const voice = {
+    on: () => voiceToggle.on,
+    cues,
     unlock: () => { if (voiceToggle.on) voicePlayer.unlock(); },
     reveal: ({ render, paint }) => voiceToggle.on
-      ? { reveal: createSpokenReveal({ render, paint, speak: (text, signal) => agent.speech(text, signal), player: voicePlayer, onState: showVoiceState }), spoken: true }
+      ? { reveal: createSpokenReveal({ render, paint, speak: (text, signal) => agent.speech(text, signal, thread.slot?.mood), player: voicePlayer, onState: showVoiceState, cues }), spoken: true }
       : { reveal: createReveal({ render, paint }), spoken: false },
   };
 
