@@ -41,7 +41,7 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
   Object.assign(settings, { model: 'sonnet', claudePath: provider, reducedMotion: true });
   settings.persona.name = 'Acceptance Jet';
   await writeFile(path.join(data, 'settings.json'), JSON.stringify(settings));
-  const jet = listen => processes.launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', listen, '--data-dir', data, '--ui-dir', path.join(root, 'crates/jet/ui'), '--disable-feelings'], /Jet listening on (http:\/\/\S+)/);
+  const jet = listen => processes.launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', listen, '--data-dir', data, '--ui-dir', path.join(root, 'crates/jet/ui'), '--disable-feelings', '--disable-voice'], /Jet listening on (http:\/\/\S+)/);
   const quanty = listen => processes.launch(process.env.QUANTY_BINARY, ['--home', home, '--listen', listen, '--fixture', 'black-scholes', '--trusted-integration'], /listening on (http:\/\/\S+)/, { PATH: process.env.PATH });
   const origin = await jet('127.0.0.1:0'), quantyUrl = await quanty('127.0.0.1:0');
   const generic = await processes.launch('node', [path.join(root, 'crates/jet/tests/fixtures/proxy.mjs')], /"url":"([^"]+)"/, { ...process.env, FIXTURE_NAME: 'Generic notebook' });

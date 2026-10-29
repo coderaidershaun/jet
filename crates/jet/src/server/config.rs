@@ -11,6 +11,7 @@ pub struct ServerConfig {
     pub public_origin: Option<String>,
     pub ui_dir: PathBuf,
     pub disable_feelings: bool,
+    pub disable_voice: bool,
 }
 
 impl ServerConfig {
@@ -24,11 +25,16 @@ impl ServerConfig {
             public_origin: None,
             ui_dir: PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/ui")),
             disable_feelings: false,
+            disable_voice: false,
         };
         let mut args = args.into_iter().map(Into::into);
         while let Some(flag) = args.next() {
             if flag == "--disable-feelings" {
                 config.disable_feelings = true;
+                continue;
+            }
+            if flag == "--disable-voice" {
+                config.disable_voice = true;
                 continue;
             }
             let value = args

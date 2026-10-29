@@ -4,9 +4,11 @@
 pub mod apps;
 mod chat;
 mod conversation;
+mod env_file;
 mod feeling;
 pub mod mcp;
 mod turn;
+pub mod voice;
 
 pub use chat::{
     Attachment, ContextStatus, Effort, Entry, EntryId, EntryStatus, Event, FACADE_TOOLS, Failure,

@@ -48,6 +48,7 @@ pub(super) fn router(host: Server) -> Router {
     ));
     Router::new()
         .merge(super::tools::router())
+        .merge(super::voice::router())
         .route("/api/status", get(status))
         .route("/api/snapshot", get(snapshot))
         .route("/api/events", get(events))

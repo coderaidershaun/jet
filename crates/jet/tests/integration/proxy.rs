@@ -249,6 +249,7 @@ fn registered_proxy_rejects_unsafe_routes_and_origins() {
         .args(["--listen", "0.0.0.0:0", "--data-dir"])
         .arg(host.dir.path().join("wildcard"))
         .arg("--disable-feelings")
+        .arg("--disable-voice")
         .output()
         .unwrap();
     assert!(!output.status.success());

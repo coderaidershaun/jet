@@ -45,7 +45,7 @@ if (input.includes('fail-before-init')) {
   await chmod(provider, 0o755);
   Object.assign(settings, { model: 'sonnet', claudePath: provider, reducedMotion: true });
   await writeFile(path.join(data, 'settings.json'), JSON.stringify(settings));
-  origin = await launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', '127.0.0.1:0', '--data-dir', data, '--ui-dir', path.join(root, 'crates/jet/ui'), '--disable-feelings'], /Jet listening on (http:\/\/\S+)/);
+  origin = await launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', '127.0.0.1:0', '--data-dir', data, '--ui-dir', path.join(root, 'crates/jet/ui'), '--disable-feelings', '--disable-voice'], /Jet listening on (http:\/\/\S+)/);
   const fixture = name => launch('node', [path.join(root, 'crates/jet/tests/fixtures/proxy.mjs')], /"url":"([^"]+)"/, { ...process.env, FIXTURE_NAME: name });
   const first = await fixture('First notebook'), second = await fixture('Second notebook');
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');

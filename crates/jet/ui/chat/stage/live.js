@@ -23,6 +23,7 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
   node.className = 'jet-live';
   node.setAttribute('role', 'img');
   let name = 'Jet';
+  let speaking = false;
   node.setAttribute('aria-label', name + ', idle');
   node.append(svg);
 
@@ -75,7 +76,7 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
       if (now >= flight.endsAt) endFlight();
     }
     const { busy } = director.tick(now);
-    const label = name + ', ' + director.status;
+    const label = name + ', ' + (speaking ? 'speaking' : director.status);
     if (label !== lastLabel) {
       lastLabel = label;
       node.setAttribute('aria-label', label);
@@ -184,6 +185,12 @@ export function createLive({ reducedMotion = false, heroSlot, scrollToBottom }) 
       flight = createFlight({ from: first, to: last, fromScale, toScale, startAt: now + moveAt, durationMs: moveMs });
       applyFlight(now);
       needsDraw = true;
+    },
+
+    /** While the voice speaks, screen readers hear "speaking" instead of what the animation is doing. */
+    speaking(on) {
+      speaking = on;
+      lastLabel = '';
     },
 
     /** The user typed: a Jet the wind has lands, and the quiet time starts again. */

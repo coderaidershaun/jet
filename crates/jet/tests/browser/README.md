@@ -61,7 +61,7 @@ FIXTURE_PORT=18181 FIXTURE_NAME=First node /workspace/crates/jet/tests/fixtures/
 FIXTURE_PORT=18182 FIXTURE_NAME=Second node /workspace/crates/jet/tests/fixtures/proxy.mjs
 /build/x86_64-unknown-linux-gnu/debug/jet --listen 0.0.0.0:8787 \
   --public-origin http://127.0.0.1:18787 --data-dir /tmp/jet-data \
-  --ui-dir /workspace/crates/jet/ui --disable-feelings
+  --ui-dir /workspace/crates/jet/ui --disable-feelings --disable-voice
 ```
 
 Run those three processes concurrently; wait for both fixture startup messages

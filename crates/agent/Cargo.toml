@@ -5,6 +5,7 @@ edition.workspace = true
 description = "Runs Jet's chat turns through Claude Code or Codex and keeps the thread, notes, and app connections"
 
 [dependencies]
+base64 = { workspace = true }
 dotenvy = { workspace = true }
 jsonschema = { workspace = true }
 pulldown-cmark = { workspace = true }

@@ -4,7 +4,7 @@ use pulldown_cmark::{CodeBlockKind, CowStr, Event, LinkType, Tag, TagEnd};
 
 use super::protect::{CLOSE, Marker, Math, OPEN, Protected};
 
-enum Piece<'t> {
+pub(super) enum Piece<'t> {
     Plain(&'t str),
     Marker(&'t Marker),
 }
@@ -155,7 +155,7 @@ impl Protected {
 
     /// Splits text at its markers. A stray marker character with no known marker behind it ends
     /// the split, and the rest stays plain.
-    fn pieces<'s>(&'s self, text: &'s str) -> Vec<Piece<'s>> {
+    pub(super) fn pieces<'s>(&'s self, text: &'s str) -> Vec<Piece<'s>> {
         let mut pieces = Vec::new();
         let mut rest = text;
         while let Some((before, after_open)) = rest.split_once(OPEN) {

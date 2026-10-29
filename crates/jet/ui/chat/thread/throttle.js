@@ -6,7 +6,7 @@
 
 const RENDER_EVERY_MS = 50;
 
-const realClock = {
+export const realClock = {
   now: () => performance.now(),
   after(fn, ms) {
     const id = setTimeout(fn, ms);

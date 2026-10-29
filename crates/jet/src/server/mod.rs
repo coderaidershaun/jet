@@ -4,6 +4,7 @@ mod config;
 mod proxy;
 mod routes;
 mod tools;
+mod voice;
 
 use crate::chat::TurnTools;
 use crate::facade::Facade;

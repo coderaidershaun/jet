@@ -33,7 +33,7 @@ fs.writeFileSync(${JSON.stringify(promptFile)},input);
   await chmod(provider, 0o755);
   Object.assign(settings, { model: 'sonnet', claudePath: provider, reducedMotion: true });
   await writeFile(path.join(data, 'settings.json'), JSON.stringify(settings));
-  const base = await processes.launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', '127.0.0.1:0', '--data-dir', data, '--ui-dir', path.join(root, 'crates/jet/ui'), '--disable-feelings'], /Jet listening on (http:\/\/\S+)/);
+  const base = await processes.launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', '127.0.0.1:0', '--data-dir', data, '--ui-dir', path.join(root, 'crates/jet/ui'), '--disable-feelings', '--disable-voice'], /Jet listening on (http:\/\/\S+)/);
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
   browser = await chromium.launch({ executablePath: process.env.CHROME_BINARY, headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });

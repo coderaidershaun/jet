@@ -36,6 +36,9 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Emotion** — a feeling with an authored animation: `hello` or `insulted`; `neutral` has none. `EMOTIONS` maps words to clips.
 - **Mood** — the supported word at the start of the provider's reply: `neutral`, `hello` or `insulted`. Unknown saved words read as neutral.
 - **Feeling** — `{ mood, scores }`, classification of the user's message before model dispatch; the request may carry the supported word as prompt context.
+- **Voice** — Jet speaking its replies aloud with Gemini, when the speaker button in the message box is on. The key, the voice id and the model are read on each call from the environment or the nearest `.env`, never from Settings. Its sound comes back in audio clips that the voice player puts on the page's audio clock; these are not the character's Clip or Player. _Avoid_: audio, TTS.
+- **Speech part** — one piece of a reply that voice treats alone: a sentence, a heading, or a block that is not spoken (code, a table, display math, a rule). It is settled only once its end cannot change, and carries the marks that say when each word is shown.
+- **Spoken reply** — a reply that is held back and shown as the voice reaches each word, so words appear just before they are heard. Jet settles when the voice has finished. Stop, Esc, a new message or switching voice off quiets the voice and shows every word at once.
 - **JEV** — the optional external classifier; credentials are read on each call from the environment or nearest `.env`, never from Settings.
 - **Reveal deadline** — `revealAt`, an absolute monotonic time consumed by `holdUntil(at)`; streamed and successfully completed text both wait until it.
 - **Player** — owns live state, samples clips and adds secondary motion, idle layers, blinks and the deterministic string chain.

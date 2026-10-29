@@ -12,6 +12,7 @@ mod session_policy;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+pub(crate) use markdown::spoken_words;
 pub use markdown::{dollar_math, render_markdown};
 pub use memory::{DataDir, MemoryError, now_ms};
 use memory::{NewEntry, Session, Transcript};

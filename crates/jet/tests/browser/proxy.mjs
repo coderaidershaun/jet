@@ -77,7 +77,7 @@ async function tlsFront() {
   });
   tls.listen(0, '127.0.0.1'); await once(tls, 'listening');
   const origin = `https://127.0.0.1:${tls.address().port}`;
-  const jet = await launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', '127.0.0.1:0', '--data-dir', path.join(scratch, 'jet'), '--disable-feelings', '--public-origin', origin], /Jet listening on (http:\/\/\S+)/);
+  const jet = await launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', '127.0.0.1:0', '--data-dir', path.join(scratch, 'jet'), '--disable-feelings', '--disable-voice', '--public-origin', origin], /Jet listening on (http:\/\/\S+)/);
   upstream = jet.url;
   return origin;
 }

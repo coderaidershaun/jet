@@ -17,9 +17,13 @@ import { createSheet } from './settings/sheet.js';
 import { createLive } from './stage/live.js';
 import { createFollow } from './thread/scroll.js';
 import { createThread } from './thread/store.js';
+import { createReveal } from './thread/throttle.js';
 import { createThreadView } from './thread/view.js';
 import { createJobWatcher } from './thread/cards/job-watch.js';
 import { createTurn } from './turn.js';
+import { createVoicePlayer } from './voice/player.js';
+import { createSpokenReveal } from './voice/spoken.js';
+import { createVoiceToggle } from './voice/toggle.js';
 
 const $ = (id) => document.getElementById(id);
 const warn = (what) => (error) => console.warn(what + ':', error);
@@ -27,7 +31,14 @@ const warn = (what) => (error) => console.warn(what + ':', error);
 async function start() {
   const settings = await loadSettings();
   const agent = connectAgent();
-  const [history, status] = await Promise.all([agent.history(), agent.status()]);
+  const [history, status, voiceStatus] = await Promise.all([
+    agent.history(),
+    agent.status(),
+    agent.voiceStatus().catch((error) => {
+      console.warn('the voice status could not be read:', error);
+      return { available: false, reason: 'The voice could not be reached' };
+    }),
+  ]);
 
   const page = $('page');
   let toolBrowser, commandMenu;
@@ -164,6 +175,27 @@ async function start() {
     }
   }
 
+  const voicePlayer = createVoicePlayer();
+  const voiceToggle = createVoiceToggle({
+    button: $('voice'),
+    status: voiceStatus,
+    check: () => agent.voiceStatus(),
+    replying: () => composer.replying,
+    announce: (message) => { $('announce').textContent = message; },
+    onChange: (on) => { if (on) voicePlayer.unlock(); else turn.silence(); },
+  });
+  const showVoiceState = (state) => {
+    voiceToggle.setSpeaking(state.speaking);
+    live.speaking(state.speaking);
+    if ('problem' in state) voiceToggle.setProblem(state.problem);
+  };
+  const voice = {
+    unlock: () => { if (voiceToggle.on) voicePlayer.unlock(); },
+    reveal: ({ render, paint }) => voiceToggle.on
+      ? { reveal: createSpokenReveal({ render, paint, speak: (text, signal) => agent.speech(text, signal), player: voicePlayer, onState: showVoiceState }), spoken: true }
+      : { reveal: createReveal({ render, paint }), spoken: false },
+  };
+
   const turn = createTurn({
     agent,
     settings,
@@ -176,6 +208,7 @@ async function start() {
     page: { announce: $('announce') },
     afterReply: refreshStatus,
     activeAppId: workspace.activeAppId,
+    voice,
   });
 
   function paintPersona() {

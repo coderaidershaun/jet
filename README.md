@@ -246,3 +246,5 @@ cargo fmt --all -- --check
 These checks use local free fixtures. Browser host integration tests require Python 3 for the controlled CLI stand-in. No desktop SDK or webview is needed.
 
 Optional feelings use `JEV_API_KEY`, with the existing nearest-`.env` lookup. That service is separate from the provider; absence or failure falls back to neutral. Only deliberately run live tests with `REX_PROD_API=true` when intending to contact that service.
+
+Optional voice uses `GEMINI_API_KEY` and `GEMINI_VOICE_ID` (and `GEMINI_TTS_MODEL` to choose another model), read on each call from the environment or the nearest `.env`. Voice is off until the speaker button in the message box is pressed; without the key or the voice, the button says what is missing. Start the host with `--disable-voice` to turn it off for good; every test launch does. `REX_PROD_API=true cargo test -p agent --test voice_live -- --ignored` speaks one sentence through Google and costs a fraction of a cent.

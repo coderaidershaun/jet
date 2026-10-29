@@ -21,6 +21,7 @@ The browser uses JSON commands and one server-sent event stream:
 - `POST /api/chat/stop`: `requestId` of the request to cancel; `POST /api/chat/forget` clears the conversation and deletes the files Jet wrote.
 - `GET/PUT /api/settings`, `GET/PUT /api/memory`.
 - `GET /api/status`, `POST /api/markdown`, `POST /api/feel`.
+- `GET /api/voice`: `{ available, reason }`, whether Jet can speak. `POST /api/voice/speech`: `{ text }`, a piece of Markdown of at most 2,000 characters; answers the words that are spoken as raw `audio/L16;rate=24000;channels=1`, and an empty body when there is nothing to say aloud. A refusal is `{ kind, message }`: 503 `notConfigured`, 413 `tooLong`, 429 `rateLimited`, 502 `rejected` (Google refused the key or the voice) or `http`. The key, the voice (`GEMINI_VOICE_ID`) and the model (`GEMINI_TTS_MODEL`, optional) are read on each call from the environment or the nearest `.env`, are never part of Settings, and never reach the page. `--disable-voice` turns both routes off.
 - `GET/POST /api/apps`: the deterministic registry operations documented in the app contract.
 - `POST /api/files?name=<name>`: saves an uploaded file, sent as the raw request body, and returns its details (`id`, `name`, `kind`, `bytes`, `details`, `origin`, `attached`, `at`). The name's extension and the first bytes of the file must agree on one of PDF, Markdown, HTML, `.xlsx`, CSV, text, PNG, JPEG, GIF or WebP, or the answer is 415. A file over 32 MiB, or one that would take the store past 2 GiB, is 413. A file the reader process cannot describe is refused with 415 and not kept. The file stays hidden from Jet until a message names its id.
 - `DELETE /api/files/{id}`: deletes an upload that was never sent (204). A file that was sent, one Jet wrote, or an id that is not a UUID is 404.
@@ -40,6 +41,8 @@ A reply is drained on the server independently of browser connections. The serve
 ## UI
 
 `ui/bridge/browser-agent.js` is the transport. `ui/chat/main.js` composes the existing thread, composer, character, settings and drawer. `ui/chat/turn.js` also restores server snapshots without resending input or repeating feeling classification.
+
+Voice is off until the speaker button inside the message box is pressed, and the choice is kept in the browser (`jet.voice`), because sound belongs to the device. A reply sent from this page while voice is on is held back and shown word by word as Gemini speaks it (`ui/chat/voice/`); a reply restored from another page or from history is never spoken.
 
 Markdown still passes through the Rust renderer. The character policy and animation modules remain unchanged. Web/mail links open through the browser. Source images resolve against the tool call’s registered stable app ID and use its contained mount. Invalid, removed-app, direct/external and historical filesystem images show an unavailable fallback. See the [image contract](../../docs/app-contract.md#tool-result-images).
 

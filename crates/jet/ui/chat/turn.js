@@ -9,6 +9,8 @@ const SUPPORTED_MOODS = new Set(MOODS);
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped']);
 
+const SILENT = { reveal: (options) => ({ reveal: createReveal(options), spoken: false }), unlock() {} };
+
 /**
  * @param {{
  *   agent: {
@@ -26,10 +28,14 @@ const TERMINAL = new Set(['finished', 'failed', 'stopped']);
  *   live: ReturnType<typeof import('./stage/live.js').createLive>,
  *   page: { announce: HTMLElement },
  *   afterReply: () => void,
- * }} parts
+ *   voice?: {
+ *     reveal: (options: { render: (text: string) => Promise<string>, paint: (html: string) => void }) => { reveal: ReturnType<typeof createReveal> | ReturnType<typeof import('./voice/spoken.js').createSpokenReveal>, spoken: boolean },
+ *     unlock: () => void,
+ *   },
+ * }} parts   `voice` gives the reply to each sent message its reveal: spoken while the speaker is on, plain when it is off
  */
-export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, page, afterReply, activeAppId = () => null }) {
-  /** @type {ReturnType<typeof createReveal> | null} */
+export function createTurn({ agent, settings, thread, view, follow, composer, composerView, live, page, afterReply, activeAppId = () => null, voice = SILENT }) {
+  /** @type {ReturnType<typeof createReveal> | ReturnType<typeof import('./voice/spoken.js').createSpokenReveal> | null} */
   let reveal = null;
   let pendingEntry = null;
   let heldAppId = null;
@@ -49,6 +55,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     reveal = null;
     pendingEntry = null;
     composer.replying = false;
+    composer.speaking = false;
     paint();
     afterReply();
     const held = thread.takeHeld();
@@ -71,6 +78,9 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         break;
       case 'toolStarted':
         thread.startTool(event);
+        // The server puts the text after a tool call in a new paragraph, so the sentence before the
+        // call is complete now, and the voice can say it while the tool runs.
+        if (active?.spoken && thread.slot.text !== '') reveal.text(thread.slot.text + '\n\n');
         break;
       case 'toolFinished':
         thread.finishTool(event);
@@ -87,15 +97,22 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         thread.appendText(event.delta);
         reveal.text(thread.slot.text);
         break;
-      case 'finished':
+      case 'finished': {
         pendingEntry = event.entry;
-        live.done(now);
+        // Jet settles after a spoken reply only when the voice has finished.
+        const spoken = Boolean(active?.spoken);
+        if (!spoken) live.done(now);
         reveal.finish(() => {
+          if (spoken) live.done(performance.now());
           thread.finish(event.entry);
           page.announce.textContent = event.entry.text;
           endReply();
         });
+        // Read after `finish`, which is what starts the speech of a reply that arrived in one piece.
+        composer.speaking = reveal.speaking === true;
+        composerView.refresh();
         return;
+      }
       case 'failed':
         reveal.end();
         thread.fail(event.failure, event.entry);
@@ -139,6 +156,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       active = null;
       reveal = null;
       pendingEntry = null;
+      composer.speaking = false;
       if (snapshot.history.length) composer.sent();
       const current = snapshot.active;
       if (current) {
@@ -179,7 +197,8 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
      * @param {import('./thread/store.js').Attachment[]} [attachments]   the uploaded files that go with it
      */
     async send(text, appId = activeAppId(), attachments = []) {
-      const mine = { dispatched: false, cancelFeeling: null };
+      voice.unlock();
+      const mine = { dispatched: false, cancelFeeling: null, spoken: false };
       active = mine;
       const now = performance.now();
       const message = request(text, appId, attachments);
@@ -196,7 +215,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       page.announce.textContent = displayName(settings) + ' is replying';
       paint();
 
-      reveal = createReveal({
+      const made = voice.reveal({
         render: (partial) => agent.renderMarkdown(partial),
         paint: (html) => {
           if (active !== mine || !thread.slot) return;
@@ -204,6 +223,8 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
           paint();
         },
       });
+      reveal = made.reveal;
+      mine.spoken = made.spoken;
       const warn = () => {
         if (warned) return;
         warned = true;
@@ -238,7 +259,9 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       const receive = (event) => {
         if (active !== mine) return;
         if (mine.stopping) {
-          if (TERMINAL.has(event.kind)) onEvent({ kind: 'stopped', entry: { ...event.entry, text: thread.slot.text, html: thread.slot.html, status: 'stopped' } });
+          // A spoken reply holds words back, so the page shows less than was received; the saved entry has it all.
+          const kept = mine.spoken ? {} : { text: thread.slot.text, html: thread.slot.html };
+          if (TERMINAL.has(event.kind)) onEvent({ kind: 'stopped', entry: { ...event.entry, ...kept, status: 'stopped' } });
         } else onEvent(event);
       };
       try {
@@ -269,6 +292,12 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         agent.stop(mine.requestId).catch((error) => console.warn('Stop could not be sent:', error));
         return;
       }
+      // Once a spoken reply is written, Stop only quiets the voice, and the reply ends complete. This checks
+      // `spoken`, not `speaking`, so that a second Stop before the reply ends cannot mark it stopped.
+      if (pendingEntry && mine.spoken) {
+        reveal.flush();
+        return;
+      }
       const entry = pendingEntry ?? { id: null, role: 'jet', at: Date.now() };
       reveal.end();
       thread.stop({ ...entry, text: thread.slot.text, html: thread.slot.html, status: 'stopped' });
@@ -279,7 +308,17 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     hold(text, appId = activeAppId(), attachments = []) {
       heldAppId = appId;
       thread.hold(text, attachments);
+      // While Jet only speaks, a new message cuts in: the voice stops, and the message goes as soon as the reply ends.
+      if (pendingEntry && active?.spoken) {
+        reveal.flush();
+        return;
+      }
       composerView.setHeld(thread.held);
+    },
+
+    /** Quiets the voice of the reply that is running, as when the speaker is switched off. The reply goes on as normal. */
+    silence() {
+      if (active?.spoken) reveal?.flush();
     },
 
     /** Puts the held text back in the field. @returns {import('./thread/store.js').Attachment[]} the held files, for the tray to take back */

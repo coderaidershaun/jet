@@ -31,7 +31,7 @@ export function createComposerView({ page, composer, field, button, heldChip, he
     button.replaceChildren(mode === 'stop' ? stopIcon : sendIcon);
     button.disabled = mode === 'disabled';
     button.dataset.mode = mode;
-    button.setAttribute('aria-label', mode === 'stop' ? 'Stop' : 'Send');
+    button.setAttribute('aria-label', mode === 'stop' ? (state.speaking ? 'Stop speaking' : 'Stop') : 'Send');
   }
 
   function take() {

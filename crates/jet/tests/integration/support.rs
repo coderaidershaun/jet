@@ -41,6 +41,7 @@ impl Host {
             .args(["--listen", "127.0.0.1:0", "--data-dir"])
             .arg(dir.path())
             .arg("--disable-feelings")
+            .arg("--disable-voice")
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()

@@ -25,22 +25,35 @@
 .field-line { display: flex; align-items: flex-end; }
 
 textarea#field {
-  flex: 1; min-width: 0; min-height: 42px; max-height: 196px; padding: 10px 16px 10px 6px;
+  flex: 1; min-width: 0; min-height: 42px; max-height: 196px; padding: 10px 4px 10px 6px;
   background: none; border: 0; border-radius: 0 22px 22px 0; outline: 0;
   font-size: 16px; line-height: 22px; resize: none; display: block;
 }
 textarea#field::placeholder { color: var(--muted); }
 
 /* The 3 px margins centre the 36 px button on a one-line field and keep it at the foot as the field grows.
-   The ::after makes the press target 44 px across. */
-.attach {
+   The ::after makes the press target 44 px across. The speaker at the right end mirrors the + at the left. */
+.attach, .voice {
   position: relative; display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin: 3px 0 3px 4px; padding: 0;
   background: none; border: 0; border-radius: 50%; color: var(--muted);
   transition: background 120ms, color 120ms;
 }
-.attach::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
-.attach:hover, .attach:focus-visible { background: rgba(255, 255, 255, .06); color: var(--fg); }
-.attach .icon { width: 20px; height: 20px; }
+.voice { margin: 3px 4px 3px 0; }
+.attach::after, .voice::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
+.attach:hover, .attach:focus-visible, .voice:hover, .voice:focus-visible { background: rgba(255, 255, 255, .06); color: var(--fg); }
+.attach .icon, .voice .icon { width: 20px; height: 20px; }
+
+.voice[aria-pressed="true"] { background: rgba(61, 139, 255, .14); color: var(--accent); }
+.voice[aria-pressed="true"]:hover, .voice[aria-pressed="true"]:focus-visible { background: rgba(61, 139, 255, .22); color: var(--accent); }
+.voice[aria-disabled="true"] { opacity: .45; }
+.voice.is-speaking { background: rgba(61, 139, 255, .26); }
+.voice.is-speaking .icon { animation: voice-pulse 1.2s ease-in-out infinite; }
+.voice.has-problem::before {
+  content: ""; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px;
+  background: var(--warning); border: 2px solid var(--surface-2); border-radius: 50%;
+}
+@keyframes voice-pulse { 50% { opacity: .5; } }
+.reduced .voice.is-speaking .icon { animation: none; }
 
 /* The 12 px padding above leaves room for the × that overhangs each chip. */
 .tray { display: flex; gap: 8px; margin: 0; padding: 12px 12px 4px; list-style: none; overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
@@ -104,5 +117,5 @@ textarea#field::placeholder { color: var(--muted); }
 .held .icon-button { position: relative; width: 36px; height: 36px; margin: 4px 0; color: var(--fg); }
 .held .icon-button::after { content: ""; position: absolute; inset: -4px; }
 @media (prefers-reduced-motion: reduce) {
-  .chip { animation: none; }
+  .chip, .voice.is-speaking .icon { animation: none; }
 }

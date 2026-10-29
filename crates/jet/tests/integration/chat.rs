@@ -200,4 +200,15 @@ fn restart_recovers_request_identity_without_replaying_provider() {
     );
     let html = markdown.1.as_str().unwrap();
     assert!(html.contains("<strong>bold</strong>") && !html.contains("<script"));
+
+    // Under --disable-voice the page is told why Jet cannot speak, and nothing is asked of Google.
+    let voice = host.get("/api/voice");
+    assert_eq!(voice["available"], false);
+    assert_eq!(voice["reason"], "Voice is turned off on this server");
+    let speech = host.post(
+        "/api/voice/speech",
+        serde_json::json!({"text":"Hello there."}),
+    );
+    assert_eq!(speech.0, 503);
+    assert_eq!(speech.1["kind"], "notConfigured");
 }

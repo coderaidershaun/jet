@@ -1,7 +1,9 @@
-//! Keeps the JEV wire format and credential handling out of the conversation.
+//! Reads how a message makes Jet feel before the reply starts, and keeps the JEV wire format and
+//! credential handling out of the conversation.
 
-use super::{Feeling, JevError, QUESTIONS};
-use serde::Deserialize;
+use crate::Mood;
+use crate::env_file;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -10,9 +12,72 @@ use std::time::Duration;
 const ENDPOINT: &str = "https://api.typesafe.ai/v1/systemone";
 const MODEL: &str = "jev-1.13.0";
 const TIMEOUT: Duration = Duration::from_secs(2);
+const KEY_VARIABLE: &str = "JEV_API_KEY";
+
+pub(crate) const QUESTIONS: [(Mood, &str); 2] = [
+    (
+        Mood::Hello,
+        "Is the user greeting you or saying goodbye in this message?",
+    ),
+    (
+        Mood::Insulted,
+        "Is this message insulting you or expressing contempt for you?",
+    ),
+];
+
+/// The chosen emotion and the confidence scores returned for this message.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Feeling {
+    pub mood: Mood,
+    pub scores: BTreeMap<String, f64>,
+}
+
+impl Feeling {
+    /// Invalid and unsupported scores cannot choose an animation.
+    pub fn from_scores(scores: BTreeMap<String, f64>) -> Self {
+        let mut mood = Mood::Neutral;
+        let mut highest = 0.5;
+        for candidate in Mood::ALL.into_iter().skip(1) {
+            if let Some(&score) = scores.get(candidate.word())
+                && score.is_finite()
+                && (0.5..=1.0).contains(&score)
+                && (mood == Mood::Neutral || score > highest)
+            {
+                mood = candidate;
+                highest = score;
+            }
+        }
+        Self { mood, scores }
+    }
+
+    pub fn neutral() -> Self {
+        Self::from_scores(BTreeMap::new())
+    }
+}
+
+/// Failures contain no server body or credential-bearing transport error.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum JevError {
+    #[error("JEV request failed or exceeded its two-second timeout")]
+    Http,
+    #[error("JEV rejected the request with status {status}")]
+    Rejected { status: u16 },
+    #[error("JEV response did not contain valid answers for both emotions")]
+    Decode,
+}
+
+/// Reads the key anew for this call. With no key, classification is immediate.
+/// # Errors
+/// Returns a safe request or decoding error when JEV is unavailable.
+pub fn feel_message(text: &str) -> Result<Feeling, JevError> {
+    let Some(key) = env_file::read(KEY_VARIABLE) else {
+        return Ok(Feeling::neutral());
+    };
+    Jev::new(key).classify(text)
+}
 
 /// One bounded request per classification, with no retries or redirects.
-pub struct Jev {
+struct Jev {
     http: ureq::Agent,
     key: String,
     endpoint: String,
@@ -26,7 +91,7 @@ impl fmt::Debug for Jev {
 }
 
 impl Jev {
-    pub fn new(key: String) -> Self {
+    fn new(key: String) -> Self {
         Self {
             http: ureq::Agent::config_builder()
                 .timeout_global(Some(TIMEOUT))
@@ -41,7 +106,7 @@ impl Jev {
     /// Asks JEV how the message makes Jet feel.
     /// # Errors
     /// Returns a safe request or decoding error when JEV is unavailable.
-    pub fn classify(&self, text: &str) -> Result<Feeling, JevError> {
+    fn classify(&self, text: &str) -> Result<Feeling, JevError> {
         let questions: serde_json::Map<_, _> = QUESTIONS
             .into_iter()
             .map(|(mood, question)| {
@@ -95,7 +160,6 @@ struct Answer {
 
 #[cfg(test)]
 mod tests {
-    use super::super::key;
     use super::*;
     use crate::Mood;
     use std::io::{Read, Write};
@@ -145,36 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn jev_key_is_found_sent_and_never_leaked() {
-        // The key comes from the environment first, then from the nearest .env file above the
-        // folder, and finding it never changes the environment.
-        let before = std::env::var_os(key::VARIABLE);
-        let root = tempfile::tempdir().unwrap();
-        let child = root.path().join("a/b");
-        std::fs::create_dir_all(&child).unwrap();
-        assert!(key::discover(None, &child).is_none());
-        std::fs::write(
-            root.path().join(".env"),
-            "export JEV_API_KEY='parent-value'\n",
-        )
-        .unwrap();
-        assert_eq!(key::discover(None, &child).as_deref(), Some("parent-value"));
-        assert_eq!(
-            key::discover(Some("environment-value".into()), &child).as_deref(),
-            Some("environment-value")
-        );
-        std::fs::write(child.join(".env"), "JEV_API_KEY=nearest-value\n").unwrap();
-        assert_eq!(
-            key::discover(None, &child).as_deref(),
-            Some("nearest-value")
-        );
-        std::fs::write(child.join(".env"), "OTHER=present\n").unwrap();
-        assert!(
-            key::discover(None, &child).is_none(),
-            "a nearer file owns the configuration"
-        );
-        assert_eq!(std::env::var_os(key::VARIABLE), before);
-
+    fn jev_key_is_sent_and_never_leaked() {
         let (client, worker) = server(
             200,
             r#"{"answers":{"hello":{"noul":0.8},"insulted":{"noul":0.1}}}"#,

@@ -4,11 +4,14 @@
 mod protect;
 mod restore;
 mod safe;
+mod speech;
 mod table;
 
 use pulldown_cmark::{Options, Parser, TextMergeStream, html};
 
 use protect::Protected;
+
+pub(crate) use speech::spoken_words;
 
 /// Renders Markdown (tables, strikethrough and task lists included) to safe HTML. Math comes back
 /// as `.math` elements holding the TeX.

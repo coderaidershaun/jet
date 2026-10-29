@@ -17,6 +17,22 @@ export async function requestJson(path, body, method = body === undefined ? 'GET
   return value;
 }
 
+/** Posts JSON and reads the answer as raw audio. A refusal is thrown as `{ kind, message }`, like any other call. */
+async function requestAudio(path, body, fetcher, signal) {
+  let response;
+  try {
+    response = await fetcher(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
+  } catch (error) {
+    throw { kind: 'network', message: error.message ?? String(error) };
+  }
+  if (!response.ok) {
+    const refusal = await response.json().catch(() => ({}));
+    throw { kind: refusal.kind ?? 'http', message: refusal.message ?? 'The voice request failed.' };
+  }
+  try { return await response.arrayBuffer(); }
+  catch (error) { throw { kind: 'network', message: error.message ?? String(error) }; }
+}
+
 export function randomId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -127,6 +143,8 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     loadMemory: () => call('/api/memory'),
     saveMemory: (notes) => call('/api/memory', notes, 'PUT'),
     renderMarkdown: (text) => call('/api/markdown', { text }),
+    voiceStatus: () => call('/api/voice'),
+    speech: (text, signal) => requestAudio('/api/voice/speech', { text }, fetcher, signal),
     readAppImage: (appId, path) => readAppImage(call, appId, path),
     uploadFile,
     async removeFile(id) {

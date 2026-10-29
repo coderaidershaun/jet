@@ -52,6 +52,9 @@ import { createBrowserAgent } from './browser-agent.js';
  * @property {() => Promise<Notes>} loadMemory
  * @property {(notes: { memory: string, user: string, recent: string }) => Promise<Notes>} saveMemory
  * @property {(text: string) => Promise<string>} renderMarkdown
+ * @property {() => Promise<{ available: boolean, reason: string | null }>} voiceStatus   whether the server can speak, and why not
+ * @property {(markdown: string, signal?: AbortSignal) => Promise<ArrayBuffer>} speech
+ *   the spoken words of a piece of Markdown as raw 24 kHz 16-bit mono sound; empty when there is nothing to say; rejects with `{ kind, message }`
  * @property {(appId: string, path: string) => Promise<string>} readAppImage   rejects when no registered image route is available
  * @property {(file: File, onProgress?: (fraction: number) => void) => Promise<import('../chat/thread/store.js').Attachment>} uploadFile
  *   saves a file the user chose, hidden from Jet until a message carries it; rejects with a reason fit to show

@@ -22,6 +22,9 @@ export function createComposer({ empty, tray = emptyTray }) {
     /** True while Jet's reply runs. */
     replying: false,
 
+    /** True once Jet has written the whole reply and the voice is still saying it. */
+    speaking: false,
+
     get layout() {
       return centred ? 'centred' : 'bottom';
     },
@@ -38,7 +41,8 @@ export function createComposer({ empty, tray = emptyTray }) {
 
     /** @param {string} text   what is in the field @returns {'send' | 'stop' | 'disabled'} */
     button(text) {
-      if (composer.replying) return 'stop';
+      // While Jet only speaks, a message in the field cuts in, and an empty field lets the button stop the voice.
+      if (composer.replying) return composer.speaking && !waiting() && hasMessage(text) ? 'send' : 'stop';
       return waiting() || !hasMessage(text) ? 'disabled' : 'send';
     },
 
