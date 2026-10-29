@@ -36,7 +36,7 @@ const ICONS = {
   download: 'M12 4v11M7 10.5l5 5 5-5M5 20h14',
   chevron: 'M6 9l6 6 6-6',
   plus: 'M12 5v14M5 12h14',
-  speaker: 'M11 5L6 9H2v6h4l5 4V5z',
+  speaker: 'M16.5 5L11.5 9H7.5v6h4l5 4V5z',
   speakerWaves: 'M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14',
 };
 const FILLED = new Set(['stop']);
