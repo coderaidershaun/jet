@@ -147,6 +147,8 @@ test('stop before classification sends held text, and results and events of an o
 function speakingVoice() {
   const voice = { unlocked: 0, replies: [] };
   voice.part = {
+    on: () => true,
+    cues: [{ tag: '<laugh>', weight: 8 }],
     unlock: () => { voice.unlocked++; },
     reveal: () => {
       let release = null;
@@ -220,4 +222,21 @@ test('while Jet only speaks, Jet settles after the voice and a new message cuts 
   assert.equal(s.stops(), 1);
   s.event({ kind: 'stopped', entry: { ...s.entry, text: 'Partial reply', html: '<p>Partial reply</p>', status: 'stopped' } });
   assert.deepEqual([lastJet().text, lastJet().html, lastJet().status], ['Partial reply', '<p>Partial reply</p>', 'stopped']);
+});
+
+test('a send says the reply is not spoken while the speaker is off', async (t) => {
+  const s = await setup(t);
+  assert.equal(s.requests[0].spoken, false);
+});
+
+test('a send says the reply is spoken, and the finished reply is announced without its vocal cues', async (t) => {
+  const voice = speakingVoice();
+  const s = await setup(t, { voice: voice.part });
+  assert.equal(s.requests[0].spoken, true);
+  s.event({ kind: 'text', delta: 'Ha <laugh> yes.' });
+  s.event({ kind: 'finished', entry: { ...s.entry, text: 'Ha <laugh> yes.' } });
+  voice.replies[0].endVoice();
+  await s.advance(50);
+  assert.equal(s.page.announce.textContent, 'Ha yes.');
+  assert.equal(s.thread.rows().filter((row) => row.entry?.role === 'jet').at(-1).entry.text, 'Ha <laugh> yes.', 'the saved reply keeps its cues');
 });

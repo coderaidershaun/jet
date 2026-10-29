@@ -42,6 +42,15 @@ impl Mood {
         }
     }
 
+    /// How the voice says a reply in this mood, or `None` for the voice's own manner.
+    pub fn style(self) -> Option<&'static str> {
+        match self {
+            Mood::Neutral => None,
+            Mood::Hello => Some("warm and bright"),
+            Mood::Insulted => Some("clipped and irritated"),
+        }
+    }
+
     /// Finds the mood for a word, ignoring case. `None` for a word outside the list.
     pub fn from_word(word: &str) -> Option<Mood> {
         Mood::ALL

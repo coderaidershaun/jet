@@ -31,6 +31,7 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
         }),
         active_app_id: None,
         feeling: None,
+        spoken: false,
     };
     let (_, reply) = conversation.send(Arc::new(claude), message, None).unwrap();
     let events: Vec<Event> = reply.collect();

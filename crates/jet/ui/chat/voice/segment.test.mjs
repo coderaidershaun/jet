@@ -72,3 +72,21 @@ test('the first batch is one sentence and later batches hold at most two', () =>
   assert.deepEqual(prose.slice(1), [long.replace('ends.', 'also ends.'), long], 'two long sentences do not');
   assert.equal(speechText('  - one\n    two\n\tthree', [{ start: 0, end: 22 }], 0, 1), '- one\ntwo\nthree', 'an indented line is not read as code');
 });
+
+test('a listed cue takes time and shows no letters, and a cue alone on a line is timed with the next line', () => {
+  const cues = [{ tag: '<laugh>', weight: 8 }, { tag: '<short pause>', weight: 3 }, { tag: '<sigh>', weight: 4 }];
+  const weights = (text, finished) => segment(text, finished, cues).map((part) => part.marks.map((mark) => mark.weight));
+
+  // "Ha" is two letters, the cue is eight with no letters of its own, and "yes." is three plus a sentence pause.
+  assert.deepEqual(weights('Ha <laugh> yes. Next', false), [[2, 8, 9]]);
+  assert.deepEqual(weights('Well <short pause> ok. Next', false), [[4, 3, 8]], 'a cue of two words is one unit');
+  assert.deepEqual(weights('Ha <zap> yes. Next', false), [[2, 3, 9]], 'a tag that is not listed is not a cue');
+
+  // A cue alone on a line joins the next line, however many blank lines lie between, so one batch holds both.
+  const text = '<sigh>\n\nSo true. More.';
+  const parts = segment(text, true, cues);
+  assert.deepEqual(parts.map((part) => text.slice(part.start, part.end)), ['<sigh>\n\nSo true.', 'More.']);
+  assert.equal(speechText(text, parts, 0, nextBatch(parts, 0, true).to), '<sigh>\n\nSo true.');
+  assert.deepEqual(segment('<sigh>\n\n', false, cues), [], 'with no next line yet the cue waits');
+  assert.equal(segment('Done.\n\n<sigh>\n\nThen this. Last', false, cues).length, 2);
+});

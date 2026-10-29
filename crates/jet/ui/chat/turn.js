@@ -3,13 +3,14 @@ import { displayName } from '../bridge/settings.js';
 import { randomId } from '../bridge/browser-agent.js';
 import { localTimeLabel } from './clock.js';
 import { createReveal } from './thread/throttle.js';
+import { withoutCues } from './voice/segment.js';
 
 const FEELING_CAP_MS = 2200;
 const SUPPORTED_MOODS = new Set(MOODS);
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped']);
 
-const SILENT = { reveal: (options) => ({ reveal: createReveal(options), spoken: false }), unlock() {} };
+const SILENT = { on: () => false, cues: [], reveal: (options) => ({ reveal: createReveal(options), spoken: false }), unlock() {} };
 
 /**
  * @param {{
@@ -29,6 +30,8 @@ const SILENT = { reveal: (options) => ({ reveal: createReveal(options), spoken: 
  *   page: { announce: HTMLElement },
  *   afterReply: () => void,
  *   voice?: {
+ *     on: () => boolean,
+ *     cues: { tag: string, weight: number }[],
  *     reveal: (options: { render: (text: string) => Promise<string>, paint: (html: string) => void }) => { reveal: ReturnType<typeof createReveal> | ReturnType<typeof import('./voice/spoken.js').createSpokenReveal>, spoken: boolean },
  *     unlock: () => void,
  *   },
@@ -105,7 +108,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         reveal.finish(() => {
           if (spoken) live.done(performance.now());
           thread.finish(event.entry);
-          page.announce.textContent = event.entry.text;
+          page.announce.textContent = withoutCues(event.entry.text, voice.cues);
           endReply();
         });
         // Read after `finish`, which is what starts the speech of a reply that arrived in one piece.
@@ -140,6 +143,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       budgetUsd: settings.turnBudgetUsd,
       persona: { ...settings.persona },
       localTime: localTimeLabel(Date.now()),
+      spoken: voice.on(),
     };
   }
 

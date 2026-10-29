@@ -4,15 +4,9 @@
 // call, drops answers that were overtaken, and holds the first reveal back
 // until Jet has reacted to its mood.
 
-const RENDER_EVERY_MS = 50;
+import { realClock } from '../clock.js';
 
-export const realClock = {
-  now: () => performance.now(),
-  after(fn, ms) {
-    const id = setTimeout(fn, ms);
-    return () => clearTimeout(id);
-  },
-};
+const RENDER_EVERY_MS = 50;
 
 /**
  * @param {{

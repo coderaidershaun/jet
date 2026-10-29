@@ -160,3 +160,24 @@ test('registered_app_images_keep_their_origin_and_reject_escape', async () => {
   await assert.rejects(agent.readAppImage('origin-app', 'a.png'), /Picture unavailable/);
   assert.ok(requests.length > 0);
 });
+
+test('hear_posts_exactly_the_clip_bytes_with_its_vocabulary_and_throws_refusals_as_kind_and_message', async () => {
+  const requests = [];
+  const answer = { ok: true, json: async () => ({ text: 'What time is it?' }) };
+  const agent = createBrowserAgent({ uuid: () => 'browser', fetch: async (path, options) => { requests.push({ path, options }); return answer; } });
+  const whole = Int16Array.from([9, 9, 1, 2, 3, 4, 9, 9]);
+  const clip = whole.subarray(2, 6);
+  assert.deepEqual(await agent.hear(clip, ['Jet', 'Quanty & Co'], undefined), { text: 'What time is it?' });
+  const [{ path, options }] = requests;
+  assert.equal(path, '/api/voice/hear?vocabulary=Jet&vocabulary=Quanty%20%26%20Co');
+  assert.equal(options.method, 'POST');
+  assert.equal(options.headers['Content-Type'], 'audio/L16;rate=16000;channels=1');
+  assert.deepEqual(new Int16Array(options.body), clip, 'the bytes of the view, not of the buffer behind it');
+  assert.equal(options.body.byteLength, 8);
+
+  await agent.hear(clip, [], undefined);
+  assert.equal(requests[1].path, '/api/voice/hear');
+
+  const refusing = createBrowserAgent({ uuid: () => 'browser', fetch: async () => ({ ok: false, json: async () => ({ kind: 'rateLimited', message: 'Slow down.' }) }) });
+  await assert.rejects(refusing.hear(clip, [], undefined), { kind: 'rateLimited', message: 'Slow down.' });
+});

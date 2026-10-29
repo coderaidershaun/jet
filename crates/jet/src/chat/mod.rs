@@ -64,6 +64,10 @@ pub(crate) struct SendRequest {
     pub feeling: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_app_id: Option<agent::apps::AppId>,
+    /// True when the user hears the reply spoken aloud. Left out of the saved request when false,
+    /// so that a retried request still matches the one that was accepted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub spoken: bool,
 }
 
 impl SendRequest {
@@ -215,6 +219,7 @@ impl ChatState {
             mcp: Some(self.tools.bind(&identity)),
             active_app_id: request.active_app_id,
             feeling: request.feeling,
+            spoken: request.spoken,
         };
         (identity, message)
     }

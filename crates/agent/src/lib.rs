@@ -16,7 +16,7 @@ pub use chat::{
     ShownEntry, TOOL_USE_META, TURN_HEADER, ToolCall, ToolStart, TurnIdentity, USER_LIMIT,
 };
 pub use conversation::{
-    Conversation, ConversationError, DataDir, MemoryError, Message, REVIEW_QUIET, Reply,
+    CUES, Conversation, ConversationError, Cue, DataDir, MemoryError, Message, REVIEW_QUIET, Reply,
     ReviewError, ReviewOutcome, dollar_math, now_ms, render_markdown,
 };
 pub use feeling::{Feeling, JevError, feel_message};

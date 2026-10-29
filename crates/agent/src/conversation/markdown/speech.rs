@@ -3,6 +3,7 @@
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, TextMergeStream};
 
+use super::cues::{inline_cues, is_cue};
 use super::protect::Protected;
 use super::restore::Piece;
 
@@ -11,7 +12,7 @@ use super::restore::Piece;
 pub(crate) fn spoken_words(markdown: &str) -> String {
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
-    let protected = Protected::new(markdown);
+    let protected = Protected::new(&inline_cues(markdown));
     let events = TextMergeStream::new(Parser::new_ext(&protected.text, options));
     let mut speaker = Speaker::default();
     for event in events {
@@ -20,6 +21,7 @@ pub(crate) fn spoken_words(markdown: &str) -> String {
             Event::End(tag) => speaker.end(tag),
             Event::Text(text) => speaker.text(&protected, &text),
             Event::Code(code) => speaker.code(&code),
+            Event::InlineHtml(raw) if is_cue(&raw) => speaker.cue(&raw),
             Event::SoftBreak | Event::HardBreak => speaker.current.push(' '),
             _ => {}
         }
@@ -91,6 +93,12 @@ impl Speaker {
                     }
                 }
             }
+        }
+    }
+
+    fn cue(&mut self, cue: &str) {
+        if self.silent == 0 {
+            self.current.push_str(cue);
         }
     }
 
@@ -230,6 +238,9 @@ mod tests {
             ("Done ~~old~~ new", "Done new"),
             ("![alt text](https://x.example/y.png) caption", "caption"),
             ("<div>raw</div>\n\nText", "Text"),
+            ("Ha <laugh> yes.", "Ha <laugh> yes."),
+            ("<sigh>\nFine, then.\n\nNext.", "<sigh> Fine, then.\nNext."),
+            ("`<laugh>` and <zap> here.", "and here."),
             ("It costs $5 or $10.", "It costs $5 or $10."),
             ("```\nonly code\n```", ""),
             ("", ""),

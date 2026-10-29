@@ -22,15 +22,24 @@ const ITEM = /^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+/;
 /**
  * @typedef {{ end: number, weight: number }} Mark   a word, or a formatted run, that ends at `end`
  * @typedef {{ start: number, end: number, silent: boolean, opensBlock: boolean, marks: Mark[] }} Part
+ * @typedef {{ tag: string, weight: number }} Cue   a vocal tag such as `<laugh>`, and the letters of time the voice takes to perform it
  */
 
 /**
  * @param {string} text
  * @param {boolean} finished   no more text will come, so the last part is settled too
+ * @param {Cue[]} [cues]   the server's list of vocal cues; a listed cue takes time and shows no letters
  * @returns {Part[]}
  */
-export function segment(text, finished) {
-  return blocksOf(text).flatMap((block) => partsOf(text, block, finished));
+export function segment(text, finished, cues = []) {
+  return blocksOf(text, cues).flatMap((block) => partsOf(text, block, finished, cues));
+}
+
+/** The text without the listed cues, for a screen reader that would read `<laugh>` out. */
+export function withoutCues(text, cues) {
+  if (cues.length === 0) return text;
+  const tags = cues.map((cue) => cue.tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return text.replace(new RegExp(`[ \\t]?(?:${tags.join('|')})`, 'g'), '');
 }
 
 // SMELL: a part is never split, so a part too long for one request (about a thousand characters,
@@ -108,11 +117,27 @@ function contentStartOf(kind, line) {
 
 const CONTINUES = new Set(['paragraph', 'item', 'quote']);
 
+/** True when the line holds only listed cues and spaces. */
+function isCueLine(line, cues) {
+  let rest = line.trim();
+  if (rest === '' || cues.length === 0) return false;
+  while (rest !== '') {
+    const cue = cues.find(({ tag }) => rest.startsWith(tag));
+    if (!cue) return false;
+    rest = rest.slice(cue.tag.length).trimStart();
+  }
+  return true;
+}
+
+// SMELL: this copies the server's rule that a line of only cues joins the next line with words, so that
+// Markdown does not read it as an HTML block. The server's other rule, joining the line before when none
+// follows, is not copied, because that line may already be spoken. So a cue line before a code fence, or
+// at the very end, is its own part and is not performed.
 /**
- * @returns {{ kind: string, start: number, end: number, contentStart: number, closed: boolean }[]}
- *   `closed` is true when nothing more can join the block
+ * @returns {{ kind: string, start: number, end: number, contentStart: number, closed: boolean, awaitingWords: boolean }[]}
+ *   `closed` is true when nothing more can join the block; `awaitingWords` is true while the block is only cues
  */
-function blocksOf(text) {
+function blocksOf(text, cues) {
   const blocks = [];
   let open = null;
   let ending = null;
@@ -127,8 +152,14 @@ function blocksOf(text) {
       continue;
     }
     if (line.complete && lineText.trim() === '') {
+      if (open?.awaitingWords) continue;
       if (open) open.closed = true;
       open = null;
+      continue;
+    }
+    if (open?.awaitingWords && !FENCE.test(lineText)) {
+      open.end = line.end;
+      open.awaitingWords = line.complete && isCueLine(lineText, cues);
       continue;
     }
     const kind = startOf(lineText, line.complete);
@@ -144,6 +175,7 @@ function blocksOf(text) {
       end: line.end,
       contentStart: line.start + contentStartOf(kind, lineText),
       closed: false,
+      awaitingWords: kind === null && line.complete && isCueLine(lineText, cues),
     };
     blocks.push(open);
     if (kind === 'heading' || kind === 'rule') {
@@ -168,11 +200,11 @@ function blocksOf(text) {
 
 const isSilent = (kind) => kind === 'fence' || kind === 'math' || kind === 'table' || kind === 'rule';
 
-function partsOf(text, block, finished) {
+function partsOf(text, block, finished, cues) {
   const closed = block.closed || finished;
   if (isSilent(block.kind)) return closed ? [silentPart(text, block)] : [];
-  if (block.kind === 'heading') return closed ? [headingPart(text, block)] : [];
-  return proseParts(text, block, closed);
+  if (block.kind === 'heading') return closed ? [headingPart(text, block, cues)] : [];
+  return proseParts(text, block, closed, cues);
 }
 
 function silentPart(text, block) {
@@ -181,16 +213,16 @@ function silentPart(text, block) {
 }
 
 /** A heading shows whole, so it has one mark, and the voice pauses after it. */
-function headingPart(text, block) {
+function headingPart(text, block, cues) {
   const end = trimEnd(text, block.start, block.end);
-  const units = scanUnits(text, block.contentStart, end);
+  const units = scanUnits(text, block.contentStart, end, cues);
   const spoken = units.reduce((sum, unit) => sum + unit.weight, 0);
   const pause = units.length > 0 && units.at(-1).pause === 0 ? PAUSE_AFTER_SENTENCE : 0;
   return { start: block.start, end, silent: false, opensBlock: true, marks: [{ end, weight: spoken + pause }] };
 }
 
-function proseParts(text, block, closed) {
-  const units = scanUnits(text, block.contentStart, trimEnd(text, block.start, block.end));
+function proseParts(text, block, closed, cues) {
+  const units = scanUnits(text, block.contentStart, trimEnd(text, block.start, block.end), cues);
   // The voice pauses after a list item even when it has no end mark.
   if (closed && block.kind === 'item' && units.length > 0 && units.at(-1).pause === 0) units.at(-1).weight += PAUSE_AFTER_SENTENCE;
   const parts = [];
@@ -215,7 +247,7 @@ function proseParts(text, block, closed) {
 }
 
 /** A unit is one word, or a whole formatted run with what touches it: `**big world**,` is one unit, and so is a link. */
-function scanUnits(text, from, to) {
+function scanUnits(text, from, to, cues) {
   const units = [];
   let i = from;
   while (i < to) {
@@ -225,7 +257,7 @@ function scanUnits(text, from, to) {
     }
     const start = i;
     const weigher = createWeigher();
-    while (i < to && !isSpace(text[i])) i = step(text, i, to, weigher);
+    while (i < to && !isSpace(text[i])) i = step(text, i, to, weigher, cues);
     const word = text.slice(start, i);
     const pause = pauseAfter(word);
     units.push({ start, end: i, weight: weigher.total() + pause, pause, endsSentence: endsSentence(word) });
@@ -234,10 +266,10 @@ function scanUnits(text, from, to) {
 }
 
 /** Moves past one character or one whole construct, and counts what is spoken in it. */
-function step(text, i, to, weigher) {
-  const found = constructAt(text, i, to);
+function step(text, i, to, weigher, cues) {
+  const found = constructAt(text, i, to, cues);
   if (found) {
-    weigher.construct(text, found);
+    weigher.construct(text, found, cues);
     return found.end;
   }
   if (text[i] === '\\' && i + 1 < to) {
@@ -263,9 +295,9 @@ function createWeigher() {
     plain(c) {
       pending += c;
     },
-    construct(text, found) {
+    construct(text, found, cues) {
       settle();
-      weight += constructWeight(text, found);
+      weight += constructWeight(text, found, cues);
     },
     total() {
       settle();
@@ -274,13 +306,13 @@ function createWeigher() {
   };
 }
 
-function weighRegion(text, from, to) {
+function weighRegion(text, from, to, cues) {
   const weigher = createWeigher();
-  for (let i = from; i < to;) i = step(text, i, to, weigher);
+  for (let i = from; i < to;) i = step(text, i, to, weigher, cues);
   return weigher.total();
 }
 
-function constructWeight(text, found) {
+function constructWeight(text, found, cues) {
   switch (found.kind) {
     case 'code':
     case 'math': {
@@ -289,7 +321,9 @@ function constructWeight(text, found) {
     }
     case 'emphasis':
     case 'link':
-      return weighRegion(text, found.from, found.to);
+      return weighRegion(text, found.from, found.to, cues);
+    case 'cue':
+      return found.weight;
     default:
       return 0;
   }
@@ -317,8 +351,9 @@ function endsSentence(word) {
  * @returns {{ end: number, kind: string, from?: number, to?: number } | null}
  *   `from` and `to` mark what is inside; null when the character starts no construct
  */
-function constructAt(text, i, to) {
+function constructAt(text, i, to, cues) {
   const c = text[i];
+  if (c === '<') return cueAt(text, i, to, cues);
   if (c === '`') return codeAt(text, i, to);
   if (c === '\\' && (text[i + 1] === '(' || text[i + 1] === '[')) return mathAt(text, i, to, text[i + 1] === '(' ? '\\)' : '\\]');
   if (c === '$' && text[i + 1] === '$') return mathAt(text, i, to, '$$');
@@ -329,6 +364,12 @@ function constructAt(text, i, to) {
   if (c === '[') return linkAt(text, i, to);
   if (c === '*' || c === '_') return emphasisAt(text, i, to);
   return null;
+}
+
+/** A listed cue that starts at `i` and ends inside the block. A cue still arriving is not one yet. */
+function cueAt(text, i, to, cues) {
+  const cue = cues.find(({ tag }) => i + tag.length <= to && text.startsWith(tag, i));
+  return cue ? { end: i + cue.tag.length, kind: 'cue', weight: cue.weight } : null;
 }
 
 function runOf(text, i, to, c) {

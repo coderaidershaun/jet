@@ -1,4 +1,13 @@
-// How the page writes times and days. Pure, and local time throughout.
+// The page's clock: the real time source that timed modules use unless a test gives them their own,
+// and how the page writes times and days, which is pure and in local time throughout.
+
+export const realClock = {
+  now: () => performance.now(),
+  after(fn, ms) {
+    const id = setTimeout(fn, ms);
+    return () => clearTimeout(id);
+  },
+};
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

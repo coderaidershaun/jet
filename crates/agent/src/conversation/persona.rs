@@ -6,6 +6,10 @@ use crate::chat::{Attachment, Effort, Model, Notes, Persona};
 
 const TEMPLATE: &str = include_str!("persona.md");
 
+/// Added to a message that is read aloud. It is not part of the system prompt, because the user
+/// can turn the voice on and off between messages.
+const VOICE_LINE: &str = "[Voice is on: the user hears this reply spoken aloud. Write for the ear: short sentences, plain words, no tables and no code unless asked. Where it feels natural, at most once or twice in a reply, you may add a vocal cue exactly as written, inside a sentence, never alone on a line and never in code, headings or links: <laugh> <chuckle> <sigh> <gasp> <short pause> <long pause>. The voice performs a cue and the text hides it.]\n";
+
 /// How much of the user's own notes about Jet goes into the prompt.
 const PERSONA_NOTES_LIMIT: usize = 600;
 
@@ -36,6 +40,9 @@ pub(super) fn message_words(message: &super::Message) -> String {
     let mut words = String::new();
     if let Some(mood) = message.feeling.as_deref().and_then(crate::Mood::from_word) {
         words.push_str(&format!("[Jet: reading this, you feel {}]\n", mood.word()));
+    }
+    if message.spoken {
+        words.push_str(VOICE_LINE);
     }
     if let Some(id) = &message.active_app_id {
         words.push_str(&format!(
@@ -197,5 +204,35 @@ mod tests {
         assert!(prompt.contains("call me {ingest_lifetime} and {memory}"));
         assert!(prompt.contains("<memory>\n- likes {name}\n</memory>"));
         assert!(prompt.contains("<user>\n(empty)\n</user>"));
+    }
+
+    #[test]
+    fn the_voice_line_comes_after_the_feeling_line_only_when_spoken() {
+        use super::super::test_support::{Chat, message};
+        let chat = Chat::new("voice-line", ["one", "one", "one"]);
+        let mut spoken = message("user words");
+        spoken.feeling = Some("hello".into());
+        spoken.spoken = true;
+        chat.send(message("opening words"));
+        chat.send(spoken);
+        chat.send(message("user words"));
+        let requests = chat.requests();
+        let (heard, silent) = (&requests[1], &requests[2]);
+        let feeling_line = "[Jet: reading this, you feel hello]\n";
+        assert_eq!(
+            heard.prompt,
+            format!("{feeling_line}{VOICE_LINE}user words")
+        );
+        assert_eq!(silent.prompt, "user words");
+        assert_eq!(heard.system_prompt, silent.system_prompt);
+        assert!(!heard.system_prompt.contains("Voice is on"));
+        // The session goes on across a spoken message, so the voice line leaves the fingerprint
+        // of the system prompt alone.
+        for request in &requests[1..] {
+            assert!(matches!(
+                request.session,
+                crate::turn::SessionMode::Resume(_)
+            ));
+        }
     }
 }

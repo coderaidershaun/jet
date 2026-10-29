@@ -137,3 +137,14 @@ Harnesses own only the processes they start. Their shared process helper treats 
 graceful-shutdown timeout as failure, even when it subsequently force-cleans an
 owned child. Artifacts describe the run; these commands alone are not a claim that
 checks passed. Browser evidence is specific to the selected Chrome build.
+
+## Fake microphone (for a future listening harness)
+
+No harness here drives the mic button yet. When one does, run Chrome with a fake microphone so that no real device or permission prompt is needed, and play a 16 kHz mono WAV of speech into it (`crates/jet/ui/chat/hear/engine/fixtures/hello.wav` is one):
+
+```sh
+--use-fake-device-for-media-stream --use-fake-ui-for-media-stream \
+--use-file-for-fake-audio-capture=/absolute/path/to/speech.wav
+```
+
+The file plays once from the start when the microphone opens, so open it after the page has loaded and expect the words only if the server can hear (`GEMINI_API_KEY`), which spends a little quota. Without the key, `GET /api/voice` says hearing is unavailable and the mic shows why instead of listening.

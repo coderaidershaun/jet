@@ -95,6 +95,23 @@ impl Host {
             serde_json::from_str(&response.body_mut().read_to_string().unwrap()).unwrap(),
         )
     }
+    /// Posts raw bytes, the way the page posts a clip of audio.
+    pub fn post_bytes(&self, path: &str, bytes: &[u8]) -> (u16, Value) {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .into();
+        let mut response = agent
+            .post(format!("{}{path}", self.url))
+            .header("content-type", "audio/L16;rate=16000;channels=1")
+            .send(bytes)
+            .unwrap();
+        let status = response.status().as_u16();
+        (
+            status,
+            serde_json::from_str(&response.body_mut().read_to_string().unwrap()).unwrap(),
+        )
+    }
     /// Uploads a file as the raw request body, the way the page does. The name travels in the
     /// query, percent-encoded.
     pub fn upload(&self, name: &str, bytes: &[u8]) -> (u16, Value) {

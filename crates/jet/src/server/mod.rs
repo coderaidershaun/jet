@@ -42,6 +42,7 @@ pub struct Server {
     pub(crate) files: Files,
     pub registry: Arc<Mutex<Registry>>,
     pub config: ServerConfig,
+    hear_budget: Arc<voice::HearBudget>,
 }
 
 impl Server {
@@ -82,6 +83,7 @@ impl Server {
             facade,
             files,
             config,
+            hear_budget: Arc::new(voice::HearBudget::new()),
         })
     }
 
