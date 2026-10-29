@@ -31,29 +31,58 @@ textarea#field {
 }
 textarea#field::placeholder { color: var(--muted); }
 
-/* The 3 px margins centre the 36 px button on a one-line field and keep it at the foot as the field grows.
-   The ::after makes the press target 44 px across. The speaker at the right end mirrors the + at the left. */
-.attach, .voice {
+/* The 3 px margins centre a 36 px button on a one-line field and keep it at the foot as the field grows.
+   The ::after makes the press target 44 px across. The voice pill at the right end mirrors the + at the left. */
+.attach, .voice, .hear {
   position: relative; display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin: 3px 0 3px 4px; padding: 0;
   background: none; border: 0; border-radius: 50%; color: var(--muted);
   transition: background 120ms, color 120ms;
 }
-.voice { margin: 3px 4px 3px 0; }
-.attach::after, .voice::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
-.attach:hover, .attach:focus-visible, .voice:hover, .voice:focus-visible { background: rgba(255, 255, 255, .06); color: var(--fg); }
-.attach .icon, .voice .icon { width: 20px; height: 20px; }
+.voice, .hear { margin: 0; }
+.attach::after, .voice::after, .hear::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
+.attach:hover, .attach:focus-visible, .voice:hover, .voice:focus-visible, .hear:hover, .hear:focus-visible { background: rgba(255, 255, 255, .06); color: var(--fg); }
+.attach .icon, .voice .icon, .hear .icon { width: 20px; height: 20px; }
 
-.voice[aria-pressed="true"] { background: rgba(61, 139, 255, .14); color: var(--accent); }
+/* Speaker and mic share one 36 px pill. The speaker comes first, where people already reach for it,
+   and the whole pill takes the accent tint when either half is on. */
+.voice-pill {
+  display: flex; flex: none; height: 36px; margin: 3px 4px 3px 0; border-radius: 18px;
+  transition: background 120ms;
+}
+.voice-pill.has-on { background: rgba(61, 139, 255, .14); }
+.voice-pill .voice { border-radius: 18px 0 0 18px; }
+.voice-pill .hear { border-left: 1px solid var(--line); border-radius: 0 18px 18px 0; }
+
+.voice[aria-pressed="true"] { color: var(--accent); }
 .voice[aria-pressed="true"]:hover, .voice[aria-pressed="true"]:focus-visible { background: rgba(61, 139, 255, .22); color: var(--accent); }
 .voice[aria-disabled="true"] { opacity: .45; }
 .voice.is-speaking { background: rgba(61, 139, 255, .26); }
 .voice.is-speaking .icon { animation: voice-pulse 1.2s ease-in-out infinite; }
-.voice.has-problem::before {
+.voice.has-problem::before, .hear.has-problem::before, .hear[data-state="asleep"]::before {
   content: ""; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px;
   background: var(--warning); border: 2px solid var(--surface-2); border-radius: 50%;
 }
 @keyframes voice-pulse { 50% { opacity: .5; } }
 .reduced .voice.is-speaking .icon { animation: none; }
+
+/* The mic. data-state is the engine's state; the ring is ::before, driven by --level (0 to 1) while it listens. */
+.hear[aria-disabled="true"] { opacity: .45; }
+.hear[data-state="listening"], .hear[data-state="halfDuplexPause"] { color: var(--accent); }
+.hear[data-state="listening"]:hover, .hear[data-state="listening"]:focus-visible, .hear[data-state="halfDuplexPause"]:hover, .hear[data-state="halfDuplexPause"]:focus-visible { background: rgba(61, 139, 255, .22); }
+.hear[data-state="waitingForTouch"] { color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.hear[data-state="starting"] .icon { opacity: .5; }
+.hear[data-state="halfDuplexPause"] .icon { opacity: .6; }
+.hear[data-state="asleep"]::before { background: var(--accent); }
+.hear[data-state="listening"]::before, .hear[data-state="starting"]::before {
+  content: ""; position: absolute; inset: -3px; border: 2px solid var(--accent); border-radius: 50%; pointer-events: none;
+}
+.hear[data-state="listening"]::before {
+  opacity: calc(.25 + .65 * var(--level, 0)); transform: scale(calc(1 + .35 * var(--level, 0)));
+}
+.hear[data-state="starting"]::before { border-color: transparent; border-top-color: var(--accent); animation: hear-spin 1s linear 1; }
+.hear.is-busy::before { transform: none; animation: voice-pulse 1.6s ease-in-out infinite; }
+.hear.is-greeting .icon { animation: voice-pulse 1.2s ease-in-out 1; }
+@keyframes hear-spin { to { transform: rotate(360deg); } }
 
 /* The 12 px padding above leaves room for the × that overhangs each chip. */
 .tray { display: flex; gap: 8px; margin: 0; padding: 12px 12px 4px; list-style: none; overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
@@ -87,6 +116,10 @@ textarea#field::placeholder { color: var(--muted); }
 .chip-remove .icon { width: 12px; height: 12px; }
 .tray-note { margin: 0; padding: 4px 16px 0; color: var(--danger); font-size: 12px; line-height: 16px; }
 .reduced .chip { animation: none; }
+.reduced .hear.is-greeting .icon { animation: none; }
+.reduced .hear::before, .reduced .send::before { animation: none; transition: none; transform: none; }
+.reduced .hear[data-state="listening"]::before, .reduced .hear.is-busy::before { opacity: .25; }
+.reduced .send.is-pending::before { opacity: 0; }
 
 /* Files dragged over the page: the box turns into a place to drop them. */
 .drop-label {
@@ -105,6 +138,9 @@ textarea#field::placeholder { color: var(--muted); }
 }
 .send::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; }
 .send .icon { width: 20px; height: 20px; }
+/* While the page waits out the end of a thought, a soft halo says the message is about to go. */
+.send::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; background: var(--accent); opacity: 0; z-index: -1; transition: opacity 200ms; }
+.send.is-pending::before { opacity: .6; }
 /* Solid rather than faded, so the tile does not show through the button in the empty state. */
 .send:disabled { background: #23487b; color: rgba(255, 255, 255, .6); }
 
@@ -117,5 +153,9 @@ textarea#field::placeholder { color: var(--muted); }
 .held .icon-button { position: relative; width: 36px; height: 36px; margin: 4px 0; color: var(--fg); }
 .held .icon-button::after { content: ""; position: absolute; inset: -4px; }
 @media (prefers-reduced-motion: reduce) {
-  .chip, .voice.is-speaking .icon { animation: none; }
+  .chip, .voice.is-speaking .icon, .hear.is-greeting .icon { animation: none; }
+  /* Rules inside a media query do not win by being there, so :root makes these as specific as the rule for each state. */
+  :root .hear::before, :root .send::before { animation: none; transition: none; transform: none; }
+  .hear[data-state="listening"]::before, .hear.is-busy::before { opacity: .25; }
+  .send.is-pending::before { opacity: 0; }
 }

@@ -83,6 +83,7 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
   agent.onRegistryChanged?.(refresh);
   const api = {
     activeAppId: () => selected,
+    appLabels: () => apps.map(app => app.label),
     refresh,
     ready,
     toolsContent,

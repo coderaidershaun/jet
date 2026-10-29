@@ -14,6 +14,7 @@ import { createTray } from './composer/tray.js';
 import { createTrayView } from './composer/tray-view.js';
 import { createComposerView } from './composer/view.js';
 import { createDrawerView } from './drawer/view.js';
+import { connectHearing } from './hear/connect.js';
 import { createSheet } from './settings/sheet.js';
 import { createLive } from './stage/live.js';
 import { createFollow } from './thread/scroll.js';
@@ -42,7 +43,7 @@ async function start() {
   ]);
 
   const page = $('page');
-  let toolBrowser, commandMenu;
+  let toolBrowser, commandMenu, hear;
   const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId) });
   const commandResult = h('pre', { class: 'command-result', role: 'status', 'aria-label': 'Command result' });
   $('rows').after(commandResult);
@@ -88,6 +89,7 @@ async function start() {
   });
 
   function submit(text) {
+    hear?.userActive();
     const appId = workspace.activeAppId();
     // The files leave the tray at once, so the chips go as the message does. A command carries none.
     const attachments = text.trimStart().startsWith('/') ? [] : trayView.take();
@@ -106,7 +108,7 @@ async function start() {
     handlers: {
       send: submit,
       hold: submit,
-      input: (text) => { commandMenu?.input(text); live.typing(); },
+      input: (text) => { commandMenu?.input(text); live.typing(); hear?.fieldChanged(text); },
       keydown: (event) => commandMenu?.keydown(event),
       stop: () => turn.stop(),
       cancelHold: () => trayView.restore(turn.cancelHold()),
@@ -183,7 +185,7 @@ async function start() {
     check: () => agent.voiceStatus(),
     replying: () => composer.replying,
     announce: (message) => { $('announce').textContent = message; },
-    onChange: (on) => { if (on) voicePlayer.unlock(); else turn.silence(); },
+    onChange: (on) => { if (on) voicePlayer.unlock(); else turn.silence(); hear?.repaint(); },
   });
   const showVoiceState = (state) => {
     voiceToggle.setSpeaking(state.speaking);
@@ -210,9 +212,27 @@ async function start() {
     composerView,
     live,
     page: { announce: $('announce') },
-    afterReply: refreshStatus,
+    afterReply: () => { refreshStatus(); hear?.replyEnded(); },
     activeAppId: workspace.activeAppId,
     voice,
+  });
+
+  hear = connectHearing({
+    agent,
+    status: voiceStatus.hear,
+    button: $('hear'),
+    pill: $('voice-pill'),
+    field: $('field'),
+    composerView,
+    thread,
+    turn,
+    live,
+    voicePlayer,
+    speakerOn: () => voiceToggle.on,
+    settings,
+    appLabels: workspace.appLabels,
+    announce: (message) => { $('announce').textContent = message; },
+    reducedMotion,
   });
 
   function paintPersona() {

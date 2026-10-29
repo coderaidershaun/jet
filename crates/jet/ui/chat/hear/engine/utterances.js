@@ -1,7 +1,7 @@
 // Sends each clip for its words and hands the words back in the order the clips were cut, however
 // Google answers. A clip that fails twice, or is not answered in time, comes back without words.
 
-import { realClock } from '../clock.js';
+import { realClock } from '../../clock.js';
 import { WORDS_LATE_MS } from './endpointer.js';
 
 const MOST_IN_FLIGHT = 2;

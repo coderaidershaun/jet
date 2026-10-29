@@ -5,6 +5,7 @@ const SAMPLE_RATE = 24000;
 const QUIET = 0.02;
 const EDGE_S = 0.03;
 const FADE_S = 0.08;
+const DUCKED_GAIN = 0.15;
 
 /**
  * @param {{ AudioContext?: typeof AudioContext }} [options]
@@ -14,7 +15,18 @@ export function createVoicePlayer({ AudioContext: Context = globalThis.AudioCont
   let context = null;
   /** @type {GainNode | null} */
   let gain = null;
-  const sources = new Set();
+  /** A second gain after the first, so that `silence` can reset its own gain without undoing a duck. @type {GainNode | null} */
+  let duckGain = null;
+  /** Each scheduled source with the audio times it sounds between. */
+  const sources = new Map();
+
+  function rampDuck(to) {
+    if (!duckGain) return;
+    const now = context.currentTime;
+    duckGain.gain.cancelScheduledValues(now);
+    duckGain.gain.setValueAtTime(duckGain.gain.value, now);
+    duckGain.gain.linearRampToValueAtTime(to, now + FADE_S);
+  }
 
   return {
     /** Starts the audio clock. Browsers allow sound only after the person has touched the page, so the first call must come from a click or a key press. */
@@ -23,7 +35,9 @@ export function createVoicePlayer({ AudioContext: Context = globalThis.AudioCont
         if (!context) {
           context = new Context({ latencyHint: 'interactive' });
           gain = context.createGain();
-          gain.connect(context.destination);
+          duckGain = context.createGain();
+          gain.connect(duckGain);
+          duckGain.connect(context.destination);
         }
         if (context.state !== 'running') context.resume().catch((error) => console.warn('sound could not be started:', error));
       } catch (error) {
@@ -74,8 +88,27 @@ export function createVoicePlayer({ AudioContext: Context = globalThis.AudioCont
       source.connect(gain);
       source.onended = () => sources.delete(source);
       source.start(at, from, length);
-      sources.add(source);
-      return { start: at, end: at + length };
+      const span = { start: at, end: at + length };
+      sources.set(source, span);
+      return span;
+    },
+
+    /** True while a clip is sounding now, not merely fetched or waiting its turn. */
+    audible() {
+      if (!context) return false;
+      const now = context.currentTime;
+      for (const { start, end } of sources.values()) if (now >= start && now < end) return true;
+      return false;
+    },
+
+    /** Turns the voice down to a murmur, so a person who speaks over Jet can tell they were heard. */
+    duck() {
+      rampDuck(DUCKED_GAIN);
+    },
+
+    /** Brings the voice back to full after a murmur. */
+    unduck() {
+      rampDuck(1);
     },
 
     /** Fades the sound out over 80 milliseconds and drops every clip that has not played. */
@@ -85,7 +118,7 @@ export function createVoicePlayer({ AudioContext: Context = globalThis.AudioCont
       gain.gain.cancelScheduledValues(now);
       gain.gain.setValueAtTime(gain.gain.value, now);
       gain.gain.linearRampToValueAtTime(0, now + FADE_S);
-      for (const source of sources) source.stop(now + FADE_S);
+      for (const source of sources.keys()) source.stop(now + FADE_S);
       sources.clear();
       gain.gain.setValueAtTime(1, now + FADE_S + 0.01);
     },

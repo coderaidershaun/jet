@@ -2,7 +2,7 @@
 // It owns the turns, tells echoes of Jet's own voice from the user, and lets go of the microphone
 // when nobody talks. It touches no page element, so it can be tested without a browser.
 
-import { realClock } from '../clock.js';
+import { realClock } from '../../clock.js';
 import { createEndpointer, SETTINGS } from './endpointer.js';
 import { createUtterances } from './utterances.js';
 import { HOP_SAMPLES } from './vad.js';

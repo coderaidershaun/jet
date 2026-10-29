@@ -5,6 +5,7 @@
 import { icon } from '../../dom.js';
 
 const HOP_MS = 420;
+const LISTENING_PLACEHOLDER = 'Listening…';
 
 /**
  * @param {{
@@ -18,6 +19,8 @@ const HOP_MS = 420;
 export function createComposerView({ page, composer, field, button, heldChip, heldCancel, state, reducedMotion, handlers }) {
   const sendIcon = icon('send');
   const stopIcon = icon('stop');
+  let basePlaceholder = field.placeholder;
+  let listening = false;
 
   // The height must add the border, which scrollHeight leaves out, or even a one-line field shows a scrollbar.
   // The style sheet's max-height stops the growth at eight lines.
@@ -43,6 +46,11 @@ export function createComposerView({ page, composer, field, button, heldChip, he
     return text;
   }
 
+  function sendOrHold(action) {
+    if (action === 'send') handlers.send(take());
+    else if (action === 'hold') handlers.hold(take());
+  }
+
   field.addEventListener('input', () => {
     grow();
     refresh();
@@ -55,8 +63,7 @@ export function createComposerView({ page, composer, field, button, heldChip, he
     const action = state.enter(event, field.value);
     if (action === 'newline') return;
     event.preventDefault();
-    if (action === 'send') handlers.send(take());
-    else if (action === 'hold') handlers.hold(take());
+    sendOrHold(action);
   });
 
   button.addEventListener('click', () => {
@@ -90,7 +97,44 @@ export function createComposerView({ page, composer, field, button, heldChip, he
     },
 
     setPlaceholder(text) {
-      field.placeholder = text;
+      basePlaceholder = text;
+      field.placeholder = listening ? LISTENING_PLACEHOLDER : text;
+    },
+
+    /** While the mic listens the empty field says so. @param {boolean} on */
+    setListening(on) {
+      listening = on;
+      field.placeholder = on ? LISTENING_PLACEHOLDER : basePlaceholder;
+    },
+
+    /** Sends the field as pressing Enter would: a send, or a hold while Jet replies. It never stops the reply, and with nothing to send it leaves the field alone. */
+    sendNow() {
+      sendOrHold(state.enter({ shiftKey: false, isComposing: false }, field.value));
+    },
+
+    /**
+     * Writes heard words: sets the text, grows the field and refreshes the button, but never focuses
+     * the field or scrolls, so a phone's keyboard stays down. Where the caret was is kept while the
+     * person is editing; otherwise it goes to the end.
+     */
+    dictate(text) {
+      const editing = document.activeElement === field;
+      const { selectionStart, selectionEnd } = field;
+      field.value = text;
+      if (editing) field.setSelectionRange(selectionStart, selectionEnd);
+      else field.setSelectionRange(text.length, text.length);
+      grow();
+      refresh();
+    },
+
+    /** Tells the page that a burst of heard words has landed, as it is told of typing. */
+    dictated() {
+      handlers.input?.(field.value);
+    },
+
+    /** The halo on Send while the page waits out the end of a thought. @param {boolean} on */
+    setPending(on) {
+      button.classList.toggle('is-pending', on);
     },
 
     /** Moves the composer to its layout, hopping there unless motion is reduced. */

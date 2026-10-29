@@ -38,6 +38,7 @@ const ICONS = {
   plus: 'M12 5v14M5 12h14',
   speaker: 'M16.5 5L11.5 9H7.5v6h4l5 4V5z',
   speakerWaves: 'M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14',
+  mic: 'M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM5 11a7 7 0 0 0 14 0M12 18v3',
 };
 const FILLED = new Set(['stop']);
 

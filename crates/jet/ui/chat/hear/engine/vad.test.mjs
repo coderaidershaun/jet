@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import createVADModule from '../../vendor/ten-vad/ten_vad.js';
+import createVADModule from '../../../vendor/ten-vad/ten_vad.js';
 import { createVad, HOP_SAMPLES } from './vad.js';
 
 const WAV_HEADER_BYTES = 44;
-const wasmBinary = readFileSync(new URL('../../vendor/ten-vad/ten_vad.wasm', import.meta.url));
+const wasmBinary = readFileSync(new URL('../../../vendor/ten-vad/ten_vad.wasm', import.meta.url));
 
 /** The speech probability of every 256-sample hop of a 16 kHz mono 16-bit WAV file. */
 async function probabilities(fileName) {
