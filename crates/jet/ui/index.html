@@ -6,6 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>Jet</title>
 <link rel="icon" href="data:,">
+<link rel="stylesheet" href="./loading.css">
 <link rel="stylesheet" href="./vendor/katex/katex.min.css">
 <link rel="stylesheet" href="./chat.css">
 <link rel="stylesheet" href="./chat/drawer/drawer.css">
@@ -19,6 +20,12 @@
 <script type="module" src="./chat/main.js"></script>
 </head>
 <body>
+<div class="loading" id="loading" role="status">
+  <p class="loading-text">Jet is loading…</p>
+  <span class="loading-ring" aria-hidden="true"></span>
+  <p class="loading-slow">Still loading. The server may be busy.</p>
+  <noscript><p class="loading-text">Jet needs JavaScript.</p></noscript>
+</div>
 <div class="page" id="page" data-layout="centred">
   <aside class="drawer" id="drawer" aria-label="Jet and the agent stream">
     <div class="drawer-inner">

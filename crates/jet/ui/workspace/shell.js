@@ -6,6 +6,8 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
   const narrow = matchMedia('(max-width: 759px)');
   let expanded = !narrow.matches;
   let mode = 'chat', apps = [], selected = null, refreshNumber = 0;
+  let resolveReady;
+  const ready = new Promise((resolve) => { resolveReady = resolve; });
   const drawer = document.getElementById('drawer');
   const inner = drawer.querySelector('.drawer-inner');
   const appButton = app => { const label = app.label + (app.enabled ? '' : ' · disabled'); return h('button', { type: 'button', class: 'workspace-button', 'aria-label': label, title: label, 'data-app-id': app.id, onClick: () => select(app) }, h('span', { class: 'nav-icon', 'aria-hidden': 'true', text: app.label.slice(0, 1).toUpperCase() }), h('span', { class: 'nav-label', text: app.label })); };
@@ -57,8 +59,14 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
       for (const app of apps) frames.update(app);
       list.replaceChildren(...apps.map(appButton));
       paint();
+      resolveReady();
       return true;
-    } catch (error) { if (current === refreshNumber) notice.textContent = 'Apps could not be loaded: ' + (error.message ?? String(error)); }
+    } catch (error) {
+      if (current === refreshNumber) {
+        notice.textContent = 'Apps could not be loaded: ' + (error.message ?? String(error));
+        resolveReady();
+      }
+    }
   }
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return;
@@ -76,6 +84,7 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
   const api = {
     activeAppId: () => selected,
     refresh,
+    ready,
     toolsContent,
     openApp(id) { const app = apps.find(item => item.id === id); if (!app) throw new Error('This app is no longer registered.'); select(app); },
     async reloadApp(id) { if (!await refresh()) throw new Error('Apps could not be refreshed. Try reloading again.'); if (!apps.some(item => item.id === id)) throw new Error('This app is no longer registered.'); frames.reload(id); },

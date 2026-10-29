@@ -1,0 +1,34 @@
+.loading {
+  position: fixed; inset: 0; z-index: 1000;
+  display: grid; place-content: center; justify-items: center; gap: 14px;
+  background: var(--ground); color: var(--fg);
+  font-family: var(--font); font-size: 16px; line-height: 22px;
+  transition: opacity 220ms ease-out;
+}
+.loading p { margin: 0; }
+.loading.is-leaving { opacity: 0; pointer-events: none; }
+
+/* The text and ring wait 200 ms, so a fast load shows only the plain background.
+   Visibility is animated too, so a screen reader does not read a line before it shows. */
+.loading-text, .loading-ring { animation: loading-appear 150ms ease-out 200ms both; }
+@keyframes loading-appear {
+  from { opacity: 0; visibility: hidden; }
+  to { opacity: 1; visibility: visible; }
+}
+
+.loading-ring { width: 24px; height: 24px; }
+.loading-ring::after {
+  content: ""; display: block; box-sizing: border-box; width: 24px; height: 24px;
+  border: 3px solid var(--fg); border-color: var(--fg) transparent var(--fg) transparent; border-radius: 50%;
+  animation: loading-spin 1.2s linear infinite;
+}
+@keyframes loading-spin { to { transform: rotate(360deg); } }
+
+.loading-slow { color: var(--muted); font-size: 13px; line-height: 18px; animation: loading-appear 150ms ease-out 10s both; }
+
+.loading.is-failed .loading-ring, .loading.is-failed .loading-slow { display: none; }
+.loading.is-failed .loading-text {
+  max-width: min(560px, calc(100vw - 32px)); padding: 12px 16px; overflow-wrap: anywhere;
+  background: var(--surface-2); border-left: 2px solid var(--danger); border-radius: 8px;
+  animation: none; opacity: 1; visibility: visible;
+}

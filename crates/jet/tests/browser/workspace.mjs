@@ -57,7 +57,7 @@ if (input.includes('fail-before-init')) {
   page.on('pageerror', error => { errors.push(String(error)); console.error(error); });
   page.on('request', request => { if (request.url().endsWith('/api/chat/send')) sends.push(request.postDataJSON()); if (request.url().endsWith('/api/chat/stop')) stops.push(request.postDataJSON()); });
   await page.goto(origin);
-  await page.locator('.workspace-shell').waitFor();
+  await page.locator('#loading').waitFor({ state: 'detached' });
   await delay(250);
   await page.screenshot({ path: path.join(output, 'workspace-empty.png') });
   const api = async body => { const response = await context.request.post(origin + '/api/apps', { data: body }); assert.ok(response.ok(), await response.text()); return response.json(); };
@@ -245,7 +245,7 @@ if (input.includes('fail-before-init')) {
   assert.equal(await page.locator('#context-tokens').textContent(), '600 / 1,000 tokens');
   await page.unroute('**/api/settings');
   await page.reload();
-  await page.locator('.workspace-shell').waitFor();
+  await page.locator('#loading').waitFor({ state: 'detached' });
   await until(async () => (await page.locator('#context-tokens').textContent()) === '600 / 1,000 tokens', 'Persisted context survives browser reload');
   assert.equal((await (await context.request.get(origin + '/api/settings')).json()).effort, 'low');
   await slash('/thinking');
@@ -348,7 +348,7 @@ if (input.includes('fail-before-init')) {
   await page.locator('#sheet').waitFor({ state: 'hidden' });
   await until(async () => (await page.locator('#context-tokens').textContent()) === '— / — tokens', 'Forget clears measured context');
   await page.reload();
-  await page.locator('.workspace-shell').waitFor();
+  await page.locator('#loading').waitFor({ state: 'detached' });
   assert.equal(await page.locator('#context-tokens').textContent(), '— / — tokens');
   await nav(a.id).click();
   await chat();

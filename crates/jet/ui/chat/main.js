@@ -5,6 +5,7 @@ import { createCommandMenu } from '../workspace/completion.js';
 import { createToolBrowser } from '../workspace/tools.js';
 import { createWorkspace } from '../workspace/shell.js';
 import { h, icon } from '../dom.js';
+import { failLoading, finishLoading } from '../loading.js';
 import { connectAgent } from '../bridge/agent.js';
 import { requestJson } from '../bridge/browser-agent.js';
 import { displayName, loadSettings, saveSettings } from '../bridge/settings.js';
@@ -280,13 +281,14 @@ async function start() {
     live.showInLane(view.liveLane());
   }
   live.start();
-  agent.watch?.((snapshot) => { turn.restore(snapshot); workspace.refresh(); refreshStatus(); }, (event) => turn.observe(event));
+  // The first snapshot builds every row of the thread again, so the loading screen waits for it.
+  let resolveFirstSnapshot;
+  const firstSnapshot = new Promise((resolve) => { resolveFirstSnapshot = resolve; });
+  agent.watch?.((snapshot) => { turn.restore(snapshot); workspace.refresh(); resolveFirstSnapshot(); refreshStatus(); }, (event) => turn.observe(event));
+  finishLoading({ cover: $('loading'), settled: Promise.all([workspace.ready, firstSnapshot]), reducedMotion });
 }
 
 start().catch((error) => {
   console.error(error);
-  const message = document.createElement('p');
-  message.className = 'boot-error';
-  message.textContent = 'Jet could not start: ' + (error && error.message ? error.message : error);
-  document.body.append(message);
+  failLoading({ cover: $('loading'), message: 'Jet could not start: ' + (error && error.message ? error.message : error) });
 });
