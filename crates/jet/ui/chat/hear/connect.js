@@ -46,7 +46,6 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
     announce,
     onStart: () => { unlockVoice(); start(); },
     onStop: stop,
-    reducedMotion,
   });
 
   let hearing = null;
@@ -57,12 +56,10 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
   let pausing = false;
   let duckedTurn = null;
   let cancelJetCheck = null;
-  // SMELL: this bookkeeping of turns, clips and the ducked voice decides when a message sends itself, and
+  // SMELL: this bookkeeping of turns and the ducked voice decides when a message sends itself, and
   // it has no test because this file needs a browser. A bug in how these events are joined shows up only by hand.
   /** Turns that began with speech and have not ended: a key pressed in one of them is the person taking over. */
   const openTurns = new Set();
-  /** How many clips of each turn still wait for their words; a discarded turn never gets all of them back. */
-  const inFlight = new Map();
 
   // With the speaker off Jet's voice needs no sound yet; switching the speaker on starts it then.
   function unlockVoice() {
@@ -82,10 +79,6 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
     paintHalo();
   }
 
-  function showBusy() {
-    toggle.setBusy([...inFlight.values()].reduce((sum, count) => sum + count, 0));
-  }
-
   function unduckFor(turnId) {
     if (duckedTurn !== turnId) return;
     duckedTurn = null;
@@ -94,10 +87,8 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
 
   function forgetTurn(turnId) {
     openTurns.delete(turnId);
-    inFlight.delete(turnId);
     unduckFor(turnId);
     pausing = false;
-    showBusy();
     paintHalo();
   }
 
@@ -130,10 +121,6 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
       if (duckedTurn !== null) unduckFor(duckedTurn);
       paintHalo();
     }
-    if (!LISTENING_STATES.has(state)) {
-      inFlight.clear();
-      showBusy();
-    }
     repaint();
   }
 
@@ -154,7 +141,6 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
         showState(event.state, event.reason);
         break;
       case 'level':
-        toggle.setLevel(event.level);
         updateJetSpeaking();
         break;
       case 'speech':
@@ -166,13 +152,7 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
           duckedTurn = event.turnId;
         }
         break;
-      case 'utterance':
-        inFlight.set(event.turnId, (inFlight.get(event.turnId) ?? 0) + 1);
-        showBusy();
-        break;
       case 'words':
-        inFlight.set(event.turnId, Math.max(0, (inFlight.get(event.turnId) ?? 0) - 1));
-        showBusy();
         if (event.interrupts) turn.silence();
         unduckFor(event.turnId);
         dictation.append(event.text);

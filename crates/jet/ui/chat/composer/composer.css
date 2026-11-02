@@ -43,15 +43,14 @@ textarea#field::placeholder { color: var(--muted); }
 .attach:hover, .attach:focus-visible, .voice:hover, .voice:focus-visible, .hear:hover, .hear:focus-visible { background: rgba(255, 255, 255, .06); color: var(--fg); }
 .attach .icon, .voice .icon, .hear .icon { width: 20px; height: 20px; }
 
-/* Speaker and mic share one 36 px pill. The speaker comes first, where people already reach for it,
-   and the whole pill takes the accent tint when either half is on. */
+/* Mic and speaker share one 36 px pill, and the whole pill takes the accent tint when either half is on. */
 .voice-pill {
   display: flex; flex: none; height: 36px; margin: 3px 4px 3px 0; border-radius: 18px;
   transition: background 120ms;
 }
 .voice-pill.has-on { background: rgba(61, 139, 255, .14); }
-.voice-pill .voice { border-radius: 18px 0 0 18px; }
-.voice-pill .hear { border-left: 1px solid var(--line); border-radius: 0 18px 18px 0; }
+.voice-pill .hear { border-radius: 18px 0 0 18px; }
+.voice-pill .voice { border-left: 1px solid var(--line); border-radius: 0 18px 18px 0; }
 
 .voice[aria-pressed="true"] { color: var(--accent); }
 .voice[aria-pressed="true"]:hover, .voice[aria-pressed="true"]:focus-visible { background: rgba(61, 139, 255, .22); color: var(--accent); }
@@ -65,7 +64,7 @@ textarea#field::placeholder { color: var(--muted); }
 @keyframes voice-pulse { 50% { opacity: .5; } }
 .reduced .voice.is-speaking .icon { animation: none; }
 
-/* The mic. data-state is the engine's state; the ring is ::before, driven by --level (0 to 1) while it listens. */
+/* The mic's data-state is the listening engine's state. */
 .hear[aria-disabled="true"] { opacity: .45; }
 .hear[data-state="listening"], .hear[data-state="halfDuplexPause"] { color: var(--accent); }
 .hear[data-state="listening"]:hover, .hear[data-state="listening"]:focus-visible, .hear[data-state="halfDuplexPause"]:hover, .hear[data-state="halfDuplexPause"]:focus-visible { background: rgba(61, 139, 255, .22); }
@@ -73,16 +72,7 @@ textarea#field::placeholder { color: var(--muted); }
 .hear[data-state="starting"] .icon { opacity: .5; }
 .hear[data-state="halfDuplexPause"] .icon { opacity: .6; }
 .hear[data-state="asleep"]::before { background: var(--accent); }
-.hear[data-state="listening"]::before, .hear[data-state="starting"]::before {
-  content: ""; position: absolute; inset: -3px; border: 2px solid var(--accent); border-radius: 50%; pointer-events: none;
-}
-.hear[data-state="listening"]::before {
-  opacity: calc(.25 + .65 * var(--level, 0)); transform: scale(calc(1 + .35 * var(--level, 0)));
-}
-.hear[data-state="starting"]::before { border-color: transparent; border-top-color: var(--accent); animation: hear-spin 1s linear 1; }
-.hear.is-busy::before { transform: none; animation: voice-pulse 1.6s ease-in-out infinite; }
 .hear.is-greeting .icon { animation: voice-pulse 1.2s ease-in-out 1; }
-@keyframes hear-spin { to { transform: rotate(360deg); } }
 
 /* The 12 px padding above leaves room for the × that overhangs each chip. */
 .tray { display: flex; gap: 8px; margin: 0; padding: 12px 12px 4px; list-style: none; overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
@@ -117,8 +107,7 @@ textarea#field::placeholder { color: var(--muted); }
 .tray-note { margin: 0; padding: 4px 16px 0; color: var(--danger); font-size: 12px; line-height: 16px; }
 .reduced .chip { animation: none; }
 .reduced .hear.is-greeting .icon { animation: none; }
-.reduced .hear::before, .reduced .send::before { animation: none; transition: none; transform: none; }
-.reduced .hear[data-state="listening"]::before, .reduced .hear.is-busy::before { opacity: .25; }
+.reduced .send::before { transition: none; }
 .reduced .send.is-pending::before { opacity: 0; }
 
 /* Files dragged over the page: the box turns into a place to drop them. */
@@ -154,8 +143,6 @@ textarea#field::placeholder { color: var(--muted); }
 .held .icon-button::after { content: ""; position: absolute; inset: -4px; }
 @media (prefers-reduced-motion: reduce) {
   .chip, .voice.is-speaking .icon, .hear.is-greeting .icon { animation: none; }
-  /* Rules inside a media query do not win by being there, so :root makes these as specific as the rule for each state. */
-  :root .hear::before, :root .send::before { animation: none; transition: none; transform: none; }
-  .hear[data-state="listening"]::before, .hear.is-busy::before { opacity: .25; }
+  .send::before { transition: none; }
   .send.is-pending::before { opacity: 0; }
 }

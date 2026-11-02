@@ -7,10 +7,8 @@ function fakeElement() {
   const attributes = new Map();
   const classes = new Set();
   const listeners = new Map();
-  const properties = new Map();
   return {
     title: '',
-    style: { setProperty: (name, value) => properties.set(name, value) },
     setAttribute: (name, value) => attributes.set(name, String(value)),
     removeAttribute: (name) => attributes.delete(name),
     getAttribute: (name) => attributes.get(name) ?? null,
@@ -19,7 +17,6 @@ function fakeElement() {
     classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)), add: (name) => classes.add(name), remove: (name) => classes.delete(name), contains: (name) => classes.has(name) },
     addEventListener: (kind, listener) => listeners.set(kind, listener),
     click: () => listeners.get('click')(),
-    property: (name) => properties.get(name),
   };
 }
 
@@ -40,12 +37,10 @@ const blockedStorage = {
 
 const READY = { available: true, reason: null };
 
-/** Builds a toggle on fake parts; frames wait in a queue until `runFrames` runs them. */
-function make({ storage = memoryStorage(), status = READY, check = async () => status, reducedMotion = false } = {}) {
+function make({ storage = memoryStorage(), status = READY, check = async () => status } = {}) {
   const button = fakeElement();
   const said = [];
   const calls = [];
-  const frames = [];
   const toggle = createHearToggle({
     button,
     storage,
@@ -54,15 +49,12 @@ function make({ storage = memoryStorage(), status = READY, check = async () => s
     announce: (message) => said.push(message),
     onStart: () => calls.push('start'),
     onStop: () => calls.push('stop'),
-    reducedMotion: () => reducedMotion,
-    requestFrame: (fn) => frames.push(fn),
   });
-  const runFrames = () => { while (frames.length > 0) frames.shift()(); };
   const look = () => [button.getAttribute('data-state'), button.getAttribute('aria-pressed'), button.title];
-  return { button, toggle, said, calls, frames, runFrames, look };
+  return { button, toggle, said, calls, look };
 }
 
-test('the mic shows every state with its tooltip, announces each change once, and rings with the voice level', () => {
+test('the mic shows every state with its tooltip and announces each change once', () => {
   const previous = globalThis.document;
   globalThis.document = { createElementNS: () => fakeElement() };
   try {
@@ -103,30 +95,8 @@ test('the mic shows every state with its tooltip, announces each change once, an
       ['asleep', false, false], ['waitingForTouch', false, false], ['blocked', true, false], ['problem', true, false],
     ]);
 
-    // The ring answers the voice through an eased level, and words on their way make it pulse.
-    mic.toggle.setState('listening');
-    mic.toggle.setLevel(1);
-    mic.frames.shift()();
-    const first = Number(mic.button.property('--level'));
-    assert.ok(first > 0 && first < 1, 'the ring eases toward the voice, not straight to it');
-    mic.runFrames();
-    assert.equal(Number(mic.button.property('--level')), 1);
-    assert.equal(mic.frames.length, 0, 'the easing stops once the ring has caught up');
-    mic.toggle.setBusy(2);
-    assert.equal(mic.button.classList.contains('is-busy'), true);
-    mic.toggle.setBusy(0);
-    assert.equal(mic.button.classList.contains('is-busy'), false);
-    mic.toggle.setState('asleep');
-    assert.equal(Number(mic.button.property('--level')), 0, 'the ring rests when listening stops');
     mic.toggle.greet();
     assert.equal(mic.button.classList.contains('is-greeting'), true);
-
-    // Under reduced motion the ring stays still.
-    const still = make({ reducedMotion: true });
-    still.toggle.setState('listening');
-    still.toggle.setLevel(1);
-    assert.equal(still.frames.length, 0);
-    assert.equal(still.button.property('--level'), '0');
 
     // A server that cannot hear shows why and looks switched off, whatever was chosen.
     const reason = 'Hearing needs GEMINI_API_KEY in .env';
