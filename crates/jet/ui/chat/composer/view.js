@@ -101,10 +101,13 @@ export function createComposerView({ page, composer, field, button, heldChip, he
       field.placeholder = listening ? LISTENING_PLACEHOLDER : text;
     },
 
-    /** While the mic listens the empty field says so. @param {boolean} on */
+    /** While the mic listens the empty field says so, and the composer is marked so the style sheet can show the trail. @param {boolean} on */
     setListening(on) {
       listening = on;
       field.placeholder = on ? LISTENING_PLACEHOLDER : basePlaceholder;
+      composer.classList.toggle('is-listening', on);
+      // The trail takes width from the field while the mic listens and gives it back after, so the lines wrap differently.
+      grow();
     },
 
     /** Sends the field as pressing Enter would: a send, or a hold while Jet replies. It never stops the reply, and with nothing to send it leaves the field alone. */

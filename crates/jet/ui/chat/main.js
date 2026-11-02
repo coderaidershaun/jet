@@ -222,6 +222,7 @@ async function start() {
     status: voiceStatus.hear,
     button: $('hear'),
     pill: $('voice-pill'),
+    trailCanvas: $('trail'),
     field: $('field'),
     composerView,
     thread,

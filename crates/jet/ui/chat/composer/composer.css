@@ -74,6 +74,11 @@ textarea#field::placeholder { color: var(--muted); }
 .hear[data-state="asleep"]::before { background: var(--accent); }
 .hear.is-greeting .icon { animation: voice-pulse 1.2s ease-in-out 1; }
 
+/* The 3 px margins match the buttons', so the trail centres on a one-line field and stays at the foot as the field grows. */
+.trail { display: none; flex: none; width: 96px; height: 36px; margin: 3px 0; }
+:root:not(.reduced) .composer.is-listening .trail { display: block; }
+@media (max-width: 479.98px) { .trail { width: 56px; } }
+
 /* The 12 px padding above leaves room for the × that overhangs each chip. */
 .tray { display: flex; gap: 8px; margin: 0; padding: 12px 12px 4px; list-style: none; overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
 .chip { position: relative; flex: none; animation: rise 160ms ease-out; }

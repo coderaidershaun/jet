@@ -24,17 +24,18 @@ function fakeClock() {
   };
 }
 
-/** A field that only holds text, and a view that writes to it and counts how often the page was told. */
+/** A field that only holds text, and a view that writes to it, keeps every write, and counts how often the page was told. */
 function room({ reducedMotion = false } = {}) {
   const field = { value: '' };
+  const writes = [];
   const told = [];
   const composerView = {
-    dictate: (text) => { field.value = text; },
+    dictate: (text) => { writes.push(text); field.value = text; },
     dictated: () => told.push(field.value),
   };
   const clock = fakeClock();
   const dictation = createDictation({ field, composerView, clock, reducedMotion: () => reducedMotion });
-  return { field, told, clock, dictation };
+  return { field, writes, told, clock, dictation };
 }
 
 test('heard words land one every 35 ms, tidy and capitalised, and the page is told once the burst has landed', () => {
@@ -108,4 +109,56 @@ test('under reduced motion a burst of words lands whole', () => {
   assert.equal(field.value, 'Hello there jet');
   assert.deepEqual(told, ['Hello there jet']);
   assert.equal(dictation.landing, false);
+});
+
+test('live words show after the heard words until those land in their place, and leave with the turn, a take-over or a send by hand', () => {
+  const { field, writes, told, clock, dictation } = room();
+
+  // Live words show at once, with a capital when they start the message, and follow the recognizer.
+  dictation.showLive('hello');
+  assert.equal(field.value, 'Hello');
+  dictation.showLive('hello there how');
+  assert.equal(field.value, 'Hello there how');
+
+  // Heard words take the place of the live words they cover in one update, with no typewriter.
+  writes.length = 0;
+  dictation.append('Hello there,');
+  assert.deepEqual(writes, ['Hello there, how']);
+  assert.deepEqual(told, ['Hello there, how']);
+  dictation.showLive('hello there how are');
+  assert.equal(field.value, 'Hello there, how are', 'only the words past the two heard ones show as live words');
+
+  // The turn ends: the live words go, and the next turn counts heard words from zero.
+  dictation.clearLive();
+  assert.equal(field.value, 'Hello there,');
+  dictation.append('one two three');
+  assert.equal(field.value, 'Hello there, one', 'with no live words showing the typewriter runs as before');
+  dictation.showLive('one two three four');
+  assert.equal(field.value, 'Hello there, one two three four', 'the words still waiting land before the live words');
+  clock.advance(1000);
+  assert.equal(field.value, 'Hello there, one two three four', 'nothing lands twice');
+
+  // A take-over takes the live words away, and none show until the field is empty.
+  field.value += 'x';
+  dictation.takeOver();
+  assert.equal(field.value, 'Hello there, one two threex');
+  dictation.showLive('one two three four five');
+  assert.equal(field.value, 'Hello there, one two threex');
+  field.value = '';
+  dictation.reset();
+  dictation.clearLive();
+  dictation.showLive('again');
+  assert.equal(field.value, 'Again');
+
+  // A message sent by hand holds the live words, and the rest of that turn is dropped.
+  field.value = '';
+  dictation.reset();
+  assert.equal(dictation.autoSend, false);
+  dictation.showLive('again and more');
+  dictation.append('Again and more.');
+  assert.equal(field.value, '');
+  dictation.clearLive();
+  assert.equal(dictation.autoSend, true);
+  dictation.showLive('next');
+  assert.equal(field.value, 'Next');
 });

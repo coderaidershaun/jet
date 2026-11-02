@@ -41,9 +41,11 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Spoken reply** — a reply that is held back and shown as the voice reaches each word, so words appear just before they are heard. Jet settles when the voice has finished. Stop, Esc, a new message or switching voice off quiets the voice and shows every word at once.
 - **Cue** — a vocal tag in a reply such as `<laugh>`, from the list in `cues.rs`; the voice performs it, the bubble hides it.
 - **Listening** — the page watching the microphone for speech while the mic button is on. _Avoid_: recording.
+- **Trail** — the bars beside the mic that show how loud the sound it hears is, flowing left while it listens.
 - **Listening engine** — `ui/chat/hear/engine/`: turns the microphone's sound into events about what the user said, and touches no page element. _Avoid_: recogniser (that is Google's side).
 - **Utterance** — one stretch of the user's speech, cut at a pause or at eight seconds, sent for its words as a clip.
 - **Heard words** — what Google gives back for an utterance; they land in the field.
+- **Live words** — the browser's own running guess at the user's words while they speak, shown in the field after the heard words until those land in their place. A message that sends itself never holds them; a message sent by hand while they show holds them, and the rest of that spoken turn is dropped. _Avoid_: preview (that is a file's thumbnail), interim.
 - **Endpoint** — the moment the page decides the user has finished a message: silence for the tier the words call for, with all heard words back. _Avoid_: turn (that is the exchange).
 - **Barge-in** — speech while Jet's voice plays; it quiets Jet and becomes the next message.
 - **Echo strike** — a barge-in whose words were Jet's own; two strikes make the mic wait while Jet speaks.

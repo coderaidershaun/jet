@@ -1,7 +1,7 @@
-// Joins the listening engine to the page: the mic button, the message field, the send, Jet's voice
-// and Jet on the stage. The engine is loaded and built on the first start, so a page that never
-// listens never downloads the voice detector. This needs a browser, so it only passes events along;
-// the decisions worth a test are made by the mic button and the dictation.
+// Joins the listening engine to the page: the mic button, the trail of loudness beside it, the
+// message field and the browser's live words in it, the send, Jet's voice and Jet on the stage. The
+// engine is loaded and built on the first start, so a page that never listens never downloads the
+// voice detector. This file needs a browser, so it has no test.
 
 import { displayName } from '../../bridge/settings.js';
 import { realClock } from '../clock.js';
@@ -10,6 +10,8 @@ import { createDictation } from './dictation.js';
 import { createHearing } from './engine/hearing.js';
 import { createVad } from './engine/vad.js';
 import { createHearToggle } from './hear-toggle.js';
+import { createLiveWords } from './live-words.js';
+import { createTrail } from './trail.js';
 
 const NO_HEARING = { available: false, reason: 'The voice could not be reached' };
 const JET_WORDS_KEPT_MS = 10000;
@@ -22,7 +24,7 @@ const LISTENING_STATES = new Set(['listening', 'halfDuplexPause']);
  * @param {{
  *   agent: { hear: Function, voiceStatus: () => Promise<{ hear?: { available: boolean, reason: string | null } }> },
  *   status: { available: boolean, reason: string | null } | undefined,
- *   button: HTMLButtonElement, pill: HTMLElement, field: HTMLTextAreaElement,
+ *   button: HTMLButtonElement, pill: HTMLElement, trailCanvas: HTMLCanvasElement, field: HTMLTextAreaElement,
  *   composerView: ReturnType<typeof import('../composer/view.js').createComposerView>,
  *   thread: ReturnType<typeof import('../thread/store.js').createThread>,
  *   turn: ReturnType<typeof import('../turn.js').createTurn>,
@@ -37,8 +39,9 @@ const LISTENING_STATES = new Set(['listening', 'halfDuplexPause']);
  * }} parts   `status` is the server's word on hearing, and may be missing when the voice could not be reached
  * @returns {{ repaint: () => void, replyEnded: () => void, fieldChanged: (text: string) => void, userActive: () => void }}
  */
-export function connectHearing({ agent, status, button, pill, field, composerView, thread, turn, live, voicePlayer, speakerOn, settings, appLabels, announce, reducedMotion, clock = realClock }) {
+export function connectHearing({ agent, status, button, pill, trailCanvas, field, composerView, thread, turn, live, voicePlayer, speakerOn, settings, appLabels, announce, reducedMotion, clock = realClock }) {
   const dictation = createDictation({ field, composerView, clock, reducedMotion });
+  const trail = createTrail({ canvas: trailCanvas, reducedMotion });
   const toggle = createHearToggle({
     button,
     status: status ?? NO_HEARING,
@@ -56,10 +59,12 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
   let pausing = false;
   let duckedTurn = null;
   let cancelJetCheck = null;
-  // SMELL: this bookkeeping of turns and the ducked voice decides when a message sends itself, and
-  // it has no test because this file needs a browser. A bug in how these events are joined shows up only by hand.
+  // SMELL: this bookkeeping of turns, live words and the ducked voice decides when a message sends itself and what it
+  // holds, and it has no test because this file needs a browser. A bug in how these events are joined shows up only by hand.
   /** Turns that began with speech and have not ended: a key pressed in one of them is the person taking over. */
   const openTurns = new Set();
+  // Text that arrives outside a turn may be Jet's own voice heard through the speakers.
+  const liveWords = createLiveWords({ onWords: (text) => { if (openTurns.size > 0) dictation.showLive(text); } });
 
   // With the speaker off Jet's voice needs no sound yet; switching the speaker on starts it then.
   function unlockVoice() {
@@ -86,7 +91,12 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
   }
 
   function forgetTurn(turnId) {
-    openTurns.delete(turnId);
+    // A turn the mic cut short can be thrown away as an echo after the next turn has begun,
+    // and must not take the new turn's live words with it.
+    if (openTurns.delete(turnId)) {
+      dictation.clearLive();
+      liveWords.dropAll();
+    }
     unduckFor(turnId);
     pausing = false;
     paintHalo();
@@ -112,6 +122,9 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
   function showState(state, reason) {
     toggle.setState(state, reason);
     composerView.setListening(LISTENING_STATES.has(state));
+    // The browser's recognizer opens a microphone of its own, so it stops even while the mic only waits out Jet's voice.
+    if (state === 'listening') liveWords.start();
+    else liveWords.stop();
     if (state === 'halfDuplexPause') checkJetUntilResumed();
     if (state !== 'listening') {
       // A turn cut short by the mic stopping keeps its words in the field but never sends itself.
@@ -141,11 +154,18 @@ export function connectHearing({ agent, status, button, pill, field, composerVie
         showState(event.state, event.reason);
         break;
       case 'level':
+        trail.add(event.level);
         updateJetSpeaking();
         break;
       case 'speech':
         if (!event.on) break;
-        openTurns.add(event.turnId);
+        if (!openTurns.has(event.turnId)) {
+          openTurns.add(event.turnId);
+          // A turn the mic cut short is never forgotten, and its words can still land,
+          // so each new turn starts its live words afresh.
+          liveWords.dropFinished();
+          dictation.clearLive();
+        }
         live.typing();
         if (voicePlayer.audible()) {
           voicePlayer.duck();
