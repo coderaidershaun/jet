@@ -30,7 +30,7 @@ The browser uses JSON commands and one server-sent event stream:
 
 ## The file reader
 
-Every parse of a stored file (its details at upload, and `files_read`) runs in a child of the running program started as `jet --read-file`, and never in the server itself. The child sets `RLIMIT_AS` to 2 GiB before it reads the job from standard input, and prints one JSON answer; the server allows 30 seconds and 16 MiB of output, runs two children at a time, and kills a child that is late. A crash, an abort from a failed allocation or a hang therefore gives only a refused file. The child sets the core dump limit to 1, not 0, because the host sends core dumps to a helper program that the kernel skips only at 1.
+Every parse of a stored file (its details at upload, and `files_read`) runs in a child of the running program started as `jet --read-file`, and never in the server itself. The child sets `RLIMIT_AS` to 2 GiB (1 TiB on macOS, which refuses any cap below the roughly 400 GiB a process maps at start) before it reads the job from standard input, and prints one JSON answer; the server allows 30 seconds and 16 MiB of output, runs two children at a time, and kills a child that is late. A crash, an abort from a failed allocation or a hang therefore gives only a refused file. The child sets the core dump limit to 1, not 0, because the host sends core dumps to a helper program that the kernel skips only at 1.
 
 Provider paths come from server settings. Process-command MCP configuration is rejected; the host never launches legacy app processes.
 

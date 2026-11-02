@@ -22,7 +22,13 @@ pub const READ_FILE_ARGUMENT: &str = "--read-file";
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
+#[cfg(target_os = "linux")]
 const MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// The memory cap off Linux. macOS refuses any cap below what a process has already mapped, about
+/// 400 GiB at rest, so 2 GiB cannot be set there. 1 TiB still stops a runaway reservation, and the
+/// time limits bound the rest.
+#[cfg(all(unix, not(target_os = "linux")))]
+const LOOSE_MEMORY_LIMIT_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 /// Readers allowed at once, so the memory cap cannot be multiplied without end.
 const READERS_AT_ONCE: usize = 2;
 
@@ -175,6 +181,7 @@ fn reader_program() -> PathBuf {
 
 #[derive(Debug, thiserror::Error)]
 enum ServeError {
+    #[cfg(target_os = "linux")]
     #[error("could not set the memory limit: {0}")]
     Limit(#[source] std::io::Error),
     #[error("could not read the job: {0}")]
@@ -229,7 +236,7 @@ fn answer<T>(result: Result<T, ReadError>) -> Result<Answer<T>, ReadError> {
     }
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn limit_resources() -> Result<(), ServeError> {
     use rlimit::{Resource, setrlimit};
     // Without the memory cap nothing here is safe, so a failure to set it ends the reader.
@@ -238,6 +245,23 @@ fn limit_resources() -> Result<(), ServeError> {
     let _ = setrlimit(Resource::CPU, DEADLINE.as_secs(), DEADLINE.as_secs());
     // The value is 1, not 0: the host sends core dumps to a helper program, and the kernel skips
     // that helper only when the limit is exactly 1.
+    let _ = setrlimit(Resource::CORE, 1, 1);
+    Ok(())
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn limit_resources() -> Result<(), ServeError> {
+    use rlimit::{Resource, setrlimit};
+    if let Err(error) = setrlimit(
+        Resource::AS,
+        LOOSE_MEMORY_LIMIT_BYTES,
+        LOOSE_MEMORY_LIMIT_BYTES,
+    ) {
+        eprintln!(
+            "jet: file reader: the memory cap could not be set on this system: {error}; the reader runs with the time limits only"
+        );
+    }
+    let _ = setrlimit(Resource::CPU, DEADLINE.as_secs(), DEADLINE.as_secs());
     let _ = setrlimit(Resource::CORE, 1, 1);
     Ok(())
 }
