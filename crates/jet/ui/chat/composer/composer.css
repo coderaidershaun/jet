@@ -15,7 +15,7 @@
 }
 
 /* The box, not the field, wears the border and the focus ring, because it holds the tray of files as well as the + button and the field.
-   One line is 44 px: the field's 42 px and the one-pixel border above and below. The field grows with its text up to 196 px, which holds eight lines, and then scrolls. */
+   One line is 44 px: the field's 42 px and the one-pixel border above and below. The field grows with its text up to 152 px, which holds six lines, and then scrolls. */
 .field-box {
   position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 22px;
@@ -25,7 +25,7 @@
 .field-line { display: flex; align-items: flex-end; }
 
 textarea#field {
-  flex: 1; min-width: 0; min-height: 42px; max-height: 196px; padding: 10px 4px 10px 6px;
+  flex: 1; min-width: 0; min-height: 42px; max-height: 152px; padding: 10px 4px 10px 6px;
   background: none; border: 0; border-radius: 0 22px 22px 0; outline: 0;
   font-size: 16px; line-height: 22px; resize: none; display: block;
 }

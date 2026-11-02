@@ -22,8 +22,8 @@ export function createComposerView({ page, composer, field, button, heldChip, he
   let basePlaceholder = field.placeholder;
   let listening = false;
 
-  // The height must add the border, which scrollHeight leaves out, or even a one-line field shows a scrollbar.
-  // The style sheet's max-height stops the growth at eight lines.
+  // The height must add any border, which scrollHeight leaves out, or a field with a border shows a scrollbar.
+  // The style sheet's max-height stops the growth.
   function grow() {
     field.style.height = 'auto';
     field.style.height = field.scrollHeight + field.offsetHeight - field.clientHeight + 'px';
