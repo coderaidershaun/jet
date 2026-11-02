@@ -1,9 +1,9 @@
 // Draws the thread's rows: bubbles with their grouping and tails, day and
 // notice pills, the lane beside each Jet message, the cards of tool calls above
-// a reply and the citation chips in its text, the waiting dots, the error and
-// stopped bubbles, code blocks with Copy, and links. A row's node is kept for as
-// long as the row lives, so the live Jet standing in a lane is never thrown away
-// by a redraw.
+// a reply and the citation chips in its text, the waiting dots, the faded bubble
+// of a spoken message still forming, the error and stopped bubbles, code blocks
+// with Copy, and links. A row's node is kept for as long as the row lives, so the
+// live Jet standing in a lane is never thrown away by a redraw.
 
 import { h } from '../../dom.js';
 import { clockTime } from '../clock.js';
@@ -14,6 +14,7 @@ import { fillAttachments } from './attachments.js';
 
 const LOGIN_HINT = /log ?in/i;
 const doneCalls = (calls) => calls.filter((call) => callState(call) === 'done');
+const dots = () => h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
 
 /**
  * @param {{
@@ -75,6 +76,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     bubble.append(body);
 
     if (row.type === 'user') {
+      bubble.classList.toggle('is-forming', entry.status === 'forming');
       body.textContent = entry.text;
       // A message of files alone has no bubble; its time sits under the files instead.
       bubble.hidden = isFilesAlone(entry);
@@ -84,10 +86,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     } else if (isWaiting(entry)) {
       bubble.classList.add('is-waiting');
       bubble.setAttribute('aria-busy', 'true');
-      body.append(
-        h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
-        h('span', { class: 'still', text: 'still thinking…' }),
-      );
+      body.append(dots(), h('span', { class: 'still', text: 'still thinking…' }));
       return;
     } else {
       body.innerHTML = entry.html;
@@ -97,7 +96,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
       if (entry.status === 'streaming') bubble.setAttribute('aria-busy', 'true');
       if (entry.status === 'stopped') body.append(h('p', { class: 'stopped', text: entry.text ? 'Stopped' : 'Stopped before replying' }));
     }
-    if (entry.status === 'streaming') return;
+    if (entry.status === 'streaming' || entry.status === 'forming') return;
     bubble.append(h('span', { class: 'time', text: clockTime(entry.at) }));
     leaveRoomForTime(bubble, body);
   }

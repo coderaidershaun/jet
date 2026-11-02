@@ -92,3 +92,42 @@ test('a reply slot ends as finished, failed or stopped, and a message held meanw
   thread.addUser('', at(14, 9, 7), [report]);
   assert.deepEqual(thread.lastUser(), { text: '', attachments: [report] });
 });
+
+test('a spoken message forms after every other row, takes its words, and is sent in place or dropped', () => {
+  const thread = createThread({ now: () => NOW });
+  thread.addUser('hello', at(14, 9, 0));
+  thread.openSlot(at(14, 9, 0));
+  thread.finish(entry(2, 'jet', at(14, 9, 0), 'Hi'));
+  assert.equal(thread.forming, null);
+
+  thread.form('Hello');
+  const forming = () => thread.rows().at(-1);
+  assert.deepEqual([forming().type, forming().entry.status, forming().entry.text], ['user', 'forming', 'Hello']);
+  const key = forming().key;
+
+  thread.form('Hello there');
+  assert.equal(thread.forming, 'Hello there');
+  assert.equal(forming().key, key, 'the key holds while the words change');
+  assert.equal(forming().entry.text, 'Hello there');
+
+  // A different message, such as a held one released as the person speaks, is pushed before the forming one.
+  thread.addUser('held one', at(14, 9, 1));
+  assert.equal(forming().key, key);
+  assert.equal(forming().entry.status, 'forming');
+  assert.deepEqual(thread.rows().filter((row) => row.type === 'user').map((row) => row.entry.text), ['hello', 'held one', 'Hello there']);
+
+  // The same words sent: the row keeps its key and becomes an ordinary sent message.
+  thread.addUser('Hello there', at(14, 9, 2));
+  assert.equal(thread.forming, null);
+  const sent = thread.rows().at(-1);
+  assert.equal(sent.key, key);
+  assert.equal(sent.entry.status, 'complete');
+  assert.equal(sent.entry.at, at(14, 9, 2));
+  assert.equal(thread.rows().filter((row) => row.type === 'user').length, 3, 'the message is not on the thread twice');
+
+  // A turn thrown away leaves nothing behind.
+  thread.form('Cough');
+  thread.dropForming();
+  assert.equal(thread.forming, null);
+  assert.equal(thread.rows().at(-1).entry.text, 'Hello there');
+});

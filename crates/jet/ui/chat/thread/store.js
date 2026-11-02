@@ -1,7 +1,8 @@
 // What the thread holds: the messages, the notices, the one reply that may be
-// running, and the message held back until that reply ends. It turns them into
-// rows (bubbles, day pills, notice pills) with the grouping already decided.
-// It knows nothing about the DOM, the agent or the clock beyond `now`.
+// running, the message held back until that reply ends, and the spoken message
+// still forming. It turns them into rows (bubbles, day pills, notice pills) with
+// the grouping already decided. It knows nothing about the DOM, the agent or the
+// clock beyond `now`.
 
 import { dayKey, dayLabel } from '../clock.js';
 
@@ -16,7 +17,7 @@ const GROUP_GAP_MS = 3 * 60 * 1000;
  * @property {'day' | 'notice' | 'user' | 'jet' | 'lane'} type
  * @property {string} [label]         day pills
  * @property {string} [message]       notice pills
- * @property {{ id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string, status: string, error?: string, tools?: import('./cards/model.js').ShownCall[], attachments?: Attachment[], at: number }} [entry]
+ * @property {{ id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string, status: string, error?: string, tools?: import('./cards/model.js').ShownCall[], attachments?: Attachment[], at: number }} [entry]   `status` is `forming` for a spoken message that is not sent yet
  * @property {{ kind: string, message: string }} [failure]
  * @property {boolean} [first]        first bubble of its group
  * @property {boolean} [last]         last bubble of its group, so it carries the tail
@@ -34,6 +35,8 @@ export function createThread({ now = Date.now } = {}) {
   let slot = null;
   /** @type {Held | null} */
   let held = null;
+  /** The spoken message before it is sent. It is kept apart from `items` so it stays the last row. @type {typeof items[number] | null} */
+  let forming = null;
 
   const nextKey = () => 'm' + ++counter;
   const isMessage = (row) => row.type === 'user' || row.type === 'jet';
@@ -79,9 +82,27 @@ export function createThread({ now = Date.now } = {}) {
       held = null;
     },
 
-    /** @param {Attachment[]} [attachments] */
+    /** A message with the words of the forming one takes its row, so the bubble turns solid in place. @param {Attachment[]} [attachments] */
     addUser(text, at = now(), attachments = []) {
-      items.push({ key: nextKey(), type: 'user', at, entry: { id: null, role: 'user', text, html: '', status: 'complete', attachments, at } });
+      const promoted = forming?.entry.text === text ? forming : null;
+      if (promoted) forming = null;
+      items.push({ key: promoted?.key ?? nextKey(), type: 'user', at, entry: { id: null, role: 'user', text, html: '', status: 'complete', attachments, at } });
+    },
+
+    /** The words of the spoken message so far, or null when none forms. */
+    get forming() {
+      return forming?.entry.text ?? null;
+    },
+
+    /** Shows the spoken message with these words as the last row, starting it when none forms. */
+    form(text) {
+      const at = now();
+      forming ??= { key: nextKey(), type: 'user', at, entry: { id: null, role: 'user', text: '', html: '', status: 'forming', attachments: [], at } };
+      forming.entry.text = text;
+    },
+
+    dropForming() {
+      forming = null;
     },
 
     /** A notice that arrives while Jet replies belongs above that reply. */
@@ -206,7 +227,7 @@ export function createThread({ now = Date.now } = {}) {
       /** @type {Row[]} */
       const rows = [];
       let day = null;
-      for (const item of items) {
+      for (const item of forming ? [...items, forming] : items) {
         const key = dayKey(item.at);
         if (key !== day) {
           rows.push({ key: 'day:' + key, type: 'day', label: dayLabel(item.at, now()) });

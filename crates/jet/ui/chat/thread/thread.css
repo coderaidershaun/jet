@@ -34,6 +34,7 @@
 .row-jet .bubble { background: var(--bubble-jet); }
 .row-user .bubble { background: var(--bubble-user); color: var(--on-user); max-width: min(560px, 78%, calc(100% - var(--lane) - 8px)); }
 .row-user .body { white-space: pre-wrap; }
+.bubble.is-forming { opacity: .6; }
 
 /* A sent message is its files above its bubble, in one column on the right. */
 .sent { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 0; max-width: min(560px, 78%, calc(100% - var(--lane) - 8px)); }

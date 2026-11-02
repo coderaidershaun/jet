@@ -1,6 +1,7 @@
-// Puts heard words into the message field one at a time, the way Jet's own reply appears, and
-// remembers whether the message may still send itself. While the user speaks, the browser's own
-// live words show after the heard ones, and the heard words take their place as they land.
+// Puts heard words into the spoken message forming at the end of the thread, one at a time, the way
+// Jet's own reply appears, and remembers whether the message may still send itself. While the user
+// speaks, the browser's own live words show after the heard ones, and the heard words take their
+// place as they land. Once the person takes over, the words go to the message field instead.
 
 const STEP_MS = 35;
 
@@ -13,15 +14,17 @@ function joined(current, text) {
   return current + joiner + (current.trim() === '' ? upperFirst(text) : text);
 }
 
+const beforeTyped = (spoken, typed) => (typed === '' || /^\s/.test(typed) ? spoken + typed : spoken + ' ' + typed);
+
 /**
  * @param {{
- *   field: { value: string },
- *   composerView: { dictate: (text: string) => void, dictated: () => void },
+ *   forming: { text: string, write: (text: string) => void, drop: () => void },
+ *   field: { text: string, write: (text: string) => void },
  *   clock: { after: (fn: () => void, ms: number) => () => void },
  *   reducedMotion: () => boolean,
- * }} options   words always go after what the field holds; `dictated` is called once each time a burst of heard words has landed
+ * }} options   `forming` is the spoken message in the thread, and its `text` is empty when none forms
  */
-export function createDictation({ field, composerView, clock, reducedMotion }) {
+export function createDictation({ forming, field, clock, reducedMotion }) {
   /** @type {string[]} */
   let queue = [];
   let cancelStep = null;
@@ -30,20 +33,22 @@ export function createDictation({ field, composerView, clock, reducedMotion }) {
   let liveWords = [];
   /** How many heard words this turn has brought, so only the live words past them show. */
   let heardCount = 0;
-  /** The live words showing, exactly as they stand at the end of the field with their joiner; empty when none show. */
+  /** The live words showing, exactly as they stand at the end of the spoken message with their joiner; empty when none show. */
   let tail = '';
-  /** True after the live words left the field by hand (sent or cleared): the rest of the turn is dropped, or it would be sent twice. */
+  /** True after the spoken message was taken to be sent: the rest of the turn is dropped, or it would be sent twice. */
   let spent = false;
 
+  const target = () => (takenOver ? field : forming);
+
   function landOne() {
-    composerView.dictate(joined(field.value, queue.shift()));
+    const sink = target();
+    sink.write(joined(sink.text, queue.shift()));
   }
 
   function step() {
     cancelStep = null;
     landOne();
     if (queue.length > 0) cancelStep = clock.after(step, STEP_MS);
-    else composerView.dictated();
   }
 
   function drop() {
@@ -52,10 +57,20 @@ export function createDictation({ field, composerView, clock, reducedMotion }) {
     queue = [];
   }
 
-  /** The field without the live words. They are searched from the end, since the user may have typed after them. */
-  function withoutTail() {
-    const at = tail === '' ? -1 : field.value.lastIndexOf(tail);
-    return at < 0 ? field.value : field.value.slice(0, at) + field.value.slice(at + tail.length);
+  /** Lands every word that is still waiting. */
+  function flush() {
+    cancelStep?.();
+    cancelStep = null;
+    while (queue.length > 0) landOne();
+  }
+
+  /** The spoken message without the live words, which always stand at its end. */
+  const withoutTail = () => forming.text.slice(0, forming.text.length - tail.length);
+
+  /** A bubble never stands empty, so when no words are left the spoken message is dropped instead of written. */
+  function show(text) {
+    if (text === '') forming.drop();
+    else forming.write(text);
   }
 
   /** Writes `base` followed by the live words that the heard words have not covered yet. */
@@ -63,17 +78,26 @@ export function createDictation({ field, composerView, clock, reducedMotion }) {
     const unheard = liveWords.slice(heardCount).join(' ');
     const text = unheard === '' ? base : joined(base, unheard);
     tail = text.slice(base.length);
-    composerView.dictate(text);
+    show(text);
   }
 
   function withdraw() {
     if (tail === '') return;
     const text = withoutTail();
     tail = '';
-    composerView.dictate(text);
+    show(text);
   }
 
   const dictation = {
+    /** A spoken turn opens and heard words are counted from zero; its message appears with its first words. */
+    open() {
+      // A take-over lasts while its words are in the field.
+      if (field.text.trim() === '') takenOver = false;
+      spent = false;
+      liveWords = [];
+      heardCount = 0;
+    },
+
     /**
      * Takes the words of one heard utterance. With live words showing they take the place of those in one update;
      * otherwise the first lands at once and the rest follow, or all land at once when motion is reduced.
@@ -85,21 +109,11 @@ export function createDictation({ field, composerView, clock, reducedMotion }) {
       heardCount += words.length;
       if (tail !== '') {
         write(joined(withoutTail(), words.join(' ')));
-        composerView.dictated();
       } else {
         queue.push(...words);
-        if (reducedMotion()) dictation.flush();
+        if (reducedMotion()) flush();
         else if (cancelStep === null) step();
       }
-    },
-
-    /** Lands every word that is still waiting. */
-    flush() {
-      const waiting = queue.length > 0;
-      cancelStep?.();
-      cancelStep = null;
-      while (queue.length > 0) landOne();
-      if (waiting) composerView.dictated();
     },
 
     /** Shows the browser's live words after the heard ones, in place of the live words shown before. */
@@ -108,42 +122,55 @@ export function createDictation({ field, composerView, clock, reducedMotion }) {
       liveWords = wordsOf(text);
       if (tail === '' && liveWords.length <= heardCount) return;
       // Heard words still waiting go in first, or they would land after the live words.
-      dictation.flush();
+      flush();
       write(withoutTail());
     },
 
-    /** A turn starts or ends: its live words leave the field, and the next turn's heard words are counted from zero. */
-    clearLive() {
-      liveWords = [];
-      heardCount = 0;
-      spent = false;
+    /** The turn ended with words to send: the live words leave and every heard word still waiting lands. */
+    end() {
       withdraw();
+      flush();
     },
 
-    /** The person is editing the message: it keeps its heard words but will not send itself, and the live words leave. */
-    takeOver() {
-      takenOver = true;
-      withdraw();
-    },
-
-    /** The field is empty again: the next message may send itself, and words for the old one are dropped. */
-    reset() {
-      // A message that sends itself loses its live words before it goes,
-      // so live words still here were sent or cleared by hand.
-      spent = tail !== '';
-      takenOver = false;
+    /** The turn was thrown away: its message and the words still waiting for it go. */
+    discard() {
+      drop();
       tail = '';
+      if (!takenOver) forming.drop();
+    },
+
+    /**
+     * The person is editing: the heard words move into the field before what they typed, and the message stops sending
+     * itself. The live words are left out, since their heard words are still on the way.
+     */
+    takeOver() {
+      if (takenOver) return;
+      // SMELL: heard words still waiting to land go after what the person typed, so a key pressed while a burst appears
+      // splits that burst around the key. Landing them first would keep the words in order.
+      const spoken = withoutTail();
+      tail = '';
+      takenOver = true;
+      forming.drop();
+      if (spoken !== '') field.write(beforeTyped(spoken, field.text));
+    },
+
+    /** The spoken message was taken to be sent, live words and all, so the rest of the turn is dropped. */
+    spend() {
+      drop();
+      tail = '';
+      spent = true;
+    },
+
+    /** The field is empty again: the next words form a new message that may send itself, and words for the old one are dropped. */
+    reset() {
+      if (!takenOver) return;
+      takenOver = false;
       drop();
     },
 
-    /** True while the message may still send itself; a turn whose live words were sent or cleared by hand never does. */
+    /** True while the message may still send itself; a taken-over or hand-sent turn never does. */
     get autoSend() {
       return !takenOver && !spent;
-    },
-
-    /** True while words are still waiting to land. */
-    get landing() {
-      return queue.length > 0;
     },
   };
   return dictation;

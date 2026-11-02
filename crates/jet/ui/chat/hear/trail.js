@@ -1,6 +1,6 @@
-// The trail beside the mic: bars that show how loud the microphone's sound is, born at the right
-// and flowing left, so the user sees that Jet hears them. Bars stand tall only for speech; other
-// sound stays low. The bars are kept apart from the drawing so they can be tested without a browser.
+// The trail across the empty message field: bars that show how loud the microphone's sound is, born
+// at the right and flowing left, so the user sees that Jet hears them. Bars stand tall only for speech;
+// other sound stays low. The bars are kept apart from the drawing so they can be tested without a browser.
 
 const BAR_STEP_PX = 4;
 /** One bar for every two levels, and the engine sends a level every 32 ms. */

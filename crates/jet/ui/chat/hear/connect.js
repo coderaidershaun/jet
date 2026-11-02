@@ -1,16 +1,17 @@
-// Joins the listening engine to the page: the mic button, the trail of loudness beside it, the
-// message field and the browser's live words in it, the send, Jet's voice and Jet on the stage. The
-// engine is loaded and built on the first start, so a page that never listens never downloads the
-// voice detector. This file needs a browser, so it has no test.
+// Joins the listening engine to the page: the mic button, the trail of loudness across the empty message
+// field, the spoken message forming in the thread with the browser's live words in it, the field the
+// words move to when the person takes over, the send, Jet's voice and Jet on the stage. The engine is
+// loaded and built on the first start, so a page that never listens never downloads the voice detector.
+// This file needs a browser, so it has no test.
 
 import { displayName } from '../../bridge/settings.js';
 import { realClock } from '../clock.js';
 import { createCapture } from './capture.js';
-import { createDictation } from './dictation.js';
 import { createHearing } from './engine/hearing.js';
 import { createVad } from './engine/vad.js';
 import { createHearToggle } from './hear-toggle.js';
 import { createLiveWords } from './live-words.js';
+import { createSpokenMessage } from './spoken-message.js';
 import { createTrail } from './trail.js';
 
 const NO_HEARING = { available: false, reason: 'The voice could not be reached' };
@@ -37,10 +38,9 @@ const LISTENING_STATES = new Set(['listening', 'halfDuplexPause']);
  *   reducedMotion: () => boolean,
  *   clock?: { now: () => number, after: (fn: () => void, ms: number) => () => void },
  * }} parts   `status` is the server's word on hearing, and may be missing when the voice could not be reached
- * @returns {{ repaint: () => void, replyEnded: () => void, fieldChanged: (text: string) => void, userActive: () => void }}
+ * @returns {{ repaint: () => void, replyEnded: () => void, fieldChanged: (text: string) => void, formingTaken: () => void, userActive: () => void }}
  */
 export function connectHearing({ agent, status, button, pill, trailCanvas, field, composerView, thread, turn, live, voicePlayer, speakerOn, settings, appLabels, announce, reducedMotion, clock = realClock }) {
-  const dictation = createDictation({ field, composerView, clock, reducedMotion });
   const trail = createTrail({ canvas: trailCanvas, reducedMotion });
   const toggle = createHearToggle({
     button,
@@ -56,15 +56,22 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
   let generation = 0;
   let jetEndedAt = -Infinity;
   let jetAudible = false;
-  let pausing = false;
-  let duckedTurn = null;
   let cancelJetCheck = null;
-  // SMELL: this bookkeeping of turns, live words and the ducked voice decides when a message sends itself and what it
-  // holds, and it has no test because this file needs a browser. A bug in how these events are joined shows up only by hand.
-  /** Turns that began with speech and have not ended: a key pressed in one of them is the person taking over. */
-  const openTurns = new Set();
-  // Text that arrives outside a turn may be Jet's own voice heard through the speakers.
-  const liveWords = createLiveWords({ onWords: (text) => { if (openTurns.size > 0) dictation.showLive(text); } });
+  const liveWords = createLiveWords({ onWords: (text) => spoken.showLive(text) });
+  const spoken = createSpokenMessage({
+    forming: {
+      get text() { return thread.forming ?? ''; },
+      write(text) { thread.form(text); turn.paint(); },
+      drop() { thread.dropForming(); turn.paint(); },
+    },
+    field: { get text() { return field.value; }, write: composerView.dictate },
+    clock,
+    reducedMotion,
+    liveWords,
+    voice: voicePlayer,
+    silence: () => turn.silence(),
+    composer: composerView,
+  });
 
   // With the speaker off Jet's voice needs no sound yet; switching the speaker on starts it then.
   function unlockVoice() {
@@ -73,33 +80,6 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
 
   function repaint() {
     pill.classList.toggle('has-on', speakerOn() || toggle.lit);
-  }
-
-  function paintHalo() {
-    composerView.setPending(pausing && dictation.autoSend);
-  }
-
-  function takeOver() {
-    dictation.takeOver();
-    paintHalo();
-  }
-
-  function unduckFor(turnId) {
-    if (duckedTurn !== turnId) return;
-    duckedTurn = null;
-    voicePlayer.unduck();
-  }
-
-  function forgetTurn(turnId) {
-    // A turn the mic cut short can be thrown away as an echo after the next turn has begun,
-    // and must not take the new turn's live words with it.
-    if (openTurns.delete(turnId)) {
-      dictation.clearLive();
-      liveWords.dropAll();
-    }
-    unduckFor(turnId);
-    pausing = false;
-    paintHalo();
   }
 
   /** Tells the engine whether Jet's voice is sounding, only when that changes. */
@@ -126,14 +106,7 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
     if (state === 'listening') liveWords.start();
     else liveWords.stop();
     if (state === 'halfDuplexPause') checkJetUntilResumed();
-    if (state !== 'listening') {
-      // A turn cut short by the mic stopping keeps its words in the field but never sends itself.
-      if (openTurns.size > 0) dictation.takeOver();
-      openTurns.clear();
-      pausing = false;
-      if (duckedTurn !== null) unduckFor(duckedTurn);
-      paintHalo();
-    }
+    if (state !== 'listening') spoken.micStopped();
     repaint();
   }
 
@@ -158,38 +131,11 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
         updateJetSpeaking();
         break;
       case 'speech':
-        if (!event.on) break;
-        if (!openTurns.has(event.turnId)) {
-          openTurns.add(event.turnId);
-          // A turn the mic cut short is never forgotten, and its words can still land,
-          // so each new turn starts its live words afresh.
-          liveWords.dropFinished();
-          dictation.clearLive();
-        }
-        live.typing();
-        if (voicePlayer.audible()) {
-          voicePlayer.duck();
-          duckedTurn = event.turnId;
-        }
+        spoken.hear(event);
+        if (event.on) live.typing();
         break;
-      case 'words':
-        if (event.interrupts) turn.silence();
-        unduckFor(event.turnId);
-        dictation.append(event.text);
-        break;
-      case 'pausing':
-        pausing = event.on;
-        paintHalo();
-        break;
-      case 'turn':
-        forgetTurn(event.turnId);
-        dictation.flush();
-        if (dictation.autoSend) composerView.sendNow();
-        break;
-      case 'discarded':
-        // SMELL: if an echo ends a turn after an earlier phrase of it has landed, those words stay in the field unsent.
-        forgetTurn(event.turnId);
-        break;
+      default:
+        spoken.hear(event);
     }
   }
 
@@ -260,13 +206,12 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
 
   field.addEventListener('input', () => {
     hearing?.wake();
-    if (field.value !== '' && (openTurns.size > 0 || dictation.landing)) takeOver();
+    spoken.typed(field.value);
   });
   document.addEventListener('keydown', (event) => {
     // An Esc inside a dialog, such as the settings sheet, is for that dialog.
-    if (event.key === 'Escape' && pausing && dictation.autoSend && !event.target.closest?.('dialog')) {
+    if (event.key === 'Escape' && !event.target.closest?.('dialog') && spoken.escape()) {
       event.preventDefault();
-      takeOver();
       return;
     }
     firstTouch(event);
@@ -284,12 +229,8 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
       jetEndedAt = clock.now();
     },
 
-    /** The field's text changed; an empty field lets the next message send itself again. */
-    fieldChanged(text) {
-      if (text !== '') return;
-      dictation.reset();
-      paintHalo();
-    },
+    formingTaken: spoken.formingTaken,
+    fieldChanged: spoken.fieldChanged,
 
     /** The person is plainly here, so a mic that went to sleep listens again. */
     userActive() {

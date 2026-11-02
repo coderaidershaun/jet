@@ -93,7 +93,12 @@ async function start() {
     const appId = workspace.activeAppId();
     // The files leave the tray at once, so the chips go as the message does. A command carries none.
     const attachments = text.trimStart().startsWith('/') ? [] : trayView.take();
-    return commands.submit(text, () => composer.replying ? turn.hold(text, appId, attachments) : turn.send(text, appId, attachments));
+    return commands.submit(text, () => composer.replying ? turn.hold(text, appId, attachments) : turn.send(text, appId, attachments)).then(() => {
+      // A spoken message that was held or ran as a command leaves the thread. One that was sent is already its bubble.
+      if (thread.forming !== text) return;
+      thread.dropForming();
+      turn.paint();
+    });
   }
 
   const composerView = createComposerView({
@@ -105,6 +110,7 @@ async function start() {
     heldCancel: $('held-cancel'),
     state: composer,
     reducedMotion,
+    forming: () => thread.forming ?? '',
     handlers: {
       send: submit,
       hold: submit,
@@ -112,6 +118,7 @@ async function start() {
       keydown: (event) => commandMenu?.keydown(event),
       stop: () => turn.stop(),
       cancelHold: () => trayView.restore(turn.cancelHold()),
+      formingTaken: () => hear?.formingTaken(),
     },
   });
 

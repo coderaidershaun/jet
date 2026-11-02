@@ -22,7 +22,7 @@
 }
 .field-box.has-tray { border-radius: 20px; }
 .field-box:has(#field:focus-visible) { outline: 2px solid var(--focus); }
-.field-line { display: flex; align-items: flex-end; }
+.field-line { position: relative; isolation: isolate; display: flex; align-items: flex-end; }
 
 textarea#field {
   flex: 1; min-width: 0; min-height: 42px; max-height: 152px; padding: 10px 4px 10px 6px;
@@ -74,10 +74,11 @@ textarea#field::placeholder { color: var(--muted); }
 .hear[data-state="asleep"]::before { background: var(--accent); }
 .hear.is-greeting .icon { animation: voice-pulse 1.2s ease-in-out 1; }
 
-/* The 3 px margins match the buttons', so the trail centres on a one-line field and stays at the foot as the field grows. */
-.trail { display: none; flex: none; width: 96px; height: 36px; margin: 3px 0; }
-:root:not(.reduced) .composer.is-listening .trail { display: block; }
-@media (max-width: 479.98px) { .trail { width: 56px; } }
+/* The trail lies behind the empty field, from the + button to the voice pill: 40 px is the + button with its margin, 76 px the pill
+   with its margin, and 44 px one line of the box with its borders. A canvas keeps its own width even when left and right are set, so the width is given. */
+.trail { position: absolute; z-index: -1; left: 40px; bottom: -1px; width: calc(100% - 40px - 76px); height: 44px; display: none; pointer-events: none; }
+:root:not(.reduced) .composer.is-listening #field:placeholder-shown ~ .trail { display: block; }
+:root:not(.reduced) .composer.is-listening #field::placeholder { color: transparent; }
 
 /* The 12 px padding above leaves room for the × that overhangs each chip. */
 .tray { display: flex; gap: 8px; margin: 0; padding: 12px 12px 4px; list-style: none; overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
