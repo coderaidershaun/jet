@@ -26,7 +26,7 @@ function rig() {
     endpointer,
     events,
     talk: (ms, p = SPEECH, rms = 0.1) => feed(ms, p, rms),
-    hush: (ms) => feed(ms, QUIET, 0.001),
+    hush: (ms, rms = 0.001) => feed(ms, QUIET, rms),
     now: () => atMs,
     of: (kind) => events.filter((event) => event.kind === kind),
     /** What happened, in order, leaving out the steady stream of levels. */
@@ -73,6 +73,20 @@ test('a second of speech is cut at a 320 ms breath, a shorter phrase waits for 6
   const levels = quietRoom.of('level').map((event) => event.level);
   assert.equal(levels.length, 20, 'one level for every two hops');
   assert.ok(levels[3] < 0.1 && levels.at(-1) > 0.5, 'the level follows the voice above the room');
+  const speech = quietRoom.of('level').map((event) => event.speech);
+  assert.deepEqual(speech, [...Array(10).fill(false), ...Array(10).fill(true)], 'a level holds speech only while the voice talks');
+  quietRoom.hush(HOP);
+  quietRoom.talk(2 * HOP);
+  quietRoom.hush(HOP);
+  assert.deepEqual(quietRoom.of('level').slice(-2).map((event) => event.speech), [true, true], 'a level holds speech when only its first or only its second hop does');
+
+  const justOpened = rig();
+  justOpened.hush(160, 1e-5);
+  justOpened.talk(128, SPEECH, 0.003);
+  justOpened.hush(1000, 0.003);
+  const loudest = Math.max(...justOpened.of('level').map((event) => event.level));
+  assert.ok(loudest < 0.1, `a microphone that has just opened must not read room noise as loud, but a level reached ${loudest}`);
+  assert.ok(justOpened.of('level').every((event) => !event.speech), 'and no level holds speech during its fade-in, which the detector mistakes for speech');
 });
 
 test('after the last words the send waits 700, 1000 or 1500 ms, as the ending says', () => {

@@ -154,7 +154,7 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
         showState(event.state, event.reason);
         break;
       case 'level':
-        trail.add(event.level);
+        trail.add(event.level, event.speech);
         updateJetSpeaking();
         break;
       case 'speech':

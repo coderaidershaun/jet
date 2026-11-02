@@ -29,7 +29,9 @@ export const SETTINGS = Object.freeze({
   STRIKES_TO_HALF_DUPLEX: 2, // echoes before the mic stops listening while Jet speaks
   SLEEP_AFTER_MS: 600000, // ten minutes without a message
   LEVEL_FLOOR_RISE_PER_S: 1, // dB per second that the room's noise floor is allowed to drift up
+  LEVEL_FLOOR_MIN_DB: -50, // an ordinary room's noise; a microphone's near-silent first moments must not set the floor
   LEVEL_RANGE_DB: 30, // the level reads full this far above the floor
+  LEVEL_SPEECH_AFTER_MS: 300, // a microphone fades in as it opens, and the voice detector mistakes that for speech
 });
 
 export const WORDS_LATE_MS = SETTINGS.WORDS_LATE_MS;
@@ -44,7 +46,7 @@ const HAS_LETTERS = /[\p{L}\p{N}]/u;
 
 /**
  * @param {{ newTurn: () => string, onEvent: (event: object) => void }} options
- *   `newTurn` gives the id of each turn the moment speech opens one. Events: `level`, `speech`
+ *   `newTurn` gives the id of each turn the moment speech opens one. Events: `level` (with `speech`), `speech`
  *   (with `interrupts`), `utterance` (with its `pcm`), `pausing`, `turn` and `discarded`.
  */
 export function createEndpointer({ newTurn, onEvent }) {
@@ -60,22 +62,23 @@ export function createEndpointer({ newTurn, onEvent }) {
   let now = 0;
   let lastSpeechEnd = 0;
   let hopCount = 0;
-  let floorDb = null;
-  let recentLevel = 0;
+  let floorDb = Infinity;
+  let recent = { level: 0, speech: false };
 
   const guarded = () => jetSpeaking || now < guardUntil;
   const speechMs = () => utterance.speechHops * HOP_MS;
 
-  function emitLevel(rms) {
+  function emitLevel(rms, p) {
     const db = 20 * Math.log10(Math.max(rms, 1e-5));
-    floorDb = floorDb === null ? db : Math.min(db, floorDb + (SETTINGS.LEVEL_FLOOR_RISE_PER_S * HOP_MS) / 1000);
+    floorDb = Math.max(SETTINGS.LEVEL_FLOOR_MIN_DB, Math.min(db, floorDb + (SETTINGS.LEVEL_FLOOR_RISE_PER_S * HOP_MS) / 1000));
     const fraction = Math.min(1, Math.max(0, (db - floorDb) / SETTINGS.LEVEL_RANGE_DB));
+    const speech = now > SETTINGS.LEVEL_SPEECH_AFTER_MS && p >= ON_P;
     hopCount++;
     if (hopCount % 2 === 1) {
-      recentLevel = fraction;
+      recent = { level: fraction, speech };
       return;
     }
-    onEvent({ kind: 'level', level: Math.max(recentLevel, fraction) });
+    onEvent({ kind: 'level', level: Math.max(recent.level, fraction), speech: recent.speech || speech });
   }
 
   function emitSpeech(on) {
@@ -239,7 +242,7 @@ export function createEndpointer({ newTurn, onEvent }) {
         guardUntil = now + SETTINGS.GUARD_TAIL_MS;
         guardTailStarts = false;
       }
-      emitLevel(rms);
+      emitLevel(rms, p);
       ring.push(record);
       if (ring.length > RING_HOPS) ring.shift();
       if (state === 'speaking') {
