@@ -132,6 +132,16 @@ export function createDictation({ forming, field, clock, reducedMotion }) {
       flush();
     },
 
+    /**
+     * Google gave no words for the turn, so the live words showing stay as its words.
+     * @returns {boolean} whether any live words showed
+     */
+    keepLive() {
+      const kept = tail !== '';
+      tail = '';
+      return kept;
+    },
+
     /** The turn was thrown away: its message and the words still waiting for it go. */
     discard() {
       drop();

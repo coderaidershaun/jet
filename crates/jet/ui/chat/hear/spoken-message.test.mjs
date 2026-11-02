@@ -79,7 +79,7 @@ test('a spoken message sends itself at the end of its turn, and moves into the f
   assert.equal(escaping.spoken.escape(), false);
 });
 
-test('a turn the mic cut short or threw away never sends itself, and its late words land only in a field the person took over', () => {
+test("a turn the mic cut short or threw away never sends itself unless Google could not hear it and the browser's live words show, and its late words land only in a field the person took over", () => {
   const outside = room();
   outside.spoken.showLive('jet said this');
   assert.equal(outside.forming.text, '');
@@ -112,6 +112,20 @@ test('a turn the mic cut short or threw away never sends itself, and its late wo
   assert.equal(discarded.forming.text, '');
   assert.equal(discarded.field.text, '');
   assert.deepEqual(discarded.page.sent, []);
+
+  // When Google gave no words the live words are all the person said, so they are sent in their place.
+  for (const reason of ['failed', 'late']) {
+    const unheard = room();
+    unheard.spoken.hear(speech('t1'));
+    unheard.spoken.showLive('hello there');
+    unheard.spoken.hear({ kind: 'discarded', turnId: 't1', reason });
+    assert.deepEqual(unheard.page.sent, ['Hello there'], reason);
+  }
+  const nothing = room();
+  nothing.spoken.hear(speech('t1'));
+  nothing.spoken.hear({ kind: 'discarded', turnId: 't1', reason: 'failed' });
+  assert.deepEqual(nothing.page.sent, []);
+  assert.equal(nothing.forming.text, '');
 });
 
 test("Jet's voice is ducked while the person speaks over it, and words that cut in quiet the reply", () => {

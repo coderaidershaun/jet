@@ -26,6 +26,7 @@ import { createTurn } from './turn.js';
 import { createVoicePlayer } from './voice/player.js';
 import { createSpokenReveal } from './voice/spoken.js';
 import { createVoiceToggle } from './voice/toggle.js';
+import { createWarning } from './warning.js';
 
 const $ = (id) => document.getElementById(id);
 const warn = (what) => (error) => console.warn(what + ':', error);
@@ -186,18 +187,36 @@ async function start() {
   }
 
   const voicePlayer = createVoicePlayer();
+  // The first snapshot builds every row of the thread again, so a notice added before it would be lost, and the loading screen waits for it too.
+  let resolveFirstSnapshot;
+  const firstSnapshot = new Promise((resolve) => { resolveFirstSnapshot = resolve; });
+  const notify = (message) => firstSnapshot.then(() => { thread.addWarning(message); turn.paint(); });
   const voiceToggle = createVoiceToggle({
     button: $('voice'),
     status: voiceStatus,
     check: () => agent.voiceStatus(),
     replying: () => composer.replying,
     announce: (message) => { $('announce').textContent = message; },
-    onChange: (on) => { if (on) voicePlayer.unlock(); else turn.silence(); hear?.repaint(); },
+    onChange: (on) => {
+      if (on) {
+        voicePlayer.unlock();
+        agent.voiceStatus().then(speakerSwitchedOn, warn('the voice status could not be read'));
+      } else turn.silence();
+      hear?.repaint();
+    },
   });
+  const speechWarning = createWarning({ show: (message) => voiceToggle.setProblem(message), say: notify });
+  const speechProblem = (message) => (message ? "Jet can't speak right now: " + message : null);
+  /** Switching the speaker on says at once what Google last refused, without waiting for a reply to fail. */
+  function speakerSwitchedOn(status) {
+    speechWarning.switchedOn();
+    speechWarning.report(speechProblem(status.warning));
+  }
+  if (voiceToggle.on) speakerSwitchedOn(voiceStatus);
   const showVoiceState = (state) => {
     voiceToggle.setSpeaking(state.speaking);
     live.speaking(state.speaking);
-    if ('problem' in state) voiceToggle.setProblem(state.problem);
+    if ('problem' in state) speechWarning.report(speechProblem(state.problem));
   };
   const cues = voiceStatus.cues ?? [];
   const voice = {
@@ -240,6 +259,7 @@ async function start() {
     settings,
     appLabels: workspace.appLabels,
     announce: (message) => { $('announce').textContent = message; },
+    notify,
     reducedMotion,
   });
 
@@ -312,9 +332,6 @@ async function start() {
     live.showInLane(view.liveLane());
   }
   live.start();
-  // The first snapshot builds every row of the thread again, so the loading screen waits for it.
-  let resolveFirstSnapshot;
-  const firstSnapshot = new Promise((resolve) => { resolveFirstSnapshot = resolve; });
   agent.watch?.((snapshot) => { turn.restore(snapshot); workspace.refresh(); resolveFirstSnapshot(); refreshStatus(); }, (event) => turn.observe(event));
   finishLoading({ cover: $('loading'), settled: Promise.all([workspace.ready, firstSnapshot]), reducedMotion });
 }

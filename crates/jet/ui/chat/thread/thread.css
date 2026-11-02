@@ -71,6 +71,7 @@ a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22
   background: rgba(17, 27, 35, .85); border-radius: 999px;
   font-size: 12px; line-height: 16px; color: var(--muted); text-align: center;
 }
+.pill-notice.is-warning { color: var(--warning); border: 1px solid rgba(242, 177, 84, .35); }
 .pill-banner { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 14px; color: var(--fg); text-align: left; border: 1px solid var(--line); }
 .pill-banner .action { position: relative; min-height: 36px; padding: 0 14px; font-size: 13px; }
 .pill-banner .action::after { content: ""; position: absolute; inset: -4px; }

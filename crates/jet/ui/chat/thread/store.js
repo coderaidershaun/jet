@@ -17,6 +17,7 @@ const GROUP_GAP_MS = 3 * 60 * 1000;
  * @property {'day' | 'notice' | 'user' | 'jet' | 'lane'} type
  * @property {string} [label]         day pills
  * @property {string} [message]       notice pills
+ * @property {boolean} [warning]      a notice pill that says something is wrong
  * @property {{ id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string, status: string, error?: string, tools?: import('./cards/model.js').ShownCall[], attachments?: Attachment[], at: number }} [entry]   `status` is `forming` for a spoken message that is not sent yet
  * @property {{ kind: string, message: string }} [failure]
  * @property {boolean} [first]        first bubble of its group
@@ -28,7 +29,7 @@ const GROUP_GAP_MS = 3 * 60 * 1000;
  * @param {{ now?: () => number }} [options]
  */
 export function createThread({ now = Date.now } = {}) {
-  /** @type {{ key: string, type: 'user' | 'jet' | 'notice', at: number, entry?: any, message?: string, failure?: any }[]} */
+  /** @type {{ key: string, type: 'user' | 'jet' | 'notice', at: number, entry?: any, message?: string, warning?: boolean, failure?: any }[]} */
   let items = [];
   let counter = 0;
   /** @type {typeof items[number] | null} */
@@ -43,6 +44,12 @@ export function createThread({ now = Date.now } = {}) {
 
   function joins(a, b) {
     return isMessage(a) && a.type === b.type && b.entry.at - a.entry.at >= 0 && b.entry.at - a.entry.at < GROUP_GAP_MS;
+  }
+
+  function insertNotice(fields) {
+    const notice = { key: 'n' + ++counter, type: 'notice', ...fields };
+    if (slot) items.splice(items.indexOf(slot), 0, notice);
+    else items.push(notice);
   }
 
   function requireSlot(action) {
@@ -107,9 +114,12 @@ export function createThread({ now = Date.now } = {}) {
 
     /** A notice that arrives while Jet replies belongs above that reply. */
     addNotice(message, at = now()) {
-      const notice = { key: 'n' + ++counter, type: 'notice', at, message };
-      if (slot) items.splice(items.indexOf(slot), 0, notice);
-      else items.push(notice);
+      insertNotice({ at, message });
+    },
+
+    /** A notice that something is wrong, shown in the warning colour. */
+    addWarning(message, at = now()) {
+      insertNotice({ at, message, warning: true });
     },
 
     /** Starts the Jet row that the reply will fill. */
@@ -234,7 +244,7 @@ export function createThread({ now = Date.now } = {}) {
           day = key;
         }
         rows.push(item.type === 'notice'
-          ? { key: item.key, type: 'notice', message: item.message }
+          ? { key: item.key, type: 'notice', message: item.message, warning: item.warning }
           : { key: item.key, type: item.type, entry: item.entry, failure: item.failure });
       }
       rows.forEach((row, i) => {

@@ -14,7 +14,7 @@ function fakeElement() {
     getAttribute: (name) => attributes.get(name) ?? null,
     append() {},
     replaceChildren() {},
-    classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)) },
+    classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)), contains: (name) => classes.has(name) },
     addEventListener: (kind, listener) => { if (kind === 'click') onClick = listener; },
     click: () => onClick(),
   };
@@ -60,6 +60,14 @@ test('the speaker is off by default, remembers the choice on this device, and st
     reloaded.button.click();
     assert.deepEqual([reloaded.toggle.on, reloaded.changes, storage.getItem('jet.voice')], [false, [false], null]);
     assert.equal(make(storage).toggle.on, false, 'off is remembered too');
+
+    // A problem with Google's voice marks the speaker and its tooltip until it clears.
+    const trouble = make(memoryStorage());
+    const marked = () => [trouble.button.classList.contains('has-problem'), trouble.button.title];
+    trouble.toggle.setProblem("Jet can't speak right now: Google's voice quota is used up");
+    assert.deepEqual(marked(), [true, "Jet can't speak right now: Google's voice quota is used up"]);
+    trouble.toggle.setProblem(null);
+    assert.deepEqual(marked(), [false, 'Speak replies: off']);
 
     // Storage that throws leaves the speaker off, and the button still turns voice on and off.
     const blocked = make(blockedStorage);

@@ -42,7 +42,7 @@ const blockedStorage = {
  * Hearing with a fake microphone, a fake detector that reads its probability from the first sample of
  * each hop (percent), and a transcriber answered by hand. Time moves only as frames are sent.
  */
-function room({ storage = memoryStorage(), jetWords = '' } = {}) {
+function room({ storage = memoryStorage(), jetWords = '', stopOnFailure = false } = {}) {
   const events = [];
   const requests = [];
   const clock = fakeClock();
@@ -70,6 +70,7 @@ function room({ storage = memoryStorage(), jetWords = '' } = {}) {
     onEvent: (event) => events.push(event),
     clock,
     storage,
+    stopOnFailure,
   });
   const frames = (ms, percent) => {
     for (let spent = 0; spent < ms; spent += HOP * 2) {
@@ -228,6 +229,31 @@ test('when the microphone or Google gives out, words already on their way are ke
   await refused.settle();
   assert.deepEqual(refused.events.at(-1), { kind: 'state', state: 'problem', reason: 'Google refused the key.' });
   assert.equal(refused.capture.stopped, 1);
+
+  // A clip refused twice comes back with its error and the turn is thrown away as failed, so the page can say why.
+  const quota = { kind: 'rateLimited', message: "Google's voice quota is used up" };
+  const refuseTwice = async (world) => {
+    await world.hearing.start();
+    world.talk(1200);
+    world.hush(SETTINGS.PHRASE_GAP_MS + HOP);
+    world.requests[0].reject(quota);
+    await world.settle();
+    world.clock.advance(400);
+    world.requests[1].reject(quota);
+    await world.settle();
+  };
+  const failing = room();
+  await refuseTwice(failing);
+  assert.deepEqual(failing.of('words'), [{ kind: 'words', turnId: 'turn-1', index: 0, text: '', interrupts: false, error: quota }]);
+  assert.deepEqual(failing.of('discarded').map((event) => event.reason), ['failed']);
+  assert.equal(failing.states().at(-1), 'listening');
+
+  // Without a recognizer of its own the page has nothing to send, so the same failure ends listening as a refused key does.
+  const stopping = room({ stopOnFailure: true });
+  await refuseTwice(stopping);
+  assert.deepEqual(stopping.events.at(-1), { kind: 'state', state: 'problem', reason: quota.message });
+  assert.equal(stopping.capture.stopped, 1);
+  assert.equal(stopping.of('words').length, 0);
 });
 
 test('stop leaves nothing in flight', async () => {

@@ -138,7 +138,7 @@ test('the turn waits for late words for six seconds, then goes on without them, 
   assert.equal(runOn.of('turn').length, 1, 'the turn ends with the words that came, after its own gap');
 });
 
-test('a blip is never sent, and a turn whose words are empty is discarded', () => {
+test('a blip is never sent, and a turn whose words are empty or failed is discarded', () => {
   const blip = rig();
   blip.talk(150);
   blip.hush(SETTINGS.SHORT_GAP_MS + HOP);
@@ -147,6 +147,10 @@ test('a blip is never sent, and a turn whose words are empty is discarded', () =
 
   const cough = sentence('  ');
   assert.deepEqual(cough.room.story(), ['speech:true', 'speech:false', 'utterance:0', 'pausing:true', 'pausing:false', 'discarded:noWords']);
+
+  const refused = sentence(null);
+  refused.room.endpointer.words({ index: 0, text: '', failed: true });
+  assert.deepEqual(refused.room.story(), ['speech:true', 'speech:false', 'utterance:0', 'pausing:true', 'pausing:false', 'discarded:failed']);
 });
 
 test('a run-on is cut at its quietest moment without ending the turn, and the rest heads the next utterance', () => {

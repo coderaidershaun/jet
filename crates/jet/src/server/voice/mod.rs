@@ -2,10 +2,12 @@
 //! a clip of the user's speech into words. The key and the voice stay on the server.
 
 mod budget;
+mod health;
 mod refusal;
 
 pub(super) use budget::HearBudget;
 use budget::Moment;
+pub(super) use health::VoiceHealth;
 use refusal::Refusal;
 
 use super::Server;
@@ -24,6 +26,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::time::Instant;
 
 const DISABLED: &str = "Voice is turned off on this server";
 const AUDIO_TYPE: &str = "audio/L16;rate=24000;channels=1";
@@ -44,19 +47,17 @@ pub(super) fn router() -> Router<Server> {
 struct Availability {
     available: bool,
     reason: Option<String>,
+    /// Google's last refusal on this route, while it is under ten minutes old and Google has not
+    /// answered since.
+    warning: Option<String>,
 }
 
 impl Availability {
-    fn of(status: Result<(), VoiceError>) -> Self {
-        match status {
-            Ok(()) => Self {
-                available: true,
-                reason: None,
-            },
-            Err(error) => Self {
-                available: false,
-                reason: Some(error.to_string()),
-            },
+    fn of(status: Result<(), VoiceError>, warning: Option<String>) -> Self {
+        Self {
+            available: status.is_ok(),
+            reason: status.err().map(|error| error.to_string()),
+            warning,
         }
     }
 
@@ -64,6 +65,7 @@ impl Availability {
         Self {
             available: false,
             reason: Some(DISABLED.into()),
+            warning: None,
         }
     }
 }
@@ -83,7 +85,11 @@ async fn availability(State(host): State<Server>) -> Result<Json<VoiceStatus>, R
         (Availability::off(), Availability::off())
     } else {
         let (speaking, hear) = on_worker(|| (voice::status(), voice::hearing_status())).await?;
-        (Availability::of(speaking), Availability::of(hear))
+        let now = Instant::now();
+        (
+            Availability::of(speaking, host.speech_health.warning(now)),
+            Availability::of(hear, host.hear_health.warning(now)),
+        )
     };
     Ok(Json(VoiceStatus {
         speaking,
@@ -115,7 +121,9 @@ async fn speech(
         .as_deref()
         .and_then(Mood::from_word)
         .and_then(Mood::style);
-    let pcm = on_worker(move || voice::speak(&request.text, style)).await??;
+    let spoken = on_worker(move || voice::speak(&request.text, style)).await?;
+    host.speech_health.record(&spoken, Instant::now());
+    let pcm = spoken?;
     Ok((
         [
             (CONTENT_TYPE, HeaderValue::from_static(AUDIO_TYPE)),
@@ -152,11 +160,13 @@ async fn hear(
         host.hear_budget
             .admit(voice::clip_seconds(&body), Moment::now(), daily_minutes)?;
     // The permit goes with the call, so a caller who hangs up does not free it while Google works.
-    let text = on_worker(move || {
+    let heard = on_worker(move || {
         let _permit = permit;
         voice::hear(&body, &vocabulary)
     })
-    .await??;
+    .await?;
+    host.hear_health.record(&heard, Instant::now());
+    let text = heard?;
     Ok(Json(json!({"text": text})))
 }
 

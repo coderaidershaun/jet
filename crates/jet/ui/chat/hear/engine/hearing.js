@@ -50,10 +50,12 @@ function defaultStorage() {
  *   onEvent: (event: object) => void,
  *   clock?: { after: (fn: () => void, ms: number) => () => void },
  *   storage?: { getItem: (key: string) => string | null, setItem: (key: string, value: string) => void, removeItem: (key: string) => void } | null,
+ *   stopOnFailure?: boolean,
  * }} options   `capture.stop` must also cancel a start still under way; `storage` keeps the echo strikes between page
- *   loads and may be missing or blocked
+ *   loads and may be missing or blocked; `stopOnFailure` is true when the page has nothing to send without Google's words,
+ *   so a clip that fails twice ends listening
  */
-export function createHearing({ capture, vad, transcribe, vocabulary, recentJetWords, onEvent, clock = realClock, storage = defaultStorage() }) {
+export function createHearing({ capture, vad, transcribe, vocabulary, recentJetWords, onEvent, clock = realClock, storage = defaultStorage(), stopOnFailure = false }) {
   let state = 'off';
   let jetSpeaking = false;
   let generation = 0;
@@ -134,6 +136,7 @@ export function createHearing({ capture, vad, transcribe, vocabulary, recentJetW
     transcribe,
     vocabulary,
     clock,
+    stopOnFailure,
     onWords: ({ turnId, index, text, error }) => {
       const turn = turns.get(turnId);
       if (!turn) return;
@@ -148,8 +151,8 @@ export function createHearing({ capture, vad, transcribe, vocabulary, recentJetW
         return;
       }
       turn.texts.set(index, heard);
-      onEvent({ kind: 'words', turnId, index, text: heard, interrupts: turn.interrupts && heard !== '' });
-      if (turn.open) endpointer.words({ index, text: heard });
+      onEvent({ kind: 'words', turnId, index, text: heard, interrupts: turn.interrupts && heard !== '', ...(error && { error }) });
+      if (turn.open) endpointer.words({ index, text: heard, failed: error !== undefined });
       forgetIfDone(turn);
     },
     onFatal: (error) => {

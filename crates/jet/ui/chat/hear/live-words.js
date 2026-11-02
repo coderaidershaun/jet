@@ -11,12 +11,13 @@ const RESTART_AT_ONCE = new Set(['no-speech']);
 
 /**
  * @param {{ onWords: (text: string) => void }} options   `onWords` gets the words since the last drop each time they change
- * @returns {{ start: () => void, stop: () => void, dropFinished: () => void, dropAll: () => void }}
- *   `start` and `stop` say whether the recognizer is wanted; `dropFinished` forgets the words already final, and `dropAll` all of them
+ * @returns {{ supported: boolean, start: () => void, stop: () => void, dropFinished: () => void, dropAll: () => void }}
+ *   `supported` is false when the browser has no recognizer; `start` and `stop` say whether the recognizer is wanted;
+ *   `dropFinished` forgets the words already final, and `dropAll` all of them
  */
 export function createLiveWords({ onWords }) {
   const Recognition = globalThis.SpeechRecognition ?? globalThis.webkitSpeechRecognition;
-  if (!Recognition) return { start() {}, stop() {}, dropFinished() {}, dropAll() {} };
+  if (!Recognition) return { supported: false, start() {}, stop() {}, dropFinished() {}, dropAll() {} };
 
   const recognition = new Recognition();
   recognition.continuous = true;
@@ -74,6 +75,8 @@ export function createLiveWords({ onWords }) {
   };
 
   return {
+    supported: true,
+
     start() {
       wanted = true;
       if (retryTimer === null) begin();

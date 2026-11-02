@@ -117,7 +117,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
 
   function create(row) {
     if (row.type === 'day') return { el: h('div', { class: 'pill pill-day', text: row.label }), lane: null, cards: null, files: null, stamp: null, signature: '' };
-    if (row.type === 'notice') return { el: h('div', { class: 'pill pill-notice', role: 'status', text: row.message }), lane: null, cards: null, files: null, stamp: null, signature: '' };
+    if (row.type === 'notice') return { el: h('div', { class: row.warning ? 'pill pill-notice is-warning' : 'pill pill-notice', role: 'status', text: row.message }), lane: null, cards: null, files: null, stamp: null, signature: '' };
     if (row.type === 'user') {
       const files = h('div', { class: 'attachments' });
       const stamp = h('span', { class: 'sent-time', hidden: true });

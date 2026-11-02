@@ -1,8 +1,12 @@
 // Follows the person's spoken turns through the listening engine's events and decides what becomes of the spoken
 // message: it sends itself when they have finished, moves into the field when they take over, or goes when the turn is
-// thrown away. It also quiets Jet's voice while they speak over it.
+// thrown away, unless Google could not hear it and the browser's live words stand in for the heard ones. It also quiets
+// Jet's voice while they speak over it.
 
 import { createDictation } from './dictation.js';
+
+/** Turns thrown away because Google gave no words for them, not because nothing was said. */
+const UNHEARD = new Set(['failed', 'late']);
 
 /**
  * @param {{
@@ -31,6 +35,12 @@ export function createSpokenMessage({ forming, field, clock, reducedMotion, live
   function takeOver() {
     dictation.takeOver();
     paintHalo();
+  }
+
+  /** A message that cannot go yet, such as one waiting for a file to upload, moves to the field instead of staying in the thread. */
+  function sendTurn() {
+    dictation.end();
+    if (dictation.autoSend && !composer.sendNow()) takeOver();
   }
 
   function unduckFor(turnId) {
@@ -84,12 +94,12 @@ export function createSpokenMessage({ forming, field, clock, reducedMotion, live
           break;
         case 'turn':
           forgetTurn(event.turnId);
-          dictation.end();
-          // A message that cannot go yet, such as one waiting for a file to upload, moves to the field instead of staying in the thread.
-          if (dictation.autoSend && !composer.sendNow()) takeOver();
+          sendTurn();
           break;
         case 'discarded':
-          if (forgetTurn(event.turnId)) dictation.discard();
+          if (!forgetTurn(event.turnId)) break;
+          if (UNHEARD.has(event.reason) && dictation.keepLive()) sendTurn();
+          else dictation.discard();
           break;
       }
     },

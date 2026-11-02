@@ -50,10 +50,14 @@ export function createHearToggle({ button, storage, status, check, announce, onS
   let { available, reason } = status;
   let state = 'off';
   let stateReason = null;
+  let problem = null;
+
+  // A mic that is off or asleep keeps its own tooltip, since Google's trouble matters only while it listens.
+  const shownProblem = () => (RUNNING_STATES.has(state) ? problem : null);
 
   function tooltip() {
     if (!available) return reason ?? NOT_AVAILABLE;
-    return stateReason ?? TOOLTIPS[state] ?? NOT_AVAILABLE;
+    return stateReason ?? shownProblem() ?? TOOLTIPS[state] ?? NOT_AVAILABLE;
   }
 
   function render() {
@@ -61,7 +65,7 @@ export function createHearToggle({ button, storage, status, check, announce, onS
     button.setAttribute('aria-pressed', String(wanted && available));
     if (available) button.removeAttribute('aria-disabled');
     else button.setAttribute('aria-disabled', 'true');
-    button.classList.toggle('has-problem', available && (state === 'blocked' || state === 'problem'));
+    button.classList.toggle('has-problem', available && (state === 'blocked' || state === 'problem' || shownProblem() !== null));
     button.title = tooltip();
   }
 
@@ -73,7 +77,8 @@ export function createHearToggle({ button, storage, status, check, announce, onS
     if (next === before) return;
     // Coming back from a pause for Jet's voice is not news, and the reply has just been announced.
     if (next === 'listening' && before === 'halfDuplexPause') return;
-    if (next === 'blocked' || next === 'problem') announce(why ?? BLOCKED);
+    // A stopped mic is said in the thread, so only a blocked one is announced here.
+    if (next === 'blocked') announce(why ?? BLOCKED);
     else if (ANNOUNCEMENTS[next]) announce(ANNOUNCEMENTS[next]);
   }
 
@@ -132,6 +137,12 @@ export function createHearToggle({ button, storage, status, check, announce, onS
 
     /** Shows the engine's state. @param {string} next @param {string} [why] the engine's words for a state that needs them */
     setState,
+
+    /** A problem to show while the mic runs, such as Google refusing clips while the browser's own hearing stands in; null clears it. @param {string | null} message */
+    setProblem(message) {
+      problem = message;
+      render();
+    },
 
     /** One gentle pulse of the icon, for a mic that started on its own when the page loaded. */
     greet() {

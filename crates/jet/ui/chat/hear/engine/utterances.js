@@ -1,5 +1,6 @@
 // Sends each clip for its words and hands the words back in the order the clips were cut, however
-// Google answers. A clip that fails twice, or is not answered in time, comes back without words.
+// Google answers. A clip that fails twice, or is not answered in time, comes back without words. When the page has
+// nothing to send without them, a second failure ends everything instead, as a refused key does.
 
 import { realClock } from '../../clock.js';
 import { WORDS_LATE_MS } from './endpointer.js';
@@ -15,9 +16,11 @@ const FATAL_KINDS = new Set(['notConfigured', 'rejected']);
  *   onWords: (words: { turnId: string, index: number, text: string, error?: { kind: string, message: string } }) => void,
  *   onFatal: (error: { kind: string, message: string }) => void,
  *   clock?: { after: (fn: () => void, ms: number) => () => void },
- * }} options   `transcribe` rejects with `{ kind, message }`; a refused key or a missing one is fatal, anything else is tried once more
+ *   stopOnFailure?: boolean,
+ * }} options   `transcribe` rejects with `{ kind, message }`; a refused key or a missing one is fatal, anything else is tried once more.
+ *   `stopOnFailure` is true when the page has nothing to send without Google's words: a clip that fails again is then fatal too
  */
-export function createUtterances({ transcribe, vocabulary, onWords, onFatal, clock = realClock }) {
+export function createUtterances({ transcribe, vocabulary, onWords, onFatal, clock = realClock, stopOnFailure = false }) {
   /** @type {{ pcm: Int16Array, turnId: string, index: number, status: 'queued' | 'fetching' | 'ready' | 'failed' | 'dropped', text: string, error?: object, retried: boolean, controller: AbortController, cancelTimers: Array<() => void> }[]} */
   let items = [];
 
@@ -50,7 +53,7 @@ export function createUtterances({ transcribe, vocabulary, onWords, onFatal, clo
       },
       (error) => {
         if (item.status !== 'fetching') return;
-        if (FATAL_KINDS.has(error?.kind)) {
+        if (FATAL_KINDS.has(error?.kind) || (item.retried && stopOnFailure)) {
           stop();
           onFatal({ kind: error.kind, message: error.message });
         } else if (!item.retried) {

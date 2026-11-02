@@ -74,7 +74,8 @@ test('the mic shows every state with its tooltip and announces each change once'
       ['listening', undefined, 'Listening', 'Jet is listening'],
       ['blocked', undefined, "Microphone blocked. Allow it in the browser's site settings, then click.", "Microphone blocked. Allow it in the browser's site settings, then click."],
       ['blocked', 'The microphone stopped. Click to listen again.', '', null],
-      ['problem', 'Hearing needs GEMINI_API_KEY in .env', '', 'Hearing needs GEMINI_API_KEY in .env'],
+      // The thread says why the mic stopped, so the mic does not say it a second time.
+      ['problem', 'Hearing needs GEMINI_API_KEY in .env', '', null],
       ['off', undefined, 'Talk to Jet: off', 'Jet is not listening'],
     ];
     for (const [state, reason, tooltip, announcement] of table) {
@@ -94,6 +95,18 @@ test('the mic shows every state with its tooltip and announces each change once'
       ['off', false, false], ['starting', false, true], ['listening', false, true], ['halfDuplexPause', false, true],
       ['asleep', false, false], ['waitingForTouch', false, false], ['blocked', true, false], ['problem', true, false],
     ]);
+
+    // A problem to show while the mic runs, such as Google refusing clips, marks the mic and its tooltip until it clears.
+    const marked = () => [mic.look()[2], mic.button.classList.contains('has-problem')];
+    mic.toggle.setState('listening');
+    mic.toggle.setProblem('Google refused the clip');
+    assert.deepEqual(marked(), ['Google refused the clip', true]);
+    mic.toggle.setState('off');
+    assert.deepEqual(marked(), ['Talk to Jet: off', false], 'a mic that is off keeps its own tooltip');
+    mic.toggle.setState('listening');
+    assert.deepEqual(marked(), ['Google refused the clip', true]);
+    mic.toggle.setProblem(null);
+    assert.deepEqual(marked(), ['Listening', false]);
 
     mic.toggle.greet();
     assert.equal(mic.button.classList.contains('is-greeting'), true);

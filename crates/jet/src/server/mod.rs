@@ -43,6 +43,8 @@ pub struct Server {
     pub registry: Arc<Mutex<Registry>>,
     pub config: ServerConfig,
     hear_budget: Arc<voice::HearBudget>,
+    speech_health: Arc<voice::VoiceHealth>,
+    hear_health: Arc<voice::VoiceHealth>,
 }
 
 impl Server {
@@ -84,6 +86,8 @@ impl Server {
             files,
             config,
             hear_budget: Arc::new(voice::HearBudget::new()),
+            speech_health: Arc::default(),
+            hear_health: Arc::default(),
         })
     }
 

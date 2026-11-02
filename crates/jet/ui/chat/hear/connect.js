@@ -6,6 +6,7 @@
 
 import { displayName } from '../../bridge/settings.js';
 import { realClock } from '../clock.js';
+import { createWarning } from '../warning.js';
 import { createCapture } from './capture.js';
 import { createHearing } from './engine/hearing.js';
 import { createVad } from './engine/vad.js';
@@ -20,10 +21,12 @@ const MOST_NAMES = 20;
 const JET_CHECK_MS = 100;
 /** The mic still works while it pauses for Jet's voice, so the field says it is listening then too. */
 const LISTENING_STATES = new Set(['listening', 'halfDuplexPause']);
+/** The notice at switch-on and the one when the mic stops must match word for word, so that it is said once. */
+const cannotHear = (reason) => `Jet can't hear right now: ${reason}`;
 
 /**
  * @param {{
- *   agent: { hear: Function, voiceStatus: () => Promise<{ hear?: { available: boolean, reason: string | null } }> },
+ *   agent: { hear: Function, voiceStatus: () => Promise<{ hear?: { available: boolean, reason: string | null, warning: string | null } }> },
  *   status: { available: boolean, reason: string | null } | undefined,
  *   button: HTMLButtonElement, pill: HTMLElement, trailCanvas: HTMLCanvasElement, field: HTMLTextAreaElement,
  *   composerView: ReturnType<typeof import('../composer/view.js').createComposerView>,
@@ -35,21 +38,23 @@ const LISTENING_STATES = new Set(['listening', 'halfDuplexPause']);
  *   settings: import('../../bridge/settings.js').Settings,
  *   appLabels: () => string[],
  *   announce: (message: string) => void,
+ *   notify: (message: string) => void,
  *   reducedMotion: () => boolean,
  *   clock?: { now: () => number, after: (fn: () => void, ms: number) => () => void },
- * }} parts   `status` is the server's word on hearing, and may be missing when the voice could not be reached
+ * }} parts   `status` is the server's word on hearing, and may be missing when the voice could not be reached; `notify` adds a warning notice to the thread
  * @returns {{ repaint: () => void, replyEnded: () => void, fieldChanged: (text: string) => void, formingTaken: () => void, userActive: () => void }}
  */
-export function connectHearing({ agent, status, button, pill, trailCanvas, field, composerView, thread, turn, live, voicePlayer, speakerOn, settings, appLabels, announce, reducedMotion, clock = realClock }) {
+export function connectHearing({ agent, status, button, pill, trailCanvas, field, composerView, thread, turn, live, voicePlayer, speakerOn, settings, appLabels, announce, notify, reducedMotion, clock = realClock }) {
   const trail = createTrail({ canvas: trailCanvas, reducedMotion });
   const toggle = createHearToggle({
     button,
     status: status ?? NO_HEARING,
     check: async () => (await agent.voiceStatus()).hear ?? NO_HEARING,
     announce,
-    onStart: () => { unlockVoice(); start(); },
+    onStart: () => { unlockVoice(); start(); warnFromStatus(); },
     onStop: stop,
   });
+  const micWarning = createWarning({ show: (message) => toggle.setProblem(message), say: notify });
 
   let hearing = null;
   let loading = null;
@@ -72,6 +77,13 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
     silence: () => turn.silence(),
     composer: composerView,
   });
+
+  // SMELL: a recognizer that gives no words, such as one the browser refuses, still counts, so the mic keeps listening
+  // and the notice promises live words that never come.
+  /** With a recognizer of its own the browser carries on while Google cannot hear; without one the mic stops, and says so. */
+  const hearingProblem = (message) => (liveWords.supported
+    ? `${message.replace(/\.$/, '')}. Jet is using your browser's own hearing until it is back.`
+    : cannotHear(message));
 
   // With the speaker off Jet's voice needs no sound yet; switching the speaker on starts it then.
   function unlockVoice() {
@@ -100,7 +112,8 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
   }
 
   function showState(state, reason) {
-    toggle.setState(state, reason);
+    const why = state === 'problem' ? cannotHear(reason) : reason;
+    toggle.setState(state, why);
     composerView.setListening(LISTENING_STATES.has(state));
     // The browser's recognizer opens a microphone of its own, so it stops even while the mic only waits out Jet's voice.
     if (state === 'listening') liveWords.start();
@@ -108,6 +121,21 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
     if (state === 'halfDuplexPause') checkJetUntilResumed();
     if (state !== 'listening') spoken.micStopped();
     repaint();
+    if (state === 'problem') micWarning.report(why);
+  }
+
+  /**
+   * Switching the mic on says at once what Google last refused, without waiting for a clip to be refused. It is not part
+   * of `start`, because a first touch calls `start` again to carry on the same switch-on, and would say it twice.
+   */
+  async function warnFromStatus() {
+    micWarning.switchedOn();
+    try {
+      const { hear } = await agent.voiceStatus();
+      micWarning.report(hear?.warning ? hearingProblem(hear.warning) : null);
+    } catch (error) {
+      console.warn('the voice status could not be read:', error);
+    }
   }
 
   function recentJetWords() {
@@ -134,6 +162,12 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
         spoken.hear(event);
         if (event.on) live.typing();
         break;
+      case 'words':
+        // A clip Google answered clears the warning. One the page gave up waiting for says nothing about Google.
+        if (!event.error) micWarning.report(null);
+        else if (event.error.kind !== 'late') micWarning.report(hearingProblem(event.error.message));
+        spoken.hear(event);
+        break;
       default:
         spoken.hear(event);
     }
@@ -152,6 +186,7 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
         recentJetWords,
         onEvent,
         clock,
+        stopOnFailure: !liveWords.supported,
       });
     })();
     loading.catch(() => { loading = null; });
@@ -199,6 +234,7 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
     if (permission === 'granted') {
       toggle.greet();
       start();
+      warnFromStatus();
     } else if (permission === 'denied') {
       showState('blocked');
     }

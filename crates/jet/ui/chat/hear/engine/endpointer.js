@@ -86,7 +86,7 @@ export function createEndpointer({ newTurn, onEvent }) {
   }
 
   function openTurn() {
-    turn = { id: newTurn(), interrupts: guarded(), nextIndex: 0, pending: new Map(), texts: new Map(), hadLateWords: false };
+    turn = { id: newTurn(), interrupts: guarded(), nextIndex: 0, pending: new Map(), texts: new Map(), missed: null };
   }
 
   function startUtterance(runLength) {
@@ -206,7 +206,7 @@ export function createEndpointer({ newTurn, onEvent }) {
     for (const [index, sentAt] of turn.pending) {
       if (now - sentAt < SETTINGS.WORDS_LATE_MS) continue;
       turn.pending.delete(index);
-      turn.hadLateWords = true;
+      turn.missed = 'late';
     }
   }
 
@@ -215,7 +215,7 @@ export function createEndpointer({ newTurn, onEvent }) {
     giveUpLateWords();
     if (turn.pending.size > 0) return;
     const words = lastWords();
-    if (words === null) discard(turn.hadLateWords ? 'late' : 'noWords');
+    if (words === null) discard(turn.missed ?? 'noWords');
     else if (now - lastSpeechEnd >= END_GAP_MS[judge(words)]) endTurn();
   }
 
@@ -254,11 +254,15 @@ export function createEndpointer({ newTurn, onEvent }) {
       }
     },
 
-    /** The words of an utterance, empty when it had none. Words for a turn that has ended are ignored. */
-    words({ index, text }) {
+    /**
+     * The words of an utterance, empty when it had none. Words for a turn that has ended are ignored. A `failed` clip is
+     * not silence, so a turn left with no words after one is thrown away as `failed`.
+     */
+    words({ index, text, failed = false }) {
       if (turn === null || !turn.pending.has(index)) return;
       turn.pending.delete(index);
       turn.texts.set(index, text);
+      if (failed) turn.missed = 'failed';
       judgeEnd();
     },
 
