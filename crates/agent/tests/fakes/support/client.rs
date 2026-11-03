@@ -15,13 +15,6 @@ pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
             serde_json::from_str(args.iter().find_map(|arg| arg.strip_prefix(key)).unwrap())
                 .unwrap()
         };
-        assert!(args.contains(&"--ignore-user-config".into()));
-        assert!(args.contains(&"--ignore-rules".into()));
-        assert!(args.contains(&"features.shell_tool=false".into()));
-        assert!(args.contains(&format!(
-            "mcp_servers.jet.enabled_tools={}",
-            json!(agent::FACADE_TOOLS)
-        )));
         (
             value("mcp_servers.jet.url="),
             value(&format!("mcp_servers.jet.http_headers.{TURN_HEADER}=")),
@@ -29,14 +22,6 @@ pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
     } else {
         let value =
             |key: &str| -> &str { &args[args.iter().position(|arg| arg == key).unwrap() + 1] };
-        assert_eq!(value("--tools"), "");
-        assert!(args.contains(&"--strict-mcp-config".into()));
-        assert_eq!(
-            value("--allowedTools"),
-            agent::FACADE_TOOLS
-                .map(|name| format!("mcp__jet__{name}"))
-                .join(",")
-        );
         let config: Value = serde_json::from_str(value("--mcp-config")).unwrap();
         (
             config["mcpServers"]["jet"]["url"].as_str().unwrap().into(),

@@ -3,9 +3,11 @@
 #[test]
 #[ignore = "calls live JEV"]
 fn live_jev_classifies_within_the_backend_cap() {
-    if std::env::var("REX_PROD_API").as_deref() != Ok("true") {
-        return;
-    }
+    assert_eq!(
+        std::env::var("REX_PROD_API").as_deref(),
+        Ok("true"),
+        "this live test spends real quota; run it with REX_PROD_API=true"
+    );
     let start = std::time::Instant::now();
     let feeling = agent::feel_message("Hello, Jet!").expect("live JEV classification failed");
     eprintln!(

@@ -1,4 +1,4 @@
-//! Drive real HTTP facade requests from free provider process fixtures.
+//! Lets a fake provider call Jet's tool facade over real HTTP when its input holds a `facade:` script.
 mod client;
 mod events;
 use serde_json::Value;

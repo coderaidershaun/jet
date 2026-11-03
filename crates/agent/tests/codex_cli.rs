@@ -44,7 +44,13 @@ fn codex_stream_resume_schema_usage_tool_results_and_terminal_errors() {
         serde_json::from_slice(&std::fs::read(dir.path().join("fake-codex-args.json")).unwrap())
             .unwrap();
     assert!(args.contains(&"model_reasoning_effort=\"high\"".into()));
-    assert!(args.contains(&"features.shell_tool=false".into()));
+    for flag in [
+        "--ignore-user-config",
+        "--ignore-rules",
+        "features.shell_tool=false",
+    ] {
+        assert!(args.contains(&flag.into()), "{flag}");
+    }
     assert!(args.contains(&"mcp_servers.jet.http_headers.x-jet-turn=\"turn-token\"".into()));
     assert!(args.contains(&format!(
         "mcp_servers.jet.enabled_tools={}",
@@ -110,6 +116,11 @@ fn codex_stream_resume_schema_usage_tool_results_and_terminal_errors() {
 #[test]
 #[ignore = "uses the locally signed-in Codex subscription"]
 fn live_codex_chat_resume_and_review_schema() {
+    assert_eq!(
+        std::env::var("REX_PROD_API").as_deref(),
+        Ok("true"),
+        "this live test spends real quota; run it with REX_PROD_API=true"
+    );
     let dir = tempfile::tempdir().unwrap();
     let cli = CodexCli::locate(None, dir.path()).unwrap();
     let mut req = request("Remember the word marigold. Reply with just OK.");

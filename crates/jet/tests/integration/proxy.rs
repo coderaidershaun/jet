@@ -11,8 +11,27 @@ struct Fixture {
     url: String,
     stall: String,
 }
+/// Stops at once with the fix when the Node programs these tests run cannot work.
+fn require_node_and_ws() {
+    let fix = "run `npm ci --prefix crates/jet/tests/fixtures --ignore-scripts` (needs node)";
+    let node = Command::new("node").arg("--version").output();
+    assert!(
+        node.is_ok_and(|output| output.status.success()),
+        "node is missing: {fix}"
+    );
+    let ws = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/node_modules/ws"
+    );
+    assert!(
+        std::path::Path::new(ws).is_dir(),
+        "the `ws` module is missing: {fix}"
+    );
+}
+
 impl Fixture {
     fn start(name: &str) -> Self {
+        require_node_and_ws();
         let mut child = Command::new("node")
             .arg(concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -27,6 +46,7 @@ impl Fixture {
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut line)
             .unwrap();
+        assert!(!line.is_empty(), "the proxy fixture exited before it began");
         let value: Value = serde_json::from_str(&line).unwrap();
         Self {
             child,

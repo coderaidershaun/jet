@@ -4,6 +4,17 @@ version.workspace = true
 edition.workspace = true
 description = "Runs Jet's chat turns through Claude Code or Codex and keeps the thread, notes, and app connections"
 
+# Stand-ins for the provider programs, built so the tests can run them. They are not product code.
+[[bin]]
+name = "fake-claude"
+path = "tests/fakes/fake-claude.rs"
+test = false
+
+[[bin]]
+name = "fake-codex"
+path = "tests/fakes/fake-codex.rs"
+test = false
+
 [dependencies]
 base64 = { workspace = true }
 dotenvy = { workspace = true }

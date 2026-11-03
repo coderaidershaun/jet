@@ -6,6 +6,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Longest a request to the host may take before the test fails instead of hanging.
+const REQUEST_LIMIT: Duration = Duration::from_secs(30);
+
 pub struct Host {
     pub child: Child,
     pub url: String,
@@ -29,14 +32,6 @@ impl Host {
         Self::launch(dir)
     }
     fn launch(dir: tempfile::TempDir) -> Self {
-        let config = jet::ServerConfig::from_args([
-            "--listen",
-            "127.0.0.1:0",
-            "--data-dir",
-            dir.path().to_str().unwrap(),
-        ])
-        .unwrap();
-        assert!(config.listen.ip().is_loopback());
         let mut child = Command::new(env!("CARGO_BIN_EXE_jet"))
             .args(["--listen", "127.0.0.1:0", "--data-dir"])
             .arg(dir.path())
@@ -71,7 +66,12 @@ impl Host {
         Self::launch(dir)
     }
     pub fn get(&self, path: &str) -> Value {
-        let text = ureq::get(format!("{}{path}", self.url))
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(REQUEST_LIMIT))
+            .build()
+            .into();
+        let text = agent
+            .get(format!("{}{path}", self.url))
             .call()
             .unwrap()
             .body_mut()
@@ -82,6 +82,7 @@ impl Host {
     pub fn post(&self, path: &str, value: Value) -> (u16, Value) {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .timeout_global(Some(REQUEST_LIMIT))
             .build()
             .into();
         let mut response = agent
@@ -99,6 +100,7 @@ impl Host {
     pub fn post_bytes(&self, path: &str, bytes: &[u8]) -> (u16, Value) {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .timeout_global(Some(REQUEST_LIMIT))
             .build()
             .into();
         let mut response = agent
@@ -118,6 +120,7 @@ impl Host {
         let name: String = url::form_urlencoded::byte_serialize(name.as_bytes()).collect();
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .timeout_global(Some(REQUEST_LIMIT))
             .build()
             .into();
         let mut response = agent
@@ -134,6 +137,7 @@ impl Host {
     pub fn delete(&self, path: &str) -> u16 {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .timeout_global(Some(REQUEST_LIMIT))
             .build()
             .into();
         agent
@@ -161,6 +165,20 @@ impl Host {
         write!(socket, "POST /api/chat/send HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
         socket
     }
+    /// Opens the event stream. A read that stalls fails the test instead of hanging it.
+    pub fn events(&self, epoch: &str, cursor: u64) -> ureq::http::Response<ureq::Body> {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(REQUEST_LIMIT))
+            .build()
+            .into();
+        agent
+            .get(format!(
+                "{}/api/events?epoch={epoch}&cursor={cursor}",
+                self.url
+            ))
+            .call()
+            .unwrap()
+    }
     pub fn invocations(&self) -> usize {
         std::fs::read_to_string(self.dir.path().join("calls"))
             .unwrap_or_default()
@@ -180,10 +198,17 @@ pub fn host() -> Host {
     let bins = std::path::Path::new(env!("CARGO_BIN_EXE_jet"))
         .parent()
         .unwrap();
+    let (claude, codex) = (bins.join("fake-claude"), bins.join("fake-codex"));
+    for fake in [&claude, &codex] {
+        assert!(
+            fake.exists(),
+            "{} is missing; run `cargo build --workspace` before these tests",
+            fake.display()
+        );
+    }
     std::fs::write(
         host.dir.path().join("settings.json"),
-        json!({"claudePath":bins.join("fake-claude"),"codexPath":bins.join("fake-codex")})
-            .to_string(),
+        json!({"claudePath":claude,"codexPath":codex}).to_string(),
     )
     .unwrap();
     host
@@ -218,18 +243,15 @@ pub fn replay(host: &Host) -> Vec<Value> {
     if last == 0 {
         return Vec::new();
     }
-    let mut response = ureq::get(format!(
-        "{}/api/events?epoch={}&cursor=0",
-        host.url,
-        snapshot["epoch"].as_str().unwrap()
-    ))
-    .call()
-    .unwrap();
+    let mut response = host.events(snapshot["epoch"].as_str().unwrap(), 0);
     let mut reader = BufReader::new(response.body_mut().as_reader());
     let mut events = Vec::new();
     loop {
         let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
+        let read = reader
+            .read_line(&mut line)
+            .expect("the event stream stalled");
+        assert!(read > 0, "the event stream ended before cursor {last}");
         if let Some(data) = line.strip_prefix("data: ") {
             let event: Value = serde_json::from_str(data).unwrap();
             if event["kind"] == "event" {

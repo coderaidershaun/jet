@@ -1,4 +1,4 @@
-//! Exercise shared metadata and calls against real SDK HTTP sessions.
+//! Calls and catalogues between the MCP client and an app, over real HTTP sessions.
 use agent::{
     apps::{AddApp, App, AppOverrides, McpOverride, Registry, RegistryCommand},
     mcp::{HttpMcpClient, McpError, ToolRequest, ToolTarget},
@@ -13,10 +13,12 @@ use rmcp::{
     },
 };
 use serde_json::json;
+use std::future::Future;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Default)]
 struct Fixture {
@@ -25,6 +27,7 @@ struct Fixture {
     discovery: Arc<AtomicBool>,
     release: Arc<tokio::sync::Notify>,
     calls: Arc<AtomicUsize>,
+    sessions_opened: Arc<AtomicUsize>,
     cancelled: Arc<AtomicBool>,
     peer: Arc<Mutex<Option<rmcp::Peer<RoleServer>>>>,
 }
@@ -99,7 +102,10 @@ impl World {
         let server = fixture.clone();
         let sessions = Arc::new(LocalSessionManager::default());
         let service = StreamableHttpService::new(
-            move || Ok(server.clone()),
+            move || {
+                server.sessions_opened.fetch_add(1, Ordering::SeqCst);
+                Ok(server.clone())
+            },
             sessions.clone(),
             Default::default(),
         );
@@ -204,10 +210,29 @@ async fn lose_reply(
         response
     }
 }
+/// Waits for something another task does, and fails with a message rather than hanging.
+async fn eventually(what: &str, ready: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ready() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// Waits for a call that runs in its own task.
+async fn within_seconds<T>(what: &str, future: impl Future<Output = T>) -> T {
+    tokio::time::timeout(Duration::from_secs(10), future)
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {what}"))
+}
+
+fn calls(fixture: &Fixture) -> usize {
+    fixture.calls.load(Ordering::SeqCst)
+}
+
 #[tokio::test]
-async fn calls_validate_route_and_cancel_without_replay() {
+async fn the_catalogue_goes_stale_when_listing_fails_and_recovers() {
     let world = World::new().await;
-    // The catalogue holds what the app announced, goes stale when it cannot be listed, and recovers.
     let catalogue = world.client.catalogue(&world.app.id).await.unwrap();
     assert_eq!(
         catalogue.server.instructions.as_deref(),
@@ -219,17 +244,27 @@ async fn calls_validate_route_and_cancel_without_replay() {
     assert!(catalogue.tools[0].output_schema.is_some());
     assert!(catalogue.tools[0].annotations.is_some());
     assert!(!catalogue.is_stale);
+
     world.fixture.fail.store(true, Ordering::SeqCst);
     let peer = world.fixture.peer.lock().unwrap().clone().unwrap();
     peer.notify_tool_list_changed().await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-    let stale = world.client.catalogue(&world.app.id).await.unwrap();
-    assert!(stale.is_stale);
+    let stale = within_seconds("the stale catalogue", async {
+        loop {
+            let latest = world.client.catalogue(&world.app.id).await.unwrap();
+            if latest.is_stale {
+                break latest;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
     assert_eq!(stale.tools, catalogue.tools);
     assert!(stale.last_error.unwrap().contains("catalogue unavailable"));
     world.fixture.fail.store(false, Ordering::SeqCst);
     assert!(!world.client.refresh(&world.app.id).await.unwrap().is_stale);
-    let sessions: Vec<_> = world
+
+    // A session the app lost is replaced by a new one.
+    let ids: Vec<_> = world
         .sessions
         .sessions
         .read()
@@ -237,26 +272,38 @@ async fn calls_validate_route_and_cancel_without_replay() {
         .keys()
         .cloned()
         .collect();
-    for id in sessions {
+    for id in ids {
         world.sessions.close_session(&id).await.unwrap();
     }
+    let opened = world.fixture.sessions_opened.load(Ordering::SeqCst);
+    // The call that finds the session gone may fail; the next one works on a new session.
     let _ = world.client.refresh(&world.app.id).await.unwrap();
     assert!(!world.client.refresh(&world.app.id).await.unwrap().is_stale);
+    assert!(world.fixture.sessions_opened.load(Ordering::SeqCst) > opened);
+
     world.fixture.repeat.store(true, Ordering::SeqCst);
     let stale = world.client.refresh(&world.app.id).await.unwrap();
     assert!(stale.is_stale);
     assert!(stale.last_error.unwrap().contains("repeated"));
     world.fixture.repeat.store(false, Ordering::SeqCst);
     assert!(!world.client.refresh(&world.app.id).await.unwrap().is_stale);
-    assert_eq!(world.fixture.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(calls(&world.fixture), 0);
+}
 
+#[tokio::test]
+async fn calls_are_checked_and_the_apps_errors_come_back_as_they_are() {
+    let world = World::new().await;
     let mut invalid = world.request("invalid", "");
     invalid.arguments.clear();
     assert!(matches!(
         world.client.call(invalid).await,
         Err(McpError::InvalidArguments { .. })
     ));
-    assert_eq!(world.fixture.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        calls(&world.fixture),
+        0,
+        "invalid arguments never reach the app"
+    );
     let result = world
         .client
         .call(world.request("good", "hello"))
@@ -276,74 +323,109 @@ async fn calls_validate_route_and_cancel_without_replay() {
     assert!(
         matches!(world.client.call(world.request("protocol", "protocol-error")).await, Err(McpError::Protocol { code:-32602, data:Some(data), .. }) if data["detail"] == 42)
     );
+}
+
+#[tokio::test]
+async fn cancelling_a_call_tells_the_app_to_stop() {
+    let world = World::new().await;
     let client = world.client.clone();
     let request = world.request("cancel", "wait");
     let task = tokio::spawn(async move { client.call(request).await });
-    while world.fixture.calls.load(Ordering::SeqCst) < 4 {
-        tokio::task::yield_now().await;
-    }
+    eventually("the call to reach the app", || calls(&world.fixture) == 1).await;
     world.client.cancel_request("cancel");
     assert!(matches!(
-        task.await.unwrap(),
+        within_seconds("the cancelled call", task).await.unwrap(),
         Err(McpError::Cancelled { .. })
     ));
-    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-    assert!(world.fixture.cancelled.load(Ordering::SeqCst));
+    eventually("the app to see the cancel", || {
+        world.fixture.cancelled.load(Ordering::SeqCst)
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_cancel_before_the_call_starts_wins_and_an_id_is_used_once() {
+    let world = World::new().await;
+    let call = world
+        .client
+        .call(world.request("cancel-before-poll", "never"));
+    world.client.cancel_request("cancel-before-poll");
+    assert!(matches!(
+        world
+            .client
+            .call(world.request("cancel-before-poll", "duplicate"))
+            .await,
+        Err(McpError::InvalidArguments { .. })
+    ));
+    assert!(matches!(call.await, Err(McpError::Cancelled { .. })));
+    assert_eq!(calls(&world.fixture), 0);
+}
+
+#[tokio::test]
+async fn a_disabled_app_lets_a_running_call_settle_and_refuses_new_ones() {
+    let world = World::new().await;
     let client = world.client.clone();
     let request = world.request("settle", "wait");
     let task = tokio::spawn(async move { client.call(request).await });
-    while world.fixture.calls.load(Ordering::SeqCst) < 5 {
-        tokio::task::yield_now().await;
-    }
+    eventually("the call to reach the app", || calls(&world.fixture) == 1).await;
+    let id = world.app.id.clone();
     world
         .registry
         .lock()
         .unwrap()
-        .execute(RegistryCommand::Disable {
-            id: world.app.id.clone(),
-        })
+        .execute(RegistryCommand::Disable { id: id.clone() })
         .unwrap();
     assert!(matches!(
         world.client.call(world.request("disabled", "hello")).await,
         Err(McpError::Unavailable { .. })
     ));
-    assert!(task.await.unwrap().is_ok());
+    assert!(
+        within_seconds("the running call", task)
+            .await
+            .unwrap()
+            .is_ok()
+    );
     world
         .registry
         .lock()
         .unwrap()
-        .execute(RegistryCommand::Remove {
-            id: world.app.id.clone(),
-        })
+        .execute(RegistryCommand::Remove { id })
         .unwrap();
     assert!(matches!(
         world.client.call(world.request("removed", "hello")).await,
         Err(McpError::Unavailable { .. })
     ));
-    assert_eq!(world.fixture.calls.load(Ordering::SeqCst), 5);
-    let routing = World::new().await;
+    assert_eq!(calls(&world.fixture), 1);
+}
+
+#[tokio::test]
+async fn a_call_goes_to_the_app_it_names() {
+    let first = World::new().await;
     let other = World::new().await;
-    let second = routing.register(other.app.base_url.as_str().into()).await;
-    routing
+    let second = first.register(other.app.base_url.as_str().into()).await;
+    first
         .client
-        .call(routing.request("first-route", "one"))
+        .call(first.request("first-route", "one"))
         .await
         .unwrap();
-    let mut request = routing.request("second-route", "two");
+    let mut request = first.request("second-route", "two");
     request.target.app_id = second.id;
-    routing.client.call(request).await.unwrap();
-    assert_eq!(routing.fixture.calls.load(Ordering::SeqCst), 1);
-    assert_eq!(other.fixture.calls.load(Ordering::SeqCst), 1);
+    first.client.call(request).await.unwrap();
+    assert_eq!(calls(&first.fixture), 1);
+    assert_eq!(calls(&other.fixture), 1);
+}
+
+#[tokio::test]
+async fn a_failed_call_to_an_old_endpoint_leaves_the_new_endpoints_session_alone() {
+    let routing = World::new().await;
+    let other = World::new().await;
     let client = routing.client.clone();
     let request = routing.request("uncertain-old-endpoint", "hold-uncertain");
     let old = tokio::spawn(async move { client.call(request).await });
-    tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        while routing.fixture.calls.load(Ordering::SeqCst) < 2 {
-            tokio::task::yield_now().await;
-        }
+    eventually("the call to reach the old endpoint", || {
+        calls(&routing.fixture) == 1
     })
-    .await
-    .unwrap();
+    .await;
     let registry = routing.registry.clone();
     let id = routing.app.id.clone();
     let endpoint = other.app.mcp_url.as_ref().unwrap().to_string();
@@ -368,86 +450,58 @@ async fn calls_validate_route_and_cancel_without_replay() {
         .call(routing.request("edited-route", "three"))
         .await
         .unwrap();
-    assert_eq!(routing.fixture.calls.load(Ordering::SeqCst), 2);
-    assert_eq!(other.fixture.calls.load(Ordering::SeqCst), 2);
-    let sessions: std::collections::HashSet<_> = other
-        .sessions
-        .sessions
-        .read()
-        .await
-        .keys()
-        .cloned()
-        .collect();
+    assert_eq!(
+        calls(&routing.fixture),
+        1,
+        "the edited app goes to the new endpoint"
+    );
+    assert_eq!(calls(&other.fixture), 1);
+    let opened = other.fixture.sessions_opened.load(Ordering::SeqCst);
     routing.fixture.release.notify_one();
     assert!(matches!(
-        old.await.unwrap(),
+        within_seconds("the old call", old).await.unwrap(),
         Err(McpError::Transport { .. })
     ));
     routing.client.catalogue(&routing.app.id).await.unwrap();
     assert_eq!(
-        other
-            .sessions
-            .sessions
-            .read()
-            .await
-            .keys()
-            .cloned()
-            .collect::<std::collections::HashSet<_>>(),
-        sessions,
-        "old endpoint failure must not discard the current session"
+        other.fixture.sessions_opened.load(Ordering::SeqCst),
+        opened,
+        "the old endpoint's failure must not discard the current session"
     );
+}
+
+#[tokio::test]
+async fn an_uncertain_write_is_never_replayed() {
+    let world = World::new().await;
     assert!(matches!(
-        routing
+        world
             .client
-            .call(routing.request("uncertain-write", "uncertain"))
+            .call(world.request("uncertain-write", "uncertain"))
             .await,
         Err(McpError::Transport { .. })
     ));
-    assert_eq!(
-        other.fixture.calls.load(Ordering::SeqCst),
-        3,
-        "an uncertain write is never replayed"
-    );
-    assert!(
-        !routing
-            .client
-            .refresh(&routing.app.id)
-            .await
-            .unwrap()
-            .is_stale
-    );
-    let call = routing
+    assert_eq!(calls(&world.fixture), 1);
+    assert!(!world.client.refresh(&world.app.id).await.unwrap().is_stale);
+}
+
+#[tokio::test]
+async fn a_removed_discovery_promise_prevents_execution() {
+    let world = World::new().await;
+    world.fixture.discovery.store(true, Ordering::SeqCst);
+    world.client.refresh(&world.app.id).await.unwrap();
+    world
         .client
-        .call(routing.request("cancel-before-poll", "never"));
-    routing.client.cancel_request("cancel-before-poll");
-    assert!(matches!(
-        routing
-            .client
-            .call(routing.request("cancel-before-poll", "duplicate"))
-            .await,
-        Err(McpError::InvalidArguments { .. })
-    ));
-    assert!(matches!(call.await, Err(McpError::Cancelled { .. })));
-    assert_eq!(other.fixture.calls.load(Ordering::SeqCst), 3);
-    other.fixture.discovery.store(true, Ordering::SeqCst);
-    routing.client.refresh(&routing.app.id).await.unwrap();
-    routing
-        .client
-        .discover(routing.request("discovery", "free"))
+        .discover(world.request("discovery", "free"))
         .await
         .unwrap();
-    let discovery = routing
+    let discovery = world
         .client
-        .discover(routing.request("changed-discovery", "never"));
-    other.fixture.discovery.store(false, Ordering::SeqCst);
-    routing.client.refresh(&routing.app.id).await.unwrap();
+        .discover(world.request("changed-discovery", "never"));
+    world.fixture.discovery.store(false, Ordering::SeqCst);
+    world.client.refresh(&world.app.id).await.unwrap();
     assert!(matches!(
         discovery.await,
         Err(McpError::InvalidArguments { .. })
     ));
-    assert_eq!(
-        other.fixture.calls.load(Ordering::SeqCst),
-        4,
-        "a removed discovery promise prevents execution"
-    );
+    assert_eq!(calls(&world.fixture), 1);
 }

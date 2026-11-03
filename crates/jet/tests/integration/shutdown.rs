@@ -11,12 +11,8 @@ fn shutdown_bounds_provider_and_review_cleanup() {
         serde_json::json!({"requestId":"shutdown"}),
     );
     host.until(|snapshot| snapshot["active"].is_null());
-    let sleeper = host.dir.path().join("no-read.py");
-    std::fs::write(
-        &sleeper,
-        "#!/usr/bin/env python3\nimport time\ntime.sleep(120)\n",
-    )
-    .unwrap();
+    let sleeper = host.dir.path().join("no-read.sh");
+    std::fs::write(&sleeper, "#!/bin/sh\nexec sleep 120\n").unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
