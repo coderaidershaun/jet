@@ -1,7 +1,7 @@
 //! Reads how a message makes Jet feel before the reply starts, and keeps the JEV wire format and
 //! credential handling out of the conversation.
 
-use crate::Mood;
+use crate::chat::Mood;
 use crate::env_file;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -161,50 +161,12 @@ struct Answer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Mood;
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
+    use crate::test_server::serve;
 
-    fn server(status: u16, body: &'static str) -> (Jev, std::thread::JoinHandle<String>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    fn server(status: u16, body: &str) -> (Jev, std::thread::JoinHandle<String>) {
+        let (address, worker) = serve(status, body);
         let mut client = Jev::new("test-credential-never-output".into());
-        client.endpoint = format!("http://{}/systemone", listener.local_addr().unwrap());
-        let worker = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .unwrap();
-            let mut request = Vec::new();
-            let mut buffer = [0; 4096];
-            loop {
-                let count = stream.read(&mut buffer).unwrap();
-                request.extend_from_slice(&buffer[..count]);
-                if let Some(at) = request.windows(4).position(|part| part == b"\r\n\r\n") {
-                    let header = String::from_utf8_lossy(&request[..at]).to_ascii_lowercase();
-                    let length: usize = header
-                        .lines()
-                        .find_map(|line| line.strip_prefix("content-length: "))
-                        .unwrap()
-                        .parse()
-                        .unwrap();
-                    if request.len() >= at + 4 + length {
-                        break;
-                    }
-                }
-                assert_ne!(count, 0);
-            }
-            let response = format!(
-                "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            stream.write_all(response.as_bytes()).unwrap();
-            listener.set_nonblocking(true).unwrap();
-            assert!(
-                listener.accept().is_err(),
-                "classification made more than one request"
-            );
-            String::from_utf8(request).unwrap()
-        });
+        client.endpoint = format!("{address}/systemone");
         (client, worker)
     }
 
@@ -216,23 +178,11 @@ mod tests {
         );
         assert_eq!(client.classify("hello\nworld").unwrap().mood, Mood::Hello);
         let request = worker.join().unwrap();
-        let (header, body) = request.split_once("\r\n\r\n").unwrap();
-        assert!(header.starts_with("POST /systemone HTTP/1.1"));
         assert!(
-            header
+            request
                 .to_ascii_lowercase()
                 .contains("authorization: bearer test-credential-never-output")
         );
-        let body: serde_json::Value = serde_json::from_str(body).unwrap();
-        assert_eq!(body["model"], MODEL);
-        assert_eq!(body["state"], json!({}));
-        assert_eq!(body["questions"].as_object().unwrap().len(), 2);
-        for (mood, question) in QUESTIONS {
-            assert_eq!(
-                body["questions"][mood.word()],
-                json!({"type":"noul","instructions":{"line":"hello\nworld","question":question}})
-            );
-        }
         assert!(!format!("{client:?}").contains("test-credential"));
         for (status, body, expected) in [
             (

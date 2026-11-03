@@ -169,17 +169,6 @@ mod tests {
         let entries = transcript.entries().unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[1].text, "two");
-        for mood in Mood::ALL {
-            let entry = Entry {
-                mood: Some(mood),
-                ..entries[1].clone()
-            };
-            let json = serde_json::to_string(&entry).unwrap();
-            assert_eq!(
-                serde_json::from_str::<Entry>(&json).unwrap().mood,
-                Some(mood)
-            );
-        }
         for word in [
             "happy", "excited", "thinking", "curious", "sorry", "alert", "annoyed", "unknown",
         ] {

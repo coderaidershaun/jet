@@ -8,14 +8,14 @@ use std::sync::{Arc, Mutex};
 use super::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
 use super::session_policy::FreshReason;
 use super::{Claim, shown};
-use crate::chat::{Entry, EntryId, EntryStatus, Event, Failure, Role, SessionId};
+use crate::chat::{Entry, EntryId, EntryStatus, Event, Failure, Role, SessionId, TurnIdentity};
 use crate::turn::{
     Request, SessionMode, Step, Stopper, Summary, Transport, TransportError, Turn, TurnError,
 };
 
 /// Everything a reply needs to know about the message it answers.
 pub(super) struct Context {
-    pub identity: Option<crate::TurnIdentity>,
+    pub identity: Option<TurnIdentity>,
     pub dir: DataDir,
     pub transport: Arc<dyn Transport>,
     pub request: Request,

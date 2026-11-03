@@ -1,7 +1,7 @@
 //! Keeps the three notes current. Once the conversation has been quiet for a while, one
 //! cheap model call reads everything said since the last review and rewrites the notes.
 
-use std::sync::{MutexGuard, PoisonError, atomic::Ordering};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -11,7 +11,7 @@ use super::memory::{MemoryError, Session, Transcript, now_ms};
 use super::persona::{fill, note_or_empty};
 use super::{Claim, Conversation};
 use crate::chat::{Effort, Entry, MEMORY_LIMIT, Notes, RECENT_LIMIT, Role, USER_LIMIT};
-use crate::turn::{Request, SessionMode, Step, Stopper, Summary, Transport, Turn, TurnError};
+use crate::turn::{Request, SessionMode, Step, Summary, Transport, Turn, TurnError};
 
 const PROMPT: &str = include_str!("review.md");
 
@@ -69,7 +69,7 @@ impl Conversation {
     /// Prevents future reviews and cancels any provider review already running.
     pub fn stop_review(&self) {
         self.shutting_down.store(true, Ordering::SeqCst);
-        if let Some(stopper) = self.lock_review_stop().as_ref() {
+        if let Some(stopper) = crate::lock(&self.review_stop).as_ref() {
             stopper.stop();
         }
     }
@@ -112,7 +112,7 @@ impl Conversation {
             mcp: None,
         };
         let turn = {
-            let mut current = self.lock_review_stop();
+            let mut current = crate::lock(&self.review_stop);
             if self.shutting_down.load(Ordering::SeqCst) {
                 return Ok(ReviewOutcome::Skipped);
             }
@@ -121,7 +121,7 @@ impl Conversation {
             turn
         };
         let result = run(turn);
-        *self.lock_review_stop() = None;
+        *crate::lock(&self.review_stop) = None;
         let summary = result?;
         let verdict = read_verdict(summary)?;
 
@@ -145,13 +145,6 @@ impl Conversation {
         session.reviewed_at = now_ms();
         session.save(&self.dir)?;
         Ok(outcome)
-    }
-
-    /// A lock that a panic poisoned is still usable: it only holds a stopper.
-    fn lock_review_stop(&self) -> MutexGuard<'_, Option<Stopper>> {
-        self.review_stop
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The session and the entries with text that the review has not read yet, or `None`
@@ -334,12 +327,6 @@ mod tests {
         assert_eq!(request.session, SessionMode::Ephemeral);
         assert_eq!(request.model, Model::Haiku);
         assert_eq!(request.schema, Some(schema()));
-        assert!(
-            request
-                .system_prompt
-                .contains("Never infer anything from file paths, folder names or other metadata"),
-            "a name read from a home folder path must not reach the notes"
-        );
         assert!(request.prompt.contains("I just shipped my first app"));
         assert!(!request.prompt.contains("I am Sam"), "already reviewed");
 

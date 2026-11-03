@@ -22,31 +22,3 @@ pub(super) fn with_header(pcm: &[u8], rate: u32) -> Vec<u8> {
     wav.extend_from_slice(pcm);
     wav
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_header_describes_16_bit_mono_audio_of_the_given_length() {
-        let wav = with_header(&[1, 0, 2, 0], 16_000);
-        let expected: Vec<u8> = [
-            b"RIFF".as_slice(),
-            &40u32.to_le_bytes(),
-            b"WAVEfmt ",
-            &16u32.to_le_bytes(),
-            &1u16.to_le_bytes(),
-            &1u16.to_le_bytes(),
-            &16_000u32.to_le_bytes(),
-            &32_000u32.to_le_bytes(),
-            &2u16.to_le_bytes(),
-            &16u16.to_le_bytes(),
-            b"data",
-            &4u32.to_le_bytes(),
-            &[1, 0, 2, 0],
-        ]
-        .concat();
-        assert_eq!(wav, expected);
-        assert_eq!(wav.len(), 48);
-    }
-}

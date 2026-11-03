@@ -12,7 +12,7 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     pin::Pin,
-    sync::{Arc, Mutex, PoisonError},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 use tokio::sync::{mpsc, oneshot};
@@ -61,7 +61,7 @@ impl HttpMcpClient {
         progress: Option<mpsc::Sender<Progress>>,
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, McpError>> + Send + '_>> {
         let (sender, receiver) = oneshot::channel();
-        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut calls = crate::lock(&self.calls);
         if request.request_id.is_empty()
             || request.request_id.len() > 256
             || calls.contains_key(&request.request_id)
@@ -226,10 +226,7 @@ impl Listening {
         token: ProgressToken,
         sender: mpsc::Sender<Progress>,
     ) -> Self {
-        listeners
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(token.clone(), sender);
+        crate::lock(listeners).insert(token.clone(), sender);
         Self {
             listeners: listeners.clone(),
             token,
@@ -238,10 +235,7 @@ impl Listening {
 }
 impl Drop for Listening {
     fn drop(&mut self) {
-        self.listeners
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&self.token);
+        crate::lock(&self.listeners).remove(&self.token);
     }
 }
 struct PendingCall {
@@ -252,10 +246,7 @@ struct PendingCall {
 }
 impl Drop for PendingCall {
     fn drop(&mut self) {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&self.request_id);
+        crate::lock(&self.calls).remove(&self.request_id);
         if let Some((peer, wire_id)) = self.wire.take() {
             tokio::spawn(async move {
                 let notification = CancelledNotification::new(CancelledNotificationParam::new(

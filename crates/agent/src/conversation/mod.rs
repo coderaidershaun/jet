@@ -2,7 +2,6 @@
 //! forget the thread, edit the notes, and let the review keep them current.
 
 mod accepted;
-mod markdown;
 mod memory;
 mod persona;
 mod reply;
@@ -12,8 +11,6 @@ mod session_policy;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-pub(crate) use markdown::spoken_words;
-pub use markdown::{CUES, Cue, dollar_math, render_markdown};
 pub use memory::{DataDir, MemoryError, now_ms};
 use memory::{NewEntry, Session, Transcript};
 pub use reply::Reply;
@@ -21,9 +18,10 @@ pub use review::{REVIEW_QUIET, ReviewError, ReviewOutcome};
 use session_policy::decide;
 
 use crate::chat::{
-    Attachment, Effort, Entry, McpConnection, Model, Notes, Persona, Role, ShownEntry,
+    Attachment, Effort, Entry, McpConnection, Model, Notes, Persona, Role, ShownEntry, TurnIdentity,
 };
-use crate::turn::{Request, SessionMode, Transport, Turn};
+use crate::markdown::render_markdown;
+use crate::turn::{Request, SessionMode, Stopper, Transport, Turn};
 
 /// Everything one message brings with it.
 #[derive(Debug, Clone)]
@@ -60,7 +58,7 @@ pub struct Conversation {
     dir: DataDir,
     answering: Arc<AtomicBool>,
     reviewing: Arc<AtomicBool>,
-    review_stop: Arc<Mutex<Option<crate::Stopper>>>,
+    review_stop: Arc<Mutex<Option<Stopper>>>,
     shutting_down: Arc<AtomicBool>,
 }
 
@@ -104,7 +102,7 @@ impl Conversation {
         &self,
         transport: Arc<dyn Transport>,
         message: Message,
-        identity: Option<crate::TurnIdentity>,
+        identity: Option<TurnIdentity>,
     ) -> Result<(ShownEntry, Reply), ConversationError> {
         let claim = Claim::take(&self.answering).ok_or(ConversationError::Busy)?;
         let now = now_ms();

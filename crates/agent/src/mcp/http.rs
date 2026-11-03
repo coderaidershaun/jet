@@ -52,12 +52,7 @@ impl ClientHandler for Notifications {
         let Some(progress) = Progress::from_notification(notification) else {
             return;
         };
-        if let Some(listener) = self
-            .listeners
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(&token)
-        {
+        if let Some(listener) = crate::lock(&self.listeners).get(&token) {
             let _ = listener.try_send(progress);
         }
     }
@@ -170,10 +165,7 @@ impl HttpMcpClient {
     }
     pub fn cancel_request(&self, request_id: &str) {
         // Keep the ID reserved until the cancelled future releases its guard.
-        if let Some(sender) = self
-            .calls
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        if let Some(sender) = crate::lock(&self.calls)
             .get_mut(request_id)
             .and_then(Option::take)
         {
@@ -181,10 +173,7 @@ impl HttpMcpClient {
         }
     }
     pub async fn shutdown(&self) {
-        for sender in self
-            .calls
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        for sender in crate::lock(&self.calls)
             .drain()
             .filter_map(|(_, sender)| sender)
         {

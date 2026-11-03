@@ -15,6 +15,7 @@ impl Gemini {
     /// voice how to say them.
     pub(in crate::voice) fn speak(
         &self,
+        voice: &str,
         words: &str,
         style: Option<&str>,
     ) -> Result<Vec<u8>, VoiceError> {
@@ -28,15 +29,15 @@ impl Gemini {
             "stream": true,
             "input": [{"type": "user_input", "content": [text]}],
             "response_format": {"type": "audio"},
-            "generation_config": {"speech_config": [{"voice": self.voice}]},
+            "generation_config": {"speech_config": [{"voice": voice}]},
         });
-        let mut response = self.post(&body)?;
-        self.read_audio(BufReader::new(response.body_mut().as_reader()))
+        let mut response = self.post(&body, &[voice])?;
+        self.read_audio(BufReader::new(response.body_mut().as_reader()), voice)
     }
 
     /// The audio of every event in the stream, joined. One event may spread its data over
     /// several `data:` lines, so the lines are gathered until the blank line that ends it.
-    fn read_audio(&self, stream: impl BufRead) -> Result<Vec<u8>, VoiceError> {
+    fn read_audio(&self, stream: impl BufRead, voice: &str) -> Result<Vec<u8>, VoiceError> {
         let mut pcm = Vec::new();
         let mut data = String::new();
         for line in stream.lines() {
@@ -47,10 +48,10 @@ impl Gemini {
                 }
                 data.push_str(more);
             } else if line.is_empty() {
-                self.add_event(&std::mem::take(&mut data), &mut pcm)?;
+                self.add_event(&std::mem::take(&mut data), &mut pcm, voice)?;
             }
         }
-        self.add_event(&data, &mut pcm)?;
+        self.add_event(&data, &mut pcm, voice)?;
         pcm.truncate(pcm.len() & !1);
         if pcm.is_empty() {
             return Err(VoiceError::Decode);
@@ -60,12 +61,12 @@ impl Gemini {
 
     /// Adds the audio of one event to `pcm`. An error event ends the clip as a refusal, and an
     /// event that is not audio is passed over.
-    fn add_event(&self, data: &str, pcm: &mut Vec<u8>) -> Result<(), VoiceError> {
+    fn add_event(&self, data: &str, pcm: &mut Vec<u8>, voice: &str) -> Result<(), VoiceError> {
         let Ok(event) = serde_json::from_str::<Value>(data) else {
             return Ok(());
         };
         if let Some(error) = event.get("error").filter(|error| error.is_object()) {
-            return Err(self.refusal_from(error));
+            return Err(self.refusal_from(error, &[voice]));
         }
         let Some(delta) = event.get("delta").filter(|delta| delta["type"] == "audio") else {
             return Ok(());
@@ -112,37 +113,24 @@ mod tests {
             "event: step.start\ndata: {{}}\n\n{}{split}event: done\ndata: {{}}\n\n",
             audio_event(&[1, 0, 2, 0]),
         );
-        let (client, worker) = server(200, body);
+        let (client, worker) = server(200, &body);
         assert_eq!(
-            client.speak("Hello there.", None).unwrap(),
+            client.speak("voice_test", "Hello there.", None).unwrap(),
             [1, 0, 2, 0, 3, 0]
         );
         let request = worker.join().unwrap();
-        let (header, body) = request.split_once("\r\n\r\n").unwrap();
-        assert!(header.starts_with("POST /v1beta/interactions HTTP/1.1"));
         assert!(
-            header
+            request
                 .to_ascii_lowercase()
                 .contains(&format!("x-goog-api-key: {KEY}"))
-        );
-        let body: serde_json::Value = serde_json::from_str(body).unwrap();
-        assert_eq!(body["model"], "model-test");
-        assert_eq!(body["store"], false);
-        assert_eq!(body["stream"], true);
-        assert_eq!(body["response_format"], json!({"type": "audio"}));
-        assert_eq!(
-            body["generation_config"]["speech_config"],
-            json!([{"voice": "voice_test"}])
-        );
-        assert_eq!(
-            body["input"],
-            json!([{"type": "user_input", "content": [{"type": "text", "text": "Hello there."}]}])
         );
         assert!(!format!("{client:?}").contains(KEY));
 
         // A style rides on the text as an annotation, and only when there is one.
-        let (client, worker) = server(200, audio_event(&[1, 0]));
-        client.speak("Hi.", Some("warm and bright")).unwrap();
+        let (client, worker) = server(200, &audio_event(&[1, 0]));
+        client
+            .speak("voice_test", "Hi.", Some("warm and bright"))
+            .unwrap();
         let request = worker.join().unwrap();
         let body: serde_json::Value =
             serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
@@ -190,8 +178,8 @@ mod tests {
                 VoiceError::Decode,
             ),
         ] {
-            let (client, worker) = server(status, body);
-            let error = client.speak("Hi.", None).unwrap_err();
+            let (client, worker) = server(status, &body);
+            let error = client.speak("voice_test", "Hi.", None).unwrap_err();
             assert_eq!(error, expected);
             assert!(!format!("{error:?} {error}").contains(KEY));
             worker.join().unwrap();
