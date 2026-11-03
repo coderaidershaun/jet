@@ -16,23 +16,9 @@ const RULE_ROOM: f32 = 6.0;
 const HEADING_KEEPS: usize = 2;
 
 impl Layout<'_> {
-    /// The chunks of `markdown`. The marks of the sources in `cites` follow its last paragraph
-    /// or list item, or stand on a line of their own when it ends with something else.
-    pub(super) fn markdown(&mut self, markdown: &str, cites: &[usize]) -> Vec<Chunk> {
-        let mut pieces = read(markdown);
-        if !cites.is_empty() {
-            let marks: Vec<Span> = cites.iter().map(|&number| Span::cite(number)).collect();
-            match pieces.last_mut() {
-                Some(Piece::Paragraph { spans, .. } | Piece::Item { spans, .. }) => {
-                    spans.extend(marks);
-                }
-                _ => pieces.push(Piece::Paragraph {
-                    spans: marks,
-                    indent: 0,
-                    is_quoted: false,
-                }),
-            }
-        }
+    /// The chunks of `markdown`.
+    pub(super) fn markdown(&mut self, markdown: &str) -> Vec<Chunk> {
+        let pieces = read(markdown);
         let mut chunks = Vec::new();
         for (at, piece) in pieces.iter().enumerate() {
             let is_before_item = matches!(pieces.get(at + 1), Some(Piece::Item { .. }));
@@ -72,9 +58,9 @@ impl Layout<'_> {
                 space(&mut chunks, 0.0, after);
                 chunks
             }
-            Piece::Code { code, language } => self.code(code, language.as_deref(), Vec::new()),
+            Piece::Code { code, language } => self.code(code, language.as_deref()),
             Piece::Table(table) => self.table(table),
-            Piece::Formula(latex) => self.formula(latex, None, Vec::new()),
+            Piece::Formula(latex) => self.formula(latex),
             Piece::Rule => {
                 let rule = Item::Rule {
                     x1: 0.0,

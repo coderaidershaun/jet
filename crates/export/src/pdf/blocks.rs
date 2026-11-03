@@ -1,35 +1,21 @@
-//! The blocks of a document as chunks of a page: the title, the origin, the blocks that are not
-//! Markdown, and the list of sources.
-
-use krilla::image::Image;
+//! The parts of a document as chunks of a page: the title, the origin, a formula set apart, code
+//! on a bed, and the list of sources. The text between them is read in `pieces`.
 
 use super::TEXT_WIDTH;
 use super::faces::Typeface;
-use super::flow::{
-    Align, BODY, Layout, Line, Look, NOTE, SMALL, formula_picture, keep_lines_together,
-};
+use super::flow::{Align, BODY, Layout, Look, SMALL, formula_picture, keep_lines_together};
 use super::pages::{Chunk, INK_BED, INK_TEXT, Item};
-use super::pieces::{INDENT, ITEM_AFTER, space};
-use super::read::{Span, read_inline};
-use crate::document::language_word;
+use super::pieces::{ITEM_AFTER, space};
+use super::read::Span;
 use crate::math::Display;
-use crate::pictures::{Picture, PictureKind};
-use crate::{Block, Document, Source};
+use crate::{Document, Source};
 
 const TITLE_AFTER: f32 = 8.0;
 const ORIGIN_AFTER: f32 = 16.0;
-const LIST_AFTER: f32 = 7.0;
-/// A picture is drawn at half its pixels, so it is as sharp as the formulas around it, and it
-/// takes at most this share of the height of a page.
-const PICTURE_SCALE: f32 = 0.5;
-const PICTURE_MAX_SHARE: f32 = 0.45;
-const CAPTION: Look = SMALL.italic();
-/// The space between a picture and its caption.
-const CAPTION_GAP: f32 = 6.0;
 const DISPLAY_FORMULA_EM: f32 = 11.0 * 1.25;
-/// The least room between a formula and its label.
-const LABEL_GAP: f32 = 12.0;
-/// The room above and below a formula, a figure and a code listing.
+/// A formula set apart takes at most this share of the height of a page.
+const FORMULA_MAX_SHARE: f32 = 0.45;
+/// The room above and below a formula.
 const BLOCK_ROOM: f32 = 8.0;
 const CODE_SIZE: f32 = 8.5;
 const CODE_LEADING: f32 = 11.5;
@@ -62,205 +48,46 @@ impl Layout<'_> {
             space(&mut origin, 0.0, ORIGIN_AFTER);
             chunks.extend(origin);
         }
-        for block in &document.blocks {
-            chunks.extend(self.block(block));
-        }
+        chunks.extend(self.markdown(&document.markdown));
         if !document.sources.is_empty() {
             chunks.extend(self.sources(&document.sources));
         }
         chunks
     }
 
-    fn block(&mut self, block: &Block) -> Vec<Chunk> {
-        match block {
-            Block::Heading(heading) => self.heading(2, &[Span::text(heading)]),
-            Block::Text { markdown, cites } => self.markdown(markdown, cites),
-            Block::List(points) => {
-                let mut chunks = Vec::new();
-                for point in points {
-                    let spans = read_inline(point);
-                    let mut item = self.hanging("•", &spans, BODY, (0.0, INDENT));
-                    space(&mut item, 0.0, ITEM_AFTER);
-                    chunks.extend(item);
-                }
-                space(&mut chunks, 0.0, LIST_AFTER);
-                chunks
-            }
-            Block::Formula {
-                latex,
-                label,
-                caption,
-                cite,
-            } => self.formula(latex, label.as_deref(), caption_spans(caption, *cite)),
-            Block::Figure {
-                picture,
-                description,
-                caption,
-                cite,
-            } => {
-                let caption = caption_spans(caption, *cite);
-                let image = picture.as_deref().and_then(Picture::read);
-                self.figure(image, description, caption)
-            }
-            Block::Table {
-                markdown,
-                caption,
-                cite,
-            } => {
-                let spans = caption_spans(caption, *cite);
-                let mut chunks = self.set(&spans, CAPTION, (0.0, TEXT_WIDTH), Align::Center);
-                space(&mut chunks, 4.0, 4.0);
-                if let Some(last) = chunks.last_mut() {
-                    last.keep_with_next = 2;
-                }
-                chunks.extend(self.markdown(markdown, &[]));
-                chunks
-            }
-            Block::Code {
-                code,
-                language,
-                caption,
-                cite,
-            } => {
-                let language = language_word(language.as_deref());
-                self.code(code, Some(language), caption_spans(caption, *cite))
-            }
-        }
-    }
-
-    /// A formula set apart, with the label at the right and the caption under it. A formula that
-    /// cannot be typeset is shown as its LaTeX in code type.
-    pub(super) fn formula(
-        &mut self,
-        latex: &str,
-        label: Option<&str>,
-        caption: Vec<Span>,
-    ) -> Vec<Chunk> {
-        let label = label.filter(|label| !label.is_empty());
-        let label_look = BODY.secondary();
-        let label_width = label.map_or(0.0, |label| {
-            self.faces.width(label, Typeface::Serif, label_look.size)
-        });
-        let room = TEXT_WIDTH - label.map_or(0.0, |_| label_width + LABEL_GAP);
+    /// A formula set apart. A formula that cannot be typeset is shown as its LaTeX in code type.
+    pub(super) fn formula(&mut self, latex: &str) -> Vec<Chunk> {
         let Some(formula) = self.formulas.get(latex, Display::Block) else {
-            let mut chunks = self.set(&[Span::code(latex)], BODY, (0.0, room), Align::Left);
-            if let (Some(label), Some(first)) = (label, chunks.first_mut()) {
-                let (baseline, _) = self.line_box(BODY);
-                let at = (TEXT_WIDTH - label_width, baseline);
-                self.draw_text(label, label_look, at, &mut first.items);
-            }
-            let look = NOTE.italic().secondary();
-            chunks.extend(self.set(&caption, look, (0.0, TEXT_WIDTH), Align::Center));
+            let mut chunks = self.set(&[Span::code(latex)], BODY, (0.0, TEXT_WIDTH), Align::Left);
             space(&mut chunks, BLOCK_ROOM, BLOCK_ROOM);
             return chunks;
         };
         let em = DISPLAY_FORMULA_EM;
         let whole_width = formula.picture_width_em() as f32 * em;
         let whole_height = formula.picture_height_em() as f32 * em;
-        let scale = (room / whole_width)
-            .min(super::CONTENT_HEIGHT * PICTURE_MAX_SHARE / whole_height)
+        let scale = (TEXT_WIDTH / whole_width)
+            .min(super::CONTENT_HEIGHT * FORMULA_MAX_SHARE / whole_height)
             .min(1.0);
         let em = em * scale;
         let ascent = formula.ascent_em as f32 * em;
         let bleed = formula.bleed_em as f32 * em;
         let baseline = bleed + ascent;
         let width = formula.width_em as f32 * em;
-        // Centred in the text width, unless that would reach the label.
-        let left = ((TEXT_WIDTH - width) / 2.0).min(room - width - bleed);
-        let mut items: Vec<Item> = formula_picture(&formula, em, (left, baseline))
+        // Centred, but never past the right margin.
+        let left = ((TEXT_WIDTH - width) / 2.0).min(TEXT_WIDTH - width - bleed);
+        let items: Vec<Item> = formula_picture(&formula, em, (left, baseline))
             .into_iter()
             .collect();
-        if let Some(label) = label {
-            let at = (TEXT_WIDTH - label_width, baseline);
-            self.draw_text(label, label_look, at, &mut items);
-        }
-        let mut height = formula.picture_height_em() as f32 * em;
-        let lines = self.caption_lines(&caption, NOTE.italic().secondary());
-        if !lines.is_empty() {
-            height += 4.0;
-            height += self.draw_lines(&lines, (0.0, height, TEXT_WIDTH), Align::Center, &mut items);
-        }
+        let height = formula.picture_height_em() as f32 * em;
         let mut chunk = Chunk::new(height, items);
         chunk.before = BLOCK_ROOM;
         chunk.after = BLOCK_ROOM;
         vec![chunk]
     }
 
-    /// A picture with the caption under it, kept on one page. With no readable picture, the
-    /// description stands in for it.
-    fn figure(
-        &mut self,
-        picture: Option<Picture>,
-        description: &str,
-        caption: Vec<Span>,
-    ) -> Vec<Chunk> {
-        let look = CAPTION;
-        let image = picture.and_then(|picture| {
-            let data = picture.bytes.clone().into();
-            let image = match picture.kind {
-                PictureKind::Png => Image::from_png(data, true),
-                PictureKind::Jpeg => Image::from_jpeg(data, true),
-            };
-            image.ok().map(|image| (image, picture))
-        });
-        let Some((image, picture)) = image else {
-            let mut chunks = if description.is_empty() {
-                Vec::new()
-            } else {
-                self.set(
-                    &[Span::text(description)],
-                    BODY,
-                    (0.0, TEXT_WIDTH),
-                    Align::Left,
-                )
-            };
-            let mut caption = self.set(&caption, look, (0.0, TEXT_WIDTH), Align::Center);
-            space(&mut caption, 3.0, 0.0);
-            chunks.extend(caption);
-            space(&mut chunks, BLOCK_ROOM, BLOCK_ROOM);
-            return chunks;
-        };
-        let natural_width = picture.width_px as f32 * PICTURE_SCALE;
-        let natural_height = picture.height_px as f32 * PICTURE_SCALE;
-        let scale = (TEXT_WIDTH / natural_width)
-            .min(super::CONTENT_HEIGHT * PICTURE_MAX_SHARE / natural_height)
-            .min(1.0);
-        let (width, height) = (natural_width * scale, natural_height * scale);
-        let mut items = vec![Item::Picture {
-            x: (TEXT_WIDTH - width) / 2.0,
-            y: 0.0,
-            width,
-            height,
-            image,
-        }];
-        let mut total = height;
-        let lines = self.caption_lines(&caption, look);
-        if !lines.is_empty() {
-            total += CAPTION_GAP;
-            total += self.draw_lines(&lines, (0.0, total, TEXT_WIDTH), Align::Center, &mut items);
-        }
-        let mut chunk = Chunk::new(total, items);
-        chunk.before = BLOCK_ROOM;
-        chunk.after = BLOCK_ROOM;
-        vec![chunk]
-    }
-
-    fn caption_lines(&mut self, caption: &[Span], look: Look) -> Vec<Line> {
-        let atoms = self.atoms(caption, look);
-        if atoms.is_empty() {
-            return Vec::new();
-        }
-        self.lines(atoms, TEXT_WIDTH, look)
-    }
-
     /// Code on a grey bed, one line of the bed to a chunk so that a long listing can run over a
     /// page. A line that is wider than the bed is wrapped at a character.
-    pub(super) fn code(
-        &mut self,
-        code: &str,
-        language: Option<&str>,
-        caption: Vec<Span>,
-    ) -> Vec<Chunk> {
+    pub(super) fn code(&mut self, code: &str, language: Option<&str>) -> Vec<Chunk> {
         let advance = self.faces.width("0", Typeface::Code, CODE_SIZE);
         let inner_width = TEXT_WIDTH - 2.0 * CODE_PADDING;
         let per_row = ((inner_width / advance) as usize).max(1);
@@ -326,14 +153,6 @@ impl Layout<'_> {
             chunks.push(Chunk::new(height, items));
         }
         keep_lines_together(&mut chunks);
-        let mut caption_chunks = self.set(&caption, CAPTION, (0.0, TEXT_WIDTH), Align::Center);
-        if !caption_chunks.is_empty() {
-            space(&mut caption_chunks, 3.0, 0.0);
-            if let Some(last) = chunks.last_mut() {
-                last.keep_with_next = last.keep_with_next.max(1);
-            }
-            chunks.extend(caption_chunks);
-        }
         space(&mut chunks, 4.0, 8.0);
         chunks
     }
@@ -350,13 +169,6 @@ impl Layout<'_> {
         }
         chunks
     }
-}
-
-/// The caption as spans, followed by the mark of the source it is from.
-fn caption_spans(caption: &str, cite: Option<usize>) -> Vec<Span> {
-    let mut spans = read_inline(caption);
-    spans.extend(cite.map(Span::cite));
-    spans
 }
 
 /// The lines of the code, each cut into rows of at most `per_row` characters.

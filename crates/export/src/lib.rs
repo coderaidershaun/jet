@@ -1,20 +1,17 @@
 //! Writes a document to one file that stands alone: a PDF, a Markdown file or an HTML file,
-//! with its pictures inside it and its formulas typeset. The document is a title, a line that
-//! says where it comes from, blocks of Markdown, formulas, figures, tables and code, and the
-//! sources it cites.
+//! with its formulas typeset as pictures inside it. The document is a title, a line that
+//! says where it comes from, the text as Markdown, and the sources it cites.
 
 mod commonmark;
 mod document;
-mod fonts;
 mod html;
 mod markdown;
 mod math;
 mod pdf;
-mod pictures;
 
 use std::path::{Path, PathBuf};
 
-pub use document::{Block, Document, Format, Source};
+pub use document::{Document, Format, Source};
 
 /// Why a document could not be written.
 #[derive(Debug, thiserror::Error)]

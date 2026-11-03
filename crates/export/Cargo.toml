@@ -6,7 +6,6 @@ description = "Writes a document as one standalone PDF, Markdown or HTML file"
 
 [dependencies]
 base64 = { workspace = true }
-image = { workspace = true }
 krilla = { workspace = true }
 pulldown-cmark = { workspace = true }
 ratex-layout = { workspace = true }

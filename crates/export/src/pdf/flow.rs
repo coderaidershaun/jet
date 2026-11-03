@@ -189,14 +189,6 @@ impl<'a> Layout<'a> {
                     };
                     atoms.push(self.text(label, style));
                 }
-                SpanKind::Cite(mark) => {
-                    let style = Style {
-                        ink: INK_SECONDARY,
-                        ..text_style
-                    };
-                    atoms.push(self.space(style));
-                    atoms.push(self.text(mark, style));
-                }
                 SpanKind::LineBreak => atoms.push(Atom::Break),
             }
         }

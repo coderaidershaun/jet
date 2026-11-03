@@ -1,7 +1,5 @@
 //! What one exported file holds, and the kinds of file it can be written as. A document is not
-//! tied to what its text is about: every file is a title, blocks and the sources they cite.
-
-use std::path::PathBuf;
+//! tied to what its text is about: every file is a title, Markdown and the sources it cites.
 
 /// The longest generated file name before its extension.
 const FILE_NAME_LENGTH: usize = 80;
@@ -27,64 +25,10 @@ pub struct Document {
     /// The one line under the title that says where the text comes from, such as the question it
     /// answers. Empty means no line.
     pub origin: String,
-    pub blocks: Vec<Block>,
-    /// The sources the blocks cite, listed at the end under "Sources". Empty means no list.
+    /// CommonMark with GitHub tables, `$…$` and `$$…$$` formulas and footnote marks.
+    pub markdown: String,
+    /// The sources the text cites, listed at the end under "Sources". Empty means no list.
     pub sources: Vec<Source>,
-}
-
-/// Every `caption` is one line of Markdown that may hold `**label**`, and may be empty. A `cite`
-/// is the number of the source the block comes from.
-#[derive(
-    serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord,
-)]
-pub enum Block {
-    Heading(String),
-    /// CommonMark with GitHub tables, `$…$` and `$$…$$` formulas and footnote marks. `cites` are
-    /// the numbers of the sources it cites, written after its last paragraph as `[n]`.
-    Text {
-        markdown: String,
-        cites: Vec<usize>,
-    },
-    /// One-line points, each a line of Markdown.
-    List(Vec<String>),
-    /// A formula set apart: LaTeX with no delimiters, a label such as "(2.4)" at the right, and a
-    /// caption under it.
-    Formula {
-        latex: String,
-        label: Option<String>,
-        caption: String,
-        cite: Option<usize>,
-    },
-    /// A picture from a PNG or JPEG file. `description` stands in for the picture when there is
-    /// none or the file cannot be read.
-    Figure {
-        // SMELL: the file is read whole from any path before it is checked, so this path must
-        // never come from text that a model or a user wrote.
-        picture: Option<PathBuf>,
-        description: String,
-        caption: String,
-        cite: Option<usize>,
-    },
-    /// A GitHub Markdown table. Its caption stands above it.
-    Table {
-        markdown: String,
-        caption: String,
-        cite: Option<usize>,
-    },
-    Code {
-        code: String,
-        language: Option<String>,
-        caption: String,
-        cite: Option<usize>,
-    },
-}
-
-/// The first word of the language of a code listing: the only part a Markdown fence line can
-/// hold, and so the name that every kind of file shows.
-pub(crate) fn language_word(language: Option<&str>) -> &str {
-    language
-        .and_then(|language| language.split_whitespace().next())
-        .unwrap_or("")
 }
 
 /// The words of `text` on one line, with a single space between them.
@@ -101,28 +45,18 @@ pub struct Source {
     pub text: String,
 }
 
-/// The kinds of file a document is written as.
+/// The kinds of file a document is written as. Written as `"pdf"`, `"markdown"` and `"html"`.
 #[derive(
     serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord,
 )]
+#[serde(rename_all = "lowercase")]
 pub enum Format {
     Pdf,
     Markdown,
     Html,
 }
 
-// SMELL: nothing calls `ALL` or `name`.
 impl Format {
-    pub const ALL: [Format; 3] = [Format::Pdf, Format::Markdown, Format::Html];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Format::Pdf => "PDF",
-            Format::Markdown => "Markdown",
-            Format::Html => "HTML",
-        }
-    }
-
     pub fn extension(self) -> &'static str {
         match self {
             Format::Pdf => "pdf",
