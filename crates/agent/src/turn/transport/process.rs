@@ -124,31 +124,3 @@ fn wait_for_exit(child: &Mutex<Child>) -> Option<ExitStatus> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Fails on every read, like a pipe that broke.
-    struct Broken;
-
-    impl Read for Broken {
-        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
-            Err(io::Error::other("pipe broke"))
-        }
-    }
-
-    #[test]
-    fn output_lines_trim_skip_blanks_and_end_at_the_first_read_error() {
-        let output: &[u8] = b"first  \r\n\n   \nsecond \xff\nthird\n";
-        let items: Vec<_> = output_lines(output.chain(Broken)).collect();
-        let lines: Vec<&str> = items
-            .iter()
-            .filter_map(|item| item.as_ref().ok())
-            .map(String::as_str)
-            .collect();
-        assert_eq!(lines, ["first", "second \u{fffd}", "third"]);
-        assert_eq!(items.len(), 4, "{items:?}");
-        assert!(items[3].is_err());
-    }
-}

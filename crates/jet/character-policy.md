@@ -1,6 +1,6 @@
 # Character policy: Jet the kite
 
-Read this before changing `ui/jet/` or adding an emotion. [CONTEXT.md](CONTEXT.md) defines the vocabulary; [README.md](README.md) covers the host, commands and checks.
+Read this before changing `ui/jet/` or adding an emotion. [CONTEXT.md](../../CONTEXT.md) defines the vocabulary; [README.md](README.md) covers the host, commands and checks.
 
 ## What Jet is
 
@@ -110,7 +110,7 @@ Each supplied animation is one future feature; do not invent extra mood words fi
 1. Read the supplied script and its SVG/HTML; record timing, frame, eye kinds, route data and reveal beat. Resolve differences against the actual script before implementing.
 2. Add a `buildX(start, options)` clip using `createClip()`. Use named phases, duration constants, keys on both sides of holds, exact script curves, and `returnToRest` with owned tracks excluded. Handle standing, hovering, interruption and reduced motion.
 3. Add the builder/hold flag in `clips/catalogue.js`, and the emotion → clip mapping in `emotions.js`. Add the word to the single-line `MOODS` export in `director.js`.
-4. Add the Rust `Mood` variant, `ALL` entry and `word()` mapping in `../agent/src/chat/mod.rs`, the persona mood description in `../agent/src/conversation/persona.md`, and the JEV question in `../agent/src/feeling/mod.rs`. Keep neutral as the no-animation fallback. Update the pinned persona fingerprint when prompt content changes.
+4. Add the Rust `Mood` variant, `ALL` entry and `word()` mapping in `../agent/src/chat/mod.rs`, the persona mood description in `../agent/src/conversation/persona.md`, and the JEV question in `../agent/src/feeling.rs`. Keep neutral as the no-animation fallback. Update the pinned persona fingerprint when prompt content changes.
 5. Add the clip's compact golden fixture and public-behavior coverage; extend catalogue interruption and director timing coverage where needed. Keep Rust's vocabulary agreement test. Update this policy's emotion table.
 6. Preview through the real player and painter, inspect contact sheets beside the authored reference at key times, and complete the visual checks below.
 

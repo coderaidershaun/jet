@@ -37,7 +37,8 @@ impl ServerHandler for App {
         _: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, rmcp::ErrorData> {
         self.listing.store(true, Ordering::SeqCst);
-        while self.hold_list.load(Ordering::SeqCst) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while self.hold_list.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
         let tool = |name, marker: serde_json::Value| {

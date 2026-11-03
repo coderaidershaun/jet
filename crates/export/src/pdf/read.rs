@@ -20,8 +20,6 @@ pub(super) enum SpanKind {
     Math(String),
     /// A mark in the text that points to a note.
     NoteMark(String),
-    /// The mark of the source a block cites, such as `[1]`.
-    Cite(String),
     LineBreak,
 }
 
@@ -32,10 +30,6 @@ impl Span {
 
     pub(super) fn code(code: &str) -> Span {
         Span::plain(SpanKind::Code(code.to_owned()))
-    }
-
-    pub(super) fn cite(number: usize) -> Span {
-        Span::plain(SpanKind::Cite(format!("[{number}]")))
     }
 
     fn plain(kind: SpanKind) -> Span {
@@ -308,27 +302,4 @@ impl Reader {
         };
         self.pieces.push(piece);
     }
-}
-
-/// The spans of one line of Markdown, such as a point of a list or a caption. Anything that is
-/// more than one line of text is read as the text of all its lines.
-pub(super) fn read_inline(markdown: &str) -> Vec<Span> {
-    let mut spans = Vec::new();
-    for piece in read(markdown) {
-        match piece {
-            Piece::Paragraph { spans: more, .. }
-            | Piece::Item { spans: more, .. }
-            | Piece::Heading { spans: more, .. }
-            | Piece::Note { spans: more, .. } => {
-                if !spans.is_empty() {
-                    spans.push(Span::text(" "));
-                }
-                spans.extend(more);
-            }
-            Piece::Formula(latex) => spans.push(Span::plain(SpanKind::Math(latex))),
-            Piece::Code { code, .. } => spans.push(Span::plain(SpanKind::Code(code))),
-            Piece::Table(_) | Piece::Rule => {}
-        }
-    }
-    spans
 }

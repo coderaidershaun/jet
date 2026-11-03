@@ -16,31 +16,27 @@ const FILES_READ_DESCRIPTION: &str = "Read a file the user attached, or one you 
 static TOOLS: LazyLock<Vec<Tool>> = LazyLock::new(|| {
     let target = json!({"appId":{"type":"string","format":"uuid"},"tool":{"type":"string"}});
     [
-        ("apps_list", "List all registered apps and stable IDs.", object(json!({}),json!([]))),
-        ("apps_update", "Apply an explicit typed registry action and return its persisted outcome.", object(json!({"command":command_schema()}),json!(["command"]))),
-        ("apps_open", "Open an app in the browser that initiated this turn.", object(json!({"appId":{"type":"string","format":"uuid"}}),json!(["appId"]))),
-        ("tools_search", "Search concise tool summaries across all enabled apps. A query word may be a tool's group. Use tools_describe for schemas.", object(json!({"query":{"type":"string"}}),json!([]))),
-        ("tools_describe", "Read a real tool schema and its server instructions.", object(target,json!(["appId","tool"]))),
-        ("tools_call", TOOLS_CALL_DESCRIPTION, object(json!({"appId":{"type":"string","format":"uuid"},"tool":{"type":"string"},"arguments":{"type":"object"}}),json!(["appId","tool","arguments"]))),
-        ("files_export", FILES_EXPORT_DESCRIPTION, object(json!({
+        ("apps_list", true, "List all registered apps and stable IDs.", object(json!({}),json!([]))),
+        ("apps_update", false, "Apply an explicit typed registry action and return its persisted outcome.", object(json!({"command":command_schema()}),json!(["command"]))),
+        ("apps_open", false, "Open an app in the browser that initiated this turn.", object(json!({"appId":{"type":"string","format":"uuid"}}),json!(["appId"]))),
+        ("tools_search", true, "Search concise tool summaries across all enabled apps. A query word may be a tool's group. Use tools_describe for schemas.", object(json!({"query":{"type":"string"}}),json!([]))),
+        ("tools_describe", true, "Read a real tool schema and its server instructions.", object(target,json!(["appId","tool"]))),
+        ("tools_call", false, TOOLS_CALL_DESCRIPTION, object(json!({"appId":{"type":"string","format":"uuid"},"tool":{"type":"string"},"arguments":{"type":"object"}}),json!(["appId","tool","arguments"]))),
+        ("files_export", false, FILES_EXPORT_DESCRIPTION, object(json!({
             "format":{"enum":["pdf","markdown","html"]},
             "title":{"type":"string","minLength":1,"maxLength":200},
             "subtitle":{"type":"string","maxLength":300},
             "markdown":{"type":"string","minLength":1,"maxLength":MARKDOWN_LIMIT},
             "sources":{"type":"array","maxItems":200,"items":{"type":"string","maxLength":1000}}
         }),json!(["format","title","markdown"]))),
-        ("files_list", FILES_LIST_DESCRIPTION, object(json!({}),json!([]))),
-        ("files_read", FILES_READ_DESCRIPTION, object(json!({
+        ("files_list", true, FILES_LIST_DESCRIPTION, object(json!({}),json!([]))),
+        ("files_read", true, FILES_READ_DESCRIPTION, object(json!({
             "id":{"type":"string","format":"uuid"},
             "sheet":{"type":"string","maxLength":200},
             "start":{"type":"integer","minimum":1},
             "count":{"type":"integer","minimum":1,"maximum":2000}
         }),json!(["id"]))),
-    ].into_iter().map(|(name, description, schema)| {
-        let read_only = matches!(
-            name,
-            "apps_list" | "tools_search" | "tools_describe" | "files_list" | "files_read"
-        );
+    ].into_iter().map(|(name, read_only, description, schema)| {
         Tool::new(name, description, schema.as_object().cloned().unwrap_or_default())
             .with_annotations(ToolAnnotations::new().read_only(read_only))
     }).collect()
@@ -89,4 +85,15 @@ pub(super) fn validate(name: &str, arguments: &Value) -> Result<(), rmcp::ErrorD
         .map_err(|error| rmcp::ErrorData::internal_error(error.to_string(), None))?
         .validate(arguments)
         .map_err(|error| rmcp::ErrorData::invalid_params(error.to_string(), None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tools_are_the_ones_the_providers_are_allowed_to_call() {
+        let names: Vec<&str> = definitions().iter().map(|tool| &*tool.name).collect();
+        assert_eq!(names, agent::FACADE_TOOLS);
+    }
 }

@@ -5,8 +5,11 @@ use krilla::text::{Font, GlyphId, KrillaGlyph, Tag};
 use rustybuzz::{Direction, UnicodeBuffer};
 
 use crate::ExportError;
-use crate::fonts::{LITERATA, LITERATA_ITALIC, SOURCE_CODE, STIX_TWO_MATH};
 
+const LITERATA: &[u8] = include_bytes!("../../assets/fonts/Literata[opsz,wght].ttf");
+const LITERATA_ITALIC: &[u8] = include_bytes!("../../assets/fonts/Literata-Italic[opsz,wght].ttf");
+const SOURCE_CODE: &[u8] = include_bytes!("../../assets/fonts/SourceCodePro[wght].ttf");
+const STIX_TWO_MATH: &[u8] = include_bytes!("../../assets/fonts/STIXTwoMath-Regular.otf");
 const OPTICAL_SIZE: f32 = 14.0;
 const REGULAR: f32 = 400.0;
 const SEMIBOLD: f32 = 600.0;
@@ -19,22 +22,6 @@ pub(super) enum Typeface {
     SerifItalic,
     SerifStrongItalic,
     Code,
-}
-
-impl Typeface {
-    // SMELL: `index` counts on this list being in the order of the variants. Reordering either
-    // one picks the wrong font, and nothing fails.
-    const ALL: [Typeface; 5] = [
-        Typeface::Serif,
-        Typeface::SerifStrong,
-        Typeface::SerifItalic,
-        Typeface::SerifStrongItalic,
-        Typeface::Code,
-    ];
-
-    fn index(self) -> usize {
-        self as usize
-    }
 }
 
 /// A font file as the PDF writer holds it, and as the shaper holds it.
@@ -89,7 +76,11 @@ impl Run {
 }
 
 pub(super) struct Faces {
-    typefaces: [Loaded; 5],
+    serif: Loaded,
+    serif_strong: Loaded,
+    serif_italic: Loaded,
+    serif_strong_italic: Loaded,
+    code: Loaded,
     /// Draws a sign that the face of the text does not have.
     math: Loaded,
 }
@@ -103,18 +94,24 @@ impl Faces {
                 &[(b"wght", weight), (b"opsz", OPTICAL_SIZE)],
             )
         };
-        let typefaces = Typeface::ALL.map(|typeface| match typeface {
-            Typeface::Serif => serif(LITERATA, REGULAR),
-            Typeface::SerifStrong => serif(LITERATA, SEMIBOLD),
-            Typeface::SerifItalic => serif(LITERATA_ITALIC, REGULAR),
-            Typeface::SerifStrongItalic => serif(LITERATA_ITALIC, SEMIBOLD),
-            Typeface::Code => Loaded::new("Source Code Pro", SOURCE_CODE, &[(b"wght", REGULAR)]),
-        });
-        let [a, b, c, d, e] = typefaces;
         Ok(Faces {
-            typefaces: [a?, b?, c?, d?, e?],
+            serif: serif(LITERATA, REGULAR)?,
+            serif_strong: serif(LITERATA, SEMIBOLD)?,
+            serif_italic: serif(LITERATA_ITALIC, REGULAR)?,
+            serif_strong_italic: serif(LITERATA_ITALIC, SEMIBOLD)?,
+            code: Loaded::new("Source Code Pro", SOURCE_CODE, &[(b"wght", REGULAR)])?,
             math: Loaded::new("STIX Two Math", STIX_TWO_MATH, &[])?,
         })
+    }
+
+    fn loaded(&self, typeface: Typeface) -> &Loaded {
+        match typeface {
+            Typeface::Serif => &self.serif,
+            Typeface::SerifStrong => &self.serif_strong,
+            Typeface::SerifItalic => &self.serif_italic,
+            Typeface::SerifStrongItalic => &self.serif_strong_italic,
+            Typeface::Code => &self.code,
+        }
     }
 
     /// The width of `text` set in `typeface` at `size` points.
@@ -127,7 +124,7 @@ impl Faces {
 
     /// How far a face rises above its baseline and falls below it, in em.
     pub(super) fn extent(&self, typeface: Typeface) -> (f32, f32) {
-        let shaper = &self.typefaces[typeface.index()];
+        let shaper = self.loaded(typeface);
         let per_em = |units: i16| f32::from(units) / shaper.units_per_em;
         (
             per_em(shaper.shaper.ascender()),
@@ -138,7 +135,7 @@ impl Faces {
     /// The text as runs, each in the face of the text when it has every sign of the run, and in
     /// the math font for a sign that only that font has.
     pub(super) fn shape(&self, text: &str, typeface: Typeface) -> Vec<Run> {
-        let primary = &self.typefaces[typeface.index()];
+        let primary = self.loaded(typeface);
         let mut runs = Vec::new();
         let mut start = 0;
         let mut in_math = false;
@@ -159,7 +156,7 @@ impl Faces {
     }
 
     // SMELL: a whole run is shaped at once. The shaper panics on a letter with about 70,000
-    // accents, and finding where each cluster ends takes time that grows with its square.
+    // accents.
     fn shaped(&self, text: &str, loaded: &Loaded) -> Run {
         let mut buffer = UnicodeBuffer::new();
         buffer.push_str(text);
@@ -168,18 +165,23 @@ impl Faces {
         let shaped = rustybuzz::shape(&loaded.shaper, &[], buffer);
         let infos = shaped.glyph_infos();
         let positions = shaped.glyph_positions();
+        // A cluster ends where the next glyph with another cluster starts. Walking back from the
+        // last glyph, a glyph in the same cluster as the one after it has the same end.
+        let mut ends = vec![text.len(); infos.len()];
+        for at in (0..infos.len().saturating_sub(1)).rev() {
+            let (cluster, next) = (infos[at].cluster, infos[at + 1].cluster);
+            ends[at] = if next == cluster {
+                ends[at + 1]
+            } else {
+                next as usize
+            };
+        }
         let glyphs = infos
             .iter()
             .zip(positions)
-            .enumerate()
-            .map(|(at, (info, position))| {
+            .zip(ends)
+            .map(|((info, position), end)| {
                 let start = info.cluster as usize;
-                // The cluster ends where the next glyph with another cluster starts.
-                let end = infos[at + 1..]
-                    .iter()
-                    .map(|next| next.cluster as usize)
-                    .find(|&cluster| cluster != start)
-                    .unwrap_or(text.len());
                 let per_em = |units: i32| units as f32 / loaded.units_per_em;
                 KrillaGlyph::new(
                     GlyphId::new(info.glyph_id),

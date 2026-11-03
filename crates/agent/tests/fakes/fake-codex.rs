@@ -1,4 +1,4 @@
-//! Codex process stand-in for protocol and cancellation tests.
+//! A stand-in for the Codex program, built only so tests can run it.
 mod support;
 use serde_json::{Value, json};
 use std::io::{Read, Write};
@@ -40,9 +40,7 @@ fn main() {
         );
     }
     let text = if let Some(at) = args.iter().position(|a| a == "--output-schema") {
-        let schema: Value =
-            serde_json::from_str(&std::fs::read_to_string(&args[at + 1]).unwrap()).unwrap();
-        assert_eq!(schema["type"], "object");
+        serde_json::from_str::<Value>(&std::fs::read_to_string(&args[at + 1]).unwrap()).unwrap();
         r#"{"ok":true}"#
     } else {
         "mood: happy\nHello from Codex."

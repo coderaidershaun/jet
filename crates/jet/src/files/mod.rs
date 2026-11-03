@@ -1,11 +1,12 @@
 //! Keeps the files of a conversation, one folder for each, under the data directory until the
 //! user forgets it: the files Jet writes for the user to download, and the files the user
-//! attaches to a message.
+//! attaches to a message. The routes that move them to and from the page are here too.
 
 mod about;
 mod export;
 mod kind;
 mod read;
+mod routes;
 mod sandbox;
 mod upload;
 
@@ -14,10 +15,13 @@ use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
+use crate::{WorkerFailed, lock};
+
 pub(crate) use about::{About, Origin};
 pub(crate) use export::ExportRequest;
 pub(crate) use kind::FileKind;
 pub(crate) use read::{Range, Reading};
+pub(crate) use routes::router;
 use sandbox::Sandbox;
 pub use sandbox::{READ_FILE_ARGUMENT, run_file_reader};
 pub(crate) use upload::MAX_FILE_BYTES;
@@ -57,7 +61,7 @@ pub(crate) enum FileError {
         "“{0}” can't be attached. Jet takes PDF, Markdown, HTML, Excel (.xlsx), CSV, text and images."
     )]
     Unsupported(String),
-    #[error("“{0}” is over 32 MB.")]
+    #[error("“{0}” is over {limit} MB.", limit = MAX_FILE_BYTES / (1024 * 1024))]
     TooLarge(String),
     #[error("Jet's file store is full. Forget the conversation to free it.")]
     StoreFull,
@@ -65,6 +69,10 @@ pub(crate) enum FileError {
     Unreadable(String),
     #[error("{0}")]
     NoSuchSheet(String),
+    #[error("the file name cannot be sent")]
+    NameNotSendable,
+    #[error("request worker failed: {0}")]
+    Worker(WorkerFailed),
 }
 
 /// The folder `<data>/files/`, holding `<uuid>/<name>` for each file. The name of the download is
@@ -229,12 +237,6 @@ impl Files {
         let uuid = Uuid::try_parse(id).map_err(|_| FileError::NotFound(id.to_owned()))?;
         Ok((uuid, self.root.join(uuid.to_string())))
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn io_error(path: &Path) -> impl FnOnce(std::io::Error) -> FileError {

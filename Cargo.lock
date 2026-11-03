@@ -761,7 +761,6 @@ name = "export"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
- "image",
  "krilla",
  "lopdf 0.46.0",
  "pulldown-cmark",

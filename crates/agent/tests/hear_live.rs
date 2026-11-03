@@ -64,9 +64,11 @@ fn heard(label: &str, clip: &[u8]) -> Result<String, agent::voice::VoiceError> {
 #[test]
 #[ignore = "calls live Gemini"]
 fn gemini_hears_speech_and_says_nothing_for_noise_and_coughs() {
-    if std::env::var("REX_PROD_API").as_deref() != Ok("true") {
-        return;
-    }
+    assert_eq!(
+        std::env::var("REX_PROD_API").as_deref(),
+        Ok("true"),
+        "this live test spends real quota; run it with REX_PROD_API=true"
+    );
     let sentence = heard(
         "a spoken sentence",
         &spoken_at_16_khz("Hello Jet, what time is it in Lisbon?"),

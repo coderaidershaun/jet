@@ -37,25 +37,20 @@ function room({ reducedMotion = false } = {}) {
   return { forming, field, clock, dictation };
 }
 
-test('heard words land in the spoken message one every 35 ms, tidy and capitalised', () => {
+test('heard words land in the spoken message one after another, tidy and capitalised', () => {
   const { forming, field, clock, dictation } = room();
   dictation.open();
   assert.deepEqual(forming.writes, [], 'nothing shows until the first words');
   dictation.append('  hello   jet,\n what time ');
   assert.equal(forming.text, 'Hello', 'the first word lands at once, with a capital');
-  clock.advance(34);
-  assert.equal(forming.text, 'Hello');
-  clock.advance(1);
-  assert.equal(forming.text, 'Hello jet,');
-  clock.advance(35);
-  assert.equal(forming.text, 'Hello jet, what');
-  clock.advance(35);
+  assert.equal(forming.text, 'Hello', 'the rest follow one at a time, not at once');
+  clock.advance(1000);
   assert.equal(forming.text, 'Hello jet, what time');
   assert.equal(field.text, '', 'heard words never land in the field unless the person took over');
 
   // A second burst joins with one space; the join is tidied wherever the words go.
   dictation.append('is it');
-  clock.advance(35);
+  clock.advance(1000);
   assert.equal(forming.text, 'Hello jet, what time is it');
   forming.text = 'typed ';
   dictation.append('more');
@@ -66,7 +61,7 @@ test('heard words land in the spoken message one every 35 ms, tidy and capitalis
   forming.text = ' ';
   dictation.append('fresh start');
   assert.equal(forming.text, ' Fresh', 'a message that holds only space still starts a message');
-  clock.advance(35);
+  clock.advance(1000);
   assert.equal(forming.text, ' Fresh start');
 
   // Words that arrive while others are landing wait their turn, and the end of the turn lands them all at once.
@@ -85,7 +80,7 @@ test('a keystroke or Esc during a spoken turn moves its words into the field, an
   dictation.open();
   assert.equal(dictation.autoSend, true);
   dictation.append('hello there');
-  clock.advance(35);
+  clock.advance(1000);
   dictation.showLive('hello there how');
   assert.equal(forming.text, 'Hello there how');
 
@@ -97,7 +92,7 @@ test('a keystroke or Esc during a spoken turn moves its words into the field, an
   assert.equal(dictation.autoSend, false);
 
   dictation.append('and again');
-  clock.advance(35);
+  clock.advance(1000);
   assert.equal(field.text, 'Hello there x and again', 'the words keep landing, now in the field');
   assert.equal(dictation.autoSend, false, 'more speech does not turn auto-send back on');
 

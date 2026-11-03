@@ -238,8 +238,6 @@ mod tests {
             ("Done ~~old~~ new", "Done new"),
             ("![alt text](https://x.example/y.png) caption", "caption"),
             ("<div>raw</div>\n\nText", "Text"),
-            ("Ha <laugh> yes.", "Ha <laugh> yes."),
-            ("<sigh>\nFine, then.\n\nNext.", "<sigh> Fine, then.\nNext."),
             ("`<laugh>` and <zap> here.", "and here."),
             ("It costs $5 or $10.", "It costs $5 or $10."),
             ("```\nonly code\n```", ""),

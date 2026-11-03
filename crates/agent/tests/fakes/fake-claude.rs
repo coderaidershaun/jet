@@ -1,4 +1,4 @@
-//! A stand-in for the Claude Code program, for tests. It reads its instruction from the
+//! A stand-in for the Claude Code program, built only so tests can run it. It reads its instruction from the
 //! first line of standard input that starts with a known keyword, so the local time line
 //! that precedes a first message is ignored.
 

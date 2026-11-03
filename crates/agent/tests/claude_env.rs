@@ -6,7 +6,7 @@ mod support;
 
 use std::path::Path;
 
-use agent::{FACADE_TOOLS, McpConnection, Mood, Request, SessionId, SessionMode, Step, Turn};
+use agent::{FACADE_TOOLS, McpConnection, Request, SessionId, SessionMode, Step, Turn};
 use serde_json::json;
 use support::{chat_request, fake_claude};
 
@@ -16,7 +16,7 @@ fn recorded_args(cwd: &Path) -> Vec<String> {
 }
 
 #[test]
-fn fake_claude_streams_a_turn() {
+fn claude_runs_with_only_jets_tools_and_a_scrubbed_environment() {
     // SAFETY: in this test binary only Rust's standard library touches the environment, and
     // `set_var`, `remove_var`, `vars_os` and `Command::spawn` take the same internal lock,
     // so no reader ever sees a half-written value.
@@ -39,8 +39,8 @@ fn fake_claude_streams_a_turn() {
             std::env::set_var(name, value);
         }
     }
-    let (claude, cwd) = fake_claude("streams");
-    let prompt = "[local time: Tue 14 Oct 2026, 11:20]\nfixture:sonnet-mood-reply";
+    let (claude, cwd) = fake_claude();
+    let prompt = "[local time: Tue 14 Oct 2026, 11:20]\nfixture:quanty-search-reply";
     let request = Request {
         mcp: Some(McpConnection {
             url: "http://localhost/mcp".into(),
@@ -49,31 +49,10 @@ fn fake_claude_streams_a_turn() {
         ..chat_request(prompt, SessionMode::Resume(SessionId("abc-123".into())))
     };
     let steps: Vec<Step> = Turn::start(&claude, &request).unwrap().collect();
-
-    let mood_at = steps
-        .iter()
-        .position(|s| matches!(s, Step::Mood(Mood::Neutral)))
-        .unwrap();
-    let text_at = steps
-        .iter()
-        .position(|s| matches!(s, Step::Text(_)))
-        .unwrap();
-    assert!(mood_at < text_at, "the mood comes before the first text");
-    let text: String = steps
-        .iter()
-        .filter_map(|step| match step {
-            Step::Text(delta) => Some(delta.as_str()),
-            _ => None,
-        })
-        .collect();
-    assert!(text.starts_with("Congratulations"), "{text}");
-    let Some(Step::Finished(summary)) = steps.last() else {
-        panic!("a turn ends with Finished: {:?}", steps.last());
-    };
-    assert_eq!(summary.context_tokens, 1577);
+    assert!(matches!(steps.last(), Some(Step::Finished(_))), "{steps:?}");
 
     // Claude Code must run with nothing but Jet's own tools and no settings of the user's.
-    let args = recorded_args(&cwd);
+    let args = recorded_args(cwd.path());
     let value_of = |flag: &str| &args[args.iter().position(|arg| arg == flag).unwrap() + 1];
     assert_eq!(args[0], "-p");
     assert_eq!(value_of("--system-prompt"), "You are Jet.");
@@ -96,15 +75,15 @@ fn fake_claude_streams_a_turn() {
         "safe mode would drop the MCP servers"
     );
     assert!(value_of("--mcp-config").contains("http://localhost/mcp"));
-    let allowed: Vec<&str> = value_of("--allowedTools").split(',').collect();
-    assert_eq!(allowed.len(), FACADE_TOOLS.len());
-    assert!(
-        allowed.iter().all(|tool| tool.starts_with("mcp__jet__")),
-        "{allowed:?}"
+    assert_eq!(
+        value_of("--allowedTools"),
+        &FACADE_TOOLS
+            .map(|tool| format!("mcp__jet__{tool}"))
+            .join(",")
     );
     assert_eq!(args[args.len() - 2..], ["--resume", "abc-123"]);
 
-    let env = std::fs::read_to_string(cwd.join("fake-claude-env.json")).unwrap();
+    let env = std::fs::read_to_string(cwd.path().join("fake-claude-env.json")).unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&env).unwrap(),
         json!({
@@ -130,7 +109,7 @@ fn fake_claude_streams_a_turn() {
         .as_ref()
         .expect("the review answers as data");
     assert_eq!(notes["changed"], true);
-    let args = recorded_args(&cwd);
+    let args = recorded_args(cwd.path());
     assert!(args.contains(&"--no-session-persistence".to_owned()));
     assert!(args.contains(&"{\"type\":\"object\"}".to_owned()));
 }

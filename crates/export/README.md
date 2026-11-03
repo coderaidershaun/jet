@@ -1,8 +1,9 @@
 # export
 
-Writes a document to one standalone file: a PDF, a Markdown file or an HTML page. Pictures are
-inside the file and formulas are typeset. `export::write(&Document, Format, &Path)` is the whole
-interface.
+Writes a document to one standalone file: a PDF, a Markdown file or an HTML page. Formulas are
+typeset as pictures inside the file. A `Document` is a title, a line that says where it comes
+from, the text as Markdown, and the sources it cites. `export::write(&Document, Format, &Path)` is
+the whole interface.
 
 This crate began as a copy of the `export` crate of Quanty (`github.com/coderaidershaun/quanty`)
 at commit `abc355e`, trimmed of what only Quanty uses. It has no dependency on Quanty and is

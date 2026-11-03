@@ -1,52 +1,23 @@
 //! The documents the tests write, and the ways to read a written file back.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use export::{Block, Document, Source};
+use export::{Document, Source};
 use lopdf::Object;
 
-/// The picture of the figure in the sample answer: a small line chart.
-pub fn sample_picture() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/integration/figure.png")
-}
-
-/// An answer with one block of every kind and two sources.
+/// An answer with a heading, a formula in the text and one set apart, a table, a code listing
+/// and two sources.
 pub fn answer_like() -> Document {
+    let markdown = "The price of an option follows from a *partial differential equation* once \
+        the `Delta` hedge removes risk, where the volatility $\\sigma$ is constant.\n\n\
+        ## Why the hedge removes risk\n\n\
+        $$\n\\frac{\\partial V}{\\partial t} + \\frac{1}{2}\\sigma^2 S^2 \\frac{\\partial^2 V}{\\partial S^2} + rS \\frac{\\partial V}{\\partial S} - rV = 0\n$$\n\n\
+        | Greek | Measures |\n| --- | --- |\n| Delta | Price change per unit of the stock |\n| Vega | Price change per unit of volatility |\n\n\
+        ```python\ndef call_price(spot, strike):\n    return max(spot - strike, 0) if spot > 0 else 0\n```\n";
     Document {
         title: "Black–Scholes formula and its assumptions".to_owned(),
         origin: "Question: How is the Black–Scholes formula derived?".to_owned(),
-        blocks: vec![
-            Block::Text {
-                markdown: "The price of an option follows from a *partial differential equation* \
-                    once the `Delta` hedge removes risk, where the volatility $\\sigma$ is constant."
-                    .to_owned(),
-                cites: vec![1],
-            },
-            Block::Heading("Why the hedge removes risk".to_owned()),
-            Block::Formula {
-                latex: r"\frac{\partial V}{\partial t} + \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + rS \frac{\partial V}{\partial S} - rV = 0".to_owned(),
-                label: Some("(2.3)".to_owned()),
-                caption: "As printed in the source".to_owned(),
-                cite: Some(1),
-            },
-            Block::Figure {
-                picture: Some(sample_picture()),
-                description: "A chart of volatility against time".to_owned(),
-                caption: "**Figure 1.1** Volatility over time".to_owned(),
-                cite: Some(2),
-            },
-            Block::Table {
-                markdown: "| Greek | Measures |\n| --- | --- |\n| Delta | Price change per unit of the stock |\n| Vega | Price change per unit of volatility |".to_owned(),
-                caption: "**Table 1.1** Greeks".to_owned(),
-                cite: Some(1),
-            },
-            Block::Code {
-                code: "def call_price(spot, strike):\n    return max(spot - strike, 0) if spot > 0 else 0\n".to_owned(),
-                language: Some("python".to_owned()),
-                caption: "**Listing 2.1** The call price in Python".to_owned(),
-                cite: Some(2),
-            },
-        ],
+        markdown: markdown.to_owned(),
         sources: vec![
             Source {
                 number: 1,
@@ -54,7 +25,7 @@ pub fn answer_like() -> Document {
             },
             Source {
                 number: 2,
-                text: "Natenberg, chapter 1: Volatility, p. 5 — Figure 1.1".to_owned(),
+                text: "Natenberg, chapter 1: Volatility, p. 5".to_owned(),
             },
         ],
     }

@@ -7,11 +7,11 @@ use super::ServerError;
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub listen: SocketAddr,
-    pub data_dir: PathBuf,
-    pub public_origin: Option<String>,
-    pub ui_dir: PathBuf,
-    pub disable_feelings: bool,
-    pub disable_voice: bool,
+    pub(crate) data_dir: PathBuf,
+    pub(crate) public_origin: Option<String>,
+    pub(crate) ui_dir: PathBuf,
+    pub(crate) disable_feelings: bool,
+    pub(crate) disable_voice: bool,
 }
 
 impl ServerConfig {

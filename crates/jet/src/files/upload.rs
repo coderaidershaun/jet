@@ -7,7 +7,8 @@ use std::path::Path;
 use uuid::Uuid;
 
 use super::kind::FileKind;
-use super::{ABOUT_FILE, About, FileError, Files, Origin, io_error, lock};
+use super::{ABOUT_FILE, About, FileError, Files, Origin, io_error};
+use crate::lock;
 
 /// The largest file, in bytes.
 pub(crate) const MAX_FILE_BYTES: usize = 32 * 1024 * 1024;

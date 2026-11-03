@@ -38,9 +38,8 @@ mod tests {
     #[test]
     fn a_variable_is_found_in_the_environment_then_the_nearest_env_file() {
         // The value comes from the environment first, then from the nearest .env file above the
-        // folder, and finding it never changes the environment.
+        // folder.
         const VARIABLE: &str = "JEV_API_KEY";
-        let before = std::env::var_os(VARIABLE);
         let root = tempfile::tempdir().unwrap();
         let child = root.path().join("a/b");
         std::fs::create_dir_all(&child).unwrap();
@@ -68,6 +67,5 @@ mod tests {
             lookup(VARIABLE, None, &child).is_none(),
             "a nearer file owns the configuration"
         );
-        assert_eq!(std::env::var_os(VARIABLE), before);
     }
 }

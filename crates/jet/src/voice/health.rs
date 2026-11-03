@@ -1,15 +1,16 @@
 //! What Google last refused on one voice route, so the page can say so as soon as the person
 //! switches the mic or the speaker on.
 
+use crate::lock;
 use agent::voice::VoiceError;
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// How long a refusal is still reported when Google has not answered since.
 const REMEMBERED_FOR: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Default)]
-pub(in crate::server) struct VoiceHealth {
+pub(super) struct VoiceHealth {
     /// Google's message and when it refused.
     refusal: Mutex<Option<(String, Instant)>>,
 }
@@ -19,7 +20,7 @@ impl VoiceHealth {
     /// before the call, such as a missing key, changes nothing. `at` is passed in so that the
     /// time limit can be tested.
     pub(super) fn record<T>(&self, outcome: &Result<T, VoiceError>, at: Instant) {
-        let mut refusal = self.refusal.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut refusal = lock(&self.refusal);
         match outcome {
             Ok(_) => *refusal = None,
             Err(
@@ -35,7 +36,7 @@ impl VoiceHealth {
     /// Google's last refusal on this route, while it is under ten minutes old and Google has not
     /// answered since.
     pub(super) fn warning(&self, at: Instant) -> Option<String> {
-        let refusal = self.refusal.lock().unwrap_or_else(PoisonError::into_inner);
+        let refusal = lock(&self.refusal);
         refusal
             .as_ref()
             .filter(|(_, refused_at)| at.duration_since(*refused_at) < REMEMBERED_FOR)

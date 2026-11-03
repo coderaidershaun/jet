@@ -1,6 +1,6 @@
 # Jet glossary
 
-The domain words of the `jet` crate, each with one meaning. [The character policy](character-policy.md) holds the geometry and motion rules.
+The domain words of Jet, each with one meaning. [The character policy](crates/jet/character-policy.md) holds the geometry and motion rules.
 
 - **Kite** — Jet's blue body, bow, black eyes and pale string, drawn in a 200 × 240 reference frame.
 - **Form** — the body's 52 ordered outline points: kite or spinner, or a point-by-point blend between them.
@@ -39,7 +39,7 @@ The domain words of the `jet` crate, each with one meaning. [The character polic
 - **Voice** — Jet speaking its replies aloud with Gemini, when the speaker button in the message box is on. The key, the voice id and the model are read on each call from the environment or the nearest `.env`, never from Settings. Its sound comes back in audio clips that the voice player puts on the page's audio clock; these are not the character's Clip or Player. When Google refuses a voice call, a warning notice in the thread says so, the mic or the speaker shows a dot with the reason, and the server remembers the refusal for ten minutes, so switching either button on says so at once. _Avoid_: audio, TTS.
 - **Speech part** — one piece of a reply that voice treats alone: a sentence, a heading, or a block that is not spoken (code, a table, display math, a rule). It is settled only once its end cannot change, and carries the marks that say when each word is shown.
 - **Spoken reply** — a reply that is held back and shown as the voice reaches each word, so words appear just before they are heard. Jet settles when the voice has finished. Stop, Esc, a new message or switching voice off quiets the voice and shows every word at once.
-- **Cue** — a vocal tag in a reply such as `<laugh>`, from the list in `cues.rs`; the voice performs it, the bubble hides it.
+- **Cue** — a vocal tag in a reply such as `<laugh>`, from the list in `crates/agent/src/markdown/cues.rs`; the voice performs it, the bubble hides it.
 - **Listening** — the page watching the microphone for speech while the mic button is on. _Avoid_: recording.
 - **Trail** — the bars across the empty message field, behind it, that show how loud the sound the mic hears is, flowing left while it listens; they stand tall only for speech and stay low for other sound. They show only while the field is empty and motion is not reduced.
 - **Listening engine** — `ui/chat/hear/engine/`: turns the microphone's sound into events about what the user said, and touches no page element. _Avoid_: recogniser (that is Google's side).

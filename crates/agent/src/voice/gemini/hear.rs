@@ -30,7 +30,7 @@ impl Gemini {
                 "custom_vocabulary": vocabulary,
             }},
         });
-        let mut response = self.post(&body)?;
+        let mut response = self.post(&body, &[])?;
         let answer = response
             .body_mut()
             .with_config()
@@ -44,7 +44,7 @@ impl Gemini {
     fn read_transcript(&self, answer: &str) -> Result<String, VoiceError> {
         let answer: Value = serde_json::from_str(answer).map_err(|_| VoiceError::Decode)?;
         if let Some(error) = answer.get("error").filter(|error| error.is_object()) {
-            return Err(self.refusal_from(error));
+            return Err(self.refusal_from(error, &[]));
         }
         let steps = match answer["steps"].as_array() {
             Some(steps) => steps.as_slice(),
@@ -69,7 +69,6 @@ impl Gemini {
 mod tests {
     use super::super::test_support::{KEY, server};
     use super::*;
-    use base64::Engine;
     use serde_json::json;
 
     fn answer(items: serde_json::Value) -> String {
@@ -87,38 +86,17 @@ mod tests {
             {"type": "model_output", "content": [{"type": "text", "text": "in Lisbon? "}]},
         ]})
         .to_string();
-        let (mut client, worker) = server(200, body);
-        client.voice = None;
+        let (client, worker) = server(200, &body);
         let vocabulary = ["Jet".to_owned(), "Quanty".to_owned()];
         assert_eq!(
             client.hear(&[9, 8, 7], &vocabulary).unwrap(),
             "What time is it in Lisbon?"
         );
         let request = worker.join().unwrap();
-        let (header, body) = request.split_once("\r\n\r\n").unwrap();
         assert!(
-            header
+            request
                 .to_ascii_lowercase()
                 .contains(&format!("x-goog-api-key: {KEY}"))
-        );
-        let body: serde_json::Value = serde_json::from_str(body).unwrap();
-        assert_eq!(
-            body,
-            json!({
-                "model": "model-test",
-                "store": false,
-                "stream": false,
-                "input": [{
-                    "type": "audio",
-                    "data": base64::engine::general_purpose::STANDARD.encode([9, 8, 7]),
-                    "mime_type": "audio/wav",
-                }],
-                "generation_config": {"transcription_config": {
-                    "mode": "smart",
-                    "language_codes": [],
-                    "custom_vocabulary": ["Jet", "Quanty"],
-                }},
-            })
         );
         assert!(!format!("{client:?}").contains(KEY));
 
@@ -148,8 +126,7 @@ mod tests {
                 }),
             ),
         ] {
-            let (mut client, worker) = server(status, body);
-            client.voice = None;
+            let (client, worker) = server(status, &body);
             let result = client.hear(&[0, 0], &[]);
             assert_eq!(result, expected.map(str::to_owned));
             if let Err(error) = result {

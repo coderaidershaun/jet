@@ -7,7 +7,7 @@ mod error;
 mod gemini;
 mod wav;
 
-use crate::conversation::spoken_words;
+use crate::markdown::spoken_words;
 use configuration::{Hearing, Speaking};
 pub use error::VoiceError;
 use gemini::Gemini;
@@ -74,7 +74,7 @@ pub fn speak(markdown: &str, style: Option<&str>) -> Result<Vec<u8>, VoiceError>
         return Ok(Vec::new());
     }
     let Speaking { key, voice, model } = Speaking::read()?;
-    Gemini::new(key, voice, model).speak(&words, style)
+    Gemini::new(key, model).speak(&voice, &words, style)
 }
 
 /// The words in a clip of raw 16 kHz 16-bit little-endian mono audio, empty when the clip holds
@@ -96,7 +96,7 @@ pub fn hear(pcm: &[u8], vocabulary: &[String]) -> Result<String, VoiceError> {
         return Ok(String::new());
     }
     let Hearing { key, model } = Hearing::read()?;
-    Gemini::hearing(key, model).hear(&wav::with_header(pcm, HEAR_SAMPLE_RATE), &clamp(vocabulary))
+    Gemini::new(key, model).hear(&wav::with_header(pcm, HEAR_SAMPLE_RATE), &clamp(vocabulary))
 }
 
 /// The vocabulary a call may send: trimmed, without empty, repeated or overlong values, and at

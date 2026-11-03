@@ -2,7 +2,7 @@
 //! shape it. The prompt holds no clock, so the same inputs always give the same bytes and
 //! Claude's prompt cache keeps hitting.
 
-use crate::chat::{Attachment, Effort, Model, Notes, Persona};
+use crate::chat::{Attachment, Effort, Model, Mood, Notes, Persona};
 
 const TEMPLATE: &str = include_str!("persona.md");
 
@@ -38,7 +38,7 @@ pub(super) fn compose(persona: &Persona, notes: &Notes) -> String {
 
 pub(super) fn message_words(message: &super::Message) -> String {
     let mut words = String::new();
-    if let Some(mood) = message.feeling.as_deref().and_then(crate::Mood::from_word) {
+    if let Some(mood) = message.feeling.as_deref().and_then(Mood::from_word) {
         words.push_str(&format!("[Jet: reading this, you feel {}]\n", mood.word()));
     }
     if message.spoken {
@@ -176,7 +176,7 @@ mod tests {
             chat.send(message);
             let requests = chat.requests();
             let prompt = &requests.last().unwrap().prompt;
-            if crate::Mood::from_word(feeling).is_some() {
+            if Mood::from_word(feeling).is_some() {
                 assert!(prompt.ends_with(&format!(
                     "[Jet: reading this, you feel {feeling}]\nuser words"
                 )));

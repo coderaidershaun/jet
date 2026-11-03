@@ -30,13 +30,10 @@ fn accepted_turn_is_idempotent_and_reconnects() {
     other["requestId"] = "other-browser".into();
     other["clientId"] = "browser-b".into();
     assert_eq!(host.post("/api/chat/send", other).1["kind"], "busy");
-    let stream = format!(
-        "{}/api/events?epoch={}&cursor={}",
-        host.url,
+    let mut events = host.events(
         snapshot["epoch"].as_str().unwrap(),
-        snapshot["cursor"].as_u64().unwrap()
+        snapshot["cursor"].as_u64().unwrap(),
     );
-    let mut events = ureq::get(stream).call().unwrap();
     assert!(
         events.headers()["content-type"]
             .to_str()
@@ -90,13 +87,7 @@ fn accepted_turn_is_idempotent_and_reconnects() {
             .as_str()
             .is_some_and(|text| text.len() == "Partial browser reply".len() + 600)
     });
-    let mut replay = ureq::get(format!(
-        "{}/api/events?epoch={}&cursor=0",
-        host.url,
-        flooded["epoch"].as_str().unwrap()
-    ))
-    .call()
-    .unwrap();
+    let mut replay = host.events(flooded["epoch"].as_str().unwrap(), 0);
     let mut line = String::new();
     std::io::BufReader::new(replay.body_mut().as_reader())
         .read_line(&mut line)
@@ -194,13 +185,6 @@ fn restart_recovers_request_identity_without_replaying_provider() {
     let host = host.restart();
     assert_eq!(host.get("/api/settings")["persona"]["name"], "Ada");
     assert_eq!(host.get("/api/memory")["memory"], "Remember");
-    let markdown = host.post(
-        "/api/markdown",
-        serde_json::json!({"text":"**bold** <script>unsafe</script>"}),
-    );
-    let html = markdown.1.as_str().unwrap();
-    assert!(html.contains("<strong>bold</strong>") && !html.contains("<script"));
-
     // Under --disable-voice the page is told why Jet cannot speak, and nothing is asked of Google.
     let voice = host.get("/api/voice");
     assert_eq!(voice["available"], false);

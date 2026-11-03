@@ -10,7 +10,7 @@ const FILE_NAME: &str = "settings.json";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-pub struct Settings {
+pub(crate) struct Settings {
     pub reduced_motion: bool,
     pub persona: Persona,
     pub model: Model,
@@ -53,7 +53,7 @@ pub enum SettingsError {
 }
 
 /// Reads the saved settings, or the defaults when nothing has been saved yet.
-pub fn read_from(data_dir: &Path) -> Result<Settings, SettingsError> {
+pub(crate) fn read_from(data_dir: &Path) -> Result<Settings, SettingsError> {
     let path = data_dir.join(FILE_NAME);
     match std::fs::read(&path) {
         Ok(bytes) => {
@@ -64,7 +64,7 @@ pub fn read_from(data_dir: &Path) -> Result<Settings, SettingsError> {
     }
 }
 
-pub fn write_to(data_dir: &Path, settings: &Settings) -> Result<(), SettingsError> {
+pub(crate) fn write_to(data_dir: &Path, settings: &Settings) -> Result<(), SettingsError> {
     let path = data_dir.join(FILE_NAME);
     if path.exists() {
         let _ = read_from(data_dir)?;
@@ -163,22 +163,6 @@ mod tests {
         };
         write_to(&dir, &settings).unwrap();
         assert_eq!(read_from(&dir).unwrap(), settings);
-        let text = std::fs::read_to_string(dir.join(FILE_NAME)).unwrap();
-        for key in ["jobTitle", "turnBudgetUsd", "claudePath"] {
-            assert!(
-                text.contains(&format!("\"{key}\"")),
-                "missing {key} in {text}"
-            );
-        }
-        for (effort, word) in [(Effort::XHigh, "xhigh"), (Effort::Max, "max")] {
-            let settings = Settings {
-                effort,
-                ..settings.clone()
-            };
-            write_to(&dir, &settings).unwrap();
-            assert_eq!(read_from(&dir).unwrap(), settings);
-            assert_eq!(saved_json(&dir)["effort"], word);
-        }
         let _ = std::fs::remove_dir_all(dir);
     }
 

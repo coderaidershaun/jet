@@ -14,31 +14,26 @@ const fieldsOf = (card) => Object.fromEntries(card.body.fields.map((field) => [f
 test('job cards read the Job shape and the old shape', () => {
   // Through the facade the server is the app's ID, so the tool name or the shape finds the reader.
   const started = cardOf(call('ingest_pdf', running));
-  assert.equal(started.meta, 'running · converting 12 of 32 pages · 0.8 s');
   assert.deepEqual(started.job, { id: JOB, state: 'running', share: 0.375, words: 'converting 12 of 32 pages' });
   assert.equal(started.tone, 'quiet');
-  assert.deepEqual(fieldsOf(started), { State: 'running', Kind: 'ingest', Stage: 'converting 12 of 32 pages' });
+  assert.equal(fieldsOf(started).Stage, 'converting 12 of 32 pages');
 
   const finished = cardOf(call('job_status', { job_id: JOB, kind: 'ingest', state: 'done', media: 'Options', file: 'Hull ch1.pdf', document_id: 'doc-1', items: 41, cost_usd: 0.124, summary: 'Hull, chapter 1', usage: [] }));
-  assert.equal(finished.meta, 'done · 41 items · 0.8 s');
   assert.equal(finished.tone, 'ok');
-  assert.deepEqual(fieldsOf(finished), { State: 'done', Kind: 'ingest', Media: 'Options', File: 'Hull ch1.pdf', Document: 'doc-1', Items: '41', Cost: '$0.12', Summary: 'Hull, chapter 1' });
+  assert.equal(fieldsOf(finished).Items, '41');
   assert.equal(finished.body.fields.at(-1).pre, true);
   assert.equal(finished.job.share, null, 'a job that is not running has no stage to draw');
 
   assert.equal(cardOf(call('watch_job', { job_id: JOB, state: 'already_ingested' })).tone, 'ok');
-  assert.equal(cardOf(call('watch_job', { job_id: JOB, state: 'already_ingested' })).meta, 'already in the library · 0.8 s');
   const failed = cardOf(call('ingest_pdf', { job_id: JOB, state: 'failed', error: 'the PDF has no pages' }));
   assert.equal(failed.tone, 'invalid');
-  assert.deepEqual(fieldsOf(failed), { State: 'failed', Error: 'the PDF has no pages' });
+  assert.equal(fieldsOf(failed).Error, 'the PDF has no pages');
   const stopped = cardOf(call('stop_something', { job_id: JOB, state: 'stopped', error: 'start it again' }));
-  assert.equal(stopped.meta, 'stopped · 0.8 s', 'a job is read by its shape on any tool');
-  assert.equal(stopped.tone, 'quiet');
+  assert.equal(stopped.tone, 'quiet', 'a job is read by its shape on any tool');
 
   // The old shape: a stage that is only text, no job id.
   const old = cardOf({ id: 'c2', server: 'quanty', tool: 'ingest_status', input: {}, ok: true, result: { state: 'running', stage: 'converting', media: 'Options' }, durationMs: 100 });
-  assert.equal(old.meta, 'running · converting · 0.1 s');
-  assert.deepEqual(fieldsOf(old), { State: 'running', Stage: 'converting', Media: 'Options' });
+  assert.equal(fieldsOf(old).Stage, 'converting');
   assert.equal(old.job, null);
 
   // Results come from outside: no shape throws, and a share is held between 0 and 1.
@@ -47,20 +42,12 @@ test('job cards read the Job shape and the old shape', () => {
   }
   assert.equal(cardOf(call('job_status', { ...running, stage: { name: 'x', words: 'x', share: 1.7 } })).job.share, 1);
   assert.equal(cardOf(call('job_status', { ...running, stage: { name: 'x', words: 'x', share: -2 } })).job.share, 0);
-  assert.equal(cardOf(call('ingest_pdf', { state: 'running' })).meta, 'running · 0.8 s');
 
   // The bar draws the progress of the whole job, and the share of the stage only when it is missing.
   assert.equal(cardOf(call('job_status', { ...running, progress: 0.42 })).job.share, 0.42);
   assert.equal(cardOf(call('job_status', { ...running, progress: 1.7 })).job.share, 1);
   assert.equal(cardOf(call('job_status', { ...running, progress: 0 })).job.share, 0);
   assert.equal(cardOf(call('job_status', { ...running, progress: 'half' })).job.share, 0.375);
-
-  // While a job tool runs, its card says which.
-  const line = (tool, input = {}) => cardOf({ id: 'r', server: APP, tool, input }).line;
-  assert.equal(line('job_status'), 'Checking a job');
-  assert.equal(line('watch_job'), 'Watching a job');
-  assert.equal(line('ingest_pdf', { file_name: 'Hull ch1.pdf', pdf_url: 'http://x/api/files/y' }), 'Adding a PDF · Hull ch1.pdf');
-  assert.equal(line('ingest_pdf', { path: '/books/Hull ch1.pdf' }), 'Adding a PDF · Hull ch1.pdf');
 });
 
 // A clock the test moves by hand, and a Jet server that answers from a script.

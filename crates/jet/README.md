@@ -1,6 +1,6 @@
 # Jet browser host
 
-`cargo run -p jet -- --listen 127.0.0.1:8787 --data-dir ./jet-data` serves the chat in a normal browser. `jet --help` lists deployment options. The data directory owns settings, transcript, session, notes, the app registry and the files: the ones Jet has written and the ones the user attached. `--ui-dir` points to the static `ui/` directory when the executable is copied elsewhere.
+To run Jet, see the [Run section of the root guide](../../README.md#run). `jet --help` lists deployment options. The data directory owns settings, transcript, session, notes, the app registry and the files: the ones Jet has written and the ones the user attached.
 
 The [root guide](../../README.md) covers registration, commands, Quanty launch and
 existing-data reuse. Chat starts in the main content beside one drawer. Selecting

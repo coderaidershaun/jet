@@ -3,13 +3,13 @@ mod connect;
 mod headers;
 mod target;
 
-use super::{Server, ServerConfig, ServerError};
-use crate::chat::lock;
+use super::Apps;
+use crate::lock;
 use agent::apps::{App, AppId, DiscoveryStatus};
 use axum::{
     Json, Router,
     body::Body,
-    extract::{Path, State},
+    extract::{FromRef, Path, State},
     http::{Request, StatusCode, Uri, header::LOCATION},
     response::{IntoResponse, Response},
     routing::{any, get},
@@ -20,7 +20,7 @@ use hyper_util::{
     rt::{TokioExecutor, TokioIo},
 };
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 use target::{Target, reject_recursion};
 use url::Url;
 
@@ -28,26 +28,36 @@ use url::Url;
 pub(crate) struct Proxy {
     client: Client<Connector, Body>,
     public: Url,
+    listen: SocketAddr,
 }
+
+/// Why the proxy cannot be set up for the address the server listens on.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(crate) struct SetupError(String);
+
 impl Proxy {
-    pub(crate) fn new(config: &ServerConfig) -> Result<Self, ServerError> {
-        let origin = match &config.public_origin {
-            Some(origin) => origin.clone(),
-            None if config.listen.ip().is_loopback() && config.listen.port() != 0 => {
-                format!("http://{}", config.listen)
+    pub(crate) fn new(public_origin: Option<&str>, listen: SocketAddr) -> Result<Self, SetupError> {
+        let origin = match public_origin {
+            Some(origin) => origin.to_owned(),
+            None if listen.ip().is_loopback() && listen.port() != 0 => {
+                format!("http://{listen}")
             }
             None => {
-                return Err(ServerError::Config(
+                return Err(SetupError(
                     "app proxy requires --public-origin for wildcard or remote listeners".into(),
                 ));
             }
         };
-        let public = Url::parse(&origin).map_err(|error| ServerError::Config(error.to_string()))?;
-        let connector = Connector::new().map_err(|error| {
-            ServerError::Config(format!("app TLS configuration failed: {error}"))
-        })?;
+        let public = Url::parse(&origin).map_err(|error| SetupError(error.to_string()))?;
+        let connector = Connector::new()
+            .map_err(|error| SetupError(format!("app TLS configuration failed: {error}")))?;
         let client = Client::builder(TokioExecutor::new()).build(connector);
-        Ok(Self { client, public })
+        Ok(Self {
+            client,
+            public,
+            listen,
+        })
     }
 }
 
@@ -80,26 +90,30 @@ impl IntoResponse for ProxyError {
     }
 }
 
-pub(crate) fn router() -> Router<Server> {
+pub(super) fn router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    Apps: FromRef<S>,
+{
     Router::new()
         .route("/apps/{id}", any(slash))
         .route("/apps/{id}/", any(forward))
         .route("/apps/{id}/{*tail}", any(forward))
         .route("/api/apps/{id}/ui-status", get(ui_status))
 }
-fn app(host: &Server, id: &str) -> Result<App, ProxyError> {
+fn app(apps: &Apps, id: &str) -> Result<App, ProxyError> {
     let id: AppId = id.parse().map_err(|_| ProxyError::Missing)?;
-    lock(&host.registry)
+    lock(&apps.registry)
         .get(&id)
         .cloned()
         .ok_or(ProxyError::Missing)
 }
 async fn slash(
-    State(host): State<Server>,
+    State(apps): State<Apps>,
     Path(id): Path<String>,
     uri: Uri,
 ) -> Result<Response, ProxyError> {
-    app(&host, &id)?;
+    app(&apps, &id)?;
     let mut location = format!("{}/", uri.path());
     if let Some(query) = uri.query() {
         location.push('?');
@@ -108,7 +122,7 @@ async fn slash(
     Ok((StatusCode::PERMANENT_REDIRECT, [(LOCATION, location)]).into_response())
 }
 async fn forward(
-    State(host): State<Server>,
+    State(apps): State<Apps>,
     uri: Uri,
     mut request: Request<Body>,
 ) -> Result<Response, ProxyError> {
@@ -117,18 +131,18 @@ async fn forward(
         .strip_prefix("/apps/")
         .and_then(|path| path.split('/').next())
         .ok_or(ProxyError::Missing)?;
-    let app = app(&host, id)?;
+    let app = app(&apps, id)?;
     let target = Target::new(&app, &uri)?;
-    reject_recursion(&target.url, &host.proxy.public, host.config.listen).await?;
+    reject_recursion(&target.url, &apps.proxy.public, apps.proxy.listen).await?;
     let upgrade = headers::websocket(request.headers());
-    headers::request(request.headers_mut(), &target, &host.proxy.public)?;
+    headers::request(request.headers_mut(), &target, &apps.proxy.public)?;
     let downstream = upgrade.then(|| hyper::upgrade::on(&mut request));
     *request.uri_mut() = target
         .url
         .as_str()
         .parse::<Uri>()
         .map_err(|_| ProxyError::Path)?;
-    let mut response = host
+    let mut response = apps
         .proxy
         .client
         .request(request)
@@ -168,24 +182,24 @@ async fn forward(
     Ok(response.map(Body::new))
 }
 async fn ui_status(
-    State(host): State<Server>,
+    State(apps): State<Apps>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ProxyError> {
-    let app = app(&host, &id)?;
-    let discovery = lock(&host.registry).discovery_status(&app.id);
+    let app = app(&apps, &id)?;
+    let discovery = lock(&apps.registry).discovery_status(&app.id);
     if let DiscoveryStatus::Incompatible { message } = discovery {
         return Ok(Json(json!({"status":"incompatible","message":message})));
     }
     let target = Target::ui(&app)?;
     let attempt = async {
-        reject_recursion(&target.url, &host.proxy.public, host.config.listen).await?;
+        reject_recursion(&target.url, &apps.proxy.public, apps.proxy.listen).await?;
         let mut request = Request::builder()
             .method("HEAD")
             .uri(target.url.as_str())
             .body(Body::empty())
             .map_err(|_| ProxyError::Path)?;
-        headers::request(request.headers_mut(), &target, &host.proxy.public)?;
-        let response = host
+        headers::request(request.headers_mut(), &target, &apps.proxy.public)?;
+        let response = apps
             .proxy
             .client
             .request(request)

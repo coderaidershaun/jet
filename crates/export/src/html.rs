@@ -1,13 +1,13 @@
-//! A document as one HTML file that stands alone: one inline style sheet, pictures and formulas
-//! inside the file as data addresses, nothing loaded from outside and nothing run.
+//! A document as one HTML file that stands alone: one inline style sheet, formulas as
+//! pictures inside the file as data addresses, nothing loaded from outside and nothing run.
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use pulldown_cmark::{CowStr, Event, HeadingLevel, Tag, TagEnd, html::push_html};
 
 use crate::commonmark;
-use crate::document::language_word;
 use crate::math::{Display, Formulas};
-use crate::pictures::{Picture, data_uri};
-use crate::{Block, Document, Source};
+use crate::{Document, Source};
 
 /// Fonts are named and not carried: a reader without them gets a serif or a monospace font of
 /// their own.
@@ -47,8 +47,6 @@ figure.code .language { position: absolute; top: .3rem; right: .6rem; color: #66
 pub(crate) fn render(document: &Document) -> String {
     let mut page = Page {
         formulas: Formulas::default(),
-        sources: &document.sources,
-        markdown_read: 0,
     };
     let title = escape(&document.title);
     let mut body = format!("<h1>{title}</h1>\n");
@@ -58,11 +56,9 @@ pub(crate) fn render(document: &Document) -> String {
             escape(&document.origin)
         ));
     }
-    for block in &document.blocks {
-        body.push_str(&page.block(block));
-    }
+    body.push_str(&page.paragraphs(&document.markdown));
     if !document.sources.is_empty() {
-        body.push_str(&page.sources());
+        body.push_str(&source_list(&document.sources));
     }
     format!(
         "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
@@ -72,159 +68,41 @@ pub(crate) fn render(document: &Document) -> String {
 }
 
 /// What the file is made of while it is written.
-struct Page<'a> {
+struct Page {
     formulas: Formulas,
-    sources: &'a [Source],
-    /// How many pieces of Markdown have been read so far.
-    markdown_read: usize,
 }
 
-impl Page<'_> {
-    fn block(&mut self, block: &Block) -> String {
-        match block {
-            Block::Heading(heading) => format!("<h2>{}</h2>\n", escape(heading)),
-            Block::Text { markdown, cites } => self.paragraphs(markdown, cites),
-            Block::List(points) => {
-                let items: String = points
-                    .iter()
-                    .map(|point| format!("<li>{}</li>\n", self.inline(point, &[])))
-                    .collect();
-                format!("<ul class=\"points\">\n{items}</ul>\n")
-            }
-            Block::Formula {
-                latex,
-                label,
-                caption,
-                cite,
-            } => {
-                let label = label
-                    .as_deref()
-                    .map(|label| format!("<span class=\"label\">{}</span>", escape(label)))
-                    .unwrap_or_default();
-                let formula = self.math(latex, Display::Block);
-                format!(
-                    "<figure class=\"formula\">{formula}{label}{}</figure>\n",
-                    self.figcaption(caption, *cite)
-                )
-            }
-            Block::Figure {
-                picture,
-                description,
-                caption,
-                cite,
-            } => {
-                let shown = match picture.as_deref().and_then(Picture::read) {
-                    Some(picture) => format!(
-                        "<img src=\"{}\" alt=\"{}\">",
-                        picture.data_uri(),
-                        escape(description)
-                    ),
-                    None if description.is_empty() => String::new(),
-                    None => format!("<p class=\"description\">{}</p>", escape(description)),
-                };
-                format!(
-                    "<figure>{shown}{}</figure>\n",
-                    self.figcaption(caption, *cite)
-                )
-            }
-            Block::Table {
-                markdown,
-                caption,
-                cite,
-            } => format!(
-                "<figure class=\"table\">{}{}</figure>\n",
-                self.figcaption(caption, *cite),
-                self.paragraphs(markdown, &[])
-            ),
-            Block::Code {
-                code,
-                language,
-                caption,
-                cite,
-            } => {
-                let language = language_word(language.as_deref());
-                let (tag, name) = if language.is_empty() {
-                    (String::new(), "<code>".to_owned())
-                } else {
-                    let language = escape(language);
-                    (
-                        format!("<div class=\"language\">{language}</div>"),
-                        format!("<code class=\"language-{language}\">"),
-                    )
-                };
-                format!(
-                    "<figure class=\"code\">{tag}<pre>{name}{}</code></pre>{}</figure>\n",
-                    escape(code),
-                    self.figcaption(caption, *cite)
-                )
-            }
-        }
-    }
+fn source_list(sources: &[Source]) -> String {
+    let items: String = sources
+        .iter()
+        .map(|source| {
+            format!(
+                "<li id=\"source-{n}\">[{n}] {}</li>\n",
+                escape(&source.text),
+                n = source.number
+            )
+        })
+        .collect();
+    format!("<section class=\"sources\"><h2>Sources</h2>\n<ul>\n{items}</ul>\n</section>\n")
+}
 
-    fn sources(&self) -> String {
-        let items: String = self
-            .sources
-            .iter()
-            .map(|source| {
-                format!(
-                    "<li id=\"source-{n}\">[{n}] {}</li>\n",
-                    escape(&source.text),
-                    n = source.number
-                )
-            })
-            .collect();
-        format!("<section class=\"sources\"><h2>Sources</h2>\n<ul>\n{items}</ul>\n</section>\n")
-    }
-
-    /// Empty when there is neither a caption nor a source to name.
-    fn figcaption(&mut self, caption: &str, cite: Option<usize>) -> String {
-        let cites: Vec<usize> = cite.into_iter().collect();
-        let inline = self.inline(caption, &cites);
-        if inline.trim().is_empty() {
-            return String::new();
-        }
-        format!("<figcaption>{inline}</figcaption>")
-    }
-
-    /// Markdown as blocks. The marks of `cites` go inside its last paragraph, or in a paragraph
-    /// of their own when it does not end with one.
-    fn paragraphs(&mut self, markdown: &str, cites: &[usize]) -> String {
-        let mut events = self.events(markdown, false);
-        if !cites.is_empty() {
-            let marks = self.cite_marks(cites);
-            match events.last() {
-                Some(Event::End(TagEnd::Paragraph)) => {
-                    let at = events.len() - 1;
-                    events.insert(at, Event::InlineHtml(marks.into()));
-                }
-                _ => events.push(Event::Html(
-                    format!("<p class=\"cites\">{}</p>\n", marks.trim_start()).into(),
-                )),
-            }
-        }
+impl Page {
+    /// The Markdown as blocks.
+    fn paragraphs(&mut self, markdown: &str) -> String {
+        let events = self.events(markdown);
         let mut html = String::new();
         push_html(&mut html, events.into_iter());
         html
-    }
-
-    /// Markdown with no paragraph around it, for a point of a list or a caption.
-    fn inline(&mut self, markdown: &str, cites: &[usize]) -> String {
-        let mut events = self.events(markdown, true);
-        events.push(Event::InlineHtml(self.cite_marks(cites).into()));
-        let mut html = String::new();
-        push_html(&mut html, events.into_iter());
-        html.trim().to_owned()
     }
 
     /// The Markdown as events that can only write text, a formula picture or a mark of the
     /// document itself: raw HTML is shown as text, and a link or a picture of the Markdown is
     /// shown as its words, so a file never reaches outside itself. A first-level heading is read
     /// as a second-level one, under the title of the file.
-    fn events<'m>(&mut self, markdown: &'m str, bare: bool) -> Vec<Event<'m>> {
-        self.markdown_read += 1;
-        let piece = self.markdown_read;
-        // Each piece of Markdown numbers its notes from one, so their ids name the piece too.
-        let note_id = |label: &str| -> CowStr<'static> { format!("note-{piece}-{label}").into() };
+    fn events<'m>(&mut self, markdown: &'m str) -> Vec<Event<'m>> {
+        // The `1-` is from when a file held several texts, each numbering its notes from one.
+        // Files keep the ids they had.
+        let note_id = |label: &str| -> CowStr<'static> { format!("note-1-{label}").into() };
         let mut events = Vec::new();
         for event in commonmark::parse(markdown) {
             match event {
@@ -261,7 +139,6 @@ impl Page<'_> {
                 Event::Html(text) | Event::InlineHtml(text) => events.push(Event::Text(text)),
                 Event::Start(Tag::Image { .. } | Tag::Link { .. })
                 | Event::End(TagEnd::Image | TagEnd::Link) => {}
-                Event::Start(Tag::Paragraph) | Event::End(TagEnd::Paragraph) if bare => {}
                 event => events.push(event),
             }
         }
@@ -293,23 +170,14 @@ impl Page<'_> {
         format!(
             "<img class=\"math\" alt=\"{}\" src=\"{}\" style=\"{style}\">",
             escape(latex),
-            data_uri("image/png", &formula.png),
+            png_data_uri(&formula.png),
         )
     }
+}
 
-    /// ` [1] [2]`, each mark a link to its entry in the list of sources when the list has it.
-    fn cite_marks(&self, cites: &[usize]) -> String {
-        cites
-            .iter()
-            .map(|&number| {
-                if self.sources.iter().any(|source| source.number == number) {
-                    format!(" <a class=\"cite\" href=\"#source-{number}\">[{number}]</a>")
-                } else {
-                    format!(" [{number}]")
-                }
-            })
-            .collect()
-    }
+/// The address that holds the bytes of a PNG inside the text that names it.
+fn png_data_uri(bytes: &[u8]) -> String {
+    format!("data:image/png;base64,{}", STANDARD.encode(bytes))
 }
 
 fn escape(text: &str) -> String {

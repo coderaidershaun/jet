@@ -3,13 +3,13 @@
 use std::path::PathBuf;
 
 use agent::{ClaudeCli, Effort, Model, Request, SessionMode};
+use tempfile::TempDir;
 
-/// The stand-in program, set to run in its own empty folder.
-pub fn fake_claude(name: &str) -> (ClaudeCli, PathBuf) {
-    let cwd = std::env::temp_dir().join(format!("agent-contract-{}-{name}", std::process::id()));
-    std::fs::remove_dir_all(&cwd).ok();
+/// The stand-in program, set to run in its own empty folder, which goes when the test ends.
+pub fn fake_claude() -> (ClaudeCli, TempDir) {
+    let cwd = tempfile::tempdir().unwrap();
     let program = PathBuf::from(env!("CARGO_BIN_EXE_fake-claude"));
-    (ClaudeCli::at(program, cwd.clone()), cwd)
+    (ClaudeCli::at(program, cwd.path().to_owned()), cwd)
 }
 
 pub fn chat_request(prompt: &str, session: SessionMode) -> Request {

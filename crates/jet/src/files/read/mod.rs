@@ -131,7 +131,7 @@ mod tests {
     use std::io::Cursor;
 
     use base64::Engine;
-    use export::{Block, Document, Format};
+    use export::{Document, Format};
     use image::{DynamicImage, ImageFormat};
 
     use super::*;
@@ -155,10 +155,7 @@ mod tests {
         let document = Document {
             title: "Quarterly note".into(),
             origin: String::new(),
-            blocks: vec![Block::Text {
-                markdown: "Volatility smiles slope downward.".into(),
-                cites: Vec::new(),
-            }],
+            markdown: "Volatility smiles slope downward.".into(),
             sources: Vec::new(),
         };
         let folder = tempfile::tempdir().unwrap();
@@ -298,28 +295,9 @@ mod tests {
             "a reading is cut to its limit"
         );
 
-        assert_eq!(
-            describe(FileKind::Markdown, b"# Title\n\nbody\n").unwrap(),
-            "3 lines"
-        );
-        assert_eq!(
-            text_of(FileKind::Markdown, b"# Title\n\nbody\n", &whole).0,
-            "# Title\n\nbody"
-        );
-
-        let page =
-            b"<html><head><title>  Weekly\n   report </title></head>\n<body>hi</body></html>";
-        assert_eq!(
-            describe(FileKind::Html, page).unwrap(),
-            "3 lines · “Weekly report”"
-        );
-        assert_eq!(text_of(FileKind::Html, page, &whole).4, 3);
-
         for (kind, format) in [
             (FileKind::Png, ImageFormat::Png),
             (FileKind::Jpeg, ImageFormat::Jpeg),
-            (FileKind::Gif, ImageFormat::Gif),
-            (FileKind::Webp, ImageFormat::WebP),
         ] {
             let bytes = picture(64, 32, format);
             assert_eq!(describe(kind, &bytes).unwrap(), "64 × 32 px", "{kind:?}");

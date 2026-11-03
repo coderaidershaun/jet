@@ -15,8 +15,8 @@ use support::{chat_request, fake_claude};
 
 #[test]
 fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
-    let (claude, cwd) = fake_claude("quanty");
-    let conversation = Conversation::new(DataDir::new(cwd.join("data")));
+    let (claude, cwd) = fake_claude();
+    let conversation = Conversation::new(DataDir::new(cwd.path().join("data")));
     let message = Message {
         text: "fixture:quanty-search-reply".to_owned(),
         attachments: Vec::new(),
@@ -99,7 +99,7 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
     assert_eq!(capacity.used_tokens, Some(8373));
     assert_eq!(capacity.limit_tokens, Some(1_000_000));
     assert!(!capacity.estimated);
-    let reloaded = Conversation::new(DataDir::new(cwd.join("data")));
+    let reloaded = Conversation::new(DataDir::new(cwd.path().join("data")));
     assert_eq!(reloaded.context_status(Model::Sonnet).unwrap(), capacity);
     assert_eq!(
         reloaded.context_status(Model::Opus).unwrap().used_tokens,
@@ -119,7 +119,7 @@ fn is_alive(pid: &str) -> bool {
 
 #[test]
 fn stop_kills_the_process_and_keeps_partial_text() {
-    let (claude, cwd) = fake_claude("stops");
+    let (claude, cwd) = fake_claude();
     let mut turn = Turn::start(&claude, &chat_request("hang", SessionMode::New)).unwrap();
     let stopper = turn.stopper();
 
@@ -141,7 +141,7 @@ fn stop_kills_the_process_and_keeps_partial_text() {
     assert_eq!(turn.text(), "Partial");
     assert_eq!(turn.mood(), Some(Mood::Neutral));
 
-    let pid = std::fs::read_to_string(cwd.join("fake-claude-pid")).unwrap();
+    let pid = std::fs::read_to_string(cwd.path().join("fake-claude-pid")).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     while is_alive(&pid) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));

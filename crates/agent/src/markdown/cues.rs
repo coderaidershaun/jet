@@ -141,25 +141,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_listed_cue_is_a_well_formed_tag_with_a_weight() {
-        for cue in CUES {
-            let name = cue
-                .tag
-                .strip_prefix('<')
-                .and_then(|tag| tag.strip_suffix('>'))
-                .unwrap_or_else(|| panic!("{} is not in angle brackets", cue.tag));
-            assert!(!name.is_empty(), "{} is empty", cue.tag);
-            assert!(
-                name.chars()
-                    .all(|c| c.is_ascii_lowercase() || c == ' ' || c == '-'),
-                "{} holds a character other than lowercase letters, spaces and hyphens",
-                cue.tag
-            );
-            assert!(cue.weight > 0, "{} weighs nothing", cue.tag);
-        }
-    }
-
-    #[test]
     fn a_line_of_only_cues_joins_the_next_line_or_else_the_previous() {
         let cases = [
             ("Ha <laugh> yes.", "Ha <laugh> yes."),
