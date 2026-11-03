@@ -6,8 +6,8 @@ import { CENTRE } from './forms.js';
 import { fmtPoint, roundedPolygon } from '../geometry.js';
 
 export const KINDS = ['round', 'lid', 'B', 'C'];
-export const EYE_DX = 15.5;
-export const LID_Y = 89.9;
+const EYE_DX = 15.5;
+const LID_Y = 89.9;
 export const ARCH = 'M-8.5 0 Q0 -3.2 8.5 0';
 export const ARCH_WIDTH = 3.2;
 

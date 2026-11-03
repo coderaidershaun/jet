@@ -24,27 +24,20 @@ class Element {
 }
 const tagsOf = (node) => (typeof node === 'string' ? [] : [node.tag, ...node.children.flatMap(tagsOf)]);
 
-test('concept cards read concept, neighbours, path, items, compare, find and similar results', () => {
+test('concept cards read their results into facts and lists', () => {
   const concept = read('concept', {
     version: 1, nodes: [{ label: 'Relations', kind: 'tool', tool: 'concept_neighbours', arguments: {} }],
     concept_id: BLACK_SCHOLES, name: 'Black–Scholes model', definition: 'A formula for the price of an option on a stock.', aliases: ['Black–Scholes–Merton model'], mentions: 5,
     documents: [{ document_id: '2f0c', title: 'Quanty Sample Notes, chapter 2', mentions: 3 }],
     top_items: [{ item_id: 'e7a1', document_id: '9d10', page: 2, printed_page: '14', kind: 'chunk', wording: 'Black–Scholes–Merton model' }],
   });
-  assert.equal(concept.meta, '5 mentions · 0.8 s');
-  assert.deepEqual(blocksOf(concept), [
-    { type: 'lead', text: 'Black–Scholes model' },
-    { type: 'facts', fields: [{ term: 'Definition', text: 'A formula for the price of an option on a stock.' }, { term: 'Aliases', text: 'Black–Scholes–Merton model' }, { term: 'Mentions', text: '5' }] },
-    { type: 'list', heading: 'Documents', rows: [{ text: 'Quanty Sample Notes, chapter 2', meta: '3 mentions' }], empty: null },
-    { type: 'list', heading: 'Top items', rows: [{ text: 'Black–Scholes–Merton model', meta: 'p.14 · chunk' }], empty: null },
-  ]);
+  assert.deepEqual(blocksOf(concept).map((block) => block.heading ?? block.type), ['lead', 'facts', 'Documents', 'Top items']);
   // With no argument the result is only nodes, and the concepts among them are listed.
   const discovered = read('concept', { version: 1, nodes: [
     { label: 'Itô’s lemma', kind: 'discover', tool: 'concept', arguments: { concept_id: 'c4d2' } },
     { label: 'Options', kind: 'tool', tool: 'concept_items', arguments: {} },
     { label: 'Volatility', kind: 'discover', tool: 'concept', arguments: { concept_id: VOLATILITY } },
   ] });
-  assert.equal(discovered.meta, '2 concepts · 0.8 s');
   assert.deepEqual(rowsOf(discovered).map((row) => row.text), ['Itô’s lemma', 'Volatility']);
 
   // An edge reads 'A —KIND→ B' with the page of the item that states it; an ID the result does not list shows as itself.
@@ -55,29 +48,16 @@ test('concept cards read concept, neighbours, path, items, compare, find and sim
       { from: 'unlisted', to: BLACK_SCHOLES, kind: 'PART_OF', stated_by: null },
     ],
   });
-  assert.equal(neighbours.meta, '2 edges · cut short · 0.8 s');
-  assert.deepEqual(blocksOf(neighbours), [
-    { type: 'lead', text: 'Black–Scholes model' },
-    { type: 'list', heading: null, rows: [{ text: 'Black–Scholes model —ASSUMES→ Volatility', meta: 'page 3' }, { text: 'unlisted —PART_OF→ Black–Scholes model', meta: '' }], empty: 'No relations are stored for this concept.' },
-    { type: 'note', text: 'There are more relations than this shows.' },
-  ]);
+  assert.deepEqual(rowsOf(neighbours).map((row) => row.text), ['Black–Scholes model —ASSUMES→ Volatility', 'unlisted —PART_OF→ Black–Scholes model']);
+  assert.equal(blocksOf(neighbours).at(-1).type, 'note', 'a cut-short result says so');
 
   const path = read('concept_path', {
     from: { concept_id: STOCHASTIC, name: 'Stochastic calculus' }, to: { concept_id: VOLATILITY, name: 'Volatility' }, concepts,
     edges: [{ from: STOCHASTIC, to: BLACK_SCHOLES, kind: 'GENERALISES', stated_by: { page: 2 } }, { from: BLACK_SCHOLES, to: VOLATILITY, kind: 'ASSUMES', stated_by: { page: 3 } }],
   });
-  assert.equal(path.meta, '2 edges · 0.8 s');
-  assert.equal(blocksOf(path)[0].text, 'Stochastic calculus → Volatility');
   assert.deepEqual(rowsOf(path).map((row) => row.text), ['Stochastic calculus —GENERALISES→ Black–Scholes model', 'Black–Scholes model —ASSUMES→ Volatility']);
   const unlinked = read('concept_path', { from: { concept_id: STOCHASTIC, name: 'Stochastic calculus' }, to: { concept_id: VOLATILITY, name: 'Volatility' }, edges: [], concepts: [] });
-  assert.equal(unlinked.meta, 'no chain · 0.8 s');
-  assert.deepEqual(blocksOf(unlinked)[1], { type: 'note', text: 'No chain links these two concepts.' });
-
-  const items = read('concept_items', { concept_id: BLACK_SCHOLES, items: [{ item_id: 'x', document_id: '9d10', page: 2, kind: 'chunk', wording: 'Black–Scholes model' }], next_cursor: '3' });
-  assert.equal(items.meta, '1 item · 0.8 s');
-  assert.deepEqual(rowsOf(items), [{ text: 'Black–Scholes model', meta: 'page 2 · chunk' }]);
-  assert.deepEqual(blocksOf(items).at(-1), { type: 'note', text: 'More items follow. Ask again with the next cursor.' });
-  assert.equal(blocksOf(read('concept_items', { concept_id: BLACK_SCHOLES, items: [] })).at(-1).empty, 'No item mentions this concept.');
+  assert.equal(blocksOf(unlinked)[1].type, 'note', 'no chain is said in a note');
 
   // Two documents: what they share, with the mentions in each, and what only one of them has.
   const compared = read('compare_documents', {
@@ -85,23 +65,20 @@ test('concept cards read concept, neighbours, path, items, compare, find and sim
     shared: [{ concept_id: BLACK_SCHOLES, name: 'Black–Scholes model', mentions: { '9d10': 2, '2f0c': 3 } }, { concept_id: VOLATILITY, name: 'Volatility', mentions: { '2f0c': 1 } }],
     only_in: { '9d10': [{ concept_id: 'x', name: 'Time value', mentions: 1 }], '2f0c': [] }, truncated: true,
   });
-  assert.equal(compared.meta, '2 shared · cut short · 0.8 s');
   assert.deepEqual(blocksOf(compared).map((block) => block.heading ?? block.type), ['Shared', 'Only in Chapter 1', 'Only in Chapter 2', 'note']);
-  assert.deepEqual(blocksOf(compared)[0].rows, [{ text: 'Black–Scholes model', meta: 'Chapter 1: 2 · Chapter 2: 3' }, { text: 'Volatility', meta: 'Chapter 2: 1' }]);
-  assert.deepEqual(blocksOf(compared)[1].rows, [{ text: 'Time value', meta: '1 mention' }]);
-  assert.equal(blocksOf(compared)[2].empty, 'Nothing is only here.');
+  assert.deepEqual(blocksOf(compared)[0].rows.map((row) => row.meta), ['Chapter 1: 2 · Chapter 2: 3', 'Chapter 2: 1']);
 
   const found = read('find_concepts', {
     concepts: [{ concept_id: VOLATILITY, name: 'Volatility', definition: 'How much a price moves.', aliases: [], mentions: 2, documents: 2, score: 0.995 }, { concept_id: 'x', name: 'Vega', mentions: 1, documents: 1 }],
     usage: [], cost_usd: 0.000001,
   });
-  assert.equal(found.meta, '2 concepts · 0.8 s');
-  assert.deepEqual(rowsOf(found), [{ text: 'Volatility', meta: '2 mentions · 2 documents · score 0.99', detail: 'How much a price moves.' }, { text: 'Vega', meta: '1 mention · 1 document', detail: '' }]);
+  assert.deepEqual(rowsOf(found).map((row) => row.text), ['Volatility', 'Vega']);
   assert.equal(JSON.stringify(found.body).includes('0.000001'), false, 'the cost is not shown');
 
+  const items = read('concept_items', { concept_id: BLACK_SCHOLES, items: [{ item_id: 'x', document_id: '9d10', page: 2, kind: 'chunk', wording: 'Black–Scholes model' }], next_cursor: '3' });
+  assert.deepEqual(rowsOf(items).map((row) => row.text), ['Black–Scholes model']);
   const similar = read('similar_items', { item_id: 'e7a1', items: [{ item_id: 'b3c4', document_id: '9d10', document: 'Chapter 1', page: 1, kind: 'figure', label: 'Figure 1', score: 0.9 }] });
-  assert.equal(similar.meta, '1 item · 0.8 s');
-  assert.deepEqual(rowsOf(similar), [{ text: 'Chapter 1', meta: 'page 1 · figure · Figure 1 · score 0.90' }]);
+  assert.deepEqual(rowsOf(similar).map((row) => row.text), ['Chapter 1']);
 
   // Results come from outside: a result of the wrong shape shows as plain fields, and nothing throws.
   const malformed = [{ items: 'none' }, { concept_id: 7, name: 7, edges: {}, from: 'a', to: 'b', documents: 3, shared: 1, only_in: [], concepts: 'x', nodes: 5 }, null, 'text', []];

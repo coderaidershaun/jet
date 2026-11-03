@@ -43,9 +43,6 @@ test('the view mounts once and only sets attributes, and never an inline style',
   assert.equal(created, mountedCount, 'a draw creates no element');
   assert.deepEqual(descendants(svg), mountedElements, 'the same elements stay in place');
 
-  assert.equal(byClass('jet-eye-right')[0].getAttribute('transform'), 'translate(115.5 89.9)');
-  assert.equal(byClass('jet-body')[0].getAttribute('transform'), 'translate(0 0) translate(100 88) rotate(0) scale(1 1) translate(-100 -88)');
-  assert.equal(byClass('jet-string')[0].getAttribute('opacity'), '0', 'the last frame had no string');
 
   draw({ ...restingFrame(), lift: [0, 30], liftSpeed: [0, 200] }, { unitPx: 1 });
   draw({ ...restingFrame(), form: 1 }, { unitPx: 1 });

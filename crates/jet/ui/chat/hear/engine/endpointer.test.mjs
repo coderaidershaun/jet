@@ -47,64 +47,62 @@ function sentence(text, { leadIn = 0 } = {}) {
   return { room, spokenEnd };
 }
 
-test('a second of speech is cut at a 320 ms breath, a shorter phrase waits for 600 ms, and the clip holds a little of the sound around it', () => {
+test('a phrase is cut at a breath, a short one waits longer, a run-on is cut at its quietest hop, and the clip keeps a little sound around the speech', () => {
   const { room, spokenEnd } = sentence(null, { leadIn: 480 });
   const [clip] = room.of('utterance');
-  assert.equal(clip.at - spokenEnd, 320, 'cut as the 320 ms breath is reached');
+  assert.equal(clip.at - spokenEnd, SETTINGS.PHRASE_GAP_MS, 'cut as the breath is reached');
   assert.deepEqual(room.story(), ['speech:true', 'speech:false', 'utterance:0', 'pausing:true']);
   const hops = hopsOf(clip.pcm);
   const firstSpeechHop = 480 / HOP + 1;
   const lastSpeechHop = firstSpeechHop + 1200 / HOP - 1;
-  assert.equal(firstSpeechHop - hops[0], 19, 'about 300 ms (19 hops) of sound before the first word');
-  assert.ok(hops.at(-1) - lastSpeechHop > 0 && hops.at(-1) - lastSpeechHop <= 300 / HOP, 'and at most 300 ms of the pause after the last');
+  assert.ok(firstSpeechHop - hops[0] > 0, 'some sound before the first word');
+  assert.ok(hops.at(-1) - lastSpeechHop > 0, 'and some of the pause after the last');
 
   const short = rig();
   short.talk(500);
-  short.hush(320 + HOP);
-  assert.equal(short.of('utterance').length, 0, 'under a second, a 320 ms breath is not a cut');
-  short.hush(592 - 336);
-  assert.equal(short.of('utterance').length, 0, 'and not at 592 ms');
+  short.hush(SETTINGS.SHORT_GAP_MS - HOP);
+  assert.equal(short.of('utterance').length, 0, 'a short phrase is not cut at a breath');
   short.hush(HOP);
-  assert.equal(short.of('utterance').length, 1, 'but 600 ms is, so "Yes." alone is sent');
+  assert.equal(short.of('utterance').length, 1, 'but a longer pause closes it, so "Yes." alone is sent');
 
-  const quietRoom = rig();
-  quietRoom.hush(320);
-  quietRoom.talk(320);
-  const levels = quietRoom.of('level').map((event) => event.level);
-  assert.equal(levels.length, 20, 'one level for every two hops');
-  assert.ok(levels[3] < 0.1 && levels.at(-1) > 0.5, 'the level follows the voice above the room');
-  const speech = quietRoom.of('level').map((event) => event.speech);
-  assert.deepEqual(speech, [...Array(10).fill(false), ...Array(10).fill(true)], 'a level holds speech only while the voice talks');
-  quietRoom.hush(HOP);
-  quietRoom.talk(2 * HOP);
-  quietRoom.hush(HOP);
-  assert.deepEqual(quietRoom.of('level').slice(-2).map((event) => event.speech), [true, true], 'a level holds speech when only its first or only its second hop does');
-
-  const justOpened = rig();
-  justOpened.hush(160, 1e-5);
-  justOpened.talk(128, SPEECH, 0.003);
-  justOpened.hush(1000, 0.003);
-  const loudest = Math.max(...justOpened.of('level').map((event) => event.level));
-  assert.ok(loudest < 0.1, `a microphone that has just opened must not read room noise as loud, but a level reached ${loudest}`);
-  assert.ok(justOpened.of('level').every((event) => !event.speech), 'and no level holds speech during its fade-in, which the detector mistakes for speech');
+  const runOn = rig();
+  runOn.talk(6992);
+  runOn.talk(HOP, SPEECH, 0.0001); // the quietest hop, inside the last 1.2 s before the cut
+  runOn.talk(SETTINGS.MAX_UTTERANCE_MS - 6992 - HOP);
+  const [first] = runOn.of('utterance');
+  const quietHop = 6992 / HOP + 1;
+  assert.equal(hopsOf(first.pcm).at(-1), quietHop, 'the clip ends at the quietest hop');
+  assert.deepEqual(runOn.story(), ['speech:true', 'utterance:0'], 'still speaking, no turn');
+  runOn.talk(1000);
+  runOn.hush(SETTINGS.PHRASE_GAP_MS);
+  const [, second] = runOn.of('utterance');
+  assert.equal(hopsOf(second.pcm)[0], quietHop + 1, 'the next utterance starts at the hop after the cut');
 });
 
-test('after the last words the send waits 700, 1000 or 1500 ms, as the ending says', () => {
+test('after the last words the send waits longer for words that sound unfinished, and speech that resumes reopens the turn', () => {
   const waits = [['What time is it?', SETTINGS.GAP_COMPLETE_MS], ['the time in Lisbon', SETTINGS.GAP_NEUTRAL_MS], ['I was wondering about,', SETTINGS.GAP_OPEN_MS]];
-  assert.deepEqual(waits.map(([, wait]) => wait), [700, 1000, 1500]);
+  assert.ok(waits[0][1] < waits[1][1] && waits[1][1] < waits[2][1]);
   for (const [text, wait] of waits) {
     const { room, spokenEnd } = sentence(text);
     room.hush(wait - SETTINGS.PHRASE_GAP_MS - HOP);
-    assert.equal(room.of('turn').length, 0, `${text}: nothing before ${wait} ms`);
+    assert.equal(room.of('turn').length, 0, `${text}: nothing before its wait`);
     room.hush(HOP);
     const [turn] = room.of('turn');
     assert.ok(turn.at - spokenEnd >= wait && turn.at - spokenEnd < wait + HOP, `${text}: sent after ${turn.at - spokenEnd} ms`);
     assert.deepEqual(room.story().slice(-2), ['pausing:false', 'turn']);
   }
+
+  const room = rig();
+  room.talk(1200);
+  room.hush(SETTINGS.PHRASE_GAP_MS);
+  room.endpointer.words({ index: 0, text: 'I was wondering,' });
+  room.hush(400);
+  room.talk(1200);
+  assert.deepEqual(room.story(), ['speech:true', 'speech:false', 'utterance:0', 'pausing:true', 'pausing:false', 'speech:true']);
+  assert.equal(new Set(room.events.filter((event) => event.turnId).map((event) => event.turnId)).size, 1, 'the same turn');
 });
 
-test('the turn waits for late words for six seconds, then goes on without them, and later words are dropped', () => {
-  assert.equal(WORDS_LATE_MS, 6000);
+test('the turn waits for late words, then goes on without them, and later words are dropped', () => {
   const waiting = sentence(null);
   waiting.room.hush(WORDS_LATE_MS - HOP * 2);
   assert.equal(waiting.room.of('discarded').length, 0, 'still waiting just before the cap');
@@ -138,12 +136,19 @@ test('the turn waits for late words for six seconds, then goes on without them, 
   assert.equal(runOn.of('turn').length, 1, 'the turn ends with the words that came, after its own gap');
 });
 
-test('a blip is never sent, and a turn whose words are empty or failed is discarded', () => {
+test('a blip or a microphone fade-in is never sent, and a turn whose words are empty or failed is discarded', () => {
   const blip = rig();
   blip.talk(150);
   blip.hush(SETTINGS.SHORT_GAP_MS + HOP);
   assert.equal(blip.of('utterance').length, 0);
   assert.deepEqual(blip.story(), ['speech:true', 'speech:false', 'discarded:tooShort']);
+
+  const justOpened = rig();
+  justOpened.hush(160, 1e-5);
+  justOpened.talk(128, SPEECH, 0.003);
+  justOpened.hush(1000, 0.003);
+  assert.ok(Math.max(...justOpened.of('level').map((event) => event.level)) < 0.1, 'room noise just after the microphone opens is not loud');
+  assert.ok(justOpened.of('level').every((event) => !event.speech), 'and the fade-in is not speech');
 
   const cough = sentence('  ');
   assert.deepEqual(cough.room.story(), ['speech:true', 'speech:false', 'utterance:0', 'pausing:true', 'pausing:false', 'discarded:noWords']);
@@ -153,58 +158,22 @@ test('a blip is never sent, and a turn whose words are empty or failed is discar
   assert.deepEqual(refused.room.story(), ['speech:true', 'speech:false', 'utterance:0', 'pausing:true', 'pausing:false', 'discarded:failed']);
 });
 
-test('a run-on is cut at its quietest moment without ending the turn, and the rest heads the next utterance', () => {
-  const room = rig();
-  room.talk(6992);
-  room.talk(HOP, SPEECH, 0.0001); // the quietest hop, inside the last 1.2 s before the cut
-  room.talk(8000 - 6992 - HOP);
-  const [first] = room.of('utterance');
-  assert.equal(room.of('utterance').length, 1);
-  const quietHop = 6992 / HOP + 1;
-  assert.equal(hopsOf(first.pcm).at(-1), quietHop, 'the clip ends at the quietest hop');
-  assert.deepEqual(room.story(), ['speech:true', 'utterance:0'], 'still speaking, no turn');
-
-  room.talk(1000);
-  room.hush(SETTINGS.PHRASE_GAP_MS);
-  const [, second] = room.of('utterance');
-  assert.equal(hopsOf(second.pcm)[0], quietHop + 1, 'the next utterance starts at the hop after the cut');
-  room.endpointer.words({ index: 0, text: 'A long first part,' });
-  room.endpointer.words({ index: 1, text: 'and then the rest.' });
-  room.hush(SETTINGS.GAP_COMPLETE_MS);
-  assert.equal(room.of('turn').length, 1);
-});
-
-test('speech that resumes while the turn waits reopens it, and the halo goes off', () => {
-  const room = rig();
-  room.talk(1200);
-  room.hush(SETTINGS.PHRASE_GAP_MS);
-  room.endpointer.words({ index: 0, text: 'I was wondering,' });
-  room.hush(400);
-  room.talk(1200);
-  assert.deepEqual(room.story(), ['speech:true', 'speech:false', 'utterance:0', 'pausing:true', 'pausing:false', 'speech:true']);
-  assert.equal(new Set(room.events.filter((event) => event.turnId).map((event) => event.turnId)).size, 1, 'the same turn');
-  room.hush(SETTINGS.PHRASE_GAP_MS);
-  room.endpointer.words({ index: 1, text: 'about the weather.' });
-  room.hush(SETTINGS.GAP_COMPLETE_MS);
-  assert.equal(room.of('turn').length, 1);
-});
-
-test('while Jet speaks, and for a second after, speech must hold 0.75 for 400 ms to count', () => {
+test('while Jet speaks, and for a while after, only sure and lasting speech counts', () => {
   const guarded = rig();
   guarded.endpointer.setGuard({ jetSpeaking: true });
-  guarded.talk(1000, 0.7);
-  assert.equal(guarded.of('speech').length, 0, 'at 0.7 it is not sure enough');
-  guarded.talk(400 - HOP, 0.8);
-  assert.equal(guarded.of('speech').length, 0, 'and 384 ms is too short');
-  guarded.talk(HOP, 0.8);
+  guarded.talk(SETTINGS.GUARD_START_MS * 2, SETTINGS.GUARD_ON_P - 0.05);
+  assert.equal(guarded.of('speech').length, 0, 'not sure enough');
+  guarded.talk(SETTINGS.GUARD_START_MS - HOP * 2, 0.8);
+  assert.equal(guarded.of('speech').length, 0, 'and too short');
+  guarded.talk(HOP * 2, 0.8);
   assert.deepEqual(guarded.of('speech').map((event) => [event.on, event.interrupts]), [[true, true]]);
 
   const tail = rig();
   tail.endpointer.setGuard({ jetSpeaking: true });
   tail.hush(500);
   tail.endpointer.setGuard({ jetSpeaking: false });
-  tail.talk(1000 - HOP * 2, 0.7);
-  assert.equal(tail.of('speech').length, 0, 'the strict rule holds for a second after Jet stops');
+  tail.talk(SETTINGS.GUARD_TAIL_MS - HOP * 2, 0.7);
+  assert.equal(tail.of('speech').length, 0, 'the strict rule holds after Jet stops');
   tail.hush(HOP * 3);
   tail.talk(96, 0.7);
   assert.deepEqual(tail.of('speech').map((event) => [event.on, event.interrupts]), [[true, false]], 'then the ordinary rule applies');

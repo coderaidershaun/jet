@@ -238,7 +238,7 @@ function defaultCard(card, parts) {
  * @param {import('./model.js').Card} card
  * @param {Omit<Parts, 'readImage'> & { readImage: (appId: string, path: string) => Promise<string> }} parts
  */
-export function renderResultCard(card, parts) {
+function renderResultCard(card, parts) {
   if (card.state === 'done' && card.body?.kind === 'file') return fileCard(card);
   return defaultCard(card, { ...parts, readImage: (path) => parts.readImage(card.call.server, path) });
 }

@@ -10,11 +10,11 @@ import { bezier, resample } from '../geometry.js';
 import { clamp } from '../maths.js';
 
 export const SEGMENTS = 16;
-export const SEGMENT_LENGTH = 3.75;
+const SEGMENT_LENGTH = 3.75;
 export const REST_LENGTH = SEGMENTS * SEGMENT_LENGTH;
 // SMELL: the floor is typed in to fit a standing kite's string; a new hover height leaves it behind.
 export const FLOOR = 237.5;
-export const WRITTEN_SAMPLES = 130;
+const WRITTEN_SAMPLES = 130;
 
 const DRAG_PER_UNIT = 0.08;
 const MAX_DRAG_DEGREES = 60;
@@ -66,7 +66,7 @@ export function raiseBlend(i, t, { start, lag, duration, overshoot, order = 'bas
  * @param {number[][]} points
  * @returns {{ angles: number[], proportions: number[], length: number }}
  */
-export function poseFromPoints(points) {
+function poseFromPoints(points) {
   const chords = points.slice(1).map((p, i) => [p[0] - points[i][0], p[1] - points[i][1]]);
   const lengths = chords.map(([dx, dy]) => Math.hypot(dx, dy));
   const length = lengths.reduce((sum, chordLength) => sum + chordLength, 0);

@@ -5,7 +5,7 @@ Install the small independent fixture's WebSocket implementation once:
 ```sh
 npm ci --prefix crates/jet/tests/fixtures --ignore-scripts
 cargo build --workspace
-REX_PROD_API=false cargo test -p jet --test integration proxy::
+cargo test -p jet --test integration proxy::
 ```
 
 The fixture uses Node and `ws`; it makes no provider or business calls. The Rust
