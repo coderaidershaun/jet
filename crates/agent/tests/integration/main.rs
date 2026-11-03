@@ -2,3 +2,4 @@
 mod apps;
 mod descriptor;
 mod mcp;
+mod mcp_fixture;
