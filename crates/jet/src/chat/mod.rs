@@ -14,13 +14,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tokio::sync::broadcast;
 
 use crate::files::{About, FileError, Files};
-use crate::settings;
+use crate::{lock, settings};
 pub use error::BridgeError;
 use events::{ActiveTurn, Runtime};
 pub(crate) use events::{Envelope, RunningCall, Snapshot, TurnContext};
@@ -431,9 +431,6 @@ impl ChatState {
     }
 }
 
-pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;

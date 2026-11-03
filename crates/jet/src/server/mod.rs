@@ -1,16 +1,17 @@
-//! Share one host state between browser commands, event streams and app integrations.
+//! Open the host, serve its routes and shut it down. It joins the jobs of the crate: chat, apps,
+//! files, voice and the tool facade.
 
 mod config;
-mod proxy;
 mod routes;
-mod tools;
-mod voice;
 
+use crate::apps::{Apps, Proxy};
 use crate::chat::TurnTools;
 use crate::facade::Facade;
 use crate::files::Files;
+use crate::lock;
+use crate::voice::Voice;
 use agent::{apps::Registry, mcp::HttpMcpClient};
-use axum::Router;
+use axum::{Router, extract::FromRef};
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -35,21 +36,36 @@ pub enum ServerError {
 
 #[derive(Clone)]
 pub struct Server {
-    pub(crate) chat: Arc<ChatState>,
-    pub(crate) proxy: proxy::Proxy,
-    pub mcp: Arc<HttpMcpClient>,
-    pub(crate) facade: Arc<Facade>,
-    pub(crate) files: Files,
-    pub registry: Arc<Mutex<Registry>>,
-    pub config: ServerConfig,
-    hear_budget: Arc<voice::HearBudget>,
-    speech_health: Arc<voice::VoiceHealth>,
-    hear_health: Arc<voice::VoiceHealth>,
+    chat: Arc<ChatState>,
+    apps: Apps,
+    facade: Arc<Facade>,
+    files: Files,
+    voice: Voice,
+    config: ServerConfig,
+}
+
+impl FromRef<Server> for Apps {
+    fn from_ref(server: &Server) -> Self {
+        server.apps.clone()
+    }
+}
+
+impl FromRef<Server> for Files {
+    fn from_ref(server: &Server) -> Self {
+        server.files.clone()
+    }
+}
+
+impl FromRef<Server> for Voice {
+    fn from_ref(server: &Server) -> Self {
+        server.voice.clone()
+    }
 }
 
 impl Server {
     pub fn open(config: ServerConfig) -> Result<Self, ServerError> {
-        let proxy = proxy::Proxy::new(&config)?;
+        let proxy = Proxy::new(config.public_origin.as_deref(), config.listen)
+            .map_err(|error| ServerError::Config(error.to_string()))?;
         let registry = Arc::new(Mutex::new(Registry::open(&config.data_dir)?));
         let mcp = Arc::new(HttpMcpClient::new(registry.clone()));
         let files = Files::new(&config.data_dir);
@@ -61,8 +77,8 @@ impl Server {
             config.public_origin.clone(),
         );
         let chat = ChatState::open(config.data_dir.clone(), facade.clone(), files.clone())?;
-        *crate::chat::lock(&facade.chat) = Arc::downgrade(&chat);
-        let events = crate::chat::lock(&registry).subscribe();
+        *lock(&facade.chat) = Arc::downgrade(&chat);
+        let events = lock(&registry).subscribe();
         let weak = Arc::downgrade(&chat);
         std::thread::spawn(move || {
             loop {
@@ -79,26 +95,22 @@ impl Server {
         });
         Ok(Self {
             chat,
-            proxy,
-            registry,
-            mcp,
+            apps: Apps::new(registry, mcp, proxy),
             facade,
             files,
+            voice: Voice::new(config.disable_voice),
             config,
-            hear_budget: Arc::new(voice::HearBudget::new()),
-            speech_health: Arc::default(),
-            hear_health: Arc::default(),
         })
     }
 
-    pub fn router(&self) -> Router {
+    fn router(&self) -> Router {
         routes::router(self.clone())
     }
 
     /// Stops provider work and closes event streams within a fixed cleanup deadline.
-    pub async fn shutdown(&self) {
+    async fn shutdown(&self) {
         self.facade.shutdown();
-        self.mcp.shutdown().await;
+        self.apps.shutdown().await;
         let chat = self.chat.clone();
         if let Err(error) = tokio::task::spawn_blocking(move || chat.shutdown()).await {
             eprintln!("jet: shutdown worker failed: {error}");

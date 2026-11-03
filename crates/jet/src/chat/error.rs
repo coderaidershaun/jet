@@ -3,6 +3,7 @@
 use agent::{ConversationError, Failure, MemoryError, TransportError, TurnError};
 use serde::Serialize;
 
+use crate::WorkerFailed;
 use crate::files::FileError;
 use crate::settings::SettingsError;
 
@@ -87,6 +88,12 @@ impl From<FileError> for BridgeError {
     }
 }
 
+impl axum::response::IntoResponse for FileError {
+    fn into_response(self) -> axum::response::Response {
+        BridgeError::from(self).into_response()
+    }
+}
+
 impl From<TransportError> for BridgeError {
     fn from(error: TransportError) -> BridgeError {
         let failure = Failure::from(&TurnError::from(error));
@@ -94,6 +101,12 @@ impl From<TransportError> for BridgeError {
             Failure::ClaudeMissing { message } => BridgeError::ClaudeMissing(message),
             other => BridgeError::Io(other.message().to_owned()),
         }
+    }
+}
+
+impl From<WorkerFailed> for BridgeError {
+    fn from(error: WorkerFailed) -> BridgeError {
+        BridgeError::Io(format!("request worker failed: {error}"))
     }
 }
 

@@ -5,20 +5,19 @@ mod budget;
 mod health;
 mod refusal;
 
-pub(super) use budget::HearBudget;
-use budget::Moment;
-pub(super) use health::VoiceHealth;
+use budget::{HearBudget, Moment};
+use health::VoiceHealth;
 use refusal::Refusal;
 
-use super::Server;
+use crate::on_worker;
 use agent::voice::{self, VoiceError};
 use agent::{CUES, Cue, Mood};
 use axum::{
     Json, Router,
     body::Bytes,
-    extract::{DefaultBodyLimit, Query, State, rejection::BytesRejection},
+    extract::{DefaultBodyLimit, FromRef, Query, State, rejection::BytesRejection},
     http::{
-        HeaderValue, StatusCode,
+        HeaderValue,
         header::{CACHE_CONTROL, CONTENT_TYPE},
     },
     response::{IntoResponse, Response},
@@ -26,14 +25,39 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 const DISABLED: &str = "Voice is turned off on this server";
 const AUDIO_TYPE: &str = "audio/L16;rate=24000;channels=1";
 /// The largest body the hear route reads. A 20 second clip is 640,000 bytes.
 const HEAR_BODY_LIMIT: usize = 1 << 20;
 
-pub(super) fn router() -> Router<Server> {
+/// What the voice routes remember between requests: whether voice is turned off, what the hear
+/// route may still spend, and what Google last refused on each route.
+#[derive(Clone)]
+pub(crate) struct Voice {
+    disabled: bool,
+    hear_budget: Arc<HearBudget>,
+    speech_health: Arc<VoiceHealth>,
+    hear_health: Arc<VoiceHealth>,
+}
+
+impl Voice {
+    pub(crate) fn new(disabled: bool) -> Self {
+        Self {
+            disabled,
+            hear_budget: Arc::new(HearBudget::new()),
+            speech_health: Arc::default(),
+            hear_health: Arc::default(),
+        }
+    }
+}
+
+pub(crate) fn router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    Voice: FromRef<S>,
+{
     Router::new()
         .route("/api/voice", get(availability))
         .route("/api/voice/speech", post(speech))
@@ -80,15 +104,15 @@ struct VoiceStatus {
     cues: &'static [Cue],
 }
 
-async fn availability(State(host): State<Server>) -> Result<Json<VoiceStatus>, Refusal> {
-    let (speaking, hear) = if host.config.disable_voice {
+async fn availability(State(state): State<Voice>) -> Result<Json<VoiceStatus>, Refusal> {
+    let (speaking, hear) = if state.disabled {
         (Availability::off(), Availability::off())
     } else {
         let (speaking, hear) = on_worker(|| (voice::status(), voice::hearing_status())).await?;
         let now = Instant::now();
         (
-            Availability::of(speaking, host.speech_health.warning(now)),
-            Availability::of(hear, host.hear_health.warning(now)),
+            Availability::of(speaking, state.speech_health.warning(now)),
+            Availability::of(hear, state.hear_health.warning(now)),
         )
     };
     Ok(Json(VoiceStatus {
@@ -110,10 +134,10 @@ struct SpeechRequest {
 // SMELL: anyone who can reach this server can ask for speech, and each request spends Google
 // quota. The only limits are the cap on the length of a piece and the quota itself.
 async fn speech(
-    State(host): State<Server>,
+    State(state): State<Voice>,
     Json(request): Json<SpeechRequest>,
 ) -> Result<Response, Refusal> {
-    if host.config.disable_voice {
+    if state.disabled {
         return Err(Refusal::not_configured(DISABLED));
     }
     let style = request
@@ -122,7 +146,7 @@ async fn speech(
         .and_then(Mood::from_word)
         .and_then(Mood::style);
     let spoken = on_worker(move || voice::speak(&request.text, style)).await?;
-    host.speech_health.record(&spoken, Instant::now());
+    state.speech_health.record(&spoken, Instant::now());
     let pcm = spoken?;
     Ok((
         [
@@ -140,11 +164,11 @@ async fn speech(
 // Google quota. The clip length, the calls at once, the audio a minute and the audio a day are
 // capped, which bounds the damage but does not stop the exposure.
 async fn hear(
-    State(host): State<Server>,
+    State(state): State<Voice>,
     Query(query): Query<Vec<(String, String)>>,
     body: Result<Bytes, BytesRejection>,
 ) -> Result<Json<serde_json::Value>, Refusal> {
-    if host.config.disable_voice {
+    if state.disabled {
         return Err(Refusal::not_configured(DISABLED));
     }
     let body = body.map_err(Refusal::unread_clip)?;
@@ -157,7 +181,8 @@ async fn hear(
         on_worker(|| (voice::hearing_status(), voice::hearing_daily_minutes())).await?;
     hearing?;
     let permit =
-        host.hear_budget
+        state
+            .hear_budget
             .admit(voice::clip_seconds(&body), Moment::now(), daily_minutes)?;
     // The permit goes with the call, so a caller who hangs up does not free it while Google works.
     let heard = on_worker(move || {
@@ -165,20 +190,7 @@ async fn hear(
         voice::hear(&body, &vocabulary)
     })
     .await?;
-    host.hear_health.record(&heard, Instant::now());
+    state.hear_health.record(&heard, Instant::now());
     let text = heard?;
     Ok(Json(json!({"text": text})))
-}
-
-/// Runs a call that waits on the network or reads files, away from the server's own threads.
-async fn on_worker<T: Send + 'static>(
-    call: impl FnOnce() -> T + Send + 'static,
-) -> Result<T, Refusal> {
-    tokio::task::spawn_blocking(call)
-        .await
-        .map_err(|error| Refusal {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            kind: "http",
-            message: format!("The voice worker failed: {error}"),
-        })
 }

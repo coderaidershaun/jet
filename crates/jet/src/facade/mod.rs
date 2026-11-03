@@ -4,8 +4,9 @@ mod handoff;
 mod marks;
 mod tools;
 
-use crate::chat::{ChatState, TurnContext, TurnTools, lock};
+use crate::chat::{ChatState, TurnContext, TurnTools};
 use crate::files::Files;
+use crate::lock;
 use agent::{McpConnection, TurnIdentity, apps::Registry, mcp::HttpMcpClient};
 use axum::{
     Router,
@@ -29,10 +30,10 @@ struct Binding {
     calls: HashSet<String>,
 }
 pub(crate) struct Facade {
-    pub registry: Arc<Mutex<Registry>>,
-    pub mcp: Arc<HttpMcpClient>,
+    registry: Arc<Mutex<Registry>>,
+    mcp: Arc<HttpMcpClient>,
     files: Files,
-    pub chat: Mutex<Weak<ChatState>>,
+    pub(crate) chat: Mutex<Weak<ChatState>>,
     url: Mutex<String>,
     public_origin: Option<String>,
     bindings: Mutex<HashMap<String, Binding>>,

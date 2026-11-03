@@ -1,6 +1,7 @@
 //! Limits on the hear route, because every clip it sends to Google spends quota.
 
 use super::refusal::Refusal;
+use crate::lock;
 use agent::voice::{self, VoiceError};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -35,7 +36,7 @@ impl Moment {
 
 /// What the hear route may still spend: how many calls run at once, how much audio it hears in a
 /// minute and how much in a day. A caller over any limit is refused, never queued.
-pub(in crate::server) struct HearBudget {
+pub(super) struct HearBudget {
     calls: Arc<Semaphore>,
     spent: Mutex<Spent>,
 }
@@ -50,7 +51,7 @@ struct Spent {
 }
 
 impl HearBudget {
-    pub(in crate::server) fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             calls: Arc::new(Semaphore::new(MOST_CALLS_AT_ONCE)),
             spent: Mutex::default(),
@@ -76,7 +77,7 @@ impl HearBudget {
         let permit = Arc::clone(&self.calls).try_acquire_owned().map_err(|_| {
             Refusal::rate_limited("Jet is hearing as much as it can; try again soon")
         })?;
-        let mut spent = self.spent.lock().unwrap_or_else(|error| error.into_inner());
+        let mut spent = lock(&self.spent);
         while spent
             .minute
             .front()
@@ -107,14 +108,15 @@ impl HearBudget {
 
 #[cfg(test)]
 mod tests {
+    use super::super::refusal::RefusalKind;
     use super::*;
 
     fn at(instant: Instant, utc_day: u64) -> Moment {
         Moment { instant, utc_day }
     }
 
-    fn kind(result: Result<OwnedSemaphorePermit, Refusal>) -> &'static str {
-        result.map_or_else(|refusal| refusal.kind, |_| "heard")
+    fn kind(result: Result<OwnedSemaphorePermit, Refusal>) -> Option<RefusalKind> {
+        result.err().map(|refusal| refusal.kind)
     }
 
     #[test]
@@ -123,38 +125,47 @@ mod tests {
         let start = Instant::now();
 
         // A clip over 20 seconds is refused; one of exactly 20 is heard.
-        assert_eq!(kind(budget.admit(21, at(start, 1), 60)), "tooLong");
-        assert_eq!(kind(budget.admit(20, at(start, 1), 60)), "heard");
+        assert_eq!(
+            kind(budget.admit(21, at(start, 1), 60)),
+            Some(RefusalKind::TooLong)
+        );
+        assert_eq!(kind(budget.admit(20, at(start, 1), 60)), None);
 
         // Four calls at once are allowed, and a fifth is refused, not queued.
         let held: Vec<_> = (0..4)
             .map(|_| budget.admit(1, at(start, 1), 60).unwrap())
             .collect();
-        assert_eq!(kind(budget.admit(1, at(start, 1), 60)), "rateLimited");
+        assert_eq!(
+            kind(budget.admit(1, at(start, 1), 60)),
+            Some(RefusalKind::RateLimited)
+        );
         drop(held);
 
         // 24 seconds are spent so far, so 66 more fit in the minute and no more.
         for _ in 0..3 {
-            assert_eq!(kind(budget.admit(20, at(start, 1), 600)), "heard");
+            assert_eq!(kind(budget.admit(20, at(start, 1), 600)), None);
         }
-        assert_eq!(kind(budget.admit(6, at(start, 1), 600)), "heard");
-        assert_eq!(kind(budget.admit(1, at(start, 1), 600)), "rateLimited");
+        assert_eq!(kind(budget.admit(6, at(start, 1), 600)), None);
+        assert_eq!(
+            kind(budget.admit(1, at(start, 1), 600)),
+            Some(RefusalKind::RateLimited)
+        );
         assert_eq!(
             kind(budget.admit(1, at(start + MINUTE - Duration::from_secs(1), 1), 600)),
-            "rateLimited"
+            Some(RefusalKind::RateLimited)
         );
-        assert_eq!(kind(budget.admit(20, at(start + MINUTE, 1), 600)), "heard");
+        assert_eq!(kind(budget.admit(20, at(start + MINUTE, 1), 600)), None);
 
         // The day allows 60 minutes: 3,600 seconds in all, then it is refused with its own words.
         let budget = HearBudget::new();
         let mut now = start;
         for _ in 0..180 {
-            assert_eq!(kind(budget.admit(20, at(now, 7), 60)), "heard");
+            assert_eq!(kind(budget.admit(20, at(now, 7), 60)), None);
             now += MINUTE;
         }
         let refusal = budget.admit(1, at(now, 7), 60).unwrap_err();
-        assert_eq!(refusal.kind, "rateLimited");
+        assert_eq!(refusal.kind, RefusalKind::RateLimited);
         assert_eq!(refusal.message, "Today's listening allowance is used up");
-        assert_eq!(kind(budget.admit(20, at(now, 8), 60)), "heard");
+        assert_eq!(kind(budget.admit(20, at(now, 8), 60)), None);
     }
 }

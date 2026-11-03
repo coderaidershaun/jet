@@ -1,6 +1,6 @@
 //! Expose catalogue inspection, explicitly marked free discovery and the read-only status of
 //! marked jobs to the browser.
-use super::Server;
+use super::Apps;
 use crate::chat::MAX_ID_BYTES;
 use agent::{
     apps::AppId,
@@ -8,7 +8,7 @@ use agent::{
 };
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{FromRef, Path, State},
     http::StatusCode,
     routing::{get, post},
 };
@@ -19,7 +19,11 @@ type Error = (StatusCode, Json<Value>);
 fn error(error: impl serde::Serialize) -> Error {
     (StatusCode::BAD_GATEWAY, Json(json!({"error":error})))
 }
-pub(super) fn router() -> Router<Server> {
+pub(super) fn router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    Apps: FromRef<S>,
+{
     Router::new()
         .route("/api/apps/{id}/tools", get(catalogue).post(refresh))
         .route("/api/apps/{id}/discovery", post(discover))
@@ -27,16 +31,16 @@ pub(super) fn router() -> Router<Server> {
         .route("/api/tools/cancel", post(cancel))
 }
 async fn catalogue(
-    State(host): State<Server>,
+    State(apps): State<Apps>,
     Path(id): Path<AppId>,
 ) -> Result<Json<ToolCatalogue>, Error> {
-    host.mcp.catalogue(&id).await.map(Json).map_err(error)
+    apps.mcp.catalogue(&id).await.map(Json).map_err(error)
 }
 async fn refresh(
-    State(host): State<Server>,
+    State(apps): State<Apps>,
     Path(id): Path<AppId>,
 ) -> Result<Json<ToolCatalogue>, Error> {
-    host.mcp.refresh(&id).await.map(Json).map_err(error)
+    apps.mcp.refresh(&id).await.map(Json).map_err(error)
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -64,26 +68,26 @@ impl BrowserToolRequest {
     }
 }
 async fn discover(
-    State(host): State<Server>,
+    State(apps): State<Apps>,
     Path(id): Path<AppId>,
     Json(request): Json<BrowserToolRequest>,
 ) -> Result<Json<Value>, Error> {
-    let result = host
+    let result = apps
         .mcp
         .discover(request.into_request(id.clone())?)
         .await
         .map_err(error)?;
-    let catalogue = host.mcp.refresh(&id).await.map_err(error)?;
+    let catalogue = apps.mcp.refresh(&id).await.map_err(error)?;
     Ok(Json(json!({"result":result,"catalogue":catalogue})))
 }
 /// Reads the status of a job. Only a tool that carries the job marker and promises to only read
 /// is called, and what it returns is data for the page to check.
 async fn status(
-    State(host): State<Server>,
+    State(apps): State<Apps>,
     Path(id): Path<AppId>,
     Json(request): Json<BrowserToolRequest>,
 ) -> Result<Json<Value>, Error> {
-    let result = host
+    let result = apps
         .mcp
         .status(request.into_request(id)?)
         .await
@@ -95,8 +99,8 @@ async fn status(
 struct CancelRequest {
     request_id: String,
 }
-async fn cancel(State(host): State<Server>, Json(request): Json<CancelRequest>) -> Json<Value> {
-    host.mcp
+async fn cancel(State(apps): State<Apps>, Json(request): Json<CancelRequest>) -> Json<Value> {
+    apps.mcp
         .cancel_request(&format!("browser:{}", request.request_id));
     Json(json!({}))
 }

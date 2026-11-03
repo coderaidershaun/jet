@@ -1,7 +1,8 @@
 //! Route provider requests through the host registry and shared HTTP client.
 use super::{Binding, Facade, HEADER, handoff, marks, tools};
-use crate::chat::{RunningCall, lock};
+use crate::chat::RunningCall;
 use crate::files::{ExportRequest, Range, Reading};
+use crate::{lock, on_worker};
 use agent::{
     apps::{AppId, RegistryCommand},
     mcp::{ToolRequest, ToolTarget},
@@ -124,7 +125,7 @@ impl Handler {
         let mut addressed = arguments.clone();
         if !ids.is_empty() {
             let files = self.0.files.clone();
-            let visible = tokio::task::spawn_blocking(move || {
+            let visible = on_worker(move || {
                 ids.into_iter()
                     .map(|id| match files.visible_id(&id) {
                         Some(file) => Ok((id, file)),
@@ -213,116 +214,123 @@ impl Handler {
     ) -> Result<Value, Value> {
         match name {
             "apps_list" => Ok(json!(lock(&self.0.registry).list())),
-            "apps_update" => {
-                let command: RegistryCommand =
-                    serde_json::from_value(arguments["command"].clone()).map_err(message)?;
-                let registry = self.0.registry.clone();
-                tokio::task::spawn_blocking(move || lock(&registry).execute(command))
-                    .await
-                    .map_err(message)?
-                    .map(|result| json!(result))
-                    .map_err(message)
-            }
-            "apps_open" => {
-                let id: AppId =
-                    serde_json::from_value(arguments["appId"].clone()).map_err(message)?;
-                if lock(&self.0.registry).get(&id).is_none() {
-                    return Err(message("app is no longer registered"));
-                }
-                let chat = lock(&self.0.chat)
-                    .upgrade()
-                    .ok_or_else(|| message("host closed"))?;
-                chat.open_app(&binding.turn, &id).map_err(message)?;
-                Ok(json!({"appId":id,"opened":true}))
-            }
-            "tools_search" => {
-                let ids: Vec<_> = lock(&self.0.registry)
-                    .list()
-                    .iter()
-                    .filter(|app| app.enabled && app.mcp_url.is_some())
-                    .map(|app| app.id.clone())
-                    .collect();
-                let query = marks::Query::new(arguments["query"].as_str().unwrap_or_default());
-                let mut found = Vec::new();
-                let mut errors = Vec::new();
-                let mut truncated = ids.len() > SEARCHED_APP_LIMIT;
-                let mut pending = tokio::task::JoinSet::new();
-                for id in ids.into_iter().take(SEARCHED_APP_LIMIT) {
-                    let client = self.0.mcp.clone();
-                    pending.spawn(async move {
-                        let result = client.catalogue(&id).await;
-                        (id, result)
-                    });
-                }
-                while let Some(result) = pending.join_next().await {
-                    let (id, result) = result.map_err(message)?;
-                    match result {
-                        Ok(catalogue) => {
-                            if catalogue.is_stale {
-                                errors.push(
-                                    json!({"appId":id,"error":catalogue.last_error,"isStale":true}),
-                                );
-                            }
-                            for tool in catalogue.tools {
-                                if found.len() >= FOUND_TOOL_LIMIT {
-                                    truncated = true;
-                                    break;
-                                }
-                                if query.matches(&tool) {
-                                    let mut row = json!({"appId":id,"tool":tool.name,"description":tool.description});
-                                    if let Some(group) = marks::group(&tool) {
-                                        row["group"] = json!(group);
-                                    }
-                                    found.push(row);
-                                }
-                            }
-                        }
-                        Err(e) => errors.push(json!({"appId":id,"error":e})),
-                    }
-                }
-                found.sort_by_cached_key(|tool| format!("{}:{}", tool["appId"], tool["tool"]));
-                Ok(json!({"tools":found,"errors":errors,"truncated":truncated}))
-            }
-            "tools_describe" => {
-                let target: ToolTarget = serde_json::from_value(arguments).map_err(message)?;
-                let catalogue = self
-                    .0
-                    .mcp
-                    .catalogue(&target.app_id)
-                    .await
-                    .map_err(|e| json!(e))?;
-                let tool = catalogue
-                    .tools
-                    .into_iter()
-                    .find(|tool| tool.name == target.tool)
-                    .ok_or_else(|| message("tool is not listed"))?;
-                let mut described = json!({"appId":target.app_id,"tool":tool,"server":catalogue.server,"isStale":catalogue.is_stale,"lastError":catalogue.last_error});
-                if let Some(group) = marks::group(&tool) {
-                    described["group"] = json!(group);
-                }
-                if let Some(cost) = marks::cost(&tool) {
-                    described["cost"] = json!(cost);
-                }
-                Ok(described)
-            }
+            "apps_update" => self.apps_update(&arguments).await,
+            "apps_open" => self.apps_open(&arguments, &binding),
+            "tools_search" => self.tools_search(&arguments).await,
+            "tools_describe" => self.tools_describe(arguments).await,
             "tools_call" => self.tools_call(arguments, token, binding, context).await,
-            "files_export" => {
-                let request: ExportRequest = serde_json::from_value(arguments).map_err(message)?;
-                let files = self.0.files.clone();
-                let saved = tokio::task::spawn_blocking(move || files.export(request))
-                    .await
-                    .map_err(message)?
-                    .map_err(message)?;
-                Ok(json!(saved))
-            }
+            "files_export" => self.files_export(arguments).await,
             "files_list" => {
                 let files = self.0.files.clone();
-                let listed = tokio::task::spawn_blocking(move || files.list())
-                    .await
-                    .map_err(message)?;
+                let listed = on_worker(move || files.list()).await.map_err(message)?;
                 Ok(json!({"files": listed}))
             }
             _ => Err(message("unknown facade tool")),
         }
+    }
+
+    async fn apps_update(&self, arguments: &Value) -> Result<Value, Value> {
+        let command: RegistryCommand =
+            serde_json::from_value(arguments["command"].clone()).map_err(message)?;
+        let registry = self.0.registry.clone();
+        on_worker(move || lock(&registry).execute(command))
+            .await
+            .map_err(message)?
+            .map(|result| json!(result))
+            .map_err(message)
+    }
+
+    fn apps_open(&self, arguments: &Value, binding: &Binding) -> Result<Value, Value> {
+        let id: AppId = serde_json::from_value(arguments["appId"].clone()).map_err(message)?;
+        if lock(&self.0.registry).get(&id).is_none() {
+            return Err(message("app is no longer registered"));
+        }
+        let chat = lock(&self.0.chat)
+            .upgrade()
+            .ok_or_else(|| message("host closed"))?;
+        chat.open_app(&binding.turn, &id).map_err(message)?;
+        Ok(json!({"appId":id,"opened":true}))
+    }
+
+    async fn tools_search(&self, arguments: &Value) -> Result<Value, Value> {
+        let ids: Vec<_> = lock(&self.0.registry)
+            .list()
+            .iter()
+            .filter(|app| app.enabled && app.mcp_url.is_some())
+            .map(|app| app.id.clone())
+            .collect();
+        let query = marks::Query::new(arguments["query"].as_str().unwrap_or_default());
+        let mut found = Vec::new();
+        let mut errors = Vec::new();
+        let mut truncated = ids.len() > SEARCHED_APP_LIMIT;
+        let mut pending = tokio::task::JoinSet::new();
+        for id in ids.into_iter().take(SEARCHED_APP_LIMIT) {
+            let client = self.0.mcp.clone();
+            pending.spawn(async move {
+                let result = client.catalogue(&id).await;
+                (id, result)
+            });
+        }
+        while let Some(result) = pending.join_next().await {
+            let (id, result) = result.map_err(message)?;
+            match result {
+                Ok(catalogue) => {
+                    if catalogue.is_stale {
+                        errors
+                            .push(json!({"appId":id,"error":catalogue.last_error,"isStale":true}));
+                    }
+                    for tool in catalogue.tools {
+                        if found.len() >= FOUND_TOOL_LIMIT {
+                            truncated = true;
+                            break;
+                        }
+                        if query.matches(&tool) {
+                            let mut row =
+                                json!({"appId":id,"tool":tool.name,"description":tool.description});
+                            if let Some(group) = marks::group(&tool) {
+                                row["group"] = json!(group);
+                            }
+                            found.push(row);
+                        }
+                    }
+                }
+                Err(e) => errors.push(json!({"appId":id,"error":e})),
+            }
+        }
+        found.sort_by_cached_key(|tool| format!("{}:{}", tool["appId"], tool["tool"]));
+        Ok(json!({"tools":found,"errors":errors,"truncated":truncated}))
+    }
+
+    async fn tools_describe(&self, arguments: Value) -> Result<Value, Value> {
+        let target: ToolTarget = serde_json::from_value(arguments).map_err(message)?;
+        let catalogue = self
+            .0
+            .mcp
+            .catalogue(&target.app_id)
+            .await
+            .map_err(|e| json!(e))?;
+        let tool = catalogue
+            .tools
+            .into_iter()
+            .find(|tool| tool.name == target.tool)
+            .ok_or_else(|| message("tool is not listed"))?;
+        let mut described = json!({"appId":target.app_id,"tool":tool,"server":catalogue.server,"isStale":catalogue.is_stale,"lastError":catalogue.last_error});
+        if let Some(group) = marks::group(&tool) {
+            described["group"] = json!(group);
+        }
+        if let Some(cost) = marks::cost(&tool) {
+            described["cost"] = json!(cost);
+        }
+        Ok(described)
+    }
+
+    async fn files_export(&self, arguments: Value) -> Result<Value, Value> {
+        let request: ExportRequest = serde_json::from_value(arguments).map_err(message)?;
+        let files = self.0.files.clone();
+        let saved = on_worker(move || files.export(request))
+            .await
+            .map_err(message)?
+            .map_err(message)?;
+        Ok(json!(saved))
     }
 }
