@@ -26,13 +26,17 @@ impl Conversation {
         let entries = transcript.entries()?;
         for user in entries.iter().filter(|entry| entry.role == Role::User) {
             let Some(identity) = &user.turn else { continue };
-            if entries.iter().any(|entry| {
-                entry.role == Role::Jet
-                    && entry
-                        .turn
-                        .as_ref()
-                        .is_some_and(|turn| turn.turn_id == identity.turn_id)
-            }) {
+            // A turn in which Jet only reacted leaves its reaction and no Jet entry.
+            let reacted = user.reaction_by(Role::Jet).is_some();
+            if reacted
+                || entries.iter().any(|entry| {
+                    entry.role == Role::Jet
+                        && entry
+                            .turn
+                            .as_ref()
+                            .is_some_and(|turn| turn.turn_id == identity.turn_id)
+                })
+            {
                 continue;
             }
             transcript.append(

@@ -4,6 +4,7 @@ mod chat;
 mod facade;
 mod mcp_fixture;
 mod proxy;
+mod reactions;
 mod shutdown;
 mod support;
 mod tool_calls;

@@ -2,8 +2,9 @@
 // notice pills, the lane beside each Jet message, the cards of tool calls above
 // a reply and the citation chips in its text, the waiting dots, the faded bubble
 // of a spoken message still forming, the error and stopped bubbles, code blocks
-// with Copy, and links. A row's node is kept for as long as the row lives, so the
-// live Jet standing in a lane is never thrown away by a redraw.
+// with Copy, links, and the emoji on a message with the chooser that puts them
+// there. A row's node is kept for as long as the row lives, so the live Jet
+// standing in a lane is never thrown away by a redraw.
 
 import { h } from '../../dom.js';
 import { clockTime } from '../clock.js';
@@ -11,10 +12,14 @@ import { typeset } from './math.js';
 import { callState } from './cards/model.js';
 import { createCardList, linkCitations, openSource } from './cards/view.js';
 import { fillAttachments } from './attachments.js';
+import { createReactChooser, reactButton } from './react.js';
 
 const LOGIN_HINT = /log ?in/i;
 const doneCalls = (calls) => calls.filter((call) => callState(call) === 'done');
 const dots = () => h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
+const LONG_PRESS_MS = 450;
+/** The user reacts to a saved Jet message, but not to an error. */
+const canReact = (row) => row.type === 'jet' && Number.isInteger(row.entry.id) && (row.entry.status === 'complete' || row.entry.status === 'stopped');
 
 /**
  * @param {{
@@ -23,14 +28,16 @@ const dots = () => h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h
  *   handlers: {
  *     retry: () => void, openSettings: (section: string) => void, openLink: (url: string) => void,
  *     render: (text: string) => Promise<string>, readImage: (appId: string, path: string) => Promise<string>,
+ *     react: (entryId: number, emoji: string | null) => void,
  *     watchJob: (call: import('./cards/model.js').ShownCall, onJob: (job: object) => void) => () => void,
  *   },
  * }} options
  */
 export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follow, handlers }) {
-  /** @type {Map<string, { el: HTMLElement, lane: HTMLElement | null, cards: ReturnType<typeof createCardList> | null, files: HTMLElement | null, stamp: HTMLElement | null, signature: string }>} */
+  /** @type {Map<string, { el: HTMLElement, lane: HTMLElement | null, cards: ReturnType<typeof createCardList> | null, files: HTMLElement | null, stamp: HTMLElement | null, reacts?: HTMLElement, signature: string }>} */
   const nodes = new Map();
   let liveKey = null;
+  const chooser = createReactChooser({ onPick: handlers.react });
 
   function sealCode(body) {
     for (const pre of body.querySelectorAll('pre')) {
@@ -101,10 +108,18 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     leaveRoomForTime(bubble, body);
   }
 
+  // Each side has at most one emoji on a message. The user's own is a button that takes it off.
+  function fillReactions(record, row) {
+    record.reacts.replaceChildren(...row.reactions.map(({ by, emoji }) => (by === 'user'
+      ? h('button', { class: 'react-chip mine', type: 'button', 'aria-label': 'Your reaction ' + emoji + ', press to remove', 'data-entry': row.entry.id, text: emoji })
+      : h('span', { class: 'react-chip', role: 'img', 'aria-label': 'Reaction ' + emoji, text: emoji }))));
+  }
+
   function fillRow(record, row, isFinal, earlier) {
     const { el } = record;
-    el.className = 'row row-' + row.type + (row.first ? ' first' : '') + (row.last ? ' last' : '');
+    el.className = 'row row-' + row.type + (row.first ? ' first' : '') + (row.last ? ' last' : '') + (row.reactions?.length ? ' has-reacts' : '');
     if (row.type === 'lane') return;
+    fillReactions(record, row);
     const calls = row.type === 'jet' ? row.entry.tools ?? [] : [];
     if (record.cards) record.cards.sync(calls, earlier);
     if (record.files) {
@@ -112,7 +127,9 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
       record.stamp.hidden = !isFilesAlone(row.entry);
       record.stamp.textContent = clockTime(row.entry.at);
     }
-    fillBubble(el.querySelector('.bubble'), row, isFinal, [...earlier, ...doneCalls(calls)]);
+    const bubble = el.querySelector('.bubble');
+    fillBubble(bubble, row, isFinal, [...earlier, ...doneCalls(calls)]);
+    if (canReact(row)) bubble.append(reactButton(row.entry.id, row.reactions.find((reaction) => reaction.by === 'user')?.emoji));
   }
 
   function create(row) {
@@ -121,7 +138,8 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     if (row.type === 'user') {
       const files = h('div', { class: 'attachments' });
       const stamp = h('span', { class: 'sent-time', hidden: true });
-      return { el: h('div', {}, h('div', { class: 'sent' }, files, h('div', { class: 'bubble' }), stamp)), lane: null, cards: null, files, stamp, signature: '' };
+      const reacts = h('div', { class: 'reacts' });
+      return { el: h('div', {}, h('div', { class: 'sent' }, files, h('div', { class: 'bubble' }), reacts, stamp)), lane: null, cards: null, files, stamp, reacts, signature: '' };
     }
     const lane = h('div', { class: 'lane' });
     if (row.type !== 'jet') {
@@ -129,14 +147,16 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     }
     const cardsEl = h('div', { class: 'cards' });
     const cards = createCardList(cardsEl, { render: handlers.render, readImage: handlers.readImage, seal: sealCode, watchJob: handlers.watchJob });
-    return { el: h('div', {}, lane, h('div', { class: 'reply' }, cardsEl, h('div', { class: 'bubble' }))), lane, cards, files: null, stamp: null, signature: '' };
+    const reacts = h('div', { class: 'reacts' });
+    return { el: h('div', {}, lane, h('div', { class: 'reply' }, cardsEl, h('div', { class: 'bubble' }), reacts)), lane, cards, files: null, stamp: null, reacts, signature: '' };
   }
 
   const signatureOf = (row, isFinal) => {
     const { entry, failure } = row;
     const calls = entry ? (entry.tools ?? []).map((call) => call.id + ':' + callState(call) + (call.progress ? JSON.stringify(call.progress) : '')).join(' ') : '';
     const files = row.type === 'user' ? (entry.attachments ?? []).map((file) => file.id) : '';
-    const shown = entry && [entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at, calls, files];
+    const reactions = (row.reactions ?? []).map((reaction) => reaction.by + reaction.emoji);
+    const shown = entry && [entry.id, entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at, calls, files, reactions];
     return JSON.stringify([row.type, row.label, row.message, row.first, row.last, isFinal, shown, failure && failure.kind]);
   };
 
@@ -165,6 +185,10 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
         follow.onScroll(scroller);
         jumpButton.hidden = !follow.jumpVisible;
       }
+    } else if (target.closest('.react-open')) {
+      openChooser(/** @type {HTMLElement} */ (target.closest('.react-open')));
+    } else if (target.closest('.react-chip.mine')) {
+      handlers.react(Number(/** @type {HTMLElement} */ (target.closest('.react-chip')).dataset.entry), null);
     } else if (target.closest('.retry')) {
       handlers.retry();
     } else if (target.closest('.open-settings')) {
@@ -181,6 +205,32 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
       );
     }
   });
+
+  function openChooser(button) {
+    const bubble = button.closest('.bubble');
+    const below = bubble.getBoundingClientRect().top - scroller.getBoundingClientRect().top < 64;
+    chooser.open(bubble, { entryId: Number(button.dataset.entry), mine: button.dataset.mine || null, below });
+  }
+
+  // On a touch screen a long press on a Jet bubble opens the chooser, and a finger that moves is a scroll.
+  let press = null;
+  const endPress = () => {
+    clearTimeout(press?.timer);
+    press = null;
+  };
+  rowsEl.addEventListener('pointerdown', (event) => {
+    const button = event.pointerType === 'touch' ? /** @type {HTMLElement} */ (event.target).closest('.bubble')?.querySelector(':scope > .react-open') : null;
+    if (!button) return;
+    endPress();
+    press = { x: event.clientX, y: event.clientY, timer: setTimeout(() => openChooser(button), LONG_PRESS_MS) };
+  });
+  rowsEl.addEventListener('pointermove', (event) => {
+    if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 10) endPress();
+  });
+  rowsEl.addEventListener('pointerup', endPress);
+  rowsEl.addEventListener('pointercancel', endPress);
+  // A finger held on a bubble would also open the browser's own menu.
+  rowsEl.addEventListener('contextmenu', (event) => { if (press) event.preventDefault(); });
 
   const view = {
     /** Brings the page up to date with the rows. @param {import('./store.js').Row[]} rows */

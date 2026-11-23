@@ -1,12 +1,17 @@
 //! `transcript.jsonl`: the thread as the chat page shows it, one entry per line. Entries
-//! are only ever added at the end; "forget" moves the whole file aside.
+//! are added at the end; a reaction replaces the file in one step; "forget" moves it aside.
 
 use std::io::{Seek, SeekFrom, Write};
+use std::sync::Mutex;
 
 use super::{DataDir, MemoryError};
 use crate::chat::{Attachment, Entry, EntryId, EntryStatus, Mood, Role, ToolCall, TurnIdentity};
 
 const FILE_NAME: &str = "transcript.jsonl";
+
+/// Held by every change to the file. A reaction rewrites the whole file while a reply may be
+/// adding its entry at the end, and without this one of the two changes would be lost.
+static CHANGES: Mutex<()> = Mutex::new(());
 
 /// An entry before it has an id and a time.
 pub(crate) struct NewEntry {
@@ -46,6 +51,7 @@ impl NewEntry {
             status: self.status,
             error: self.error,
             tools: self.tools,
+            reactions: Vec::new(),
             at,
         }
     }
@@ -65,6 +71,7 @@ impl Transcript {
     // SMELL: every append reads the whole file to find the last id, so a very long thread
     // makes each message a little slower.
     pub(crate) fn append(&self, new: NewEntry, at: u64) -> Result<Entry, MemoryError> {
+        let _change = crate::lock(&CHANGES);
         let path = self.dir.path(FILE_NAME);
         let text = self.dir.read(FILE_NAME)?.unwrap_or_default();
         let whole_lines = text.rfind('\n').map_or(0, |last_newline| last_newline + 1);
@@ -97,6 +104,51 @@ impl Transcript {
         Ok(entry)
     }
 
+    /// Puts one side's emoji on the other side's entry, or takes it off with `None`, and gives the
+    /// entry back with `true` when it changed. `None` when no entry of the other side has that id.
+    /// Only that line is rewritten; every other line keeps its text exactly, so nothing an older
+    /// or newer version saved is lost.
+    pub(crate) fn react(
+        &self,
+        id: EntryId,
+        by: Role,
+        emoji: Option<&str>,
+        at: u64,
+    ) -> Result<Option<(Entry, bool)>, MemoryError> {
+        let _change = crate::lock(&CHANGES);
+        let text = self.dir.read(FILE_NAME)?.unwrap_or_default();
+        let mut start = 0;
+        for line in text.split_inclusive('\n') {
+            let end = start + line.len();
+            let Ok(mut entry) = serde_json::from_str::<Entry>(line.trim_end()) else {
+                start = end;
+                continue;
+            };
+            if entry.id != id {
+                start = end;
+                continue;
+            }
+            if entry.role == by {
+                return Ok(None);
+            }
+            if entry.reaction_by(by) == emoji {
+                return Ok(Some((entry, false)));
+            }
+            entry.set_reaction(by, emoji, at);
+            let json = serde_json::to_string(&entry).map_err(|source| MemoryError::Json {
+                path: self.dir.path(FILE_NAME),
+                line: 0,
+                source,
+            })?;
+            self.dir.write(
+                FILE_NAME,
+                &format!("{}{json}\n{}", &text[..start], &text[end..]),
+            )?;
+            return Ok(Some((entry, true)));
+        }
+        Ok(None)
+    }
+
     /// Every entry, oldest first. A torn last line is skipped; a bad line anywhere else
     /// is an error.
     pub(crate) fn entries(&self) -> Result<Vec<Entry>, MemoryError> {
@@ -121,6 +173,7 @@ impl Transcript {
     /// Moves the thread aside as `transcript.<at>.jsonl`, where `at` is Unix milliseconds.
     /// The next entry starts a new thread at id 1.
     pub(crate) fn rotate(&self, at: u64) -> Result<(), MemoryError> {
+        let _change = crate::lock(&CHANGES);
         let from = self.dir.path(FILE_NAME);
         if !from.exists() {
             return Ok(());

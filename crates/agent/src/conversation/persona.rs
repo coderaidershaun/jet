@@ -2,7 +2,7 @@
 //! shape it. The prompt holds no clock, so the same inputs always give the same bytes and
 //! Claude's prompt cache keeps hitting.
 
-use crate::chat::{Attachment, Effort, Model, Mood, Notes, Persona};
+use crate::chat::{Attachment, Effort, Entry, Model, Mood, Notes, Persona, Role};
 
 const TEMPLATE: &str = include_str!("persona.md");
 
@@ -57,6 +57,44 @@ pub(super) fn message_words(message: &super::Message) -> String {
         words.push_str(&attachment_words(&message.attachments));
     }
     words
+}
+
+/// One line naming the reactions on these entries, both sides, or nothing when there are none.
+/// The provider's own history never holds them, because a reaction comes after its message.
+pub(super) fn reaction_words(entries: &[Entry]) -> String {
+    let mut seen = Vec::new();
+    for entry in entries {
+        for reaction in &entry.reactions {
+            let quote = quote(&entry.text);
+            seen.push(match reaction.by {
+                Role::Jet => format!("you put {} on the user's message {quote}", reaction.emoji),
+                Role::User => format!("the user put {} on your message {quote}", reaction.emoji),
+            });
+        }
+    }
+    if seen.is_empty() {
+        return String::new();
+    }
+    format!("[Reactions on recent messages: {}]\n", seen.join("; "))
+}
+
+/// What a turn that answers the user's reaction is asked.
+pub(super) fn reacted_words(emoji: &str, text: &str) -> String {
+    format!(
+        "[The user just put {emoji} on your message {}. Write a reply only if the reaction calls for one. You may react instead, or write nothing after the header lines.]",
+        quote(text)
+    )
+}
+
+/// The start of a message on one line, in quotes.
+fn quote(text: &str) -> String {
+    const LONGEST: usize = 80;
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut quoted: String = flat.chars().take(LONGEST).collect();
+    if flat.chars().count() > LONGEST {
+        quoted.push('…');
+    }
+    format!("\"{quoted}\"")
 }
 
 /// The details of the attached files and the instruction to leave them alone until asked.

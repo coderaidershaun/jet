@@ -97,6 +97,12 @@ pub struct SessionId(pub String);
 #[serde(transparent)]
 pub struct EntryId(pub(crate) u64);
 
+impl std::fmt::Display for EntryId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
@@ -157,7 +163,54 @@ pub struct Entry {
     /// The MCP tool calls that came back during the reply. Older lines have none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<ToolCall>,
+    /// At most one for each side. Older lines have none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reactions: Vec<Reaction>,
     pub at: u64,
+}
+
+impl Entry {
+    /// The emoji the given side put on this message, if any.
+    pub fn reaction_by(&self, by: Role) -> Option<&str> {
+        self.reactions
+            .iter()
+            .find(|reaction| reaction.by == by)
+            .map(|reaction| reaction.emoji.as_str())
+    }
+
+    /// Puts this side's emoji on the message in place of its old one, or takes it off with `None`.
+    pub(crate) fn set_reaction(&mut self, by: Role, emoji: Option<&str>, at: u64) {
+        self.reactions.retain(|reaction| reaction.by != by);
+        if let Some(emoji) = emoji {
+            self.reactions.push(Reaction {
+                by,
+                emoji: emoji.to_owned(),
+                at,
+            });
+        }
+    }
+}
+
+/// One emoji that the user or Jet put on a message. `at` is Unix milliseconds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reaction {
+    pub by: Role,
+    pub emoji: String,
+    pub at: u64,
+}
+
+impl Reaction {
+    /// Whether the text can be shown as one reaction: a short run of emoji, not a word. The check
+    /// is loose on purpose, because emoji sequences are long and keep growing.
+    pub fn is_emoji(text: &str) -> bool {
+        let short = (1..=16).contains(&text.chars().count());
+        short
+            && !text
+                .chars()
+                .any(|c| c.is_whitespace() || c.is_ascii_alphabetic())
+            && !text.is_ascii()
+    }
 }
 
 /// An entry plus its text rendered as HTML (empty for the user's own entries).

@@ -86,6 +86,7 @@ async function start() {
       render: (text) => agent.renderMarkdown(text),
       readImage: (appId, path) => agent.readAppImage(appId, path),
       watchJob: jobs.watch,
+      react: (entryId, emoji) => turn.react(entryId, emoji),
     },
   });
 

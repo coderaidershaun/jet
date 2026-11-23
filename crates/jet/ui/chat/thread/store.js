@@ -1,6 +1,6 @@
-// What the thread holds: the messages, the notices, the one reply that may be
-// running, the message held back until that reply ends, and the spoken message
-// still forming. It turns them into rows (bubbles, day pills, notice pills) with
+// What the thread holds: the messages and the emoji on them, the notices, the one
+// reply that may be running, the message held back until that reply ends, and the
+// spoken message still forming. It turns them into rows (bubbles, day pills, notice pills) with
 // the grouping already decided. It knows nothing about the DOM, the agent or the
 // clock beyond `now`.
 
@@ -10,6 +10,7 @@ const GROUP_GAP_MS = 3 * 60 * 1000;
 
 /** A file sent with a message, as the server saved it. @typedef {{ id: string, name: string, kind: string, bytes: number, details: string }} Attachment */
 /** The message held back while Jet replies. @typedef {{ text: string, attachments: Attachment[] }} Held */
+/** An emoji on a message, put there by the user or by Jet. @typedef {{ by: 'user' | 'jet', emoji: string, at: number }} Reaction */
 
 /**
  * @typedef {object} Row
@@ -20,6 +21,7 @@ const GROUP_GAP_MS = 3 * 60 * 1000;
  * @property {boolean} [warning]      a notice pill that says something is wrong
  * @property {{ id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string, status: string, error?: string, tools?: import('./cards/model.js').ShownCall[], attachments?: Attachment[], at: number }} [entry]   `status` is `forming` for a spoken message that is not sent yet
  * @property {{ kind: string, message: string }} [failure]
+ * @property {Reaction[]} [reactions]  on a message row
  * @property {boolean} [first]        first bubble of its group
  * @property {boolean} [last]         last bubble of its group, so it carries the tail
  * @property {boolean} [live]         the newest Jet row, where the live Jet stands
@@ -38,6 +40,8 @@ export function createThread({ now = Date.now } = {}) {
   let held = null;
   /** The spoken message before it is sent. It is kept apart from `items` so it stays the last row. @type {typeof items[number] | null} */
   let forming = null;
+  /** Kept apart from the entries by message id, so a reaction on a message whose id the page does not know yet still shows once it does. @type {Map<number, Reaction[]>} */
+  let reactions = new Map();
 
   const nextKey = () => 'm' + ++counter;
   const isMessage = (row) => row.type === 'user' || row.type === 'jet';
@@ -79,14 +83,27 @@ export function createThread({ now = Date.now } = {}) {
     /** Replaces everything with saved history. @param {any[]} entries */
     load(entries) {
       items = entries.map((entry) => ({ key: nextKey(), type: entry.role, at: entry.at, entry }));
+      reactions = new Map(entries.map((entry) => [entry.id, entry.reactions ?? []]));
       slot = null;
       held = null;
     },
 
     clear() {
       items = [];
+      reactions = new Map();
       slot = null;
       held = null;
+    },
+
+    /** The whole new list of emoji on one message, which replaces the old one. @param {number} entryId @param {Reaction[]} list */
+    react(entryId, list) {
+      reactions.set(entryId, list);
+    },
+
+    /** The newest message the user sent was saved with this id. */
+    userSaved(id) {
+      const sent = items.findLast((item) => item.type === 'user');
+      if (sent) sent.entry.id = id;
     },
 
     /** A message with the words of the forming one takes its row, so the bubble turns solid in place. @param {Attachment[]} [attachments] */
@@ -194,6 +211,19 @@ export function createThread({ now = Date.now } = {}) {
       endSlot(entry);
     },
 
+    /** The message just sent did not reach Jet: its row and the row of its reply leave the thread. */
+    unsend() {
+      items.splice(items.indexOf(requireSlot('take back the message')), 1);
+      slot = null;
+      items.splice(items.findLastIndex((item) => item.type === 'user'), 1);
+    },
+
+    /** The reply ended with nothing to show, so its row leaves the thread. */
+    dropSlot() {
+      items.splice(items.indexOf(requireSlot('drop the reply')), 1);
+      slot = null;
+    },
+
     get held() {
       return held;
     },
@@ -245,7 +275,7 @@ export function createThread({ now = Date.now } = {}) {
         }
         rows.push(item.type === 'notice'
           ? { key: item.key, type: 'notice', message: item.message, warning: item.warning }
-          : { key: item.key, type: item.type, entry: item.entry, failure: item.failure });
+          : { key: item.key, type: item.type, entry: item.entry, failure: item.failure, reactions: reactions.get(item.entry.id) ?? [] });
       }
       rows.forEach((row, i) => {
         if (!isMessage(row)) return;

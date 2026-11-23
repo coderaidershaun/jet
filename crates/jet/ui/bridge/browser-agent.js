@@ -3,6 +3,8 @@ import { uploadFile } from './uploads.js';
 
 // Browser connections observe server-owned turns; reconnecting never starts another reply.
 
+const TERMINAL = new Set(['finished', 'failed', 'stopped', 'noReply']);
+
 export async function requestJson(path, body, method = body === undefined ? 'GET' : 'POST', fetcher = globalThis.fetch, signal) {
   let response;
   try {
@@ -105,7 +107,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       cursor = message.data.cursor;
       const envelope = message.data;
       if (envelope.event.kind === 'accepted') { actionGeneration++; activeIdentity = envelope.turn; }
-      if (['finished', 'failed', 'stopped'].includes(envelope.event.kind) && sameTurn(envelope.turn, activeIdentity)) { actionGeneration++; activeIdentity = null; }
+      if (TERMINAL.has(envelope.event.kind) && sameTurn(envelope.turn, activeIdentity)) { actionGeneration++; activeIdentity = null; }
       if (envelope.event.kind === 'appOpened') void openApp(envelope);
       if (envelope.event.kind === 'memoryUpdated') for (const listener of memoryListeners) listener(envelope.event.notes);
       if (envelope.event.kind === 'registryChanged') for (const listener of registryListeners) listener(envelope.event);
@@ -113,7 +115,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       if (envelope.event.kind === 'historyChanged') { epoch = null; cursor = null; reconnect(); return; }
       if (observer) observer.event(envelope);
       else callbacks.get(envelope.turn?.requestId)?.(envelope.event);
-      if (['finished', 'failed', 'stopped'].includes(envelope.event.kind)) callbacks.delete(envelope.turn?.requestId);
+      if (TERMINAL.has(envelope.event.kind)) callbacks.delete(envelope.turn?.requestId);
     };
     source.onopen = () => setConnected(true);
     source.onerror = () => { setConnected(false); reconnect(); };
@@ -148,6 +150,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
         }
       }
     },
+    react: (request) => call('/api/chat/react', { ...request, requestId: uuid(), clientId }),
     forget: () => call('/api/chat/forget', {}),
     loadMemory: () => call('/api/memory'),
     saveMemory: (notes) => call('/api/memory', notes, 'PUT'),

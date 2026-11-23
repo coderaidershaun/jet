@@ -27,6 +27,10 @@ pub(super) struct Context {
     pub prompt_hash: String,
     pub saved: Option<Session>,
     pub notice: Option<String>,
+    /// The user's message that Jet's reaction goes on.
+    pub react_on: Option<EntryId>,
+    /// True when the turn answers the user's reaction instead of a new message.
+    pub answers_reaction: bool,
 }
 
 /// The events of one answer, read with `Iterator`. Reading blocks until the next event.
@@ -92,6 +96,7 @@ impl Reply {
         match step {
             Some(Step::Init { session_id }) => self.handle_init(session_id),
             Some(Step::Mood(mood)) => self.queue.push_back(Event::Mood { mood }),
+            Some(Step::Reaction(emoji)) => self.react(&emoji),
             Some(Step::Text(delta)) => self.queue.push_back(Event::Text { delta }),
             Some(Step::ToolStarted(start)) => self.queue.push_back(Event::ToolStarted(start)),
             Some(Step::ToolFinished(call)) => self.queue.push_back(Event::ToolFinished(call)),
@@ -149,6 +154,24 @@ impl Reply {
         .save(dir)
     }
 
+    /// Saves Jet's emoji on the user's message at once, so the page shows it while the reply runs.
+    /// A failed save loses only the reaction, never the reply.
+    fn react(&mut self, emoji: &str) {
+        let Some(id) = self.context.react_on else {
+            return;
+        };
+        match Transcript::open(&self.context.dir).react(id, Role::Jet, Some(emoji), now_ms()) {
+            Ok(Some((entry, true))) => self.queue.push_back(Event::Reactions {
+                entry_id: entry.id,
+                reactions: entry.reactions,
+            }),
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("jet: could not save Jet's reaction on message {id}: {error}");
+            }
+        }
+    }
+
     fn handle_failure(&mut self, error: TurnError) {
         let vanished = self.retry_left
             && !self.seen_init
@@ -199,6 +222,18 @@ impl Reply {
 
     fn conclude(&mut self, ending: Ending) {
         self.ended = true;
+        // A stopped turn without words leaves no empty bubble either; a failed one keeps its error.
+        if !matches!(ending, Ending::Failed(_)) && self.is_wordless() {
+            let saved = match &ending {
+                Ending::Finished(summary) => self.save_context(summary),
+                _ => Ok(()),
+            };
+            let event = match saved {
+                Ok(()) => Event::NoReply,
+                Err(error) => self.unsaved_failure(&error),
+            };
+            return self.queue.push_back(event);
+        }
         let (status, error) = match &ending {
             Ending::Finished(_) => (EntryStatus::Complete, None),
             Ending::Stopped => (EntryStatus::Stopped, None),
@@ -216,16 +251,29 @@ impl Reply {
                 failure,
                 entry: shown(entry),
             },
-            (Err(memory_error), _) => {
-                let message = memory_error.to_string();
-                let unsaved = self.jet_entry(EntryStatus::Failed, Some(message.clone()));
-                Event::Failed {
-                    failure: Failure::Io { message },
-                    entry: shown(unsaved.into_entry(EntryId(0), now_ms())),
-                }
-            }
+            (Err(memory_error), _) => self.unsaved_failure(&memory_error),
         };
         self.queue.push_back(event);
+    }
+
+    /// The end of a reply whose saving failed: the user sees why, on an entry that is not saved.
+    fn unsaved_failure(&self, error: &MemoryError) -> Event {
+        let message = error.to_string();
+        let unsaved = self.jet_entry(EntryStatus::Failed, Some(message.clone()));
+        Event::Failed {
+            failure: Failure::Io { message },
+            entry: shown(unsaved.into_entry(EntryId(0), now_ms())),
+        }
+    }
+
+    /// A turn with nothing to show needs no Jet entry when Jet reacted in it, or when it answers
+    /// a reaction. Any other empty reply still gets its entry, as before.
+    fn is_wordless(&self) -> bool {
+        let Some(turn) = &self.turn else {
+            return false;
+        };
+        let nothing_shown = turn.text().trim().is_empty() && turn.tools().is_empty();
+        nothing_shown && (self.context.answers_reaction || turn.reaction().is_some())
     }
 
     /// The answer so far, as a thread entry.
@@ -246,15 +294,21 @@ impl Reply {
     fn save_jet_entry(&self, entry: NewEntry, ending: &Ending) -> Result<Entry, MemoryError> {
         let dir = &self.context.dir;
         let entry = Transcript::open(dir).append(entry, now_ms())?;
-        if let Ending::Finished(summary) = ending
-            && let Some(mut session) = Session::load(dir)?
-        {
-            session.context_tokens = summary.context_tokens;
-            session.context = summary.context.clone();
-            session.context.model = Some(self.context.request.model);
-            session.save(dir)?;
+        if let Ending::Finished(summary) = ending {
+            self.save_context(summary)?;
         }
         Ok(entry)
+    }
+
+    fn save_context(&self, summary: &Summary) -> Result<(), MemoryError> {
+        let dir = &self.context.dir;
+        let Some(mut session) = Session::load(dir)? else {
+            return Ok(());
+        };
+        session.context_tokens = summary.context_tokens;
+        session.context = summary.context.clone();
+        session.context.model = Some(self.context.request.model);
+        session.save(dir)
     }
 }
 

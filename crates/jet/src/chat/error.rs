@@ -67,6 +67,7 @@ impl From<ConversationError> for BridgeError {
     fn from(error: ConversationError) -> BridgeError {
         match error {
             ConversationError::Busy => BridgeError::Busy,
+            ConversationError::NotJetMessage(_) => BridgeError::NotFound(error.to_string()),
             ConversationError::Memory(error) => error.into(),
         }
     }

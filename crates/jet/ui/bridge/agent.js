@@ -9,7 +9,8 @@ import { createBrowserAgent } from './browser-agent.js';
  * `id` is null only for an entry that was never saved, such as a send that failed before a reply began.
  * @typedef {{
  *   id: number | null, role: 'user' | 'jet', text: string, html: string, mood?: string,
- *   status: 'complete' | 'stopped' | 'failed', error?: string, tools?: ToolCall[], attachments?: import('../chat/thread/store.js').Attachment[], at: number,
+ *   status: 'complete' | 'stopped' | 'failed', error?: string, tools?: ToolCall[], attachments?: import('../chat/thread/store.js').Attachment[],
+ *   reactions?: import('../chat/thread/store.js').Reaction[], at: number,
  * }} ShownEntry
  */
 /** @typedef {{ memory: string, user: string, recent: string, limits?: { memory: number, user: number, recent: number } }} Notes */
@@ -25,7 +26,9 @@ import { createBrowserAgent } from './browser-agent.js';
  *   | { kind: 'toolFinished', id: string, server: string, tool: string, input: any, ok: boolean, result: any, summary: string, durationMs: number }
  *   | { kind: 'finished', entry: ShownEntry }
  *   | { kind: 'failed', failure: Failure, entry: ShownEntry }
- *   | { kind: 'stopped', entry: ShownEntry }} AgentEvent
+ *   | { kind: 'stopped', entry: ShownEntry }
+ *   | { kind: 'noReply' }
+ *   | { kind: 'reactions', entryId: number, reactions: import('../chat/thread/store.js').Reaction[] }} AgentEvent
  */
 
 /**
@@ -48,6 +51,8 @@ import { createBrowserAgent } from './browser-agent.js';
  * @property {(request: SendRequest, onEvent: (event: AgentEvent) => void) => Promise<ShownEntry>} send
  *   resolves with the saved user entry; the reply streams to `onEvent`
  * @property {() => Promise<void>} stop
+ * @property {(request: Omit<SendRequest, 'text' | 'attachments' | 'feeling'> & { entryId: number, emoji: string | null }) => Promise<{ entry: ShownEntry }>} react
+ *   puts the user's emoji on a Jet message, or takes it off with null; the new list arrives as a `reactions` event
  * @property {() => Promise<void>} forget   rejects with kind "busy" while a reply runs
  * @property {() => Promise<Notes>} loadMemory
  * @property {(notes: { memory: string, user: string, recent: string }) => Promise<Notes>} saveMemory

@@ -18,7 +18,8 @@ pub use review::{REVIEW_QUIET, ReviewError, ReviewOutcome};
 use session_policy::decide;
 
 use crate::chat::{
-    Attachment, Effort, Entry, McpConnection, Model, Notes, Persona, Role, ShownEntry, TurnIdentity,
+    Attachment, Effort, Entry, EntryId, McpConnection, Model, Notes, Persona, Role, ShownEntry,
+    TurnIdentity,
 };
 use crate::markdown::render_markdown;
 use crate::turn::{Request, SessionMode, Stopper, Transport, Turn};
@@ -44,10 +45,23 @@ pub struct Message {
     pub spoken: bool,
 }
 
+/// How many of the newest entries a prompt lists the reactions of.
+const REACTIONS_SHOWN: usize = 20;
+
+/// What one turn is asked, and where Jet's reaction in it goes.
+struct Answer {
+    words: String,
+    /// The user's message that Jet's reaction goes on.
+    react_on: Option<EntryId>,
+    answers_reaction: bool,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConversationError {
     #[error("Jet is still answering")]
     Busy,
+    #[error("the thread has no Jet message {0} to react to")]
+    NotJetMessage(EntryId),
     #[error(transparent)]
     Memory(#[from] MemoryError),
 }
@@ -105,17 +119,100 @@ impl Conversation {
         identity: Option<TurnIdentity>,
     ) -> Result<(ShownEntry, Reply), ConversationError> {
         let claim = Claim::take(&self.answering).ok_or(ConversationError::Busy)?;
+        let transcript = Transcript::open(&self.dir);
+        let recent = transcript.last(REACTIONS_SHOWN)?;
+        let mut user = NewEntry::user(&message.text);
+        user.turn = identity.clone();
+        user.attachments = message.attachments.clone();
+        let user_entry = transcript.append(user, now_ms())?;
+        let words = persona::reaction_words(&recent) + &persona::message_words(&message);
+        let answer = Answer {
+            words,
+            react_on: Some(user_entry.id),
+            answers_reaction: false,
+        };
+        let reply = self.answer(claim, transport, message, identity, answer)?;
+        Ok((shown(user_entry), reply))
+    }
+
+    /// Puts the user's emoji on a Jet message, or takes it off with `None`, and gives the message
+    /// back with `true` when its reaction changed. Starts no turn: the caller decides whether Jet
+    /// answers it.
+    ///
+    /// # Errors
+    /// `NotJetMessage` when the thread has no Jet message with that id.
+    pub fn react(
+        &self,
+        id: EntryId,
+        emoji: Option<&str>,
+    ) -> Result<(ShownEntry, bool), ConversationError> {
+        let (entry, changed) = Transcript::open(&self.dir)
+            .react(id, Role::User, emoji, now_ms())?
+            .ok_or(ConversationError::NotJetMessage(id))?;
+        Ok((shown(entry), changed))
+    }
+
+    /// Lets Jet answer the user's reaction on one of its messages. Jet may write, react on the
+    /// user's newest message, or do nothing. No user entry is added, and the text and files of
+    /// `message` are left out; only its settings count.
+    ///
+    /// # Errors
+    /// `Busy` while another answer runs, and `NotJetMessage` when the message has no reaction
+    /// from the user.
+    pub fn answer_reaction(
+        &self,
+        transport: Arc<dyn Transport>,
+        message: Message,
+        reacted: EntryId,
+        identity: Option<TurnIdentity>,
+    ) -> Result<Reply, ConversationError> {
+        let claim = Claim::take(&self.answering).ok_or(ConversationError::Busy)?;
+        let message = Message {
+            text: String::new(),
+            attachments: Vec::new(),
+            ..message
+        };
+        let entries = Transcript::open(&self.dir).entries()?;
+        let target = entries.iter().find(|entry| entry.id == reacted);
+        let Some((target, emoji)) =
+            target.and_then(|entry| Some((entry, entry.reaction_by(Role::User)?)))
+        else {
+            return Err(ConversationError::NotJetMessage(reacted));
+        };
+        let recent = &entries[entries.len().saturating_sub(REACTIONS_SHOWN)..];
+        let words = persona::reaction_words(recent)
+            + &persona::message_words(&message)
+            + &persona::reacted_words(emoji, &target.text);
+        let answer = Answer {
+            words,
+            react_on: entries
+                .iter()
+                .rev()
+                .find(|entry| entry.role == Role::User)
+                .map(|entry| entry.id),
+            answers_reaction: true,
+        };
+        self.answer(claim, transport, message, identity, answer)
+    }
+
+    fn answer(
+        &self,
+        claim: Claim,
+        transport: Arc<dyn Transport>,
+        message: Message,
+        identity: Option<TurnIdentity>,
+        answer: Answer,
+    ) -> Result<Reply, ConversationError> {
+        let Answer {
+            words,
+            react_on,
+            answers_reaction,
+        } = answer;
         let now = now_ms();
         let notes = Notes::load(&self.dir)?;
         let prompt_hash = persona::prompt_hash(&message.persona, message.model, message.effort);
         let saved = Session::load(&self.dir)?;
         let decision = decide(saved.as_ref(), &prompt_hash, now);
-
-        let mut user = NewEntry::user(&message.text);
-        user.turn = identity.clone();
-        user.attachments = message.attachments.clone();
-        let user_entry = Transcript::open(&self.dir).append(user, now)?;
-        let words = persona::message_words(&message);
         let prompt = match decision.mode {
             SessionMode::New => reply::first_message(&message.local_time, &words),
             _ => words.clone(),
@@ -143,14 +240,18 @@ impl Conversation {
             request,
             text: words,
             local_time: message.local_time,
+            // A reaction turn often shows nothing at all, so it says nothing about the session.
             notice: decision
                 .reason
+                .filter(|_| !answers_reaction)
                 .and_then(|reason| reason.notice(&message.persona.name)),
             persona_name: message.persona.name,
             prompt_hash,
             saved,
+            react_on,
+            answers_reaction,
         };
-        Ok((shown(user_entry), Reply::new(context, claim, started)))
+        Ok(Reply::new(context, claim, started))
     }
 
     /// The newest `limit` entries of the thread, oldest first.

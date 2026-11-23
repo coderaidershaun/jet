@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use super::{Mood, ShownEntry, ToolCall, ToolStart};
+use super::{EntryId, Mood, Reaction, ShownEntry, ToolCall, ToolStart};
 
 /// Why a reply failed. The message is written for the user and shown as it stands.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -30,7 +30,8 @@ impl Failure {
     }
 }
 
-/// One step of a streamed reply. Exactly one of `Finished`, `Failed` and `Stopped` ends it.
+/// One step of a streamed reply. Exactly one of `Finished`, `NoReply`, `Failed` and `Stopped` ends
+/// it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(
     tag = "kind",
@@ -66,9 +67,18 @@ pub enum Event {
     Notice {
         message: String,
     },
+    /// The reactions on one message changed; this is the whole new list. The chat also sends it
+    /// outside any reply, when the user reacts.
+    Reactions {
+        entry_id: EntryId,
+        reactions: Vec<Reaction>,
+    },
     Finished {
         entry: ShownEntry,
     },
+    /// The reply ended without words: Jet only reacted, or decided nothing was needed. No Jet
+    /// entry was saved.
+    NoReply,
     Failed {
         failure: Failure,
         entry: ShownEntry,
@@ -96,6 +106,7 @@ mod tests {
             status,
             error: None,
             tools: Vec::new(),
+            reactions: Vec::new(),
             at: 1_760_433_360_000,
         };
         let html = "<p>Friday looks fine</p>".into();
@@ -169,6 +180,19 @@ mod tests {
                 Event::Text { delta: text() },
                 json!({"kind": "text", "delta": "m"}),
             ),
+            (
+                Event::Reactions {
+                    entry_id: EntryId(41),
+                    reactions: vec![Reaction {
+                        by: Role::Jet,
+                        emoji: "👍".into(),
+                        at: 7,
+                    }],
+                },
+                json!({"kind": "reactions", "entryId": 41,
+                       "reactions": [{"by": "jet", "emoji": "👍", "at": 7}]}),
+            ),
+            (Event::NoReply, json!({"kind": "noReply"})),
             (
                 Event::Finished { entry: complete },
                 json!({

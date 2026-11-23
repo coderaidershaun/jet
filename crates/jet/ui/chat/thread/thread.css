@@ -25,8 +25,10 @@
   font-size: var(--text-size); line-height: var(--text-line);
   overflow-wrap: anywhere;
 }
-/* A Jet reply is its cards above its bubble, in one column no wider than a bubble may be. */
+/* A Jet reply is its cards above its bubble, in one column no wider than a bubble may be. With a pointer that
+   hovers, the column leaves room on its right for the react button. */
 .reply { display: flex; flex: 1 1 auto; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; max-width: min(560px, calc(100% - var(--lane) - 8px)); }
+@media (hover: hover) { .reply { max-width: min(560px, calc(100% - var(--lane) - 48px)); } }
 .reply > .bubble { max-width: 100%; }
 .cards { display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
 .cards:empty { display: none; }
@@ -136,3 +138,50 @@ a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22
   font-size: 14px; font-weight: 600; box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
 }
 .jump .icon { width: 18px; height: 18px; }
+
+/* An emoji on a message sits on the bubble's lower edge, as on WhatsApp, at its left so the time stays clear. */
+.reacts { position: relative; z-index: 1; display: flex; gap: 4px; align-self: flex-start; margin: -16px 0 0 10px; }
+.reacts:empty { display: none; }
+.row.has-reacts { margin-bottom: 10px; }
+.react-chip {
+  display: inline-grid; place-items: center; min-width: 30px; height: 26px; padding: 0 6px;
+  background: var(--surface-2); border: 2px solid var(--ground); border-radius: 13px;
+  font-size: 15px; line-height: 1;
+}
+button.react-chip { position: relative; }
+button.react-chip::after { content: ""; position: absolute; inset: -9px -7px; }
+button.react-chip:hover { background: #1d2c38; }
+
+/* The button that opens the chooser shows beside a Jet bubble while the pointer is on the message. On a touch screen a long press opens it instead. */
+.react-open {
+  position: absolute; left: calc(100% + 6px); bottom: 2px; display: grid; place-items: center;
+  width: 32px; height: 32px; padding: 0; background: none; border: 0; border-radius: 16px; color: var(--muted);
+  opacity: 0; pointer-events: none;
+}
+.react-open .icon { width: 20px; height: 20px; }
+.react-open:hover { background: rgba(255, 255, 255, .06); color: var(--fg); }
+.row-jet:hover .react-open, .react-open:focus-visible, .bubble:has(> .react-chooser) > .react-open { opacity: 1; pointer-events: auto; }
+@media (hover: none) {
+  .react-open { display: none; }
+  /* The text can still be selected and copied; only the system's long-press menu gives way to the chooser. */
+  .row-jet .bubble { -webkit-touch-callout: none; }
+}
+
+.react-chooser {
+  position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 5; display: flex; align-items: center; gap: 2px; padding: 4px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+  animation: rise 120ms ease-out;
+}
+.react-chooser.below { top: calc(100% + 6px); bottom: auto; }
+.react-pick, .react-more {
+  display: grid; place-items: center; width: 40px; height: 40px; padding: 0;
+  background: none; border: 0; border-radius: 20px; font-size: 24px; line-height: 1;
+}
+.react-pick:hover, .react-more:hover, .react-pick[aria-pressed="true"] { background: rgba(255, 255, 255, .1); }
+.react-more { color: var(--muted); }
+.react-more .icon { width: 20px; height: 20px; }
+.react-field {
+  width: 232px; height: 40px; padding: 0 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+  font-size: 16px;
+}
+.reduced .react-chooser { animation: none; }

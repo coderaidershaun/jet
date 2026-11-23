@@ -40,6 +40,8 @@ pub enum Step {
         session_id: SessionId,
     },
     Mood(Mood),
+    /// The emoji Jet put on the user's message. At most once, like the mood.
+    Reaction(String),
     Text(String),
     /// An MCP tool call has started.
     ToolStarted(ToolStart),
@@ -89,6 +91,7 @@ pub struct Turn {
     tools: ToolCalls,
     text: String,
     mood: Option<Mood>,
+    reaction: Option<String>,
     context: context::ContextReader,
     saw_delta: bool,
     needs_paragraph_break: bool,
@@ -116,6 +119,7 @@ impl Turn {
             tools: ToolCalls::default(),
             text: String::new(),
             mood: None,
+            reaction: None,
             context: context::ContextReader::default(),
             saw_delta: false,
             needs_paragraph_break: false,
@@ -134,6 +138,11 @@ impl Turn {
 
     pub fn mood(&self) -> Option<Mood> {
         self.mood
+    }
+
+    /// The emoji Jet put on the user's message in this turn, if any.
+    pub fn reaction(&self) -> Option<&str> {
+        self.reaction.as_deref()
     }
 
     /// The MCP tool calls that have come back so far, in the order they did.
@@ -240,6 +249,12 @@ impl Turn {
         {
             self.mood = Some(mood);
             self.queued.push_back(Step::Mood(mood));
+        }
+        if let Some(emoji) = split.reaction.take()
+            && self.reaction.is_none()
+        {
+            self.reaction = Some(emoji.clone());
+            self.queued.push_back(Step::Reaction(emoji));
         }
         if !split.text.is_empty() {
             if std::mem::take(&mut self.needs_paragraph_break) {
@@ -462,6 +477,40 @@ mod tests {
             assert_eq!(turn.text(), text, "{name}");
             assert_eq!(moods, mood.into_iter().collect::<Vec<_>>(), "{name}");
             assert_eq!(turn.mood(), mood, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_react_line_beside_the_mood_line_is_removed_and_gives_the_emoji() {
+        let cases = [
+            (
+                vec!["mood: neutral\nreact: 👍\nGlad it worked."],
+                "Glad it worked.",
+                Some("👍"),
+            ),
+            (vec!["react: ❤️\n", "mood: hello\n\nHi"], "Hi", Some("❤️")),
+            (vec!["mood: neutral\nre", "act: 🙏🏽"], "", Some("🙏🏽")),
+            (vec!["mood: neutral\nreact: none\nOk."], "Ok.", None),
+            (vec!["mood: neutral\nreact: thumbs\nOk."], "Ok.", None),
+            (vec!["Reactions are fun."], "Reactions are fun.", None),
+        ];
+        for (deltas, text, reaction) in cases {
+            let transport = Scripted::new().then(Script::lines(streamed_lines(&deltas)));
+            let mut turn = Turn::start(&transport, &request()).unwrap();
+            let steps: Vec<Step> = turn.by_ref().collect();
+            let reacted = steps
+                .iter()
+                .filter(|step| matches!(step, Step::Reaction(_)));
+            assert_eq!(
+                reacted.count(),
+                usize::from(reaction.is_some()),
+                "{deltas:?}"
+            );
+            assert_eq!(
+                (turn.text(), turn.reaction()),
+                (text, reaction),
+                "{deltas:?}"
+            );
         }
     }
 }

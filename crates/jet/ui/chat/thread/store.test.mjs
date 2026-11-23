@@ -131,3 +131,31 @@ test('a spoken message forms after every other row, takes its words, and is sent
   assert.equal(thread.forming, null);
   assert.equal(thread.rows().at(-1).entry.text, 'Hello there');
 });
+
+test('reactions sit on their message by id, a new list replaces the old, and a reply with nothing to show leaves no row', () => {
+  const thread = createThread({ now: () => NOW });
+  const thumbs = { by: 'user', emoji: '👍', at: at(14, 9, 2) };
+  thread.load([entry(1, 'user', at(14, 9, 0)), { ...entry(2, 'jet', at(14, 9, 1)), reactions: [thumbs] }]);
+  const reactionsOf = (id) => thread.rows().find((row) => row.entry?.id === id).reactions;
+  assert.deepEqual(reactionsOf(1), [], 'an entry saved before reactions existed has none');
+  assert.deepEqual(reactionsOf(2), [thumbs]);
+
+  const heart = { by: 'user', emoji: '❤️', at: at(14, 9, 3) };
+  thread.react(2, [heart]);
+  thread.react(2, [heart]);
+  assert.deepEqual(reactionsOf(2), [heart], 'the same list twice is the same list');
+  thread.react(2, []);
+  assert.deepEqual(reactionsOf(2), []);
+
+  // Jet reacts on a message whose id the page learns only afterwards.
+  thread.addUser('thanks', at(14, 9, 4));
+  thread.openSlot(at(14, 9, 4));
+  const pray = { by: 'jet', emoji: '🙏', at: at(14, 9, 5) };
+  thread.react(3, [pray]);
+  thread.userSaved(3);
+  assert.deepEqual(reactionsOf(3), [pray]);
+
+  thread.dropSlot();
+  assert.equal(thread.replying, false);
+  assert.deepEqual(thread.rows().filter((row) => row.type === 'jet').map((row) => row.entry.id), [2], 'no empty Jet bubble is left');
+});

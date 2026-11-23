@@ -8,7 +8,9 @@ import { withoutCues } from './voice/segment.js';
 const FEELING_CAP_MS = 2200;
 const SUPPORTED_MOODS = new Set(MOODS);
 
-const TERMINAL = new Set(['finished', 'failed', 'stopped']);
+const TERMINAL = new Set(['finished', 'failed', 'stopped', 'noReply']);
+/** The events that put something in Jet's row, so a turn that a reaction started opens the row on the first of them. */
+const SHOWN = new Set(['text', 'toolStarted', 'toolProgress', 'toolFinished', 'finished', 'failed', 'stopped']);
 
 const SILENT = { on: () => false, cues: [], reveal: (options) => ({ reveal: createReveal(options), spoken: false }), unlock() {} };
 
@@ -17,6 +19,7 @@ const SILENT = { on: () => false, cues: [], reveal: (options) => ({ reveal: crea
  *   agent: {
  *     feel: (text: string) => Promise<{ mood: string, scores: object }>,
  *     send: (request: object, onEvent: (event: any) => void) => Promise<object>,
+ *     react: (request: object) => Promise<object>,
  *     stop: () => Promise<void>,
  *     renderMarkdown: (text: string) => Promise<string>,
  *   },
@@ -43,12 +46,41 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
   let pendingEntry = null;
   let heldAppId = null;
   let active = null;
+  /** A reaction turn that started while the last reply was still being revealed. Its events wait here until that reply ends. */
+  let waiting = null;
   let warned = false;
 
   function paint() {
     view.render(thread.rows());
-    composer.replying = thread.replying;
+    // While Jet thinks about a reaction the server takes no message, so one typed meanwhile is held.
+    composer.replying = thread.replying || Boolean(active?.reaction);
     composerView.refresh();
+  }
+
+  function revealFor(mine) {
+    const made = voice.reveal({
+      render: (partial) => agent.renderMarkdown(partial),
+      paint: (html) => {
+        if (active !== mine || !thread.slot) return;
+        thread.reveal(html);
+        paint();
+      },
+    });
+    mine.spoken = made.spoken;
+    return made.reveal;
+  }
+
+  /** A turn that a reaction started has no Jet row until Jet has something to show; then Jet flies to it. */
+  function openReply(now) {
+    const takeoff = live.measure();
+    thread.openSlot();
+    view.render(thread.rows());
+    live.send(view.liveLane(), now, takeoff);
+    reveal = revealFor(active);
+    if (active.mood) {
+      thread.setMood(active.mood);
+      reveal.holdUntil(live.mood(active.mood, now).revealAt);
+    }
   }
 
   function endReply() {
@@ -61,6 +93,13 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     composer.speaking = false;
     paint();
     afterReply();
+    if (waiting) {
+      active = waiting;
+      waiting = null;
+      paint();
+      for (const event of active.events.splice(0)) onEvent(event);
+      return;
+    }
     const held = thread.takeHeld();
     if (held !== null) {
       composerView.setHeld(null);
@@ -70,8 +109,44 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     }
   }
 
+  function backToLastReply(now) {
+    live.done(now);
+    view.render(thread.rows());
+    const lane = view.liveLane();
+    if (lane) live.showInLane(lane);
+  }
+
+  /**
+   * Follows a reaction turn without reloading the thread, which would cut off the voice of the last reply.
+   * The server takes no message while it runs, so a message of this page that it has not accepted yet goes
+   * back to the held message, which is sent when the reaction turn ends.
+   */
+  function followReaction({ requestId, turnId }) {
+    const next = { dispatched: true, requestId, turnId, reaction: true, mood: null, events: [] };
+    if (pendingEntry) {
+      waiting = next;
+      return;
+    }
+    if (active) {
+      const unsent = active;
+      unsent.cancelFeeling?.();
+      reveal?.end();
+      reveal = null;
+      thread.unsend();
+      const later = thread.cancelHold();
+      thread.hold(unsent.text, unsent.attachments);
+      thread.hold(later.text, later.attachments);
+      heldAppId = unsent.appId;
+      composerView.setHeld(thread.held);
+      backToLastReply(performance.now());
+    }
+    active = next;
+    paint();
+  }
+
   function onEvent(event) {
     const now = performance.now();
+    if (!thread.slot && SHOWN.has(event.kind)) openReply(now);
     switch (event.kind) {
       case 'started':
         if (event.fresh) afterReply();
@@ -92,6 +167,10 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         thread.progressTool(event);
         break;
       case 'mood':
+        if (!thread.slot) {
+          active.mood = event.mood;
+          break;
+        }
         thread.setMood(event.mood);
         reveal.holdUntil(live.mood(event.mood, now).revealAt);
         break;
@@ -126,6 +205,14 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         thread.stop(event.entry);
         live.stopped(now);
         break;
+      case 'noReply':
+        reveal?.end();
+        if (thread.slot) {
+          // Jet only reacted to the message: the waiting bubble leaves, and Jet goes back to his last reply.
+          thread.dropSlot();
+          backToLastReply(now);
+        }
+        break;
       default:
         break;
     }
@@ -133,10 +220,9 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
     else paint();
   }
 
-  function request(text, appId, attachments) {
+  /** The settings of the turn that a message or a reaction starts, the same for both. */
+  function turnSettings(appId) {
     return {
-      text,
-      ...(attachments.length > 0 && { attachments: attachments.map((file) => file.id) }),
       activeAppId: appId,
       model: settings.model,
       effort: settings.effort,
@@ -144,6 +230,14 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       persona: { ...settings.persona },
       localTime: localTimeLabel(Date.now()),
       spoken: voice.on(),
+    };
+  }
+
+  function request(text, appId, attachments) {
+    return {
+      text,
+      ...(attachments.length > 0 && { attachments: attachments.map((file) => file.id) }),
+      ...turnSettings(appId),
     };
   }
 
@@ -158,42 +252,57 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       thread.load(snapshot.history);
       if (held !== null) thread.hold(held.text, held.attachments);
       active = null;
+      waiting = null;
       reveal = null;
       pendingEntry = null;
       composer.speaking = false;
       if (snapshot.history.length) composer.sent();
       const current = snapshot.active;
       if (current) {
-        const mine = { dispatched: true, requestId: current.identity.requestId, turnId: current.identity.turnId };
+        const mine = { dispatched: true, requestId: current.identity.requestId, turnId: current.identity.turnId, reaction: Boolean(current.reaction), mood: current.mood };
         active = mine;
-        thread.openSlot(current.user.at);
-        reveal = createReveal({ render: (text) => agent.renderMarkdown(text), paint: (html) => {
-          if (active !== mine || !thread.slot) return;
-          thread.reveal(html);
-          paint();
-        } });
-        if (current.mood) thread.setMood(current.mood);
-        for (const tool of current.tools) {
-          thread.startTool(tool);
-          if (tool.kind === 'toolFinished') thread.finishTool(tool);
+        if (current.user || current.text || current.tools.length > 0) {
+          thread.openSlot(current.user?.at);
+          reveal = createReveal({ render: (text) => agent.renderMarkdown(text), paint: (html) => {
+            if (active !== mine || !thread.slot) return;
+            thread.reveal(html);
+            paint();
+          } });
+          if (current.mood) thread.setMood(current.mood);
+          for (const tool of current.tools) {
+            thread.startTool(tool);
+            if (tool.kind === 'toolFinished') thread.finishTool(tool);
+          }
+          thread.appendText(current.text);
+          reveal.text(current.text);
         }
-        thread.appendText(current.text);
-        reveal.text(current.text);
       }
       composerView.setLayout(composer.layout);
       paint();
       if (snapshot.history.length) live.showInLane(view.liveLane());
-      if (current) live.replying(performance.now());
+      if (thread.slot) live.replying(performance.now());
     },
 
     observe(envelope) {
-      if (envelope.event.kind === 'accepted') {
-        // The page that sent the message already shows its bubble and has Jet in flight; it only needs the turn's id.
-        if (active && !active.turnId && envelope.turn?.requestId === active.requestId) active.turnId = envelope.turn.turnId;
-        else turn.restore(envelope.event.snapshot);
+      const { event } = envelope;
+      // A list of emoji replaces the old one, inside a turn or outside, so one seen twice changes nothing.
+      if (event.kind === 'reactions') {
+        thread.react(event.entryId, event.reactions);
+        paint();
         return;
       }
-      if (active && active.turnId === envelope.turn?.turnId && thread.slot) onEvent(envelope.event);
+      if (event.kind === 'accepted') {
+        const current = event.snapshot.active;
+        // The page that sent the message already shows its bubble and has Jet in flight; it only needs the ids.
+        if (active && !active.turnId && envelope.turn?.requestId === active.requestId) {
+          active.turnId = envelope.turn.turnId;
+          if (current?.user) thread.userSaved(current.user.id);
+        } else if (current?.reaction && (!active || !active.turnId || pendingEntry)) followReaction(current.identity);
+        else turn.restore(event.snapshot);
+        return;
+      }
+      if (waiting && waiting.turnId === envelope.turn?.turnId) waiting.events.push(event);
+      else if (active && active.turnId === envelope.turn?.turnId && (thread.slot || active.reaction)) onEvent(event);
     },
 
     /**
@@ -202,7 +311,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
      */
     async send(text, appId = activeAppId(), attachments = []) {
       voice.unlock();
-      const mine = { dispatched: false, cancelFeeling: null, spoken: false };
+      const mine = { dispatched: false, cancelFeeling: null, spoken: false, text, appId, attachments };
       active = mine;
       const now = performance.now();
       const message = request(text, appId, attachments);
@@ -219,16 +328,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       page.announce.textContent = displayName(settings) + ' is replying';
       paint();
 
-      const made = voice.reveal({
-        render: (partial) => agent.renderMarkdown(partial),
-        paint: (html) => {
-          if (active !== mine || !thread.slot) return;
-          thread.reveal(html);
-          paint();
-        },
-      });
-      reveal = made.reveal;
-      mine.spoken = made.spoken;
+      reveal = revealFor(mine);
       const warn = () => {
         if (warned) return;
         warned = true;
@@ -281,6 +381,14 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       }
     },
 
+    /** Puts the user's emoji on a Jet message, or takes it off with null. The new list comes back as a `reactions` event. */
+    react(entryId, emoji) {
+      return agent.react({ ...turnSettings(activeAppId()), entryId, emoji }).catch((error) => {
+        thread.addWarning('The reaction could not be saved: ' + (error?.message ?? 'the server did not answer'));
+        paint();
+      });
+    },
+
     retry() {
       const last = thread.lastUser();
       if (last !== null && !thread.replying) turn.send(last.text, undefined, last.attachments);
@@ -291,8 +399,11 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       if (!mine) return;
       if (mine.dispatched && !pendingEntry) {
         mine.stopping = true;
-        reveal.end();
-        live.stopped(performance.now());
+        // A turn that a reaction started may have shown nothing yet, so there is no reply to end on the page.
+        if (reveal) {
+          reveal.end();
+          live.stopped(performance.now());
+        }
         agent.stop(mine.requestId).catch((error) => console.warn('Stop could not be sent:', error));
         return;
       }

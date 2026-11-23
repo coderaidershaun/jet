@@ -1,7 +1,7 @@
 //! Reconnect browsers from an authoritative snapshot and a bounded tail of events.
 
 use super::BridgeError;
-use agent::{Event, ShownEntry, TurnIdentity, mcp::ToolTarget};
+use agent::{EntryId, Event, ShownEntry, TurnIdentity, mcp::ToolTarget};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::VecDeque;
@@ -50,17 +50,26 @@ pub(crate) struct Envelope {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ActiveTurn {
     pub identity: TurnContext,
-    pub user: ShownEntry,
+    /// The message the turn answers; `None` when it answers a reaction instead.
+    pub user: Option<ShownEntry>,
+    /// The reaction the turn answers, when no message started it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reaction: Option<Reacted>,
     pub text: String,
     pub mood: Option<agent::Mood>,
     pub tools: Vec<Value>,
 }
 
 impl ActiveTurn {
-    pub(super) fn new(identity: TurnContext, user: ShownEntry) -> Self {
+    pub(super) fn new(
+        identity: TurnContext,
+        user: Option<ShownEntry>,
+        reaction: Option<Reacted>,
+    ) -> Self {
         Self {
             identity,
             user,
+            reaction,
             text: String::new(),
             mood: None,
             tools: Vec::new(),
@@ -71,6 +80,14 @@ impl ActiveTurn {
         match event {
             Event::Text { delta } => self.text.push_str(delta),
             Event::Mood { mood } => self.mood = Some(*mood),
+            Event::Reactions {
+                entry_id,
+                reactions,
+            } => {
+                if let Some(user) = self.user.as_mut().filter(|user| user.entry.id == *entry_id) {
+                    user.entry.reactions = reactions.clone();
+                }
+            }
             Event::ToolStarted(_) => self.tools.push(json!(event)),
             Event::ToolFinished(call) => {
                 let started = self.tools.iter_mut().find(|tool| tool["id"] == call.id);
@@ -140,6 +157,14 @@ impl ActiveTurn {
     }
 }
 
+/// The user's emoji on a Jet message that a turn answers.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Reacted {
+    pub entry_id: EntryId,
+    pub emoji: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Snapshot {
@@ -158,6 +183,8 @@ pub(super) struct Runtime {
     pub sender: broadcast::Sender<Envelope>,
     pub closing: bool,
     pub cancelled_requests: VecDeque<String>,
+    /// The one reaction turn waiting for the running turn to end. A newer reaction replaces it.
+    pub pending: Option<super::PendingReaction>,
 }
 
 impl Runtime {
@@ -172,6 +199,7 @@ impl Runtime {
             sender,
             closing: false,
             cancelled_requests: VecDeque::new(),
+            pending: None,
         }
     }
 
@@ -198,7 +226,7 @@ impl Runtime {
         mut history: Vec<ShownEntry>,
     ) {
         let identity = active.identity.clone();
-        history.push(active.user.clone());
+        history.extend(active.user.clone());
         self.active = Some(active);
         self.stopper = Some(stopper);
         let snapshot = Snapshot {

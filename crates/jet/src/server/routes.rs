@@ -23,7 +23,7 @@ use tower_http::services::ServeDir;
 use super::Server;
 use crate::{
     apps,
-    chat::{Accepted, AgentStatus, BridgeError, SendRequest, Snapshot},
+    chat::{Accepted, AgentStatus, BridgeError, ReactRequest, SendRequest, Snapshot},
     files, on_worker, settings, voice,
 };
 
@@ -45,6 +45,7 @@ pub(super) fn router(host: Server) -> Router {
         .route("/api/snapshot", get(snapshot))
         .route("/api/events", get(events))
         .route("/api/chat/send", post(send))
+        .route("/api/chat/react", post(react))
         .route("/api/chat/stop", post(stop))
         .route("/api/chat/forget", post(forget))
         .route("/api/settings", get(load_settings).put(save_settings))
@@ -67,6 +68,13 @@ async fn send(
     Json(request): Json<SendRequest>,
 ) -> Result<Json<Accepted>, BridgeError> {
     Ok(Json(on_worker(move || host.chat.send(request)).await??))
+}
+async fn react(
+    State(host): State<Server>,
+    Json(request): Json<ReactRequest>,
+) -> Result<Json<Value>, BridgeError> {
+    let entry = on_worker(move || host.chat.react(request)).await??;
+    Ok(Json(json!({"entry": entry})))
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

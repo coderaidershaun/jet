@@ -7,8 +7,8 @@ mod review_timer;
 mod turn_tools;
 
 use agent::{
-    Conversation, DataDir, Effort, Event, Message, Model, Persona, Reply, ShownEntry, TurnIdentity,
-    mcp::Progress,
+    Conversation, ConversationError, DataDir, Effort, EntryId, Event, Message, Model, Persona,
+    Reaction, Reply, ShownEntry, Transport, TurnIdentity, mcp::Progress,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -22,7 +22,7 @@ use tokio::sync::broadcast;
 use crate::files::{About, FileError, Files};
 use crate::{lock, settings};
 pub use error::BridgeError;
-use events::{ActiveTurn, Runtime};
+use events::{ActiveTurn, Reacted, Runtime};
 pub(crate) use events::{Envelope, RunningCall, Snapshot, TurnContext};
 pub(crate) use provider::AgentStatus;
 use review_timer::{ReviewTarget, ReviewTimer};
@@ -93,6 +93,77 @@ impl SendRequest {
     }
 }
 
+/// The user puts an emoji on a Jet message, or takes theirs off with `emoji: null`. The settings
+/// are those of `send`, for the turn in which Jet may answer the reaction.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReactRequest {
+    pub request_id: String,
+    pub client_id: String,
+    pub entry_id: EntryId,
+    pub emoji: Option<String>,
+    #[serde(default)]
+    pub model: Model,
+    #[serde(default)]
+    pub effort: Effort,
+    pub budget_usd: f64,
+    pub persona: Persona,
+    pub local_time: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_app_id: Option<agent::apps::AppId>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub spoken: bool,
+}
+
+impl ReactRequest {
+    fn check(&self) -> Result<(), BridgeError> {
+        if self.request_id.is_empty()
+            || self.client_id.is_empty()
+            || self.request_id.len() > MAX_ID_BYTES
+            || self.client_id.len() > MAX_ID_BYTES
+            || !self.budget_usd.is_finite()
+            || self.budget_usd <= 0.0
+        {
+            return Err(BridgeError::InvalidRequest(
+                "request ID, client ID and positive budget are required".into(),
+            ));
+        }
+        if let Some(emoji) = &self.emoji
+            && !Reaction::is_emoji(emoji)
+        {
+            return Err(BridgeError::InvalidRequest(format!(
+                "{emoji:?} is not an emoji"
+            )));
+        }
+        Ok(())
+    }
+
+    /// The same settings as a message with no words, so the turn is bound like any other.
+    fn as_send(&self) -> SendRequest {
+        SendRequest {
+            request_id: self.request_id.clone(),
+            client_id: self.client_id.clone(),
+            text: String::new(),
+            attachments: Vec::new(),
+            model: self.model,
+            effort: self.effort,
+            budget_usd: self.budget_usd,
+            persona: self.persona.clone(),
+            local_time: self.local_time.clone(),
+            feeling: None,
+            active_app_id: self.active_app_id.clone(),
+            spoken: self.spoken,
+        }
+    }
+}
+
+/// A user's reaction that Jet answers once the running turn has ended.
+pub(crate) struct PendingReaction {
+    request: ReactRequest,
+    /// Found when the reaction came in, so starting the turn later looks nothing up.
+    transport: Arc<dyn Transport>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Accepted {
@@ -153,20 +224,125 @@ impl ChatState {
                 self.tools.revoke(&identity.request_id);
             })?;
         let identity = TurnContext::from(&identity);
-        self.review.note_activity();
-        runtime.start(
-            ActiveTurn::new(identity.clone(), user.clone()),
-            reply.stopper(),
-            history,
-        );
         let accepted = Accepted {
             turn_id: identity.turn_id.clone(),
             request_id: identity.request_id.clone(),
-            user,
+            user: user.clone(),
         };
+        let active = ActiveTurn::new(identity, Some(user), None);
+        self.begin(&mut runtime, active, reply, history, target);
+        Ok(accepted)
+    }
+
+    /// Saves the user's reaction and tells every browser at once, even while a turn runs. A new
+    /// or changed emoji lets Jet answer it now, or after the running turn as the one pending
+    /// reaction turn. Taking a reaction off starts nothing.
+    pub fn react(self: &Arc<Self>, request: ReactRequest) -> Result<ShownEntry, BridgeError> {
+        request.check()?;
+        let transport = settings::read_from(&self.data_dir)
+            .map_err(BridgeError::from)
+            .and_then(|saved| provider::transport_for(request.model, &saved, &self.data_dir));
+        let mut runtime = lock(&self.runtime);
+        if runtime.closing {
+            return Err(BridgeError::ShuttingDown);
+        }
+        let (entry, changed) = self
+            .conversation
+            .react(request.entry_id, request.emoji.as_deref())?;
+        if !changed {
+            return Ok(entry);
+        }
+        let event = Event::Reactions {
+            entry_id: entry.entry.id,
+            reactions: entry.entry.reactions.clone(),
+        };
+        runtime.publish(None, json!(event));
+        if request.emoji.is_none() {
+            let for_this_entry =
+                |pending: &PendingReaction| pending.request.entry_id == request.entry_id;
+            if runtime.pending.as_ref().is_some_and(for_this_entry) {
+                runtime.pending = None;
+            }
+            return Ok(entry);
+        }
+        // Only Jet's answer needs the settings and the provider, so the reaction is saved first.
+        let transport = transport?;
+        runtime.pending = Some(PendingReaction { request, transport });
+        self.start_pending(&mut runtime);
+        Ok(entry)
+    }
+
+    /// Starts the pending reaction turn when no turn runs. While the provider is still held by
+    /// the turn that just ended, it stays pending: that turn starts it once it lets go.
+    fn start_pending(self: &Arc<Self>, runtime: &mut Runtime) {
+        if runtime.active.is_some() || runtime.closing {
+            return;
+        }
+        let Some(PendingReaction { request, transport }) = runtime.pending.take() else {
+            return;
+        };
+        if runtime.cancelled_requests.contains(&request.request_id) {
+            return;
+        }
+        let history = match self.conversation.history(SHOWN_HISTORY) {
+            Ok(history) => history,
+            Err(error) => {
+                eprintln!(
+                    "jet: the reaction on message {} was not answered: {error}",
+                    request.entry_id
+                );
+                return;
+            }
+        };
+        let target = ReviewTarget {
+            transport: transport.clone(),
+            name: request.persona.name.clone(),
+        };
+        let (identity, message) =
+            self.bind_new_turn(request.as_send(), json!(&request), Vec::new());
+        let started = self.conversation.answer_reaction(
+            transport.clone(),
+            message,
+            request.entry_id,
+            Some(identity.clone()),
+        );
+        let reply = match started {
+            Ok(reply) => reply,
+            Err(error) => {
+                self.tools.revoke(&identity.request_id);
+                if matches!(error, ConversationError::Busy) {
+                    runtime.pending = Some(PendingReaction { request, transport });
+                } else {
+                    eprintln!(
+                        "jet: the reaction on message {} was not answered: {error}",
+                        request.entry_id
+                    );
+                }
+                return;
+            }
+        };
+        let reacted = Reacted {
+            entry_id: request.entry_id,
+            emoji: request.emoji.unwrap_or_default(),
+        };
+        let active = ActiveTurn::new(TurnContext::from(&identity), None, Some(reacted));
+        self.begin(runtime, active, reply, history, target);
+    }
+
+    /// Makes the turn the active one and follows its reply on a thread of its own.
+    fn begin(
+        self: &Arc<Self>,
+        runtime: &mut Runtime,
+        active: ActiveTurn,
+        reply: Reply,
+        history: Vec<ShownEntry>,
+        target: ReviewTarget,
+    ) {
+        let identity = active.identity.clone();
+        self.review.note_activity();
+        runtime.start(active, reply.stopper(), history);
         let host = self.clone();
         std::thread::spawn(move || host.follow_reply(reply, &identity, target));
-        Ok(accepted)
     }
 
     /// The answer to a request that was accepted before, if it was. The same request ID with a
@@ -235,7 +411,10 @@ impl ChatState {
         for event in reply.by_ref() {
             let terminal = matches!(
                 event,
-                Event::Finished { .. } | Event::Failed { .. } | Event::Stopped { .. }
+                Event::Finished { .. }
+                    | Event::NoReply
+                    | Event::Failed { .. }
+                    | Event::Stopped { .. }
             );
             let mut runtime = lock(&self.runtime);
             if let Some(active) = &mut runtime.active {
@@ -250,10 +429,11 @@ impl ChatState {
         }
         self.tools.revoke(&identity.request_id);
         drop(reply);
-        let runtime = lock(&self.runtime);
+        let mut runtime = lock(&self.runtime);
         if !runtime.closing {
             self.review.schedule(self.clone(), target);
         }
+        self.start_pending(&mut runtime);
     }
 
     /// Makes the uploads visible to Jet and gives their details for the message. A bad id leaves
@@ -344,6 +524,7 @@ impl ChatState {
     pub fn forget(&self) -> Result<(), BridgeError> {
         let mut runtime = lock(&self.runtime);
         self.conversation.forget()?;
+        runtime.pending = None;
         runtime.publish(None, json!({"kind":"historyChanged"}));
         self.files.clear()?;
         Ok(())

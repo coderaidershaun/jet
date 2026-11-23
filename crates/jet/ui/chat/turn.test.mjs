@@ -13,6 +13,7 @@ async function setup(t, options = {}) {
   const page = { announce: {} };
   let event;
   const requests = [];
+  const reacts = [];
   let stopped = 0;
   const noop = () => {};
   let relaunched = 0;
@@ -20,7 +21,7 @@ async function setup(t, options = {}) {
   const chips = [];
   const live = { feel: () => ({ revealAt: 1000 }), measure: () => ({}), send: noop, mood: () => ({ revealAt: 1650 }), replying: noop, done: () => { settled++; }, failed: noop, stopped: noop, showInLane: () => { relaunched++; } };
   const turn = createTurn({
-    agent: { serverEvents: options.serverEvents, feel: options.feel ?? (async () => ({ mood: 'neutral' })), send: (request, receive) => { requests.push(request); event = receive; return Promise.resolve({}); }, stop: () => { stopped++; return Promise.resolve(); }, renderMarkdown: async (text) => '<p>' + text + '</p>' },
+    agent: { serverEvents: options.serverEvents, feel: options.feel ?? (async () => ({ mood: 'neutral' })), send: (request, receive) => { requests.push(request); event = receive; return Promise.resolve({}); }, react: (request) => { reacts.push(request); return Promise.resolve({}); }, stop: () => { stopped++; return Promise.resolve(); }, renderMarkdown: async (text) => '<p>' + text + '</p>' },
     settings: { persona: { name: 'Jet' } }, thread, composer, page,
     view: { render: noop, liveLane: noop }, follow: { onSend: noop },
     composerView: { refresh: noop, setLayout: noop, setHeld: (held) => { chips.push(held); } },
@@ -31,7 +32,7 @@ async function setup(t, options = {}) {
   const entry = { id: 2, role: 'jet', text: 'Hello', html: '<p>Hello final</p>', status: 'complete', at: 0 };
   const sending = turn.send('hi');
   if (!options.pending) await sending;
-  return { sending, live, turn, thread, composer, page, advance, entry, requests, chips, settled: () => settled, stops: () => stopped, relaunched: () => relaunched, captureEvent: () => event, event: (value) => event(value) };
+  return { sending, live, turn, thread, composer, page, advance, entry, requests, reacts, chips, settled: () => settled, stops: () => stopped, relaunched: () => relaunched, captureEvent: () => event, event: (value) => event(value) };
 }
 
 test("the page that sent a message keeps Jet's flight on its own accepted event, and restores on another page's", async (t) => {
@@ -239,4 +240,118 @@ test('a send says the reply is spoken, and the finished reply is announced witho
   await s.advance(50);
   assert.equal(s.page.announce.textContent, 'Ha yes.');
   assert.equal(s.thread.rows().filter((row) => row.entry?.role === 'jet').at(-1).entry.text, 'Ha <laugh> yes.', 'the saved reply keeps its cues');
+});
+
+test('Jet may only react to a message: the waiting bubble leaves, and the emoji shows on the message', async (t) => {
+  const s = await setup(t, { serverEvents: true });
+  const turn = { requestId: s.requests[0].requestId, turnId: 'turn-1' };
+  const user = { id: 1, role: 'user', text: 'hi', html: '', status: 'complete', at: 0 };
+  s.turn.observe({ turn, event: { kind: 'accepted', snapshot: { history: [user], active: { identity: turn, user, text: '', mood: null, tools: [] } } } });
+  const heart = { by: 'jet', emoji: '❤️', at: 1 };
+  s.turn.observe({ turn, event: { kind: 'mood', mood: 'happy' } });
+  s.turn.observe({ turn, event: { kind: 'reactions', entryId: 1, reactions: [heart] } });
+  s.turn.observe({ turn, event: { kind: 'noReply' } });
+  assert.deepEqual([s.thread.replying, s.composer.replying], [false, false]);
+  const rows = s.thread.rows().filter((row) => row.entry);
+  assert.deepEqual(rows.map((row) => row.type), ['user'], 'no empty Jet bubble is left');
+  assert.deepEqual(rows[0].reactions, [heart], 'the message learnt its id from the accepted turn');
+});
+
+test("a reaction on Jet's message is saved with the settings of a send, and its list arrives outside any turn", async (t) => {
+  const s = await setup(t, { serverEvents: true });
+  s.event({ kind: 'finished', entry: { ...s.entry, id: 2 } });
+  await s.advance(1000);
+  await s.turn.react(2, '👍');
+  const { text: _text, feeling: _feeling, requestId: _id, ...settings } = s.requests[0];
+  const { entryId, emoji, ...same } = s.reacts[0];
+  assert.deepEqual([entryId, emoji], [2, '👍']);
+  assert.deepEqual(same, settings, 'a reaction and a message start their turns the same way');
+
+  const thumbs = { by: 'user', emoji: '👍', at: 5 };
+  s.turn.observe({ turn: null, event: { kind: 'reactions', entryId: 2, reactions: [thumbs] } });
+  s.turn.observe({ turn: null, event: { kind: 'reactions', entryId: 2, reactions: [thumbs] } });
+  assert.deepEqual(s.thread.rows().find((row) => row.entry?.id === 2).reactions, [thumbs]);
+});
+
+test('a turn that a reaction started shows nothing until Jet writes, and nothing at all when Jet lets it be', async (t) => {
+  const s = await setup(t, { serverEvents: true });
+  s.event({ kind: 'finished', entry: { ...s.entry, id: 2 } });
+  await s.advance(1000);
+  const jetRows = () => s.thread.rows().filter((row) => row.type === 'jet');
+  const reactionTurn = (turnId) => {
+    const turn = { requestId: 'r-' + turnId, turnId };
+    const active = { identity: turn, user: null, reaction: { entryId: 2, emoji: '👍' }, text: '', mood: null, tools: [] };
+    s.turn.observe({ turn, event: { kind: 'accepted', snapshot: { history: [], active } } });
+    return (event) => s.turn.observe({ turn, event });
+  };
+
+  const quiet = reactionTurn('turn-2');
+  quiet({ kind: 'started', fresh: false });
+  quiet({ kind: 'mood', mood: 'happy' });
+  assert.equal(s.thread.replying, false, 'no Jet row opens for a mood alone');
+  assert.equal(s.composer.replying, true, 'a message typed meanwhile is held');
+  quiet({ kind: 'noReply' });
+  assert.equal(s.composer.replying, false);
+  assert.equal(jetRows().length, 1);
+
+  const answer = reactionTurn('turn-3');
+  answer({ kind: 'mood', mood: 'happy' });
+  answer({ kind: 'text', delta: 'Glad it helped' });
+  assert.deepEqual([jetRows().length, s.thread.slot.mood, s.thread.slot.text], [2, 'happy', 'Glad it helped']);
+  answer({ kind: 'finished', entry: { ...s.entry, id: 3, text: 'Glad it helped' } });
+  await s.advance(1000);
+  assert.deepEqual([s.thread.replying, jetRows().at(-1).entry.id], [false, 3]);
+});
+
+/** The reaction turn the server starts as soon as a reply ends, because the user reacted while Jet replied. */
+const reactionAccepted = (s) => {
+  const turn = { requestId: 'r-react', turnId: 'turn-react' };
+  const active = { identity: turn, user: null, reaction: { entryId: 2, emoji: '👍' }, text: '', mood: null, tools: [] };
+  s.turn.observe({ turn, event: { kind: 'accepted', snapshot: { history: [], active } } });
+  return (event) => s.turn.observe({ turn, event });
+};
+
+test('a held message that a reaction turn overtakes goes back to the hold and is sent when that turn ends', async (t) => {
+  const answers = [];
+  const s = await setup(t, { serverEvents: true, pending: true, feel: () => new Promise((resolve) => answers.push(resolve)) });
+  answers[0]({ mood: 'neutral' });
+  await s.sending;
+  const own = { requestId: s.requests[0].requestId, turnId: 'turn-1' };
+  const user = { id: 1, role: 'user', text: 'hi', html: '', status: 'complete', at: 0 };
+  s.turn.observe({ turn: own, event: { kind: 'accepted', snapshot: { history: [user], active: { identity: own, user, text: '', mood: null, tools: [] } } } });
+  s.turn.observe({ turn: own, event: { kind: 'text', delta: 'Hello' } });
+  s.turn.hold('next');
+  s.turn.observe({ turn: own, event: { kind: 'finished', entry: { ...s.entry, id: 2 } } });
+  await s.advance(1000);
+  assert.equal(answers.length, 2, 'the held message is being classified');
+
+  const reaction = reactionAccepted(s);
+  answers[1]({ mood: 'neutral' });
+  await s.advance(0);
+  assert.equal(s.requests.length, 1, 'the server would refuse it while Jet answers the reaction');
+  assert.deepEqual(s.thread.held, { text: 'next', attachments: [] });
+  assert.deepEqual(s.thread.rows().filter((row) => row.entry).map((row) => row.entry.text), ['hi', 'Hello'], 'its bubble waits as the held message');
+
+  reaction({ kind: 'noReply' });
+  answers[2]({ mood: 'neutral' });
+  await s.advance(0);
+  assert.equal(s.requests.at(-1).text, 'next', 'the held message is sent');
+});
+
+test('a reaction turn that starts while the last reply is still revealed waits for it, and the reply ends whole', async (t) => {
+  const s = await setup(t, { serverEvents: true });
+  s.turn.hold('next');
+  s.event({ kind: 'text', delta: 'Hello' });
+  s.event({ kind: 'finished', entry: { ...s.entry, id: 2 } });
+  const reaction = reactionAccepted(s);
+  reaction({ kind: 'mood', mood: 'happy' });
+  assert.equal(s.relaunched(), 0, 'the thread is not reloaded');
+  await s.advance(1000);
+  const jet = s.thread.rows().filter((row) => row.type === 'jet');
+  assert.deepEqual([jet.length, jet[0].entry.status], [1, 'complete'], 'the reply finished as it was written');
+  assert.equal(s.composer.replying, true, 'the reaction turn now runs');
+  assert.equal(s.requests.length, 1, 'the held message waits for it');
+  reaction({ kind: 'noReply' });
+  await s.advance(0);
+  assert.equal(s.requests.at(-1).text, 'next');
 });
