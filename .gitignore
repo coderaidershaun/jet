@@ -4,6 +4,7 @@
 .codex
 .scratch
 jet-data/
+.rex
 
 # rex:ignore claude
 .claude/skills/
