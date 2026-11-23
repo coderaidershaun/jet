@@ -11,3 +11,13 @@ jet-data/
 
 # Local secrets (the JEV key); never committed
 .env
+
+# rex:ignore superrex
+.claude/settings.local.json
+/.claude/worktrees/
+/.rex/rex.db*
+/.rex/events.jsonl
+/.rex/orchestrators/
+/.rex/plans/
+/.rex/worktrees/
+/.rex/live/
