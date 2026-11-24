@@ -77,7 +77,9 @@ if (input.includes('fail-before-init')) {
   const chatBox = await page.locator('#page').boundingBox();
   const drawerBox = await page.locator('#drawer').boundingBox();
   assert.equal(chatBox.x, drawerBox.width);
-  assert.equal(chatBox.width + drawerBox.width, 1440, 'Chat occupies the content beside its drawer');
+  // The plan pane takes the third column at this width; it is open unless the user closed it.
+  const paneWidth = (await page.locator('#side-pane').isVisible()) ? (await page.locator('#side-pane').boundingBox()).width : 0;
+  assert.equal(chatBox.width + drawerBox.width + paneWidth, 1440, 'Chat occupies the content between its drawer and the plan pane');
   assert.ok(await page.locator('#drawer-name').evaluate(el => el.getBoundingClientRect().left > document.querySelector('#drawer-jet').getBoundingClientRect().right));
   for (const name of ['Add app', 'Apps', 'Hide apps', 'Chat', 'Tools', 'Hide dock']) {
     assert.equal(await page.getByRole('button', { name, exact: true }).count(), 0);
@@ -115,7 +117,8 @@ if (input.includes('fail-before-init')) {
   const railBox = await page.locator('#drawer').boundingBox();
   const appBox = await page.locator('.workspace-frames').boundingBox();
   const gearBox = await page.locator('#gear').boundingBox();
-  assert.ok(railBox.width < 80 && appBox.width + railBox.width === 1440, 'App fills the space beside an icon rail');
+  const paneBesideApp = (await page.locator('#side-pane').isVisible()) ? (await page.locator('#side-pane').boundingBox()).width : 0;
+  assert.ok(railBox.width < 80 && appBox.width + railBox.width + paneBesideApp === 1440, 'App fills the space between an icon rail and the plan pane');
   assert.ok(gearBox.x < railBox.width && gearBox.y + gearBox.height >= 880, 'Settings stays at the bottom left');
   const shortList = await page.locator('.app-list').evaluate(el => ({
     width: el.clientWidth, scrollWidth: el.scrollWidth, height: el.clientHeight, scrollHeight: el.scrollHeight,
@@ -264,7 +267,8 @@ if (input.includes('fail-before-init')) {
     await page.locator('.body table').last().scrollIntoViewIfNeeded();
     await delay(250);
     await page.screenshot({ path: path.join(output, `workspace-${viewport.width}x${viewport.height}.png`), animations: 'disabled' });
-    await page.getByRole('button', { name: 'Expand drawer', exact: true }).click();
+    // On a phone the drawer is hidden and the Chats button in the chat's head opens it.
+    await page.locator('.chats-toggle').click();
     assert.ok(await page.locator('#context-title').isVisible());
     assert.ok(await page.locator('.workspace-content').evaluate(el => el.inert));
     await page.screenshot({ path: path.join(output, `workspace-drawer-${viewport.height}.png`), animations: 'disabled' });
@@ -277,7 +281,7 @@ if (input.includes('fail-before-init')) {
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('.workspace-shell').getAttribute('data-expanded'), 'false');
     assert.equal(stops.length, 1);
-    assert.equal(await page.getByRole('button', { name: 'Expand drawer', exact: true }).evaluate(el => el === document.activeElement), true);
+    assert.equal(await page.locator('.chats-toggle').evaluate(el => el === document.activeElement), true);
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await chat();
@@ -334,7 +338,8 @@ if (input.includes('fail-before-init')) {
   await until(async () => (await (await context.request.get(origin + '/api/settings')).json()).effort === 'medium', 'Fresh failure selection is saved');
   await page.locator('#field').fill('fail-before-init');
   await page.locator('#send').click();
-  await until(async () => /Fixture failed before init/.test(await page.locator('#rows').innerText()), 'Free provider fails before init');
+  // A failure reads as one plain sentence, with the provider's own words behind Details.
+  await until(async () => /Jet could not finish this reply/.test(await page.locator('#rows').innerText()) && /Fixture failed before init/.test(await page.locator('#rows .error-details').last().textContent()), 'Free provider fails before init');
   await until(async () => (await page.locator('#context-tokens').textContent()) === '— / — tokens', 'Failed fresh reply clears prior context even without Started');
   await until(async () => await page.locator('#send').getAttribute('aria-label') === 'Send', 'Failed reveal ends');
   await page.locator('#field').fill('layout-fixture');
@@ -342,7 +347,7 @@ if (input.includes('fail-before-init')) {
   await until(async () => (await page.locator('#context-tokens').textContent()) === '600 / 1,000 tokens', 'Fixture measures before Forget');
   await until(async () => await page.locator('#send').getAttribute('aria-label') === 'Send', 'Fixture reveal ends before Forget');
   await page.locator('#gear').click();
-  await page.getByRole('button', { name: 'Forget this conversation', exact: true }).click();
+  await page.getByRole('button', { name: 'Forget “Main chat”', exact: true }).click();
   await page.getByRole('button', { name: 'Forget', exact: true }).click();
   await page.locator('#sheet').waitFor({ state: 'hidden' });
   await until(async () => (await page.locator('#context-tokens').textContent()) === '— / — tokens', 'Forget clears measured context');

@@ -33,7 +33,7 @@ function smiley() {
 
 /** The button on a Jet bubble that opens the chooser. It carries the message id and the user's emoji on it. */
 export function reactButton(entryId, mine) {
-  return h('button', { class: 'react-open', type: 'button', 'aria-label': 'React', 'data-entry': entryId, 'data-mine': mine ?? '' }, smiley());
+  return h('button', { class: 'react-open', type: 'button', tabindex: -1, 'aria-label': 'React', 'data-entry': entryId, 'data-mine': mine ?? '' }, smiley());
 }
 
 /**
@@ -45,12 +45,19 @@ export function createReactChooser({ onPick }) {
   const more = h('button', { class: 'react-more', type: 'button', 'aria-label': 'Any other emoji' }, icon('plus'));
   const field = h('input', { class: 'react-field', type: 'text', 'aria-label': 'Any emoji', placeholder: 'Type or paste an emoji', autocomplete: 'off', enterkeyhint: 'done', hidden: true });
   const el = h('div', { class: 'react-chooser', role: 'group', 'aria-label': 'React' }, ...picks, more, field);
-  /** @type {{ entryId: number, mine: string | null } | null} */
+  /** @type {{ entryId: number, mine: string | null, opener: HTMLElement | null } | null} */
   let target = null;
 
-  function close() {
+  /** With `refocus`, the focus goes back to the control that opened the chooser, or its message when that control is hidden. */
+  function close(refocus = false) {
+    const opener = target?.opener;
     target = null;
     el.remove();
+    el.style.removeProperty('translate');
+    if (refocus && opener) {
+      opener.focus();
+      if (document.activeElement !== opener) opener.closest('.bubble')?.focus();
+    }
   }
 
   function pick(emoji) {
@@ -74,10 +81,16 @@ export function createReactChooser({ onPick }) {
     if (emoji) pick(emoji);
   });
   el.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    // The page's own Escape stops a running reply; this one only closes the chooser.
-    event.preventDefault();
-    close();
+    const shown = [...picks, more].filter((each) => !each.hidden);
+    const at = shown.indexOf(/** @type {HTMLButtonElement} */ (event.target));
+    if (event.key === 'Escape') {
+      // The page's own Escape stops a running reply; this one only closes the chooser.
+      event.preventDefault();
+      close(true);
+    } else if ((event.key === 'ArrowRight' || event.key === 'ArrowLeft') && at !== -1) {
+      event.preventDefault();
+      shown[(at + (event.key === 'ArrowRight' ? 1 : shown.length - 1)) % shown.length].focus();
+    }
   });
   document.addEventListener('pointerdown', (event) => {
     if (target && !el.contains(/** @type {Node} */ (event.target))) close();
@@ -85,14 +98,18 @@ export function createReactChooser({ onPick }) {
 
   return {
     /** Opens on a bubble, above it, or below it when the bubble is at the top of the thread. */
-    open(bubble, { entryId, mine, below }) {
-      target = { entryId, mine };
+    open(bubble, { entryId, mine, below, opener = null }) {
+      target = { entryId, mine, opener };
       for (const each of picks) each.setAttribute('aria-pressed', String(each.dataset.emoji === mine));
       for (const each of [...picks, more]) each.hidden = false;
       field.hidden = true;
       field.value = '';
       el.classList.toggle('below', below);
+      el.style.removeProperty('translate');
       bubble.append(el);
+      // On a narrow screen the row would run past the window's right edge, so it moves left until it fits.
+      const overflow = el.getBoundingClientRect().right - (document.documentElement.clientWidth - 8);
+      if (overflow > 0) el.style.translate = -overflow + 'px 0';
       picks[0].focus({ preventScroll: true });
     },
     close,

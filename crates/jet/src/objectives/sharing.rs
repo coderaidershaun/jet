@@ -4,7 +4,8 @@
 use super::{ObjectiveError, Objectives, TEAM_NAME_LIMIT, UTC, time};
 use crate::chat::TurnOwner;
 use crate::store::{
-    Applied, ObjectiveId, Person, ProposalId, ShareCard, Shared, Sharing, Team, UserId,
+    Applied, CardPerson, CardTeam, ObjectiveId, Person, ProposalId, ShareCard, Shared, Sharing,
+    Team, UserId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +19,13 @@ pub(crate) struct SharedView {
     duration_days: i64,
     /// Days from today, in the owner's zone, to the due date; negative once it has passed.
     pub(super) days_left: i64,
+}
+
+/// Everyone the owner could share an objective with, ticked when it is shared with them now.
+#[derive(Debug, Serialize)]
+pub(crate) struct Directory {
+    people: Vec<CardPerson>,
+    teams: Vec<CardTeam>,
 }
 
 /// One change to the organisation's directory, made by an admin.
@@ -157,6 +165,42 @@ impl Objectives {
         self.store
             .sharing(owner, objective)?
             .ok_or(ObjectiveError::NoSuchObjective { id: objective.0 })
+    }
+
+    /// The people and teams of the organisation for the owner's share card, the owner left out.
+    /// Another user's objective answers as one that does not exist.
+    pub(crate) fn directory(
+        &self,
+        owner: UserId,
+        objective: ObjectiveId,
+    ) -> Result<Directory, ObjectiveError> {
+        let shared = self.sharing(owner, objective)?;
+        let (people, teams) = self.store.directory()?;
+        let name_of = |id: UserId| {
+            people
+                .iter()
+                .find(|person| person.id == id)
+                .map_or_else(String::new, |person| person.name.clone())
+        };
+        let teams = teams
+            .iter()
+            .map(|team| CardTeam {
+                id: team.id,
+                name: team.name.clone(),
+                members: team.member_ids.iter().map(|id| name_of(*id)).collect(),
+                ticked: shared.teams.iter().any(|shared| shared.id == team.id),
+            })
+            .collect();
+        let people = people
+            .iter()
+            .filter(|person| person.id != owner)
+            .map(|person| CardPerson {
+                id: person.id,
+                name: person.name.clone(),
+                ticked: shared.people.iter().any(|shared| shared.id == person.id),
+            })
+            .collect();
+        Ok(Directory { people, teams })
     }
 
     /// Marks one of the owner's notes private or shared.
@@ -478,11 +522,20 @@ mod tests {
             .objectives
             .share_cards(world.ada.user, &[replaced.id])
             .unwrap();
+        let directory = world.objectives.directory(world.ada.user, id).unwrap();
         let cards = json!({
             "proposed": json!(superseded),
             "applied": json!(applied),
             "refused": json!(refused[0]),
+            "directory": json!(directory),
         });
+        if std::env::var_os("WRITE_FIXTURE").is_some() {
+            let path = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/share-card.json"
+            );
+            std::fs::write(path, serde_json::to_string_pretty(&cards).unwrap() + "\n").unwrap();
+        }
         let fixture: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/share-card.json")).unwrap();
         assert_eq!(cards, fixture, "{cards:#}");

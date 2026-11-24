@@ -7,7 +7,7 @@
 // standing in a lane is never thrown away by a redraw.
 
 import { h } from '../../dom.js';
-import { clockTime } from '../clock.js';
+import { clockTime, dayLabel } from '../clock.js';
 import { typeset } from './math.js';
 import { colleagueNode } from './cards/colleague.js';
 import { callState } from './cards/model.js';
@@ -57,9 +57,11 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     else bubble.classList.add('time-below');
   }
 
+  // The raw words of a failure are for whoever fixes it, so they wait behind Details.
   function errorBody(row, isFinal) {
     const { entry, failure } = row;
-    const box = h('div', { class: 'error', role: 'alert' }, h('p', { text: entry.error || 'Something went wrong.' }));
+    const box = h('div', { class: 'error', role: 'alert' }, h('p', { text: 'Jet could not finish this reply.' }));
+    if (entry.error) box.append(h('details', { class: 'error-details' }, h('summary', { text: 'Details' }), h('p', { text: entry.error })));
     if (LOGIN_HINT.test(entry.error || '')) box.append(h('p', { class: 'hint' }, 'Run ', h('code', { text: 'claude' }), ' in a terminal to log in.'));
     if (isFinal) {
       const actions = h('div', { class: 'actions' }, h('button', { class: 'action retry', type: 'button', text: 'Retry' }));
@@ -81,7 +83,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     // While a call runs and no text has come, its card's spinner is the only sign of work.
     bubble.hidden = row.type === 'jet' && isWaiting(entry) && (entry.tools ?? []).some((call) => callState(call) === 'running');
     const body = h('div', { class: 'body' });
-    bubble.append(body);
+    bubble.append(h('span', { class: 'sr-only', text: row.type === 'user' ? 'You:' : 'Jet:' }), body);
 
     if (row.type === 'user') {
       bubble.classList.toggle('is-forming', entry.status === 'forming');
@@ -123,7 +125,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
 
   function fillRow(record, row, isFinal, earlier) {
     const { el } = record;
-    el.className = 'row row-' + row.type + (row.first ? ' first' : '') + (row.last ? ' last' : '') + (row.reactions?.length ? ' has-reacts' : '');
+    el.className = 'row row-' + row.type + (row.first ? ' first' : '') + (row.last ? ' last' : '') + (row.reactions?.length ? ' has-reacts' : '') + (row.live ? ' is-live' : '');
     if (row.type === 'lane') return;
     fillReactions(record, row);
     const calls = row.type === 'jet' ? row.entry.tools ?? [] : [];
@@ -135,7 +137,14 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     }
     const bubble = el.querySelector('.bubble');
     fillBubble(bubble, row, isFinal, [...earlier, ...doneCalls(calls)]);
-    if (canReact(row)) bubble.append(reactButton(row.entry.id, row.reactions.find((reaction) => reaction.by === 'user')?.emoji));
+    if (record.checkin) {
+      record.checkin.hidden = !row.entry.check;
+      record.checkin.textContent = row.entry.check ? 'Check-in · ' + dayLabel(row.entry.at, Date.now()) + ', ' + clockTime(row.entry.at) : '';
+    }
+    if (canReact(row)) {
+      bubble.tabIndex = -1;
+      bubble.append(reactButton(row.entry.id, row.reactions.find((reaction) => reaction.by === 'user')?.emoji));
+    }
   }
 
   function create(row) {
@@ -154,7 +163,9 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     const cardsEl = h('div', { class: 'cards' });
     const cards = createCardList(cardsEl, { render: handlers.render, readImage: handlers.readImage, seal: sealCode, watchJob: handlers.watchJob });
     const reacts = h('div', { class: 'reacts' });
-    return { el: h('div', {}, lane, h('div', { class: 'reply' }, cardsEl, h('div', { class: 'bubble' }), reacts)), lane, cards, files: null, stamp: null, reacts, signature: '' };
+    // A message Jet wrote by itself on a check says so above it, with when.
+    const checkin = h('p', { class: 'checkin-label', hidden: true });
+    return { el: h('div', {}, lane, h('div', { class: 'reply' }, cardsEl, checkin, h('div', { class: 'bubble' }), reacts)), lane, cards, files: null, stamp: null, reacts, checkin, signature: '' };
   }
 
   const signatureOf = (row, isFinal) => {
@@ -215,8 +226,28 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
   function openChooser(button) {
     const bubble = button.closest('.bubble');
     const below = bubble.getBoundingClientRect().top - scroller.getBoundingClientRect().top < 64;
-    chooser.open(bubble, { entryId: Number(button.dataset.entry), mine: button.dataset.mine || null, below });
+    chooser.open(bubble, { entryId: Number(button.dataset.entry), mine: button.dataset.mine || null, below, opener: button });
   }
+
+  // The reaction controls stay out of the Tab order, so the message box is not dozens of stops away.
+  // From the thread, the arrow keys move between Jet's messages, and the one that has the focus lets Tab reach its control.
+  const reactables = () => [...rowsEl.querySelectorAll('.bubble:has(> .react-open)')];
+  rowsEl.addEventListener('focusin', (event) => {
+    for (const button of rowsEl.querySelectorAll('.react-open[tabindex="0"]')) button.tabIndex = -1;
+    const open = /** @type {HTMLElement} */ (event.target).closest('.row')?.querySelector('.react-open');
+    if (open) open.tabIndex = 0;
+  });
+  scroller.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (target !== scroller && !target.matches('.bubble')) return;
+    const bubbles = reactables();
+    if (bubbles.length === 0) return;
+    const at = bubbles.indexOf(/** @type {HTMLElement} */ (target));
+    const next = at === -1 ? (event.key === 'ArrowUp' ? bubbles.length - 1 : 0) : Math.min(bubbles.length - 1, Math.max(0, at + (event.key === 'ArrowUp' ? -1 : 1)));
+    event.preventDefault();
+    bubbles[next].focus();
+  });
 
   // On a touch screen a long press on a Jet bubble opens the chooser, and a finger that moves is a scroll.
   let press = null;
@@ -254,6 +285,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
           nodes.set(row.key, record);
         }
         if (row.live) liveKey = row.key;
+        record.el.classList.toggle('is-live', Boolean(row.live));
         const signature = signatureOf(row, i === lastMessage);
         if (signature !== record.signature && (row.type === 'user' || row.type === 'jet' || row.type === 'lane')) {
           fillRow(record, row, i === lastMessage, earlier);

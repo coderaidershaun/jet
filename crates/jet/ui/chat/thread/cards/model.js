@@ -10,6 +10,8 @@ import { isJob, jobOf, readIngest } from './job.js';
 import { LIBRARY_READERS } from './library.js';
 import { peopleLine } from './people.js';
 import { pageLabel, pageTitle, piecesOf, showOf } from './pieces.js';
+import { failedWords, isRecordsCall, recordsOf, runningWords } from './records.js';
+import { replyOf, replyLine } from './reply.js';
 import { lineWords, sendOf } from './send.js';
 import { shareOf } from './share.js';
 
@@ -44,6 +46,7 @@ import { shareOf } from './share.js';
  *   | { kind: 'blocks', blocks: import('./block.js').Block[] }
  *   | { kind: 'share', view: import('./share.js').ShareView }
  *   | { kind: 'send', view: import('./send.js').SendView }
+ *   | { kind: 'reply', view: import('./reply.js').ReplyView }
  *   | { kind: 'file', name: string, title: string, tag: string, meta: string, download: string, view: string }} Body
  */
 /**
@@ -68,12 +71,13 @@ const READ_TOOL = 'jet/files_read';
 const LIST_TOOL = 'jet/files_list';
 const WEB_FETCH = 'web/fetch';
 const WEB_SEARCH = 'web/search';
-// Jet's own refusal of a page whose link the user did not write in the chat ends with this sentence.
-const WEB_REFUSAL = 'Ask the user to paste the link to this page.';
+// Jet's own refusal of a page whose link the user did not write in the chat starts with this fixed mark.
+const WEB_REFUSAL = '[page-not-linked]';
 const WEB_REFUSED_ADVICE = 'Jet reads pages only on sites whose link you wrote in this chat. Paste the link to let Jet read it.';
 
 const quoted = (text) => OPEN_QUOTE + text + CLOSE_QUOTE;
-const seconds = (ms) => (ms < 10000 ? (ms / 1000).toFixed(1) : Math.round(ms / 1000).toString()) + ' s';
+// A call quicker than a second says nothing about its time.
+const seconds = (ms) => (ms < 1000 ? '' : (ms < 10000 ? (ms / 1000).toFixed(1) : Math.round(ms / 1000).toString()) + ' s');
 
 /** The result as text, for advice and for a result that is not an object. */
 function textOf(value) {
@@ -193,7 +197,7 @@ function lineOf(call, earlier) {
       return title ? 'Writing ' + quoted(title) + ' as ' + writing : 'Writing ' + writing;
     }
     default:
-      return 'Calling ' + call.server + ' · ' + call.tool;
+      return isRecordsCall(call) ? runningWords(call) : 'Calling ' + call.server + ' · ' + call.tool;
   }
 }
 
@@ -320,10 +324,12 @@ function readShare(result) {
   return view ? { outcome: view.state, tone: 'quiet', body: { kind: 'share', view } } : null;
 }
 
-/** Jet's `tasks_update` call is a send card when it made one, else its plain fields. */
+/** Jet's `tasks_update` call is a send or reply card when it made one, else its plain fields. */
 function readSend(result) {
-  const view = sendOf(result.send);
-  return view ? { outcome: lineWords(view), tone: 'quiet', body: { kind: 'send', view } } : null;
+  const send = sendOf(result.send);
+  if (send) return { outcome: lineWords(send), tone: 'quiet', body: { kind: 'send', view: send } };
+  const reply = replyOf(result.reply);
+  return reply ? { outcome: replyLine(reply), tone: 'quiet', body: { kind: 'reply', view: reply } } : null;
 }
 
 /** A people_update call is one line, worded from its typed command. */
@@ -406,7 +412,7 @@ export function cardOf(call, earlier = []) {
     id: call.id, key: call.server + '/' + call.tool, call, state, line, name, meta: '', head: line, tone: 'quiet', advice: null, hint: null, body: null,
     progress: null, job: null,
   };
-  const ended = (meta) => ({ ...card, meta, head: name + ' · ' + meta });
+  const ended = (meta) => ({ ...card, meta, head: joined(name, meta) });
 
   if (state === 'running') return { ...card, progress: barOf(call.progress) };
   if (state === 'unfinished') return ended('stopped');
@@ -418,6 +424,10 @@ export function cardOf(call, earlier = []) {
   if (state === 'failed' && card.key === WEB_FETCH && textOf(call.result).includes(WEB_REFUSAL)) {
     return { ...ended(joined('refused', time)), tone: 'invalid', advice: WEB_REFUSED_ADVICE };
   }
+  if (state === 'failed' && isRecordsCall(call)) {
+    const failedName = failedWords(call);
+    return { ...card, name: failedName, meta: '', head: failedName, tone: 'invalid', advice: messageOf(call.result) };
+  }
   if (state === 'failed') {
     const advice = textOf(call.result);
     const hinted = HEALTH_SENTENCE.test(advice);
@@ -428,6 +438,10 @@ export function cardOf(call, earlier = []) {
   const read = readerFor(call);
   // A reader answers null for a result of a shape it does not know, and the plain fields show it.
   const result = recordOf(call.result);
+  const records = isRecordsCall(call) && !readSend(result) && !readShare(result) ? recordsOf(call) : null;
+  if (records) {
+    return { ...card, name: records.line, meta: time, head: joined(records.line, time), body: { kind: 'fields', fields: records.fields } };
+  }
   const { outcome, tone, body, problem } = read(result, input, call) ?? readGeneric(result, input, call);
   if (problem) return { ...ended(joined('failed', time)), state: 'failed', tone: 'invalid', advice: problem };
   return { ...ended(joined(outcome, time)), tone, body, job: read === readJob ? jobOf(call.result) : null };

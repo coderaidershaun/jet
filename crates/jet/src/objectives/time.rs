@@ -76,6 +76,11 @@ pub(super) fn describe(zone_name: &str, at: u64) -> Result<String, TimeError> {
     ))
 }
 
+/// A date as the user reads it: `Sun 1 Feb 2026`.
+pub(super) fn in_words(date: civil::Date) -> String {
+    date.strftime("%a %-d %b %Y").to_string()
+}
+
 /// The local time at `at` in the form a task keeps it, `YYYY-MM-DDTHH:MM`.
 pub(super) fn local(zone_name: &str, at: u64) -> Result<String, TimeError> {
     Ok(instant(zone_name, at)?

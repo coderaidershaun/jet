@@ -17,6 +17,11 @@
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 
 .lane { position: relative; flex: 0 0 var(--lane); align-self: stretch; pointer-events: none; }
+/* On a phone only the row where the live Jet stands keeps its lane; every other message takes the whole width. */
+@media (max-width: 759.98px) {
+  .row:not(.is-live) { --lane: 0px; }
+  .row:not(.is-live) > .lane { display: none; }
+}
 
 .bubble {
   position: relative; min-width: 0;
@@ -96,6 +101,12 @@ a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22
 .error .hint { color: var(--muted); }
 .error .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .stopped { margin: 4px 0 0; font-size: 12px; line-height: 16px; font-style: italic; color: var(--muted); }
+.error-details { margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 18px; }
+.error-details summary { min-height: 32px; cursor: pointer; }
+.error-details p { overflow-wrap: anywhere; font: 12px/17px var(--mono); }
+/* The label over a message Jet wrote by itself on a check. */
+.checkin-label { margin: 0 0 -2px 4px; color: var(--link-jet); font-size: 12px; font-weight: 600; line-height: 16px; }
+.bubble:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 .body > :first-child { margin-top: 0; }
 .body p { margin: 0 0 8px; }
@@ -163,6 +174,7 @@ button.react-chip:hover { background: #1d2c38; }
 .row-jet:hover .react-open, .react-open:focus-visible, .bubble:has(> .react-chooser) > .react-open { opacity: 1; pointer-events: auto; }
 @media (hover: none) {
   .react-open { display: none; }
+  button.react-chip { min-width: 44px; }
   /* The text can still be selected and copied; only the system's long-press menu gives way to the chooser. */
   .row-jet .bubble { -webkit-touch-callout: none; }
 }
@@ -181,7 +193,12 @@ button.react-chip:hover { background: #1d2c38; }
 .react-more { color: var(--muted); }
 .react-more .icon { width: 20px; height: 20px; }
 .react-field {
-  width: 232px; height: 40px; padding: 0 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+  width: 232px; height: 40px; padding: 0 14px; background: var(--surface); border: 1px solid var(--edge); border-radius: 18px;
   font-size: 16px;
 }
 .reduced .react-chooser { animation: none; }
+/* Seven 40 px picks fit a 320 px phone; on a phone each is 44 px tall for a finger. */
+@media (max-width: 759.98px) {
+  .react-pick, .react-more { height: 44px; }
+  .react-field { width: min(232px, calc(100vw - 48px)); }
+}

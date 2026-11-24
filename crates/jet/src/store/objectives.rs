@@ -36,6 +36,8 @@ pub(crate) struct Objective {
     pub(crate) version: u64,
     pub(crate) created_at: u64,
     pub(crate) updated_at: u64,
+    /// When it was closed as done or dropped.
+    pub(crate) closed_at: Option<u64>,
 }
 
 /// Where the objective's chat is.
@@ -82,7 +84,7 @@ pub(crate) struct Edit<'a> {
     pub(crate) sources: Option<&'a [NewSource]>,
 }
 
-const COLUMNS: &str = "id, chat_id, title, deliverable, start_date, due_date, status, version, created_at, updated_at";
+const COLUMNS: &str = "id, chat_id, title, deliverable, start_date, due_date, status, version, created_at, updated_at, closed_at";
 
 fn read(row: &rusqlite::Row) -> rusqlite::Result<Objective> {
     let number = |at: usize| row.get::<_, i64>(at).map(i64::unsigned_abs);
@@ -97,6 +99,7 @@ fn read(row: &rusqlite::Row) -> rusqlite::Result<Objective> {
         version: number(7)?,
         created_at: number(8)?,
         updated_at: number(9)?,
+        closed_at: row.get::<_, Option<i64>>(10)?.map(i64::unsigned_abs),
     })
 }
 
@@ -292,8 +295,8 @@ impl Store {
                 return Ok(None);
             }
             tx.execute(
-                "UPDATE objectives SET status = ?2 WHERE id = ?1",
-                params![id.0, status],
+                "UPDATE objectives SET status = ?2, closed_at = ?3 WHERE id = ?1",
+                params![id.0, status, seconds(at)],
             )?;
             tx.execute(
                 "UPDATE agent_tasks SET state = 'cancelled', version = version + 1, updated_at = ?2

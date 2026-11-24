@@ -12,7 +12,7 @@ const OUTCOMES = {
   silent: { words: 'Stayed quiet', tone: 'quiet' },
   held: { words: 'Could not read a source', tone: 'warn' },
   preempted: { words: 'Stopped because you wrote', tone: 'stopped' },
-  interrupted: { words: 'Stopped because you wrote', tone: 'stopped' },
+  interrupted: { words: 'Cut off by a restart', tone: 'stopped' },
   failed: { words: 'Failed', tone: 'bad' },
   stale: { words: 'Skipped, out of date', tone: 'quiet' },
 };
@@ -80,10 +80,29 @@ export function rangeWords(objective, year) {
 /** 'in 2 days', 'in 3 h', '5 min ago', for a distance in seconds; later is positive. */
 export function relativeWords(seconds) {
   const future = seconds >= 0, span = Math.abs(seconds);
-  const [amount, unit] = span < 60 ? [0, ''] : span < 3600 ? [Math.round(span / 60), 'min'] : span < 86400 ? [Math.round(span / 3600), 'h'] : [Math.round(span / 86400), span >= 172800 ? 'days' : 'day'];
+  const days = Math.round(span / 86400);
+  const [amount, unit] = span < 60 ? [0, ''] : span < 3600 ? [Math.round(span / 60), 'min'] : span < 86400 ? [Math.round(span / 3600), 'h'] : [days, days === 1 ? 'day' : 'days'];
   if (!unit) return future ? 'in a moment' : 'just now';
   return future ? `in ${amount} ${unit}` : `${amount} ${unit} ago`;
 }
+
+/** The day a Unix second falls on in `timeZone`, as '2026-01-05'. */
+export function isoDay(seconds, timeZone) {
+  if (numberOrNull(seconds) === null) return '';
+  return new Intl.DateTimeFormat('en-CA', { ...(timeZone ? { timeZone } : {}), year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(seconds * 1000));
+}
+
+/** A step's due day, said late in the danger tone once it has passed unticked, and in amber on the day. */
+export function stepDueWords(step, today, year) {
+  const words = dateWords(step.due, year);
+  if (!words || step.doneAt != null || !today) return { words, tone: 'quiet' };
+  if (step.due < today) return { words: `${words}, late`, tone: 'bad' };
+  if (step.due === today) return { words: 'Today', tone: 'warn' };
+  return { words, tone: 'quiet' };
+}
+
+/** 'Closed 3 Dec' for a done or dropped objective, from the instant it was closed. */
+export const closedWords = (objective, timeZone, year) => (numberOrNull(objective.closedAt) === null ? '' : `Closed ${dateWords(isoDay(objective.closedAt, timeZone), year)}`);
 
 /** 'Mon 5 Jan, 09:00' for a Unix second in `timeZone`, with the year when it is not `year`. */
 export function dueWords(seconds, timeZone, year) {
@@ -104,8 +123,15 @@ const SET_BY = { jet: 'Set by Jet', user: 'Set by you', default: 'Time chosen by
 export const setByWords = (setBy) => SET_BY[setBy] ?? SET_BY.jet;
 export const kindWords = (kind) => (kind === 'follow_up' ? 'Follow-up' : 'Check');
 
-export const tokensWords = (tokens) => (numberOrNull(tokens) === null ? '' : `${tokens.toLocaleString('en-GB')} tokens`);
-export const costWords = (cost) => (numberOrNull(cost) === null ? '' : `$${cost.toFixed(cost < 0.01 ? 4 : 2)}`);
+export const tokensWords = (tokens) => (!numberOrNull(tokens) ? '' : `${tokens.toLocaleString('en-GB')} tokens`);
+export const costWords = (cost) => (!numberOrNull(cost) ? '' : `$${cost.toFixed(cost < 0.01 ? 4 : 2)}`);
+
+/** What a check was about: its objective, or 'Follow-up' and the reason Jet gave. */
+export function runTitle(run) {
+  if (numberOrNull(run.objectiveId) !== null) return stringOf(run.title);
+  const why = stringOf(run.why);
+  return why ? `Follow-up: ${why}` : 'Follow-up';
+}
 
 /** The tone of a note's status word: 'on track' is good, 'at risk' warns, 'blocked' is bad. */
 export function noteTone(status) {
@@ -124,17 +150,33 @@ export function sharedWithWords(objective) {
   return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
 }
 
+/** The objective's next check that waits or runs, or null. */
+export function nextCheck(objective) {
+  const open = listOf(objective.tasks).filter((task) => isRecord(task) && (task.state === 'scheduled' || task.state === 'running'));
+  return open.sort((a, b) => a.dueAt - b.dueAt)[0] ?? null;
+}
+
+/** The one objective drawn open at first: the most overdue, else the one changed last. */
+export function firstOpen(objectives) {
+  const overdue = objectives.filter((objective) => numberOrNull(objective.daysLeft) !== null && objective.daysLeft < 0);
+  const pick = overdue.length ? overdue.sort((a, b) => a.daysLeft - b.daysLeft)[0] : [...objectives].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+  return pick?.id ?? null;
+}
+
 /** The newest note of an objective, or null. Notes come oldest first. */
 export const latestNote = (objective) => listOf(objective.notes).filter(isRecord).at(-1) ?? null;
 
-/** One key for each thing in the pane that can be new; a key changes when its thing does. */
+/**
+ * One key for each thing in the pane that Jet or a colleague did on their own: a check that ran, a check set or
+ * moved, a colleague's update, an answer to what the user sent. The user's own taps change objectives, so
+ * objectives have no key; a key changes when its thing does.
+ */
 export function keysOf(pane) {
   return [
-    ...pane.objectives.map((o) => `o${o.id}:${o.version}`),
     ...pane.tasks.map((t) => `t${t.id}:${t.version}`),
     ...pane.runs.map((r) => `r${r.id}`),
     ...pane.sharedWithMe.map((s) => `s${s.id}:${recordOf(s.latest).at ?? ''}`),
-    ...pane.sent.map((i) => `i${i.id}:${i.state}`),
+    ...pane.sent.filter((i) => i.state !== 'sent').map((i) => `i${i.id}:${i.state}`),
   ];
 }
 

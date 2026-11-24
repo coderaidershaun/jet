@@ -113,8 +113,8 @@ test('library cards read their results into blocks, show a failed part as a note
   assert.equal(blocksOf(blocked)[1].rows.length, 2, 'each blocker is listed');
   // A stored document has nothing to convert, so the summary is its state, not a start.
   const repair = read('check_pdf', { state: 'ingested_without_insights', items: 41, pages: null, blockers: [], estimate: { pages_to_convert: 0, usd_low: 0, usd_high: 0, minutes: 0 } });
-  assert.equal(repair.meta, 'ingested without insights · 0.8 s');
-  assert.equal(read('check_pdf', { state: 'ingested', items: 41, pages: null, blockers: [] }).meta, 'already ingested · 0.8 s');
+  assert.equal(repair.meta, 'ingested without insights');
+  assert.equal(read('check_pdf', { state: 'ingested', items: 41, pages: null, blockers: [] }).meta, 'already ingested');
 
   // Results come from outside: a result of the wrong shape shows as plain fields, and nothing throws.
   const malformed = [{ pages: 'many' }, { document_id: 7, media: 7, sections: 'none', results: {}, blockers: 'x', item_id: 3 }, null, 'text', []];

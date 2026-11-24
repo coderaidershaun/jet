@@ -1,7 +1,8 @@
 // Drives the plan pane against the real host: it seeds a user's objectives, Jet's checks and a colleague's
-// shared objective through the provider stand-in and rows in the database, then taps a step, a snooze and a
-// cancel, closes and reopens the desktop column across a reload, reads the phone button's count, and checks
-// that a done objective sits collapsed and that nothing is wider than the window at 390 px. It takes the screenshots.
+// shared objective through the provider stand-in and rows in the database, then reads the pane at a glance, opens
+// a check-in from its run, taps steps, a snooze, a failed tap and a two-tap cancel by pointer and by keyboard, adds
+// a person to a share, works the pane as a dialog below 1024 px, and checks that nothing is wider than the window.
+// It takes the screenshots.
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, mkdir, writeFile, chmod, readFile, rm } from 'node:fs/promises';
@@ -86,11 +87,14 @@ if (/^facade:/m.test(input)) {
     objectives({ action: 'note', id: 1, status: 'at risk', moved: 'Doubt I can fly it before the weekend', blockers: 'wind', private: true }),
     objectives({ action: 'note', id: 2, status: 'on track', moved: 'Invites are drafted', blockers: '', private: false }),
     tasks({ action: 'schedule', objectiveId: 2, at: clock(2, '14:00'), why: 'ask who has replied to the invite' }),
+    create({ chat: 'this', title: 'Write the newsletter', deliverable: 'November issue sent', start: clock(-4), due: clock(12), steps: [{ title: 'Pick three stories', due: clock(-1) }, { title: 'Send it', due: clock(10) }], check: { at: clock(4, '09:00'), why: 'see whether the stories are picked' } }),
+    create({ chat: 'this', title: 'Renew the passport', deliverable: 'New passport in hand', start: clock(-1), due: clock(20), steps: [{ title: 'Book the photo', due: clock(0) }], check: { at: clock(5, '09:00'), why: 'ask whether the photo is booked' } }),
+    tasks({ action: 'schedule', at: clock(3, '11:00'), why: 'ask how the move went' }),
   ]);
   const managerId = new DatabaseSync(path.join(data, 'jet.sqlite3')).prepare('SELECT id FROM users WHERE email = ?').get(MANAGER).id;
   const ownerId = new DatabaseSync(path.join(data, 'jet.sqlite3')).prepare('SELECT id FROM users WHERE email = ?').get(OWNER).id;
-  await turn(manager, 'I am hiring.', [create({ title: 'Hire a designer', deliverable: 'A signed offer', start: clock(-3), due: clock(21), steps: [{ title: 'Write the brief' }, { title: 'Interview three people' }], check: { at: clock(1, '10:00'), why: 'ask how the brief is going' } }), objectives({ action: 'note', id: 5, status: 'on track', moved: 'Brief is with HR', blockers: '', private: false })]);
-  for (const [who, objective, to] of [[owner, 1, managerId], [manager, 5, ownerId]]) {
+  await turn(manager, 'I am hiring.', [create({ title: 'Hire a designer', deliverable: 'A signed offer', start: clock(-3), due: clock(21), steps: [{ title: 'Write the brief' }, { title: 'Interview three people' }], check: { at: clock(1, '10:00'), why: 'ask how the brief is going' } }), objectives({ action: 'note', id: 7, status: 'on track', moved: 'Brief is with HR', blockers: '', private: false })]);
+  for (const [who, objective, to] of [[owner, 1, managerId], [manager, 7, ownerId]]) {
     const card = await who.post(`/api/objectives/${objective}/share-proposals`, { people: [to], teams: [] });
     await who.post(`/api/shares/proposals/${card.id}/apply`, { people: [to], teams: [] });
   }
@@ -100,16 +104,19 @@ if (/^facade:/m.test(input)) {
   // Nothing sets a default time yet, so the second task is marked as one the server chose.
   db.exec("UPDATE agent_tasks SET set_by = 'default', kind = 'follow_up' WHERE id = 2");
   const now = Math.floor(Date.now() / 1000);
-  const run = db.prepare('INSERT INTO task_runs (task_id, started_at, ended_at, outcome, found, sources_read, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  // The check that wrote posted into the kite page's chat, and the user put a reaction on it.
+  const checkIn = db.prepare("SELECT e.chat_id AS chat, e.id AS entry FROM entries e JOIN objectives o ON o.chat_id = e.chat_id WHERE o.id = 1 AND json_extract(e.entry, '$.role') = 'jet' ORDER BY e.id LIMIT 1").get();
+  db.prepare(`UPDATE entries SET entry = json_set(entry, '$.reactions', json('[{"emoji":"👍","by":"user","at":${now * 1000}}]')) WHERE chat_id = ? AND id = ?`).run(checkIn.chat, checkIn.entry);
+  const run = db.prepare('INSERT INTO task_runs (task_id, started_at, ended_at, outcome, found, sources_read, tokens, entry_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   const runs = [
-    [1, now - 2 * 3600, 'spoke', 'The frame is built but the glue has not set; asked how the weekend looks', '["github octo/kite","jet notes"]', 1840],
-    [2, now - 26 * 3600, 'silent', 'Nothing new since the last note; the invites were sent yesterday', '["jet notes"]', 620],
+    [1, now - 2 * 3600, 'spoke', 'The frame is built but the glue has not set; asked how the weekend looks', '["github octo/kite","jet notes"]', 1840, checkIn.entry],
+    [7, now - 26 * 3600, 'silent', 'Nothing new since the last note; the invites were sent yesterday', '["jet notes"]', 620],
     [1, now - 50 * 3600, 'held', 'held: source unavailable', '["github octo/kite"]', 310],
     [2, now - 3 * 86400, 'preempted', '', '[]', 90],
     [1, now - 4 * 86400, 'stale', '', '[]', 0],
     [2, now - 5 * 86400, 'failed', 'The provider stopped answering', '[]', 40],
   ];
-  for (const [task, started, outcome, found, sources, tokens] of runs.toReversed()) run.run(task, started, started + 60, outcome, found, sources, tokens);
+  for (const [task, started, outcome, found, sources, tokens, entry = null] of runs.toReversed()) run.run(task, started, started + 60, outcome, found, sources, tokens, entry);
   db.close();
 
   // ---- The browser.
@@ -135,86 +142,130 @@ if (/^facade:/m.test(input)) {
     return { scroll: document.documentElement.scrollWidth - innerWidth, wide: out.slice(0, 5).map((el) => el.className || el.tagName) };
   });
   const noOverflow = async (p, note) => { const { scroll, wide: found } = await wide(p); assert.equal(scroll, 0, `${note}: the page scrolls sideways`); assert.deepEqual(found, [], `${note}: elements wider than the window`); };
-  const shoot = async (p, name) => { await delay(400); await p.screenshot({ path: path.join(screens, name), animations: 'disabled' }); };
-  const toSection = async (p, title) => { await p.locator('.pane-heading', { hasText: title }).evaluate((el) => el.scrollIntoView({ block: 'start' })); await p.locator('#side-pane').evaluate((el) => { el.scrollTop -= 60; }); };
+  const shoot = async (p, name) => { await delay(400); await p.screenshot({ path: path.join(screens, `pane-${name}.png`), animations: 'disabled' }); };
+  /** Whether the element lies wholly inside the pane's visible part. */
+  const inPane = (locator) => locator.evaluate((el) => { const pane = document.getElementById('side-pane').getBoundingClientRect(), r = el.getBoundingClientRect(); return r.top >= pane.top && r.bottom <= pane.bottom; });
+  const focusKey = (p) => p.evaluate(() => document.activeElement?.dataset.key ?? document.activeElement?.tagName);
+  const unfold = async (p, id) => {
+    const summary = p.locator(`.objective[data-id="${id}"] .objective-summary`);
+    if ((await summary.getAttribute('aria-expanded')) === 'false') await summary.click();
+    await p.locator(`.objective[data-id="${id}"] .objective-body`).waitFor();
+  };
+  const taskTime = (p, id) => p.locator(`.task[data-id="${id}"] .task-time`).innerText();
 
-  // Desktop, 1280 px.
-  const desk = await open(OWNER, { width: 1280, height: 900 });
+  /** The checks both widths share: the glance, a run's check-in, taps by pointer and keyboard, a failed tap, a two-tap cancel and a share. */
+  async function exercise(p, width) {
+    const pane = p.locator('#side-pane');
+    await p.locator('.objective').first().waitFor();
+    assert.equal(await p.locator('.objective').count(), 4, 'four active objectives');
+    assert.equal(await p.locator('.objective[data-open="true"]').count(), 1, 'one objective starts open, the others are folded to their summary');
+    for (const summary of await p.locator('.objective-summary').all()) assert.match(await summary.innerText(), /Next check|No check is set/, 'each summary says when Jet looks in next');
+    assert.match(await p.locator('.objective[data-id="1"] .objective-summary').innerText(), /at risk[\s\S]*1 of 3 steps/, 'the summary has the latest status and the progress');
+    assert.ok(await inPane(p.locator('.pane-heading', { hasText: 'Objectives' })), 'the objectives start in the first screen');
+    await shoot(p, `${width}-01-top`);
+    await p.locator('.tile', { hasText: 'Next check' }).click();
+    assert.ok(await inPane(p.locator('.pane-heading', { hasText: "Jet's plan" })), "one tap on a tile shows Jet's plan");
+    await p.locator('.tile', { hasText: 'Last check' }).click();
+    const firstRun = p.locator('.run').first();
+    assert.ok(await inPane(firstRun), 'one tap on a tile shows the first recent check');
+    assert.equal(await firstRun.locator('.run-title').innerText(), 'Ship the kite page', 'a run names its objective');
+    assert.match(await firstRun.innerText(), /Seen 👍/, 'the reaction on the check-in shows');
+    assert.match(await p.locator('.run[data-outcome="silent"] .run-title').innerText(), /^Follow-up: /, 'a follow-up says why');
+    assert.equal(await p.locator('.run[data-outcome="stale"] .run-cost').count(), 0, 'a free check says nothing about cost');
+    await shoot(p, `${width}-02-recent-checks`);
+
+    // Jet's plan: the snooze button says where the check lands, a failed tap leaves its notice, Cancel takes two taps.
+    const snooze = p.locator('.task[data-id="1"]').getByRole('button', { name: /^Snooze to / });
+    const landing = (await snooze.innerText()).replace('Snooze to ', '');
+    assert.match(landing, /08:00$/);
+    await snooze.focus();
+    await p.keyboard.press('Enter');
+    await until(async () => (await taskTime(p, 1)) === landing, 'the check lands where the button said');
+    assert.equal(await focusKey(p), 'snooze-1', 'after Enter on Snooze the focus stays on it');
+    await p.route('**/api/tasks/*/snooze', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ kind: 'internal', message: 'the store is busy' }) }), { times: 1 });
+    await p.locator('.task[data-id="5"]').getByRole('button', { name: /^Snooze/ }).click();
+    const alert = p.locator('.pane-alert');
+    await until(async () => (await alert.innerText()) === 'The check could not be snoozed. The store is busy. Try again.', 'a failed tap says so in plain words');
+    await owner.put('/api/objectives/2/steps/5', { done: width === 1440 });
+    await until(async () => (await p.locator('.objective[data-id="2"] .progress-words').innerText()) === `${width === 1440 ? 1 : 0} of 2 steps`, 'the pane is read again');
+    assert.equal(await alert.isVisible(), true, 'the notice stays through the re-read');
+    await p.locator('.task[data-id="5"]').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await shoot(p, `${width}-03-tap-failed`);
+    // The passport's check at 1440 px, the newsletter's at 390 px.
+    const doomed = p.locator(`.task[data-id="${width === 1440 ? 6 : 5}"]`);
+    await doomed.getByRole('button', { name: 'Cancel' }).click();
+    await doomed.getByRole('button', { name: 'Tap again to cancel' }).waitFor();
+    assert.equal(await doomed.count(), 1, 'the first tap cancels nothing');
+    await shoot(p, `${width}-04-cancel-armed`);
+    await doomed.getByRole('button', { name: 'Tap again to cancel' }).click();
+    await until(async () => (await doomed.count()) === 0, 'the second tap cancels the check');
+    assert.equal(await alert.isVisible(), false, 'a tap that worked clears the notice');
+    assert.match(await focusKey(p), /^(snooze-\d+|heading-plan)$/, 'after Cancel the focus goes to the next check');
+    await p.locator('.objective[data-id="6"]').scrollIntoViewIfNeeded();
+    assert.match(await p.locator('.objective[data-id="6"] .objective-check').innerText(), /No check is set/, 'an objective with no check says so');
+    await shoot(p, `${width}-05-no-check`);
+
+    // Steps: a late step and today's step say so; Space ticks and keeps the focus.
+    await unfold(p, 5);
+    assert.match(await p.locator('.objective[data-id="5"] .step-due[data-tone="bad"]').innerText(), /late$/, 'a passed step is late');
+    await unfold(p, 6);
+    assert.equal(await p.locator('.objective[data-id="6"] .step-due[data-tone="warn"]').innerText(), 'Today');
+    const step = p.locator('.objective[data-id="6"] .step').first();
+    const stepKey = await step.getAttribute('data-key');
+    await step.focus();
+    await p.keyboard.press('Space');
+    await until(async () => (await p.locator(`[data-key="${stepKey}"]`).getAttribute('aria-checked')) === 'true', 'Space ticks the step');
+    await delay(300);
+    assert.equal(await focusKey(p), stepKey, 'after Space the focus is still on the step');
+    await shoot(p, `${width}-06-step-focus`);
+    await p.keyboard.press('Space');
+    await until(async () => (await p.locator(`[data-key="${stepKey}"]`).getAttribute('aria-checked')) === 'false', 'Space unticks it');
+
+    // Sharing: the card lists the directory, and the owner's tap adds a person.
+    await unfold(p, 1);
+    await p.locator('.objective[data-id="1"]').getByRole('button', { name: 'Change who sees it' }).click();
+    const card = p.locator('.objective[data-id="1"] .card-share');
+    await card.waitFor();
+    assert.ok(await card.locator('.share-row').count() >= 4, 'the card lists the people and teams of the directory');
+    assert.equal(await card.locator('.share-go').isDisabled(), true, 'with nothing changed the button does nothing');
+    const person = width === 1440 ? 'Admin 1' : 'Admin 2';
+    await card.locator('.share-row', { hasText: new RegExp(`^${person}$`, 'm') }).first().locator('.share-box').focus();
+    await p.keyboard.press('Space');
+    await owner.put('/api/objectives/2/steps/5', { done: width !== 1440 });
+    await until(async () => (await p.locator('.objective[data-id="2"] .progress-words').innerText()) === `${width === 1440 ? 0 : 1} of 2 steps`, 'the pane is drawn again');
+    assert.equal(await p.evaluate(() => document.activeElement.classList.contains('share-box')), true, 'the focus stays on the tick through a redraw');
+    assert.equal(await card.locator('.share-go').innerText(), 'Share');
+    await card.scrollIntoViewIfNeeded();
+    await shoot(p, `${width}-07-share-directory`);
+    await card.locator('.share-go').click();
+    await card.locator('.share-done').waitFor();
+    await until(async () => (await owner.get('/api/pane')).objectives.find((o) => o.id === 1).sharedWith.people.some((who) => who.name === person), 'the tap shares with the added person');
+    await p.locator('.objective[data-id="1"]').getByRole('button', { name: 'Close' }).click();
+
+    // The run's control opens its chat at the check-in.
+    await p.locator('.tile', { hasText: 'Last check' }).click();
+    await p.locator('.run').first().getByRole('button', { name: 'Open check-in' }).click();
+    await until(async () => (await p.locator('.chat-head').innerText()).includes('Ship the kite page'), 'the check-in opens its chat');
+    await p.locator('.row.is-marked').waitFor();
+    await shoot(p, `${width}-08-check-in-opened`);
+    if (width !== 1440) assert.equal(await pane.isHidden(), true, 'below 1024 px the pane steps aside for the chat');
+    await noOverflow(p, `${width}`);
+  }
+
+  // Desktop, 1440 x 900: the pane is a column.
+  const desk = await open(OWNER, { width: 1440, height: 900 });
   page = desk.page;
   const pane = page.locator('#side-pane');
   await pane.waitFor({ state: 'visible' });
-  await page.locator('.objective').first().waitFor();
   const columns = await page.locator('.workspace-shell').evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' '));
   assert.ok(parseFloat(columns[2]) >= 320, 'the pane has its own column on a desktop window');
-  assert.equal(await page.locator('.objective').count(), 2, 'two active objectives');
-  assert.equal(await page.locator('.objective[data-id="1"] .step').count(), 3);
-  assert.equal(await page.locator('.objective[data-id="1"] .step[data-done="true"]').count(), 1);
-  assert.match(await page.locator('.objective[data-id="1"] .objective-shared').innerText(), /Admin 123/, 'who the objective is shared with');
-  assert.equal(await page.locator('.objective[data-id="1"] .note-flip[data-private="true"]').count(), 1, 'the newest note is private and shows its lock');
-  assert.ok(await page.locator('.task .chip', { hasText: 'Default time' }).count() >= 1, 'a default time carries its mark');
-  const outcomes = await page.locator('.run .chip').allInnerTexts();
-  for (const words of ['Wrote to you', 'Stayed quiet', 'Could not read a source']) assert.ok(outcomes.includes(words), `a run reads "${words}"`);
-  assert.match(await page.locator('.run[data-outcome="held"] .run-found').innerText(), /Source unavailable/);
-  assert.equal(await page.locator('.shared').count(), 1, 'the manager shared an objective with the owner');
-  assert.equal(await page.locator('.closed').getAttribute('open'), null, 'done and dropped start collapsed');
-  assert.equal(await page.locator('.closed-row').first().isVisible(), false);
-  const below = await page.evaluate(() => ({ last: [...document.querySelectorAll('.objective')].at(-1).getBoundingClientRect().bottom, closed: document.querySelector('.closed').getBoundingClientRect().top }));
-  assert.ok(below.closed >= below.last, 'the collapsed list sits below the active objectives');
-  await shoot(page, '1280-1-objectives.png');
+  assert.equal(await pane.getAttribute('role'), null, 'a column is not a dialog');
+  await exercise(page, 1440);
   await page.locator('.closed > summary').click();
-  assert.equal(await page.locator('.closed-row').count(), 2);
-  assert.equal(await page.locator('.closed-row').first().isVisible(), true, 'one tap shows the done and dropped ones');
-  await shoot(page, '1280-1b-closed-open.png');
-  await page.locator('.closed > summary').click();
-  await toSection(page, "Jet's plan");
-  await shoot(page, '1280-2-plan.png');
-  await page.getByRole('button', { name: /Show all/ }).click();
-  assert.equal(await page.locator('.run').count(), 6);
-  await toSection(page, 'Recent checks');
-  await shoot(page, '1280-3-checks.png');
-  await page.getByRole('button', { name: 'Show fewer' }).click();
-  await toSection(page, 'Shared with you');
-  await shoot(page, '1280-4-shared-with-you.png');
-  await noOverflow(page, '1280');
-
-  // Taps: a step, a note flip, a snooze and a cancel, each seen in the page and on the server.
-  const step = page.locator('.objective[data-id="2"] .step').first();
-  await step.scrollIntoViewIfNeeded();
-  assert.equal(await step.getAttribute('aria-checked'), 'false');
-  await step.click();
-  await until(async () => (await page.locator('.objective[data-id="2"] .step').first().getAttribute('aria-checked')) === 'true', 'the tick must show');
-  assert.equal((await owner.get('/api/pane')).objectives[1].steps[0].doneAt !== null, true, 'the server has the tick');
-  await page.locator('.objective[data-id="2"] .step').first().click();
-  await until(async () => (await page.locator('.objective[data-id="2"] .step').first().getAttribute('aria-checked')) === 'false', 'the untick must show');
-  const flip = page.locator('.objective[data-id="1"] .note-flip');
-  await flip.click();
-  await until(async () => (await page.locator('.objective[data-id="1"] .note-flip').getAttribute('data-private')) === 'false', 'the note flips to shared');
-  const task = page.locator('.task[data-id="1"]');
-  const before = await task.locator('.task-time').innerText();
-  await task.getByRole('button', { name: 'Snooze' }).click();
-  await until(async () => (await page.locator('.task[data-id="1"] .task-time').innerText()) !== before, 'the snooze must move the time');
-  assert.match(await page.locator('.task[data-id="1"] .task-time').innerText(), /08:00$/, 'a snooze lands on 08:00');
-  const tasksBefore = await page.locator('.task').count();
-  await page.locator('.task[data-id="2"]').getByRole('button', { name: 'Cancel' }).click();
-  await until(async () => (await page.locator('.task').count()) === tasksBefore - 1, 'the cancelled check leaves the plan');
-  // A tap from another window of the same user shows here with no reload.
-  await owner.put('/api/objectives/1/steps/2', { done: true });
-  await until(async () => (await page.locator('.objective[data-id="1"] .step[data-done="true"]').count()) === 2, 'the pane must follow a tap made elsewhere');
-  // A share card opens inside the pane on one tap.
-  assert.equal(await page.locator('.objective[data-id="2"]').getByRole('button', { name: 'Ask Jet to share' }).count(), 1, 'a private objective is shared by asking Jet');
-  await page.locator('.objective[data-id="1"]').getByRole('button', { name: 'Change who sees it' }).click();
-  await page.locator('.objective[data-id="1"] .card-share').waitFor();
-  await page.locator('.objective[data-id="1"] .card-share').scrollIntoViewIfNeeded();
-  await shoot(page, '1280-5-share-card.png');
-  await page.locator('.objective[data-id="1"]').getByRole('button', { name: 'Close' }).click();
-  // Open the objective's own chat.
-  await page.locator('.objective[data-id="1"]').getByRole('button', { name: 'Open chat' }).click();
-  await until(async () => (await page.locator('.chat-row[data-chat-id] [aria-current="true"]').count()) === 1 && (await page.locator('.chat-head').innerText()).includes('Ship the kite'), 'the objective chat opens');
-
+  assert.match(await page.locator('.closed-row[data-status="done"] .closed-due').innerText(), /^Closed /, 'a done objective shows the day it closed');
   // Close the column, reload, and it stays closed; open it, reload, and it stays open.
   await page.locator('.pane-close').click();
   assert.equal(await pane.isHidden(), true);
-  assert.equal(parseFloat((await page.locator('.workspace-shell').evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' '))).at(2)), 0, 'the column is gone');
   await page.reload();
   await page.locator('#loading').waitFor({ state: 'detached' });
   assert.equal(await pane.isHidden(), true, 'a closed pane stays closed after a reload');
@@ -225,68 +276,64 @@ if (/^facade:/m.test(input)) {
   assert.equal(await pane.isVisible(), true, 'an open pane stays open after a reload');
   await desk.context.close();
 
-  // Phone, 390 px.
+  // Tablet, 768 px: the pane is a dialog beside the drawer's rail, the page behind is inert, the scrim closes it.
+  const tablet = await open(OWNER, { width: 768, height: 900 });
+  page = tablet.page;
+  await page.locator('.pane-toggle').click();
+  await page.locator('#side-pane').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#side-pane').getAttribute('role'), 'dialog');
+  assert.equal(await page.locator('#side-pane').getAttribute('aria-modal'), 'true');
+  assert.equal(parseFloat((await page.locator('.workspace-shell').evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ')))[0]), 64, 'the drawer folds to its rail');
+  assert.equal(await page.locator('#drawer').evaluate((el) => el.inert), true, 'the page behind is inert');
+  for (let i = 0; i < 40; i += 1) {
+    await page.keyboard.press(i % 7 === 6 ? 'Shift+Tab' : 'Tab');
+    assert.equal(await page.evaluate(() => document.getElementById('side-pane').contains(document.activeElement)), true, `Tab ${i + 1} stays in the pane`);
+  }
+  await shoot(page, '768-01-dialog');
+  await page.mouse.click(200, 450);
+  await until(async () => page.locator('#side-pane').isHidden(), 'a tap on the scrim closes the pane');
+  assert.equal(await page.locator('#drawer').evaluate((el) => el.inert), false, 'the page behind works again');
+  assert.equal(await focusKey(page), 'BUTTON', 'the focus goes back to the Plan button');
+  await tablet.context.close();
+
+  // Phone, 390 px: the pane is a dialog over the whole chat.
   const phone = await open(OWNER, { width: 390, height: 844 }, { hasTouch: true, isMobile: true });
   page = phone.page;
-  const count = page.locator('.pane-count');
-  await count.waitFor();
-  const fresh = Number(await count.innerText());
-  assert.ok(fresh > 0, 'the button counts what is new');
-  assert.equal(await page.locator('#side-pane').isHidden(), true, 'the pane is closed on a phone');
-  await shoot(page, '390-0-button-count.png');
+  assert.equal(await page.locator('.pane-toggle').innerText(), 'Plan', 'the control says Plan; nothing new since the last look');
   await page.locator('.pane-toggle').tap();
   await page.locator('#side-pane').waitFor({ state: 'visible' });
   assert.equal(await page.locator('#side-pane').evaluate((el) => el.getBoundingClientRect().width), 390, 'the pane lies over the whole chat');
-  assert.equal(await count.isHidden(), true, 'opening clears the count');
-  await page.locator('.objective').first().waitFor();
-  await shoot(page, '390-1-objectives.png');
-  await toSection(page, "Jet's plan"); await shoot(page, '390-2-plan.png');
-  await toSection(page, 'Recent checks'); await shoot(page, '390-3-checks.png');
-  await toSection(page, 'Shared with you'); await shoot(page, '390-4-shared-with-you.png');
-  await noOverflow(page, '390 open');
-  const phoneStep = page.locator('.objective[data-id="2"] .step').first();
-  await phoneStep.tap();
-  await until(async () => (await page.locator('.objective[data-id="2"] .step').first().getAttribute('aria-checked')) === 'true', 'the tick must show on the phone');
-  const phoneTask = page.locator('.task[data-id="1"]');
-  // The 1280 px run already moved this check to 08:00, so the snooze shows as a raised version on the server.
-  const versionOf = async () => (await owner.get('/api/pane')).tasks.find((task) => task.id === 1).version;
-  const phoneVersion = await versionOf();
-  await phoneTask.getByRole('button', { name: 'Snooze' }).tap();
-  await until(async () => (await versionOf()) === phoneVersion + 1, 'the snooze must reach the server from the phone');
-  await page.locator('.task[data-id="1"]').getByRole('button', { name: 'Cancel' }).tap();
-  await until(async () => (await page.locator('.task[data-id="1"]').count()) === 0, 'the cancelled check leaves the plan on the phone');
-  await noOverflow(page, '390 after taps');
-  await page.locator('.objective').first().getByRole('button', { name: 'Change who sees it' }).tap();
-  await page.locator('.pane-share .card-share').waitFor();
-  await noOverflow(page, '390 share card');
-  await page.locator('.pane-close').tap();
-  assert.equal(await page.locator('#side-pane').isHidden(), true, 'the button on the pane closes it again');
-  await noOverflow(page, '390 closed');
+  assert.equal(await page.locator('#side-pane').getAttribute('role'), 'dialog');
+  await exercise(page, 390);
   await phone.context.close();
 
   await owner.put('/api/objectives/1/notes/2', { private: true });
-  // The manager reads what the owner shared; the outsider has an empty pane.
-  for (const [view, name] of [[{ width: 1280, height: 900 }, '1280'], [{ width: 390, height: 844 }, '390']]) {
+  // The manager reads what the owner shared; the outsider has an empty pane whose example starts a message.
+  for (const [view, name] of [[{ width: 1440, height: 900 }, '1440'], [{ width: 390, height: 844 }, '390']]) {
     const mgr = await open(MANAGER, view, name === '390' ? { hasTouch: true, isMobile: true } : {});
     if (name === '390') await mgr.page.locator('.pane-toggle').tap();
     await mgr.page.locator('.shared').waitFor();
     assert.equal(await mgr.page.locator('.shared').count(), 1);
     assert.match(await mgr.page.locator('.shared').innerText(), /Ship the kite page/);
+    assert.equal(await mgr.page.locator('.shared .step-box').count(), 0, "a colleague's steps are not tick boxes");
     assert.doesNotMatch(await mgr.page.locator('#side-pane').innerText(), /Doubt I can fly|wind/, 'a private note never reaches a colleague');
-    await toSection(mgr.page, 'Shared with you');
-    await shoot(mgr.page, `${name}-6-manager-shared.png`);
+    await mgr.page.locator('.pane-heading', { hasText: 'Shared with you' }).scrollIntoViewIfNeeded();
+    await shoot(mgr.page, `${name}-09-manager-shared`);
     await noOverflow(mgr.page, `${name} manager`);
     await mgr.context.close();
     const out = await open(OUTSIDER, view, name === '390' ? { hasTouch: true, isMobile: true } : {});
     if (name === '390') await out.page.locator('.pane-toggle').tap();
     await out.page.locator('.invite').waitFor();
     assert.equal(await out.page.locator('.pane-body input, .pane-body textarea, .pane-body form').count(), 0, 'the empty pane has no form');
-    await shoot(out.page, `${name}-7-empty.png`);
+    await shoot(out.page, `${name}-10-empty`);
+    await out.page.locator('.invite-example').click();
+    await until(async () => (await out.page.locator('#field').inputValue()) === 'I need to ship the kite page by Friday.', 'the example goes into the message box');
+    assert.equal(await out.page.evaluate(() => document.activeElement.id), 'field');
     await noOverflow(out.page, `${name} empty`);
     await out.context.close();
   }
   assert.deepEqual(errors, []);
-  console.log('PASS plan_pane_taps_collapse_reload_phone_count_and_fit');
+  console.log('PASS plan_pane_glance_checkins_taps_dialog_share_and_fit');
   console.log('Screenshots: ' + screens);
 } catch (error) {
   if (page) { await page.screenshot({ path: path.join(screens, 'failure.png') }).catch(() => {}); console.error(await page.locator('body').innerText().catch(() => '')); }

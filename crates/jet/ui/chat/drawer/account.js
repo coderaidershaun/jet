@@ -2,6 +2,8 @@
 
 import { icon } from '../../dom.js';
 
+const CONFIRM_MS = 4000;
+
 /**
  * @param {{ user: { email: string, displayName: string }, announce: (message: string) => void }} options
  */
@@ -15,7 +17,25 @@ export function showAccount({ user, announce }) {
   $('account').hidden = false;
   const button = $('signout');
   button.append(icon('signOut'));
+  // A stray tap must not end the session, so the first tap asks and only a second tap within a few seconds signs out.
+  let asking = 0;
+  const stopAsking = () => {
+    clearTimeout(asking);
+    asking = 0;
+    button.classList.remove('is-confirming');
+    button.replaceChildren(icon('signOut'));
+    button.setAttribute('aria-label', 'Sign out');
+  };
+  button.addEventListener('blur', () => { if (asking) stopAsking(); });
   button.addEventListener('click', async () => {
+    if (!asking) {
+      asking = setTimeout(stopAsking, CONFIRM_MS);
+      button.classList.add('is-confirming');
+      button.textContent = 'Sign out?';
+      button.setAttribute('aria-label', 'Sign out now');
+      return;
+    }
+    stopAsking();
     button.disabled = true;
     try {
       const response = await fetch('/api/auth/signout', { method: 'POST' });

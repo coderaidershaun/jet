@@ -9,10 +9,12 @@ export function createDrawerView({ jetSvg, nameEl, titleEl, statusEl, drawerEl, 
   player.tick(0);
   gearButton.addEventListener('click', handlers.openSettings);
   contextToggle.addEventListener('click', () => { contextEl.hidden = !contextEl.hidden; contextToggle.setAttribute('aria-expanded', String(!contextEl.hidden)); });
+  const paint = () => draw(player.frame, { unitPx: Math.max(jetSvg.getBoundingClientRect().width / 200, 0.001) });
+  // On a phone the drawer is hidden at first, so the kite is drawn again once the drawer opens and it has a size.
+  new ResizeObserver(paint).observe(jetSvg);
   return {
-    init() { draw(player.frame, { unitPx: Math.max(jetSvg.getBoundingClientRect().width / 200, 0.001) }); },
+    init: paint,
     setPersona({ name, jobTitle }) { nameEl.textContent = name; titleEl.textContent = jobTitle; },
-    // SMELL: in the collapsed drawer the status line is hidden and the red dot is only drawn, so a screen reader hears nothing when the server is lost.
     setConnection(connected) { drawerEl.dataset.connection = connected ? 'online' : 'offline'; statusEl.textContent = connected ? '' : 'Server disconnected'; },
     setContext(model, context = {}) {
       modelEl.textContent = MODELS.find(([id]) => id === model)?.[1] ?? model;

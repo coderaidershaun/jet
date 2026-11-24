@@ -124,6 +124,10 @@ fn a_site_on_claude_codes_own_list_is_refused_when_the_user_did_not_link_it() {
 
     let refusal = results[0]["refused"].as_str().unwrap_or_default();
     assert!(refusal.contains("paste the link"), "{}", results[0]);
+    assert!(
+        refusal.contains("[page-not-linked]"),
+        "the page matches this mark: {refusal}"
+    );
     assert!(results[1]["refused"].is_null(), "{}", results[1]);
     let args: Vec<String> = serde_json::from_str(
         &std::fs::read_to_string(host.dir.path().join("fake-claude-args.json")).unwrap(),

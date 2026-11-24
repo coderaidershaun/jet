@@ -15,6 +15,9 @@ pub(crate) struct CardId(pub(crate) i64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) struct ItemId(pub(crate) i64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub(crate) struct ReplyCardId(pub(crate) i64);
+
 text_enum!(ItemKind {
     Question = "question",
     Task = "task",
@@ -136,6 +139,26 @@ pub(crate) struct SendCard {
     pub(crate) item_state: Option<ItemState>,
 }
 
+/// The reply card as the page draws it, in the state it is in now: the user's exact words to the
+/// colleague who sent the item.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReplyCard {
+    pub(crate) id: ReplyCardId,
+    pub(crate) item_id: ItemId,
+    /// The colleague who sent the item, whom the reply goes to.
+    pub(crate) to: CardTo,
+    /// The kind of the item it answers.
+    pub(crate) kind: ItemKind,
+    pub(crate) outcome: ReplyOutcome,
+    pub(crate) text: String,
+    #[serde(skip)]
+    pub(crate) chat: Option<ChatId>,
+    pub(crate) state: CardState,
+    pub(crate) sent_at: Option<u64>,
+    pub(crate) item_state: ItemState,
+}
+
 /// One item the user sent, as their pane lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -233,6 +256,86 @@ impl Store {
                 found.extend(card);
             }
             Ok(found)
+        })
+    }
+
+    /// Makes a reply card. It answers nothing.
+    pub(crate) fn add_reply_card(
+        &self,
+        (user, chat): (UserId, ChatId),
+        (item, outcome, body): (ItemId, ReplyOutcome, &str),
+        at: u64,
+    ) -> Result<ReplyCardId, StoreError> {
+        self.with(|db| {
+            db.execute(
+                "INSERT INTO reply_cards (user_id, chat_id, item_id, outcome, body, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![user.0, chat.0, item.0, outcome, body, seconds(at)],
+            )?;
+            Ok(ReplyCardId(db.last_insert_rowid()))
+        })
+    }
+
+    /// The user's own reply cards with these ids, as they are now. Others' cards are left out.
+    pub(crate) fn reply_cards(
+        &self,
+        user: UserId,
+        ids: &[ReplyCardId],
+    ) -> Result<Vec<ReplyCard>, StoreError> {
+        self.with(|db| {
+            let mut query = db.prepare(
+                "SELECT c.id, c.item_id, i.from_user, u.display_name, i.kind, c.outcome, c.body,
+                        c.chat_id, c.sent_at, i.state
+                 FROM reply_cards c
+                 JOIN inbox_items i ON i.id = c.item_id
+                 JOIN users u ON u.id = i.from_user
+                 WHERE c.id = ?1 AND c.user_id = ?2",
+            )?;
+            let mut found = Vec::new();
+            for id in ids {
+                let card = query
+                    .query_row(params![id.0, user.0], |row| {
+                        let sent_at = row.get::<_, Option<i64>>(8)?.map(i64::unsigned_abs);
+                        Ok(ReplyCard {
+                            id: ReplyCardId(row.get(0)?),
+                            item_id: ItemId(row.get(1)?),
+                            to: CardTo {
+                                id: UserId(row.get(2)?),
+                                name: row.get(3)?,
+                            },
+                            kind: row.get(4)?,
+                            outcome: row.get(5)?,
+                            text: row.get(6)?,
+                            chat: row.get::<_, Option<i64>>(7)?.map(ChatId),
+                            state: if sent_at.is_some() {
+                                CardState::Sent
+                            } else {
+                                CardState::Proposed
+                            },
+                            sent_at,
+                            item_state: row.get(9)?,
+                        })
+                    })
+                    .optional()?;
+                found.extend(card);
+            }
+            Ok(found)
+        })
+    }
+
+    /// Marks the user's reply card sent. False when it was sent already or is not theirs.
+    pub(crate) fn mark_reply_sent(
+        &self,
+        user: UserId,
+        card: ReplyCardId,
+        at: u64,
+    ) -> Result<bool, StoreError> {
+        self.with(|db| {
+            let changed = db.execute(
+                "UPDATE reply_cards SET sent_at = ?3 WHERE id = ?1 AND user_id = ?2 AND sent_at IS NULL",
+                params![card.0, user.0, seconds(at)],
+            )?;
+            Ok(changed == 1)
         })
     }
 

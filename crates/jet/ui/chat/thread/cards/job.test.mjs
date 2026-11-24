@@ -221,11 +221,11 @@ test('cards draw live progress', () => {
     assert.equal(find(card, 'progress'), bar);
     assert.equal(bar.attributes.value, '0.75');
     assert.equal(find(card, 'span', 'job-words').textContent, 'converting 24 of 32 pages');
-    assert.equal(find(card, 'span', 'card-meta').textContent, 'running · converting 24 of 32 pages · 0.8 s');
+    assert.equal(find(card, 'span', 'card-meta').textContent, 'running · converting 24 of 32 pages');
     hear({ job_id: JOB, kind: 'ingest', state: 'done', items: 3 });
     assert.equal(find(card, 'span', 'job').hidden, true, 'the bar goes when the job ends');
     assert.equal(card.attributes['data-tone'], 'ok');
-    assert.equal(find(card, 'span', 'card-meta').textContent, 'done · 3 items · 0.8 s');
+    assert.equal(find(card, 'span', 'card-meta').textContent, 'done · 3 items');
     assert.equal(find(card, 'dl', 'fields').children.length, 6, 'the fields are the ones of the finished job');
 
     cards.sync([], []);

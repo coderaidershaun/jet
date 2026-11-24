@@ -5,7 +5,7 @@
 use super::Server;
 use crate::account::SignedIn;
 use crate::chat::BridgeError;
-use crate::objectives::ObjectiveError;
+use crate::objectives::{Directory, ObjectiveError};
 use crate::on_worker;
 use crate::store::{ObjectiveId, ProposalId, ShareCard, Sharing, UserId};
 use axum::{
@@ -23,6 +23,7 @@ pub(super) fn router() -> Router<Server> {
         .route("/api/shares/proposals", get(cards))
         .route("/api/shares/proposals/{id}/apply", post(tap))
         .route("/api/objectives/{id}/shares", get(sharing))
+        .route("/api/objectives/{id}/directory", get(directory))
         .route("/api/objectives/{id}/share-proposals", post(propose))
         .route("/api/objectives/{id}/notes/{note}", put(flip_note))
 }
@@ -109,6 +110,18 @@ async fn sharing(
 ) -> Result<Json<Sharing>, Response> {
     let user = signed_in.user.id;
     let found = on_worker(move || host.objectives.sharing(user, ObjectiveId(id)))
+        .await
+        .map_err(|failed| BridgeError::from(failed).into_response())?;
+    Ok(Json(found.map_err(IntoResponse::into_response)?))
+}
+
+async fn directory(
+    State(host): State<Server>,
+    signed_in: SignedIn,
+    Path(id): Path<i64>,
+) -> Result<Json<Directory>, Response> {
+    let user = signed_in.user.id;
+    let found = on_worker(move || host.objectives.directory(user, ObjectiveId(id)))
         .await
         .map_err(|failed| BridgeError::from(failed).into_response())?;
     Ok(Json(found.map_err(IntoResponse::into_response)?))

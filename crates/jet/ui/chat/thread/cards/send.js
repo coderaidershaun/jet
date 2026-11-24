@@ -55,6 +55,7 @@ export const sentWords = (view) => 'Sent to ' + view.to.name + ' · ' + itemWord
 export function tapAnswer(error) {
   const kind = recordOf(error).kind;
   if (kind === 'cardNotOpen') return { words: 'This card was already sent.', reread: true };
+  if (kind === 'itemClosed') return { words: 'Their message was already closed another way, so nothing was sent.', reread: true };
   if (kind === 'network') return { words: TAP_FAILED, reread: false };
   if (Object.hasOwn(TAP_ANSWERS, kind)) return { words: TAP_ANSWERS[kind], reread: false };
   return { words: orNull(recordOf(error).message) ?? TAP_FAILED, reread: false };

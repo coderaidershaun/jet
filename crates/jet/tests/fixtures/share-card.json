@@ -1,29 +1,89 @@
 {
-  "proposed": {
-    "id": 3,
-    "objectiveId": 1,
-    "title": "Ship the kite",
-    "state": "proposed",
-    "people": [{"id": 2, "name": "bob@example.com", "ticked": false}],
-    "teams": [{"id": 1, "name": "Commercial", "members": ["Cat"], "ticked": true}],
-    "appliedAt": null
-  },
   "applied": {
+    "appliedAt": 1767225607,
     "id": 1,
     "objectiveId": 1,
-    "title": "Ship the kite",
+    "people": [
+      {
+        "id": 2,
+        "name": "bob@example.com",
+        "ticked": true
+      }
+    ],
     "state": "applied",
-    "people": [{"id": 2, "name": "bob@example.com", "ticked": true}],
-    "teams": [{"id": 1, "name": "Commercial", "members": ["Cat"], "ticked": false}],
-    "appliedAt": 1767225607
+    "teams": [
+      {
+        "id": 1,
+        "members": [
+          "Cat"
+        ],
+        "name": "Commercial",
+        "ticked": false
+      }
+    ],
+    "title": "Ship the kite"
+  },
+  "directory": {
+    "people": [
+      {
+        "id": 2,
+        "name": "bob@example.com",
+        "ticked": true
+      },
+      {
+        "id": 3,
+        "name": "Cat",
+        "ticked": false
+      }
+    ],
+    "teams": [
+      {
+        "id": 1,
+        "members": [
+          "Cat"
+        ],
+        "name": "Commercial",
+        "ticked": false
+      }
+    ]
+  },
+  "proposed": {
+    "appliedAt": null,
+    "id": 3,
+    "objectiveId": 1,
+    "people": [
+      {
+        "id": 2,
+        "name": "bob@example.com",
+        "ticked": false
+      }
+    ],
+    "state": "proposed",
+    "teams": [
+      {
+        "id": 1,
+        "members": [
+          "Cat"
+        ],
+        "name": "Commercial",
+        "ticked": true
+      }
+    ],
+    "title": "Ship the kite"
   },
   "refused": {
+    "appliedAt": null,
     "id": 2,
     "objectiveId": 1,
-    "title": "Ship the kite",
+    "people": [
+      {
+        "id": 2,
+        "name": "bob@example.com",
+        "ticked": true
+      }
+    ],
     "state": "refused",
-    "people": [{"id": 2, "name": "bob@example.com", "ticked": true}],
     "teams": [],
-    "appliedAt": null
+    "title": "Ship the kite"
   }
 }

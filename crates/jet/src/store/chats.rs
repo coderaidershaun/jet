@@ -2,7 +2,7 @@
 //! each chat, the record of its provider session and how far the user has read it.
 
 use super::text_enum::text_enum;
-use super::{Store, StoreError, UserId, from_json, to_json};
+use super::{Store, StoreError, UserId, from_json, seconds, to_json};
 use agent::{Entry, NewEntry, Session};
 use rusqlite::{OptionalExtension, Transaction, params};
 use serde::Serialize;
@@ -239,6 +239,24 @@ impl Store {
             .iter()
             .map(|text| from_json("an entry", text))
             .collect()
+    }
+
+    /// The emoji the user put on one entry of the chat, if any.
+    pub(crate) fn user_reaction(
+        &self,
+        chat: ChatId,
+        entry: u64,
+    ) -> Result<Option<String>, StoreError> {
+        self.with(|db| {
+            db.query_row(
+                "SELECT json_extract(r.value, '$.emoji') FROM entries e, json_each(e.entry, '$.reactions') r
+                 WHERE e.chat_id = ?1 AND e.id = ?2 AND e.forgotten_at IS NULL
+                   AND json_extract(r.value, '$.by') = 'user'",
+                params![chat.0, seconds(entry)],
+                |row| row.get(0),
+            )
+            .optional()
+        })
     }
 
     /// Saves the entry under the next id of the chat: one more than any id it ever had, forgotten

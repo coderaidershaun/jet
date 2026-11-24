@@ -25,13 +25,15 @@ pub(crate) use directory::{Email, NewUser, Person, Team, User, UserId};
 pub(crate) use files::Added;
 pub use import::ImportError;
 pub(crate) use inbox::{
-    CardId, Close, Closed, Item, ItemId, ItemKind, ItemState, Posted, ReplyOutcome, SendCard,
-    SendTap, Sent,
+    CardId, Close, Closed, Item, ItemId, ItemKind, ItemState, Posted, ReplyCard, ReplyCardId,
+    ReplyOutcome, SendCard, SendTap, Sent,
 };
 pub(crate) use objectives::{
     Edit, NewObjective, Objective, ObjectiveChat, ObjectiveId, ObjectiveStatus,
 };
-pub(crate) use shares::{Applied, ProposalId, ShareCard, Shared, SharedNote, Sharing, Tapped};
+pub(crate) use shares::{
+    Applied, CardPerson, CardTeam, ProposalId, ShareCard, Shared, SharedNote, Sharing, Tapped,
+};
 pub(crate) use signins::{Rotation, SigninId};
 pub(crate) use sources::{NewSource, Source, SourceKind};
 pub(crate) use steps::{NewStep, Step, StepId};
@@ -85,6 +87,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0009_pane_taps.sql"),
     include_str!("migrations/0010_check_runs.sql"),
     include_str!("migrations/0011_inbox.sql"),
+    include_str!("migrations/0012_closed_and_reply_cards.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]

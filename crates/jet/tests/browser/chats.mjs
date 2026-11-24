@@ -59,7 +59,8 @@ if (/^facade:/m.test(input)) {
   const row = title => page.locator('.chat-row', { has: page.locator('.chat-title', { hasText: title }) });
   const shoot = async name => { await delay(500); await page.screenshot({ path: path.join(screens, name), animations: 'disabled' }); };
   const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
-  const open = async () => { if (await page.locator('.workspace-shell').getAttribute('data-expanded') !== 'true') await page.locator('#jet-toggle').click(); };
+  // On a phone the chats open from the button in the chat's head; wider, from the kite at the top of the drawer.
+  const open = async () => { if (await page.locator('.workspace-shell').getAttribute('data-expanded') !== 'true') await page.locator((await page.locator('.chats-toggle').isVisible()) ? '.chats-toggle' : '#jet-toggle').click(); };
 
   await signIn(page, origin);
   await page.locator('#loading').waitFor({ state: 'detached' });
@@ -160,6 +161,7 @@ if (/^facade:/m.test(input)) {
   const long = (await get('/api/chats')).find(chat => chat.title === 'Boat trip');
   assert.ok((await context.request.patch(origin + '/api/chats/' + long.id, { ...write, data: { title: longTitle } })).ok());
   await until(async () => (await row(longTitle).count()) === 1, 'the long title must reach the list');
+  await open();
   await row(longTitle).locator('.chat-open').click();
   await until(async () => (await page.locator('#rows').innerText()).includes('book the marina'), 'the chat must open');
   await page.locator('#field').fill('U'.repeat(300));
@@ -194,7 +196,7 @@ if (/^facade:/m.test(input)) {
   await until(async () => (await get('/api/chats')).some(chat => chat.title === 'Weekend plans'), 'the rename must save on the phone');
   assert.ok(await overflow() <= 0);
 
-  // On a touch screen nothing hovers, so rename and delete must be on every row, beside a readable badge.
+  // On a touch screen rename and delete show on the open chat only, beside readable badges, and the chats open from the head.
   const touch = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
   touch.setDefaultTimeout(15000);
   const phone = await touch.newPage();
@@ -202,11 +204,16 @@ if (/^facade:/m.test(input)) {
   await send(long.id, 'Anything else for the trip?');
   await signIn(phone, origin);
   await phone.locator('#loading').waitFor({ state: 'detached' });
-  await phone.locator('#jet-toggle').tap();
+  assert.equal(await phone.locator('#drawer').isVisible(), false, 'on a phone the thread has the whole width');
+  await until(async () => /Chats, 2 unread/.test(await phone.locator('.chats-toggle').getAttribute('aria-label')), 'the chats button counts the unread entries');
+  await phone.locator('.chats-toggle').tap();
   await until(async () => (await phone.locator('.chat-row .badge').count()) === 2, 'the badges must show on the touch phone');
-  const rows = await phone.locator('.chat-row').count();
-  assert.equal(await phone.locator('.chat-row .chat-action:visible').count(), 2 * rows - 1, 'every row has rename, every row but main has delete');
+  assert.equal(await phone.locator('.chat-row .chat-action:visible').count(), 1, 'only the open chat, the main one, shows its rename');
   const sail = phone.locator(`.chat-row[data-chat-id="${objectiveChat.id}"]`);
+  await sail.locator('.chat-open').tap();
+  await until(async () => !(await phone.locator('#drawer').isVisible()), 'opening a chat folds the chats away');
+  await phone.locator('.chats-toggle').tap();
+  assert.equal(await phone.locator('.chat-row .chat-action:visible').count(), 2, 'the open chat shows rename and delete');
   await sail.getByRole('button', { name: /^Delete/ }).tap();
   assert.equal(await sail.getByRole('button', { name: /for good/ }).isVisible(), true);
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'the touch drawer fits 390 px');

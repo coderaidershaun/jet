@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="./chat/thread/thread.css">
 <link rel="stylesheet" href="./chat/files.css">
 <link rel="stylesheet" href="./chat/thread/cards/cards.css">
+<link rel="stylesheet" href="./chat/thread/cards/share.css">
 <link rel="stylesheet" href="./chat/stage/stage.css">
 <link rel="stylesheet" href="./chat/composer/composer.css">
 <link rel="stylesheet" href="./chat/settings/sheet.css">
@@ -21,6 +22,7 @@
 <script type="module" src="./chat/main.js"></script>
 </head>
 <body>
+<a class="skip-link" id="skip" href="#field">Skip to the message box</a>
 <div class="loading" id="loading" role="status">
   <p class="loading-text">Jet is loading…</p>
   <span class="loading-ring" aria-hidden="true"></span>
@@ -81,14 +83,14 @@
       <div class="empty" id="empty">
         <div class="hero" id="hero"></div>
         <h2 class="greeting" id="greeting"></h2>
-        <p class="greeting-sub">Ask me anything. I'll remember what matters.</p>
+        <p class="greeting-sub">Tell me what you are working on. I keep the plan and check in with you.</p>
       </div>
       <button class="jump" id="jump" type="button" hidden>Jump to latest</button>
     </div>
 
     <div class="composer" id="composer">
       <div class="held" id="held" hidden>
-        <span class="held-label"><span id="held-text">Sends when Jet finishes</span><span class="held-files"></span></span>
+        <span class="held-label"><span class="held-words"></span><span id="held-text">Sends when Jet finishes</span><span class="held-files"></span></span>
         <button class="icon-button" id="held-cancel" type="button" aria-label="Cancel the held message"></button>
       </div>
       <div class="composer-row">

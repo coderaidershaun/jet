@@ -4,7 +4,7 @@ import { button, note, section, textField } from './controls.js';
 import { named } from './names.js';
 
 /** @param {import('./sheet.js').SheetContext} ctx */
-export function buildClaude({ settings, agent, isAdmin, changed, onClaudeChecked, onForget }) {
+export function buildClaude({ settings, agent, isAdmin, changed, onClaudeChecked, onForget, chatTitle = () => '' }) {
   const status = h('p', { class: 'status', role: 'status' });
   const path = textField({
     label: 'Path to claude',
@@ -43,7 +43,7 @@ export function buildClaude({ settings, agent, isAdmin, changed, onClaudeChecked
     named(h('p'), "Clears the thread and starts a fresh agent session. {name}'s memory notes are kept.", displayName(settings)),
     h('div', { class: 'row-actions' }, cancel, button('Forget', { class: 'action danger', onClick: forget })),
   );
-  const ask = button('Forget this conversation', {
+  const ask = button('Forget this chat', {
     class: 'action danger',
     onClick: () => {
       ask.hidden = true;
@@ -61,6 +61,9 @@ export function buildClaude({ settings, agent, isAdmin, changed, onClaudeChecked
 
     /** Asks where the selected agent is, and shows the answer here and in the page's banner. */
     async refresh() {
+      // The user has many chats, so the button names the one it clears.
+      const title = chatTitle();
+      ask.textContent = title ? 'Forget “' + title + '”' : 'Forget this chat';
       try {
         const { program } = await agent.status();
         status.textContent = programStatus(program);

@@ -37,5 +37,7 @@
 .signout:hover { color: var(--fg); background: var(--surface-2); }
 .signout:disabled { opacity: .45; }
 .signout .icon { width: 20px; height: 20px; }
+.workspace-shell[data-expanded="false"] .signout.is-confirming { width: 52px; padding: 0 2px; font-size: 11px; line-height: 13px; }
+.signout.is-confirming { width: auto; padding: 0 12px; background: rgba(255, 123, 114, .18); color: var(--danger); font-size: 12px; font-weight: 650; }
 .workspace-shell[data-expanded="false"] .account { flex-direction: column; gap: 4px; padding: 10px 0 4px; }
 .workspace-shell[data-expanded="false"] .account-who { display: none; }

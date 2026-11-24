@@ -12,20 +12,36 @@ const TAP_ANSWERS = {
 };
 
 /**
- * One person or team on the card. `key` tells them apart in one list of ticks.
- * @typedef {{ key: string, kind: 'person' | 'team', id: number, name: string, members: string[], ticked: boolean }} Entry
+ * One person or team on the card. `key` tells them apart in one list of ticks; `shared` is true when the objective
+ * is shared with them now, and null when the card cannot tell.
+ * @typedef {{ key: string, kind: 'person' | 'team', id: number, name: string, members: string[], ticked: boolean, shared: boolean | null }} Entry
  * @typedef {{ id: number, objectiveId: number, title: string, state: 'proposed' | 'applied' | 'refused', entries: Entry[] }} ShareView
  */
+
+/**
+ * The teams then the people of a card or of the directory. A proposal holds who Jet proposes (ticked) and who it is
+ * shared with now (unticked unless proposed too), so a ticked entry of a proposal may or may not be shared now; in
+ * the directory a tick is exactly who it is shared with now.
+ */
+function entriesOf(raw, isShared) {
+  const entry = (kind) => (item) => {
+    const record = recordOf(item);
+    const ticked = record.ticked === true;
+    return { key: kind[0] + record.id, kind, id: numberOrNull(record.id), name: orNull(record.name) ?? 'Someone', members: stringsOf(record.members), ticked, shared: isShared(ticked) };
+  };
+  return [...listOf(raw.teams).map(entry('team')), ...listOf(raw.people).map(entry('person'))].filter((item) => item.id !== null);
+}
 
 /** The card of a proposal as the server sends it, or null for a value that is not one. @returns {ShareView | null} */
 export function shareOf(raw) {
   if (!isRecord(raw) || !STATES.includes(raw.state) || numberOrNull(raw.id) === null) return null;
-  const entry = (kind) => (item) => {
-    const record = recordOf(item);
-    return { key: kind[0] + record.id, kind, id: numberOrNull(record.id), name: orNull(record.name) ?? 'Someone', members: stringsOf(record.members), ticked: record.ticked === true };
-  };
-  const entries = [...listOf(raw.teams).map(entry('team')), ...listOf(raw.people).map(entry('person'))].filter((item) => item.id !== null);
-  return { id: raw.id, objectiveId: numberOrNull(raw.objectiveId) ?? 0, title: orNull(raw.title) ?? 'this objective', state: raw.state, entries };
+  return { id: raw.id, objectiveId: numberOrNull(raw.objectiveId) ?? 0, title: orNull(raw.title) ?? 'this objective', state: raw.state, entries: entriesOf(raw, (ticked) => (ticked ? null : true)) };
+}
+
+/** The pane's card from the directory read: everyone the owner can share with, ticked where it is shared now. */
+export function directoryView(objective, raw) {
+  if (!isRecord(raw)) return null;
+  return { id: null, objectiveId: objective.id, title: orNull(objective.title) ?? 'this objective', state: 'proposed', entries: entriesOf(raw, (ticked) => ticked) };
 }
 
 /** 'the Commercial team (Cat, Dan)' or 'Bob'. */
@@ -44,8 +60,15 @@ export function tapBody(view, ticked) {
   return { people: chosen('person'), teams: chosen('team') };
 }
 
-/** What the button says for the ticks now. */
-export const buttonWords = (ticked) => (ticked.size === 0 ? 'Stop sharing' : 'Share');
+/** What the button says for the ticks now, and whether the tap would change anything. */
+export function shareButton(view, ticked) {
+  if (view.entries.some((entry) => entry.shared === null)) return { words: ticked.size === 0 ? 'Stop sharing' : 'Share', enabled: true };
+  const adds = view.entries.some((entry) => ticked.has(entry.key) && !entry.shared);
+  const removes = view.entries.some((entry) => !ticked.has(entry.key) && entry.shared);
+  if (adds) return { words: 'Share', enabled: true };
+  if (removes) return { words: ticked.size === 0 ? 'Stop sharing' : 'Save who sees it', enabled: true };
+  return { words: 'Share', enabled: false };
+}
 
 /**
  * What a refused or failed tap says. `reread` is true when the card may have changed under the page, so it asks the

@@ -91,6 +91,33 @@ impl Store {
         })
     }
 
+    /// Gives the step a new title, a new due date, or both; a `None` keeps what it has. `None`
+    /// when the user has no such step.
+    pub(crate) fn edit_step(
+        &self,
+        owner: UserId,
+        (objective, step): (ObjectiveId, StepId),
+        (title, due): (Option<&str>, Option<&str>),
+        at: u64,
+    ) -> Result<Option<()>, StoreError> {
+        self.try_with(|db| {
+            let tx = db.transaction()?;
+            if !touch(&tx, owner, objective, at)? {
+                return Ok(None);
+            }
+            let changed = tx.execute(
+                "UPDATE objective_steps SET title = coalesce(?3, title), due_date = coalesce(?4, due_date)
+                 WHERE id = ?1 AND objective_id = ?2",
+                params![step.0, objective.0, title, due],
+            )?;
+            if changed == 0 {
+                return Ok(None);
+            }
+            tx.commit()?;
+            Ok(Some(()))
+        })
+    }
+
     /// Marks the step done at `at`, or not done again. `None` when the user has no such step.
     pub(crate) fn tick_step(
         &self,

@@ -105,6 +105,9 @@ export function createComposerView({ page, composer, field, button, heldChip, he
     setHeld(held) {
       heldChip.hidden = held === null;
       heldChip.title = held?.text ?? '';
+      // The first words say which message waits, so the user can tell it from what they type next.
+      const text = held?.text.trim() ?? '';
+      heldChip.querySelector('.held-words').textContent = text === '' ? '' : '“' + text.replace(/\s+/g, ' ') + '”';
       const files = held?.attachments.length ?? 0;
       heldChip.querySelector('.held-files').textContent = files === 0 ? '' : ' · ' + files + (files === 1 ? ' file' : ' files');
     },

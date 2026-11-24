@@ -17,7 +17,7 @@ use crate::store::{
 pub(crate) use inbox::InboxError;
 pub(crate) use pane::Pane;
 use serde::Serialize;
-pub(crate) use sharing::DirectoryChange;
+pub(crate) use sharing::{Directory, DirectoryChange};
 use std::sync::Arc;
 pub(crate) use time::TimeError;
 
@@ -99,6 +99,8 @@ pub(crate) enum ObjectiveError {
     CheckRunning,
     #[error("the command changes nothing; give a new start date, a new due date, or both")]
     NoNewDate,
+    #[error("the command changes nothing; give the step a new title, a new due date, or both")]
+    NothingToChange,
     #[error(
         "only the deployment's admin may name an app as a source, because an app reads one account for everyone. Leave it out, or ask the admin"
     )]
@@ -157,6 +159,7 @@ impl ObjectiveError {
             Self::AppSourceAdminOnly => "adminOnly",
             Self::AppToolNotReadOnly { .. } => "notReadOnly",
             Self::NoNewDate => "noNewDate",
+            Self::NothingToChange => "nothingToChange",
             Self::NoSuchNote { .. } => "noSuchNote",
             Self::NoSuchUser { .. } => "noSuchUser",
             Self::NoSuchTeam { .. } => "noSuchTeam",
@@ -192,6 +195,13 @@ pub(crate) struct Create {
     pub(crate) sources: Vec<NewSource>,
     pub(crate) first_check: Check,
     pub(crate) chat: ObjectiveChat,
+}
+
+/// A new title, a new due date, or both, for one step.
+#[derive(Debug, Clone)]
+pub(crate) struct StepChange {
+    pub(crate) title: Option<String>,
+    pub(crate) due: Option<String>,
 }
 
 pub(crate) struct Update {
@@ -299,13 +309,14 @@ impl Objectives {
             None => today,
         };
         let due = time::date(&new.due)?;
+        let dates = format!("From {} to {}.", time::in_words(start), time::in_words(due));
         let (start, due) = (start.to_string(), due.to_string());
         check_forwards(&start, &due)?;
         let steps = checked_steps(new.steps.clone())?;
         let (due_at, local_time) = time::to_utc(&new.first_check.at, &zone, now)?;
-        let summary = summary(&new, &steps, (&start, &due));
+        let summary = summary(&new, &steps, &dates);
         let line = format!(
-            "I have registered the objective \"{}\". It has its own chat now.",
+            "I have recorded the objective \"{}\". It has its own chat now.",
             new.title
         );
         let created = self.write(|| {
@@ -374,6 +385,37 @@ impl Objectives {
                 objective: id.0,
                 step: step.0,
             })?;
+        self.show(user, id)
+    }
+
+    /// Gives one step a new title, a new due date, or both, as when a step slips.
+    pub(crate) fn edit_step(
+        &self,
+        user: UserId,
+        id: ObjectiveId,
+        step: StepId,
+        change: StepChange,
+    ) -> Result<ObjectiveView, ObjectiveError> {
+        if change.title.is_none() && change.due.is_none() {
+            return Err(ObjectiveError::NothingToChange);
+        }
+        let open = self.store.objective(user, id)?.map(|found| found.status);
+        if matches!(open, Some(ObjectiveStatus::Done | ObjectiveStatus::Dropped)) {
+            return Err(ObjectiveError::Closed { id: id.0 });
+        }
+        let due = change
+            .due
+            .map(|due| time::date(&due).map(|date| date.to_string()))
+            .transpose()?;
+        let title = change.title.as_deref();
+        self.write(|| {
+            self.store
+                .edit_step(user, (id, step), (title, due.as_deref()), self.now())
+        })?
+        .ok_or(ObjectiveError::NoSuchStep {
+            objective: id.0,
+            step: step.0,
+        })?;
         self.show(user, id)
     }
 
@@ -639,12 +681,16 @@ fn checked_steps(steps: Vec<NewStep>) -> Result<Vec<NewStep>, ObjectiveError> {
         .collect()
 }
 
-/// The first entry of an objective's own chat.
-fn summary(new: &Create, steps: &[NewStep], (start, due): (&str, &str)) -> String {
+/// The first entry of an objective's own chat, as Markdown: a single line break would join the
+/// dates to the deliverable, so each part is a paragraph.
+fn summary(new: &Create, steps: &[NewStep], dates: &str) -> String {
     let mut text = format!(
-        "{}\n\nDeliverable: {}\nFrom {start} to {due}.",
+        "{}\n\nDeliverable: {}\n\n{dates}",
         new.title, new.deliverable
     );
+    if !steps.is_empty() {
+        text.push('\n');
+    }
     for (number, step) in (1..).zip(steps) {
         text.push_str(&format!("\n{number}. {}", step.title));
     }
@@ -820,6 +866,74 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_done_objective_has_its_closed_at() {
+        let world = world();
+        let ada = world.ada.user;
+        let id = world
+            .objectives
+            .create(world.ada, kite(ObjectiveChat::This))
+            .unwrap()
+            .objective
+            .id;
+        assert_eq!(
+            world.objectives.show(ada, id).unwrap().objective.closed_at,
+            None
+        );
+        let closed = world
+            .objectives
+            .close(ada, id, ObjectiveStatus::Done, None)
+            .unwrap();
+        let at = closed
+            .objective
+            .closed_at
+            .expect("a done objective says when it closed");
+        assert!(
+            at > START && at == closed.objective.updated_at,
+            "{closed:?}"
+        );
+    }
+
+    #[test]
+    fn step_edit_changes_date_and_title_raises_version_and_refuses_another_user() {
+        let world = world();
+        let o = &world.objectives;
+        let made = o.create(world.ada, kite(ObjectiveChat::This)).unwrap();
+        let (id, step) = (made.objective.id, made.steps[0].id);
+        let change = StepChange {
+            title: Some("Build the red frame".into()),
+            due: Some("2026-02-20".into()),
+        };
+        let edited = o
+            .edit_step(world.ada.user, id, step, change.clone())
+            .unwrap();
+        assert_eq!(
+            (
+                edited.steps[0].title.as_str(),
+                edited.steps[0].due.as_deref()
+            ),
+            ("Build the red frame", Some("2026-02-20"))
+        );
+        assert_eq!(edited.objective.version, made.objective.version + 1);
+        assert_eq!(
+            edited.steps[1], made.steps[1],
+            "the other step is as it was"
+        );
+
+        let refused = o.edit_step(world.bob.user, id, step, change).unwrap_err();
+        assert_eq!(refused.kind(), "noSuchStep");
+        let nothing = StepChange {
+            title: None,
+            due: None,
+        };
+        let empty = o.edit_step(world.ada.user, id, step, nothing).unwrap_err();
+        assert_eq!(empty.kind(), "nothingToChange");
+        assert_eq!(
+            o.show(world.ada.user, id).unwrap().objective.version,
+            edited.objective.version
+        );
+    }
+
     fn check_of_open(world: &World, user: UserId) -> Option<AgentTask> {
         world.objectives.list(user).unwrap()[0]
             .tasks
@@ -951,6 +1065,13 @@ mod tests {
         assert!(
             first[0].text.contains("A kite that flies")
                 && first[0].text.contains("1. Build the frame")
+        );
+        assert!(
+            first[0]
+                .text
+                .contains("A kite that flies\n\nFrom Sun 1 Feb 2026 to Sun 1 Mar 2026."),
+            "the dates are in words, in a paragraph of their own: {}",
+            first[0].text
         );
         let line = world.store.entries(main, None).unwrap();
         assert!(line[0].text.contains("Ship the kite"));

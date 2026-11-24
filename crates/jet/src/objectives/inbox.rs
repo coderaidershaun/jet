@@ -5,7 +5,8 @@ use super::{Objectives, UTC};
 use crate::chat::TurnOwner;
 use crate::store::{
     CardId, Close, Closed, Item, ItemId, ItemKind, ItemState, NewTask, ObjectiveId, Posted,
-    ReplyOutcome, SendCard, SendTap, SetBy, StoreError, TaskId, TaskKind, UserId,
+    ReplyCard, ReplyCardId, ReplyOutcome, SendCard, SendTap, SetBy, StoreError, TaskId, TaskKind,
+    UserId,
 };
 use agent::{Colleague, ColleagueOutcome, NewEntry, Role};
 
@@ -33,9 +34,9 @@ pub(crate) enum InboxError {
         "the user sent {name} {SEND_LIMIT} items in the last day, which is the most; try again tomorrow"
     )]
     SendLimit { name: String },
-    #[error("the user has no send card {id}")]
+    #[error("the user has no card {id}")]
     NoSuchCard { id: i64 },
-    #[error("send card {id} was sent already")]
+    #[error("card {id} was sent already")]
     CardNotOpen { id: i64 },
     #[error("the user has no item {id} to reply to; tasks_list and the chat show the ids")]
     NoSuchItem { id: i64 },
@@ -177,15 +178,80 @@ impl Objectives {
             .ok_or(InboxError::NoSuchCard { id: id.0 })
     }
 
-    /// The recipient's own words end an item: an answer, a decline or a done. The sender gets one
-    /// entry in the chat where they asked, with the words as the recipient's own.
-    pub(crate) fn reply(
+    /// Makes a reply card in the recipient's chat with their exact words. Nothing reaches the
+    /// sender until the recipient taps it.
+    pub(crate) fn propose_reply(
+        &self,
+        owner: TurnOwner,
+        id: ItemId,
+        outcome: ReplyOutcome,
+        words: &str,
+    ) -> Result<ReplyCard, InboxError> {
+        let (item, words) = self.replyable(owner.user, id, outcome, words)?;
+        if !matches!(item.state, ItemState::Sent | ItemState::Seen) {
+            return Err(InboxError::ItemClosed {
+                id: id.0,
+                state: item.state.as_str(),
+            });
+        }
+        let card = self.write(|| {
+            self.store
+                .add_reply_card((owner.user, owner.chat), (id, outcome, words), self.now())
+        })?;
+        self.reply_card(owner.user, card)
+    }
+
+    /// The recipient's tap on a reply card: the reply goes to the sender. Gives the card as it is
+    /// after, and what the reply posted.
+    pub(crate) fn tap_reply(
+        &self,
+        user: UserId,
+        id: ReplyCardId,
+    ) -> Result<(ReplyCard, Vec<Posted>), InboxError> {
+        let card = self.reply_card(user, id)?;
+        if card.sent_at.is_some() {
+            return Err(InboxError::CardNotOpen { id: id.0 });
+        }
+        let posted = self.reply(user, card.item_id, card.outcome, &card.text)?;
+        let now = self.now();
+        self.write(|| self.store.mark_reply_sent(user, id, now))?;
+        let chat = match card.chat {
+            Some(chat) => chat,
+            None => self.store.main_chat(user)?.id,
+        };
+        let line = format!(
+            "[The user tapped Send on the reply card to {}: it was sent as {}.]",
+            card.to.name,
+            card.outcome.as_str()
+        );
+        self.store.record_tap(user, chat, &line, now)?;
+        Ok((self.reply_card(user, id)?, posted))
+    }
+
+    /// The user's reply cards with these ids, as they are now. Others' cards are left out.
+    pub(crate) fn reply_cards(
+        &self,
+        user: UserId,
+        ids: &[ReplyCardId],
+    ) -> Result<Vec<ReplyCard>, InboxError> {
+        Ok(self.store.reply_cards(user, ids)?)
+    }
+
+    fn reply_card(&self, user: UserId, id: ReplyCardId) -> Result<ReplyCard, InboxError> {
+        self.store
+            .reply_cards(user, &[id])?
+            .pop()
+            .ok_or(InboxError::NoSuchCard { id: id.0 })
+    }
+
+    /// The item the user may reply to, and their words trimmed, when the words fit the outcome.
+    fn replyable<'a>(
         &self,
         user: UserId,
         id: ItemId,
         outcome: ReplyOutcome,
-        words: &str,
-    ) -> Result<Vec<Posted>, InboxError> {
+        words: &'a str,
+    ) -> Result<(Item, &'a str), InboxError> {
         let words = words.trim();
         let length = words.chars().count();
         if length > TEXT_LIMIT {
@@ -199,6 +265,19 @@ impl Objectives {
             .item(id)?
             .filter(|item| item.to == user)
             .ok_or(InboxError::NoSuchItem { id: id.0 })?;
+        Ok((item, words))
+    }
+
+    /// The recipient's own words end an item: an answer, a decline or a done. The sender gets one
+    /// entry in the chat where they asked, with the words as the recipient's own.
+    pub(crate) fn reply(
+        &self,
+        user: UserId,
+        id: ItemId,
+        outcome: ReplyOutcome,
+        words: &str,
+    ) -> Result<Vec<Posted>, InboxError> {
+        let (item, words) = self.replyable(user, id, outcome, words)?;
         let name = self.name(user)?;
         let (said, colleague) = match outcome {
             ReplyOutcome::Answered => ("answered", ColleagueOutcome::Answered),

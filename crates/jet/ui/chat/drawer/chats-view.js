@@ -1,5 +1,5 @@
 // Draws the chat list in the left pane and turns taps into calls: open, new chat, rename in place,
-// and delete after a second tap on the same row.
+// and delete after a second tap on the same row. It also tells the page how many entries are unread in all.
 
 import { h, icon } from '../../dom.js';
 
@@ -14,9 +14,10 @@ const TITLE_LIMIT = 80;
  *   chats: ReturnType<typeof import('./chats.js').createChats>,
  *   open: (id: number) => void,
  *   announce: (message: string) => void,
+ *   showUnread?: (count: number) => void,
  * }} parts
  */
-export function createChatsView({ list, titleEl, newButton, chats, open, announce }) {
+export function createChatsView({ list, titleEl, newButton, chats, open, announce, showUnread = () => {} }) {
   let renaming = null;
   let confirming = null;
   let confirmTimer = 0;
@@ -25,7 +26,8 @@ export function createChatsView({ list, titleEl, newButton, chats, open, announc
   const rows = new Map();
 
   const problem = (what) => (error) => announce(`${what}: ${error?.message ?? 'Jet did not answer.'}`);
-  const glyph = (chat) => (chat.kind === 'main' ? icon('chat') : chat.kind === 'objective' ? icon('target') : chat.title.trim().charAt(0).toUpperCase() || '#');
+  // Each chat but the main one shows its first letter, so two objectives in the rail can be told apart; the style marks an objective's.
+  const glyph = (chat) => (chat.kind === 'main' ? icon('chat') : chat.title.trim().charAt(0).toUpperCase() || '#');
 
   function stopConfirming() {
     clearTimeout(confirmTimer);
@@ -113,6 +115,7 @@ export function createChatsView({ list, titleEl, newButton, chats, open, announc
     // A list that is rebuilt under a field being typed in would take the cursor away.
     if (renaming !== null && list.querySelector('.chat-rename')) return;
     titleEl.textContent = chats.items.find((chat) => chat.id === chats.openId)?.title ?? '';
+    showUnread(chats.items.reduce((sum, chat) => sum + chat.unread, 0));
     repainting = true;
     const shown = chats.items.map((chat) => {
       const look = [chat.title, chat.unread, chat.kind, chat.id === chats.openId, renaming === chat.id, confirming === chat.id].join('|');

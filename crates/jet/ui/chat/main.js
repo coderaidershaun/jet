@@ -55,7 +55,11 @@ async function start() {
   const page = $('page');
   const announce = (message) => { $('announce').textContent = message; };
   let toolBrowser, commandMenu, hear;
-  const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId), openChat: id => { workspace.showChat(); showChat(id); } });
+  const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId), openChat: (id, entryId) => { workspace.showChat(); showChat(id, entryId); } });
+  // The shell puts itself first in the page, so the skip link moves back in front of it to stay the first Tab stop.
+  const skip = $('skip');
+  document.body.prepend(skip);
+  skip.addEventListener('click', (event) => { event.preventDefault(); workspace.showChat(); });
   const commandResult = h('pre', { class: 'command-result', role: 'status', 'aria-label': 'Command result' });
   $('rows').after(commandResult);
   function reportCommand(text) {
@@ -168,7 +172,13 @@ async function start() {
       openSettings: () => sheet.open(),
     },
   });
-  agent.onConnectionChanged?.(drawer.setConnection);
+  agent.onConnectionChanged?.((connected) => {
+    drawer.setConnection(connected);
+    // The banner can be seen at every width and is read out. A stream that resumes sends no snapshot, so the
+    // banner goes as soon as the stream is open again, and the status read puts back a banner about the program.
+    if (!connected) view.setBanner('Waiting for the connection…');
+    else { view.setBanner(null); refreshStatus(); }
+  });
 
   const chats = createChats({
     agent,
@@ -182,17 +192,39 @@ async function start() {
     newButton: $('new-chat'),
     chats,
     open: (id) => { workspace.showChat(); showChat(id); },
-    announce,
+    announce: fail,
+    showUnread: (count) => {
+      workspace.setUnread(count);
+      document.title = count === 0 ? 'Jet' : `(${count}) Jet`;
+    },
   });
   agent.onChatEvent((envelope) => {
     chats.handle(envelope);
-    if (envelope.event.kind === 'entryAdded' && envelope.chatId === chats.openId) turn.addEntry(envelope.event.entry);
+    const { event } = envelope;
+    if (event.kind === 'entryAdded' && envelope.chatId === chats.openId) turn.addEntry(event.entry);
+    if (event.kind === 'entryAdded' && event.entry?.check) {
+      const title = chats.items.find((chat) => chat.id === envelope.chatId)?.title;
+      announce(envelope.chatId === chats.openId || !title ? 'Jet checked in.' : `Jet checked in, in ${title}.`);
+    }
+    // A send or reply card in the thread reads its item again when the server says something changed.
+    if (event.kind === 'paneChanged') document.dispatchEvent(new CustomEvent('jet:pane-changed'));
   });
   document.addEventListener('visibilitychange', () => chats.attend());
 
-  /** Opens another chat: its history and running reply replace the thread, and every later call carries its id. */
-  async function showChat(id) {
-    if (id === null || id === chats.openId) return;
+  /**
+   * Opens a chat: its history and running reply replace the thread, and every later call carries its id.
+   * With an entry id it then scrolls to that entry and marks it, as the plan pane does for a check-in.
+   * @param {number | null} id
+   * @param {number | null} [entryId]
+   */
+  async function showChat(id, entryId = null) {
+    if (id === null) return;
+    if (id !== chats.openId && !(await openOther(id))) return;
+    if (Number.isInteger(entryId)) markEntry(entryId);
+  }
+
+  /** @returns {Promise<boolean>} whether the chat opened */
+  async function openOther(id) {
     try {
       await agent.openChat(id, (snapshot) => {
         chats.opened(id);
@@ -203,11 +235,34 @@ async function start() {
         view.scrollToBottom();
         refreshStatus();
       });
+      return true;
     } catch (error) {
       console.warn('the chat could not be opened:', error);
-      announce('Jet could not open that chat. Check the connection and try again.');
+      fail('Jet could not open that chat. Check the connection and try again.');
+      return false;
     }
   }
+
+  let marked = null;
+  /** Scrolls to one entry of the open thread and marks it until another is marked. An entry that is not drawn is left alone. */
+  function markEntry(entryId) {
+    // A finished Jet row is the only row that carries its entry's id, on its reaction control.
+    const row = $('rows').querySelector(`.react-open[data-entry="${entryId}"]`)?.closest('.row') ?? null;
+    if (row === null) return;
+    marked?.classList.remove('is-marked');
+    marked = row;
+    row.classList.add('is-marked');
+    row.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  }
+
+  // The plan pane holds no reference to the composer, so it puts a sentence in the message box through this event.
+  document.addEventListener('jet:draft', (event) => {
+    const text = /** @type {CustomEvent} */ (event).detail?.text;
+    if (typeof text !== 'string') return;
+    workspace.showChat();
+    composerView.setText(text);
+    $('field').focus();
+  });
 
   const live = createLive({
     reducedMotion: reducedMotion(),
@@ -242,6 +297,11 @@ async function start() {
   let resolveFirstSnapshot;
   const firstSnapshot = new Promise((resolve) => { resolveFirstSnapshot = resolve; });
   const notify = (message) => firstSnapshot.then(() => { thread.addWarning(message); turn.paint(); });
+  /** A failure is said aloud and also shown in the thread, so a sighted user sees it too. */
+  function fail(message) {
+    announce(message);
+    notify(message);
+  }
   const voiceToggle = createVoiceToggle({
     button: $('voice'),
     status: voiceStatus,
@@ -314,7 +374,7 @@ async function start() {
     reducedMotion,
   });
 
-  showAccount({ user, announce: (message) => { $('announce').textContent = message; } });
+  showAccount({ user, announce: fail });
   function paintPersona() {
     const name = displayName(settings);
     const title = settings.persona.jobTitle.trim() || 'assistant';
@@ -347,6 +407,7 @@ async function start() {
       systemReducesMotion: () => systemReduces.matches,
       onClaudeChecked: showProgramStatus,
       onForget: forget,
+      chatTitle: () => $('chat-title').textContent,
     },
     save: async () => { await saveSettings(settings); await refreshStatus(); },
     onChange: (kind) => {
@@ -394,6 +455,8 @@ async function start() {
     refreshStatus();
   }, (event) => turn.observe(event));
   finishLoading({ cover: $('loading'), settled: Promise.all([workspace.ready, firstSnapshot]), reducedMotion });
+  // With a mouse the user can type at once. On a touch screen a focused field would raise the keyboard over the thread.
+  if (matchMedia('(pointer: fine)').matches) $('field').focus({ preventScroll: true });
 }
 
 start().catch((error) => {

@@ -6,12 +6,18 @@
   --surface: #111b23;
   --surface-2: #17232d;
   --line: rgba(255, 255, 255, .08);
+  /* The edge of a field the user types in: about 3 to 1 against the dark surfaces, so the box can be found. */
+  --edge: rgba(255, 255, 255, .34);
   --fg: #e8edf1;
   --muted: #8d9ba7;
   --bubble-jet: #1b2630;
   --bubble-user: #1f4566;
   --on-user: #f3f7fa;
   --accent: #3d8bff;
+  /* The one pair for every filled blue control and badge: dark text on the blue is about 5.7 to 1, where white text was 3.3 to 1. */
+  --fill: #3d8bff;
+  --fill-hover: #5a9dff;
+  --on-fill: #06101f;
   --link-jet: #8cc4ff;
   --link-user: #d4e9ff;
   --danger: #ff7b72;
@@ -45,7 +51,7 @@
   :root { --lane: 48px; --lane-scale: .21; --empty-scale: .54; --text-size: 16px; --text-line: 22px; }
 }
 @media (max-width: 419.98px) {
-  /* Beside the 64 px rail a phone is too narrow for the line under the greeting, so the block makes room for it to wrap. */
+  /* A phone is too narrow for the line under the greeting, so the block makes room for it to wrap. */
   :root { --empty-scale: .48; --gutter: 12px; --empty-block: calc(240px * var(--empty-scale) + 156px); }
 }
 
@@ -78,14 +84,24 @@ button:disabled { cursor: default; }
     var(--ground);
 }
 
-/* Says which chat is open; on a phone the drawer is only a rail, so this is the one place that tells. */
+/* Says which chat is open; on a phone the drawer is hidden, so this is the one place that tells. It is a solid band,
+   tall enough for the 44 px buttons at its ends, and the thread starts below it so nothing scrolls under the title.
+   The side room is that of the wider end, the Plan control with its word and count, on both sides so the title stays centred. */
 .chat-head {
-  position: absolute; z-index: 3; inset: 0 0 auto; height: 38px; margin: 0; padding: 9px calc(var(--gutter) + 44px) 0;
+  position: absolute; z-index: 3; inset: 0 0 auto; height: 52px; margin: 0; padding: 0 calc(var(--gutter) + 92px);
   overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; pointer-events: none;
-  background: linear-gradient(var(--ground) 30%, transparent);
-  color: var(--muted); font-size: 13px; line-height: 18px; font-weight: 600;
+  background: var(--ground); border-bottom: 1px solid var(--line);
+  color: var(--fg); font-size: 14px; line-height: 52px; font-weight: 600;
 }
 .chat-head:empty { display: none; }
+.chat-head:not(:empty) ~ .thread { top: 52px; }
+
+/* The first stop of the keyboard: it shows when it has the focus and goes straight to the message box. */
+.skip-link {
+  position: fixed; z-index: 30; top: 8px; left: 8px; padding: 10px 16px; transform: translateY(-200%);
+  background: var(--fill); color: var(--on-fill); border-radius: 22px; font-weight: 600; text-decoration: none;
+}
+.skip-link:focus { transform: none; }
 
 .icon-button {
   display: grid; place-items: center; flex: none;
@@ -101,9 +117,16 @@ button:disabled { cursor: default; }
 .action:hover:not(:disabled) { background: #1d2c38; }
 .action:disabled { opacity: .45; }
 .action.danger { color: var(--danger); border-color: rgba(255, 123, 114, .4); }
+/* The entry the plan pane opened the chat at. */
+.row.is-marked .bubble { box-shadow: 0 0 0 2px var(--focus); }
 
 @media (max-width: 759.98px) {
   .page { grid-template-columns: minmax(0, 1fr); }
+}
+/* A finger needs 44 px; the small icon buttons grow a press area that big without moving. */
+@media (pointer: coarse) {
+  .copy::after { inset: -8px -4px; }
+  .action { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }

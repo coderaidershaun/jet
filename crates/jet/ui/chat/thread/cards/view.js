@@ -9,7 +9,8 @@ import { blocksBody, fieldNodes } from './block-view.js';
 import { findSource, splitCitations } from './cite.js';
 import { RUNNING } from './job.js';
 import { callState, cardOf } from './model.js';
-import { sendCard } from './send-view.js';
+import { foldRecords } from './records.js';
+import { replyCard, sendCard } from './send-view.js';
 import { shareCard } from './share-view.js';
 import { fillShow } from './show.js';
 
@@ -25,9 +26,10 @@ const CITED_FOR_MS = 1600;
 
 const cardData = (card) => ({ 'data-call': card.id, 'data-state': card.state, 'data-key': card.key });
 
-/** The head reads as one phrase, 'quanty · search · 8 sources · 0.8 s', with the separators in the text for screen readers. */
+/** The head reads as one phrase, 'quanty · search · 8 sources · 2.4 s', with the separators in the text for screen readers. */
 function head(tag, card) {
-  return h(tag, { class: 'card-head' }, h('span', { class: 'card-name', text: card.name }), ' · ', h('span', { class: 'card-meta', text: card.meta }));
+  const meta = card.meta ? [' · ', h('span', { class: 'card-meta', text: card.meta })] : [];
+  return h(tag, { class: 'card-head' }, h('span', { class: 'card-name', text: card.name }), ...meta);
 }
 
 /** Runs `fill` once, the first time the element opens. The flag is set before the fill starts, so opening twice quickly fills once. */
@@ -244,6 +246,7 @@ function renderResultCard(card, parts) {
   if (card.state === 'done' && card.body?.kind === 'file') return fileCard(card);
   if (card.state === 'done' && card.body?.kind === 'share') return shareCard(card);
   if (card.state === 'done' && card.body?.kind === 'send') return sendCard(card);
+  if (card.state === 'done' && card.body?.kind === 'reply') return replyCard(card);
   return defaultCard(card, { ...parts, readImage: (path) => parts.readImage(card.call.server, path) });
 }
 
@@ -290,6 +293,16 @@ function jobCard(card) {
   return { el, update };
 }
 
+/** The one line that stands for a reply's calls to Jet's own records, and opens to the card of each. */
+function recordsCard(item, cards) {
+  return h(
+    'details',
+    { class: 'card card-records', 'data-call': item.id, 'data-key': 'jet/records' },
+    h('summary', { class: 'card-head' }, h('span', { class: 'card-name', text: item.line })),
+    h('div', { class: 'card-body records-list' }, ...cards),
+  );
+}
+
 /**
  * Keeps one node per call in `container`. A finished card is built once and never rebuilt, so its open state and
  * the rows drawn inside it survive every redraw of the thread.
@@ -313,7 +326,22 @@ export function createCardList(container, parts) {
     sync(calls, earlier) {
       const above = [...earlier];
       const present = new Set();
-      calls.forEach((call, i) => {
+      foldRecords(calls).forEach((item, i) => {
+        if (item.kind === 'records') {
+          present.add(item.id);
+          const signature = item.calls.map((call) => call.id).join(' ');
+          let record = kept.get(item.id);
+          if (record?.state !== signature) {
+            const el = recordsCard(item, item.calls.map((call) => renderResultCard(cardOf(call, above), parts)));
+            record?.el.replaceWith(el);
+            record = { el, state: signature, progressKey: '', stop: null };
+            kept.set(item.id, record);
+          }
+          if (container.children[i] !== record.el) container.insertBefore(record.el, container.children[i] ?? null);
+          above.push(...item.calls);
+          return;
+        }
+        const { call } = item;
         present.add(call.id);
         const state = callState(call);
         // A running card has no open state to keep, so it is built again whenever its report changes.

@@ -37,11 +37,11 @@ body {
 .signin-label { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--muted); }
 .signin-input {
   width: 100%; min-height: 48px; padding: 12px 14px;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--edge); border-radius: 12px;
   font-size: 16px; line-height: 22px;
   transition: border-color 120ms, box-shadow 120ms;
 }
-.signin-input:hover { border-color: rgba(255, 255, 255, .16); }
+.signin-input:hover { border-color: rgba(255, 255, 255, .5); }
 .signin-input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(61, 139, 255, .25); }
 .signin-input[aria-invalid="true"] { border-color: rgba(255, 123, 114, .7); }
 .signin-input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgba(255, 123, 114, .2); }
@@ -64,11 +64,11 @@ body {
 .signin-submit {
   position: relative; display: flex; align-items: center; justify-content: center; gap: 10px;
   min-height: 48px; margin-top: 4px; padding: 0 20px;
-  background: var(--accent); border: 0; border-radius: 24px; color: #fff;
+  background: var(--fill); border: 0; border-radius: 24px; color: var(--on-fill);
   font-size: 16px; font-weight: 600;
   transition: background 120ms, transform 120ms;
 }
-.signin-submit:hover:not(:disabled) { background: #5599ff; }
+.signin-submit:hover:not(:disabled) { background: var(--fill-hover); }
 .signin-submit:active:not(:disabled) { transform: scale(.985); }
 .signin-submit:disabled { background: #23487b; color: rgba(255, 255, 255, .75); }
 .signin-spinner { display: none; width: 18px; height: 18px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: signin-spin .9s linear infinite; }

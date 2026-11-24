@@ -7,7 +7,7 @@ use crate::account::SignedIn;
 use crate::chat::BridgeError;
 use crate::objectives::InboxError;
 use crate::on_worker;
-use crate::store::{CardId, SendCard};
+use crate::store::{CardId, ReplyCard, ReplyCardId, SendCard};
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -22,13 +22,16 @@ pub(super) fn router() -> Router<Server> {
     Router::new()
         .route("/api/inbox/cards", get(cards))
         .route("/api/inbox/cards/{id}/send", post(tap))
+        .route("/api/inbox/replies", get(replies))
+        .route("/api/inbox/replies/{id}/send", post(tap_reply))
 }
 
 impl IntoResponse for InboxError {
     fn into_response(self) -> Response {
         let status = match self {
             Self::NoSuchCard { .. } => StatusCode::NOT_FOUND,
-            Self::CardNotOpen { .. } => StatusCode::CONFLICT,
+            Self::CardNotOpen { .. } | Self::ItemClosed { .. } => StatusCode::CONFLICT,
+            Self::NoSuchItem { .. } => StatusCode::NOT_FOUND,
             Self::SendLimit { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::Store(_) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::BAD_REQUEST,
@@ -43,17 +46,21 @@ struct Ids {
     ids: String,
 }
 
+fn ids(query: &Ids) -> Vec<i64> {
+    query
+        .ids
+        .split(',')
+        .filter_map(|id| id.trim().parse().ok())
+        .collect()
+}
+
 /// The cards of the signed-in user with the ids in `ids`, comma-separated, as they are now.
 async fn cards(
     State(host): State<Server>,
     signed_in: SignedIn,
     Query(query): Query<Ids>,
 ) -> Result<Json<Vec<SendCard>>, Response> {
-    let ids: Vec<CardId> = query
-        .ids
-        .split(',')
-        .filter_map(|id| id.trim().parse().ok().map(CardId))
-        .collect();
+    let ids: Vec<CardId> = ids(&query).into_iter().map(CardId).collect();
     let user = signed_in.user.id;
     let found = on_worker(move || host.objectives.send_cards(user, &ids))
         .await
@@ -75,5 +82,36 @@ async fn tap(
     let card = sent.map_err(IntoResponse::into_response)?;
     chats.pane_changed(user);
     chats.pane_changed(card.to.id);
+    Ok(Json(card))
+}
+
+/// The reply cards of the signed-in user with the ids in `ids`, comma-separated, as they are now.
+async fn replies(
+    State(host): State<Server>,
+    signed_in: SignedIn,
+    Query(query): Query<Ids>,
+) -> Result<Json<Vec<ReplyCard>>, Response> {
+    let ids: Vec<ReplyCardId> = ids(&query).into_iter().map(ReplyCardId).collect();
+    let user = signed_in.user.id;
+    let found = on_worker(move || host.objectives.reply_cards(user, &ids))
+        .await
+        .map_err(|failed| BridgeError::from(failed).into_response())?;
+    Ok(Json(found.map_err(IntoResponse::into_response)?))
+}
+
+/// The tap of the user a colleague's item was sent to: their words go back to the sender.
+async fn tap_reply(
+    State(host): State<Server>,
+    signed_in: SignedIn,
+    Path(id): Path<i64>,
+) -> Result<Json<ReplyCard>, Response> {
+    let user = signed_in.user.id;
+    let chats = host.chats.clone();
+    let sent = on_worker(move || host.objectives.tap_reply(user, ReplyCardId(id)))
+        .await
+        .map_err(|failed| BridgeError::from(failed).into_response())?;
+    let (card, posted) = sent.map_err(IntoResponse::into_response)?;
+    chats.announce_posted(&posted);
+    chats.pane_changed(user);
     Ok(Json(card))
 }

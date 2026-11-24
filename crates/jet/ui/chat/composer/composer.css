@@ -18,7 +18,7 @@
    One line is 44 px: the field's 42 px and the one-pixel border above and below. The field grows with its text up to 152 px, which holds six lines, and then scrolls. */
 .field-box {
   position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: 22px;
+  background: var(--surface-2); border: 1px solid var(--edge); border-radius: 22px;
 }
 .field-box.has-tray { border-radius: 20px; }
 .field-box:has(#field:focus-visible) { outline: 2px solid var(--focus); }
@@ -128,7 +128,7 @@ textarea#field::placeholder { color: var(--muted); }
    The ::after makes the press target 44 px across. */
 .send {
   position: relative; display: grid; place-items: center; flex: none; width: 38px; height: 38px; margin-bottom: 3px; padding: 0;
-  background: var(--accent); border: 0; border-radius: 50%; color: #fff;
+  background: var(--fill); border: 0; border-radius: 50%; color: var(--on-fill);
   transition: background 120ms, color 120ms;
 }
 .send::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; }
@@ -145,6 +145,10 @@ textarea#field::placeholder { color: var(--muted); }
   font-size: 13px; color: var(--muted);
 }
 .held-files { white-space: pre; }
+.held-label { display: flex; min-width: 0; gap: 6px; }
+.held-words { min-width: 0; overflow: hidden; color: var(--fg); text-overflow: ellipsis; white-space: nowrap; }
+.held-words:empty { display: none; }
+.held-label > :not(.held-words) { flex: none; }
 .held .icon-button { position: relative; width: 36px; height: 36px; margin: 4px 0; color: var(--fg); }
 .held .icon-button::after { content: ""; position: absolute; inset: -4px; }
 @media (prefers-reduced-motion: reduce) {

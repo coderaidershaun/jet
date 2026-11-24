@@ -1,0 +1,26 @@
+/* The share card: always open, because it is the one place the user acts. Rows are 48px high to tap, the button is the one bright thing. */
+.card-share { max-width: 560px; padding: 14px 14px 14px; }
+.share-title { margin: 0; font-size: 14px; font-weight: 600; line-height: 20px; }
+.share-objective { font-weight: 600; }
+.share-hint { margin: 2px 0 8px; color: var(--muted); font-size: 12px; line-height: 17px; }
+.share-rows { display: flex; flex-direction: column; margin: 0 -6px; }
+.share-row { display: flex; align-items: flex-start; gap: 12px; min-height: 48px; padding: 10px 6px; border-radius: 10px; cursor: pointer; }
+.share-row:hover { background: rgba(255, 255, 255, .04); }
+.share-box { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--fill); cursor: pointer; }
+.share-what { display: flex; flex-direction: column; min-width: 0; }
+.share-name { font-size: 14px; line-height: 22px; }
+.share-members, .share-removal { color: var(--muted); font-size: 12px; line-height: 17px; }
+.share-removal { color: var(--warning); }
+.share-removal[data-ticked="true"] { color: var(--muted); }
+.share-status { margin: 4px 0 0; min-height: 0; font-size: 12px; line-height: 17px; }
+.share-status[data-tone="invalid"] { color: var(--danger); }
+.share-go {
+  width: 100%; height: 44px; margin-top: 10px; background: var(--fill); border: 0; border-radius: 22px;
+  color: var(--on-fill); font: 600 14px/20px var(--font); cursor: pointer;
+}
+.share-go:hover:not(:disabled) { background: var(--fill-hover); }
+.share-go:disabled { background: var(--surface-2); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); cursor: default; }
+.share-row:focus-within, .share-go:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.share-done { margin: 6px 0 0; color: var(--ok); font-size: 14px; line-height: 20px; }
+.card-share[data-state="refused"] .share-done { color: var(--muted); }
+@media (min-width: 640px) { .share-go { width: auto; padding: 0 28px; } }

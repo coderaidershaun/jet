@@ -264,10 +264,10 @@ fn another_user_reads_nothing_and_every_tap_answers_not_found() {
     );
 }
 
-/// The next 08:00 in New York strictly after now.
-fn next_eight() -> (i64, String) {
+/// The next 08:00 in New York strictly after now and after `due`, a task's own time.
+fn next_eight(due: i64) -> (i64, String) {
     let zone = jiff::tz::TimeZone::get("America/New_York").unwrap();
-    let now = jiff::Timestamp::now();
+    let now = jiff::Timestamp::now().max(jiff::Timestamp::from_second(due).unwrap());
     let mut day = zone.to_datetime(now).date();
     loop {
         let morning = day.at(8, 0, 0, 0);
@@ -298,7 +298,11 @@ fn a_tick_a_snooze_and_a_cancel_change_what_the_pane_says_and_raise_the_version(
         kite["version"].as_u64().unwrap(),
         check["version"].as_u64().unwrap(),
     );
-    let (eight, local) = next_eight();
+    let (eight, local) = next_eight(check["dueAt"].as_i64().unwrap());
+    assert_eq!(
+        check["snoozeAt"], eight,
+        "the read names where a snooze lands"
+    );
 
     let (status, ticked) = owner.put(
         &format!("/api/objectives/{kite_id}/steps/{step}"),
@@ -343,7 +347,7 @@ fn a_tick_a_snooze_and_a_cancel_change_what_the_pane_says_and_raise_the_version(
             &json!("America/New_York"),
             &json!("user")
         ),
-        "the next 08:00 in the user's zone"
+        "the next 08:00 after the task's own time, in the user's zone"
     );
     assert_eq!(
         after["tasks"].as_array().unwrap().len(),

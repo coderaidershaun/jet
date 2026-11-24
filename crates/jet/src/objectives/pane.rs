@@ -4,7 +4,7 @@
 
 use super::{
     ObjectiveError, ObjectiveId, ObjectiveStatus, ObjectiveView, Objectives, Run, Step, StepId,
-    TaskId, TaskState, UserId, time,
+    TaskId, TaskKind, TaskState, UserId, time,
 };
 use crate::store::{AgentTask, ChatId, Sent, SetBy, SharedNote, Sharing, Snoozed};
 
@@ -21,6 +21,8 @@ struct PaneObjective {
     /// True while it is shared with nobody.
     private: bool,
     shared_with: Sharing,
+    /// False when no check of it waits or runs, so Jet will not look in by itself.
+    has_open_check: bool,
 }
 
 /// One of Jet's open tasks, with the objective it belongs to.
@@ -32,6 +34,25 @@ struct PaneTask {
     objective_title: Option<String>,
     /// The server chose this time because Jet set none.
     is_default: bool,
+    /// Where a tap on Snooze would move it, in Unix seconds.
+    snooze_at: u64,
+}
+
+/// A past run, with what its row is headed by and the check-in it opens.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PaneRun {
+    #[serde(flatten)]
+    run: Run,
+    /// The objective's title, or "Follow-up" for a task with no objective.
+    title: String,
+    objective_id: Option<ObjectiveId>,
+    /// Why Jet set the task.
+    why: String,
+    /// The chat that holds the check-in.
+    chat_id: ChatId,
+    /// The emoji the user put on the check-in.
+    reaction: Option<String>,
 }
 
 /// An objective a colleague shared with the signed-in user: nothing private, no chat.
@@ -55,7 +76,7 @@ pub(crate) struct Pane {
     time_zone: Option<String>,
     objectives: Vec<PaneObjective>,
     tasks: Vec<PaneTask>,
-    runs: Vec<Run>,
+    runs: Vec<PaneRun>,
     shared_with_me: Vec<ColleagueObjective>,
     /// What the user sent to colleagues' Jets, newest first.
     sent: Vec<Sent>,
@@ -70,11 +91,13 @@ impl Objectives {
                 let shared_with = self.sharing(user, view.objective.id)?;
                 Ok(PaneObjective {
                     private: shared_with.people.is_empty() && shared_with.teams.is_empty(),
+                    has_open_check: view.tasks.iter().any(|task| task.kind == TaskKind::Check),
                     shared_with,
                     view,
                 })
             })
             .collect::<Result<Vec<_>, ObjectiveError>>()?;
+        let zone = self.store.time_zone(user)?;
         let all = self.tasks(user)?;
         let title = |task: &AgentTask| {
             let id = task.objective_id?;
@@ -83,24 +106,56 @@ impl Objectives {
                 .find(|found| found.view.objective.id == id)
                 .map(|found| found.view.objective.title.clone())
         };
+        let runs = self.runs(all.runs, &all.tasks, title)?;
         let tasks = all
             .tasks
             .into_iter()
             .filter(|task| matches!(task.state, TaskState::Scheduled | TaskState::Running))
-            .map(|task| PaneTask {
-                objective_title: title(&task),
-                is_default: task.set_by == SetBy::Default,
-                task,
+            .map(|task| {
+                let zone = zone.as_deref().unwrap_or(&task.time_zone);
+                Ok(PaneTask {
+                    objective_title: title(&task),
+                    is_default: task.set_by == SetBy::Default,
+                    snooze_at: self.snooze_to(&task, zone)?.0,
+                    task,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, ObjectiveError>>()?;
         Ok(Pane {
-            time_zone: self.store.time_zone(user)?,
+            time_zone: zone,
             tasks,
-            runs: all.runs,
+            runs,
             shared_with_me: self.shared_with_me(user)?,
             sent: self.store.sent_items(user, SENT_SHOWN)?,
             objectives,
         })
+    }
+
+    fn runs(
+        &self,
+        runs: Vec<Run>,
+        tasks: &[AgentTask],
+        title: impl Fn(&AgentTask) -> Option<String>,
+    ) -> Result<Vec<PaneRun>, ObjectiveError> {
+        let mut rows = Vec::new();
+        for run in runs {
+            let Some(task) = tasks.iter().find(|task| task.id == run.task_id) else {
+                continue;
+            };
+            let reaction = match run.entry_id {
+                Some(entry) => self.store.user_reaction(task.chat_id, entry)?,
+                None => None,
+            };
+            rows.push(PaneRun {
+                title: title(task).unwrap_or_else(|| "Follow-up".to_owned()),
+                objective_id: task.objective_id,
+                why: task.why.clone(),
+                chat_id: task.chat_id,
+                reaction,
+                run,
+            });
+        }
+        Ok(rows)
     }
 
     fn shared_with_me(&self, viewer: UserId) -> Result<Vec<ColleagueObjective>, ObjectiveError> {
@@ -146,11 +201,20 @@ impl Objectives {
         Ok(view)
     }
 
-    /// Moves a waiting task of the user's to the next 08:00 in their zone.
+    /// A snooze lands on the next 08:00 after the task's own time, or after now when that has
+    /// passed, so it never brings a check forward.
+    fn snooze_to(&self, task: &AgentTask, zone: &str) -> Result<(u64, String), ObjectiveError> {
+        Ok(time::next_morning(zone, self.now().max(task.due_at))?)
+    }
+
+    /// Moves a waiting task of the user's to the next 08:00 in their zone after its own time.
     pub(crate) fn tap_snooze(&self, user: UserId, id: TaskId) -> Result<AgentTask, ObjectiveError> {
         let old = self.task(user, id)?;
-        let zone = self.store.time_zone(user)?.unwrap_or(old.time_zone);
-        let (due_at, local) = time::next_morning(&zone, self.now())?;
+        let zone = self
+            .store
+            .time_zone(user)?
+            .unwrap_or_else(|| old.time_zone.clone());
+        let (due_at, local) = self.snooze_to(&old, &zone)?;
         match self.write(|| {
             self.store
                 .snooze_task(user, id, (due_at, &local, &zone), self.now())
@@ -227,8 +291,8 @@ mod tests {
         ItemKind, NewStep, NewTask, NoteStatus, ObjectiveChat, RunId, RunOutcome, Settled, Store,
         TaskEnd, test_store,
     };
-    use agent::{McpConnection, TurnIdentity};
-    use serde_json::Value;
+    use agent::{McpConnection, NewEntry, Reaction, Role, TurnIdentity};
+    use serde_json::{Value, json};
     use std::{sync::Arc, time::Duration};
 
     // 2026-01-01 00:00 UTC.
@@ -316,9 +380,15 @@ mod tests {
             &store,
             ada,
             run,
-            (RunOutcome::Spoke, "The frame is built", Some(1200)),
+            (
+                RunOutcome::Spoke,
+                "The frame is built",
+                Some(1200),
+                Some("How is the frame coming along?"),
+            ),
             true,
         );
+        react(&store, ada, "👍");
 
         let chat = store.main_chat(ada).unwrap().id;
         let asked = TurnOwner { user: ada, chat };
@@ -332,6 +402,12 @@ mod tests {
             )
             .unwrap();
         objectives.tap_send(ada, card.id).unwrap();
+        let done = create(&store, &objectives, ada, "Paint the kite")
+            .objective
+            .id;
+        objectives
+            .close(ada, done, ObjectiveStatus::Done, None)
+            .unwrap();
 
         let read = serde_json::to_value(objectives.pane(ada).unwrap()).unwrap();
         if std::env::var_os("WRITE_FIXTURE").is_some() {
@@ -344,11 +420,12 @@ mod tests {
     }
 
     /// Ends the run of the user's first task: the task waits again at its own time, or is done.
+    /// `said` is the check-in it posts.
     fn end_run(
         store: &Store,
         user: UserId,
         run: RunId,
-        (outcome, found, tokens): (RunOutcome, &str, Option<u64>),
+        (outcome, found, tokens, said): (RunOutcome, &str, Option<u64>, Option<&str>),
         waits: bool,
     ) {
         let task = store.agent_tasks(user).unwrap().remove(0);
@@ -382,11 +459,137 @@ mod tests {
                 sources_read: &sources,
                 tokens,
                 cost_usd: None,
-                entry: None,
+                entry: said.map(|text| NewEntry {
+                    role: Role::Jet,
+                    ..NewEntry::user_text(text)
+                }),
                 end,
                 at: NOW + 10_000_100,
             })
             .unwrap();
+    }
+
+    #[test]
+    fn snooze_never_lands_earlier_than_the_tasks_own_time() {
+        let (_dir, store, ada, _) = test_store();
+        let objectives = objectives(&store);
+        let id = create(&store, &objectives, ada, "Ship the kite").tasks[0].id;
+        // NOW is Thu 1 Jan 2026, 00:00 in London. (the task's own time, where a snooze lands)
+        for (due, lands) in [
+            ("2026-01-05T09:00", "2026-01-06T08:00"),
+            ("2026-01-05T17:30", "2026-01-06T08:00"),
+            ("2026-01-05T07:00", "2026-01-05T08:00"),
+            ("2026-01-01T03:00", "2026-01-01T08:00"),
+        ] {
+            let chat = store.main_chat(ada).unwrap().id;
+            let check = Check {
+                at: due.into(),
+                why: "look again".into(),
+            };
+            let objective = objectives.list(ada).unwrap()[0].objective.id;
+            let (task, _) = objectives
+                .schedule(TurnOwner { user: ada, chat }, Some(objective), check)
+                .unwrap();
+            let named = objectives.pane(ada).unwrap().tasks[0].snooze_at;
+            let snoozed = objectives.tap_snooze(ada, id).unwrap();
+            assert_eq!(snoozed.local_time, lands, "a check due {due}");
+            assert!(
+                snoozed.due_at > task.due_at && snoozed.due_at > NOW,
+                "{due}"
+            );
+            assert_eq!(named, snoozed.due_at, "the pane names where {due} lands");
+        }
+    }
+
+    /// The user puts `emoji` on the last entry of the chat of their first task.
+    fn react(store: &Store, user: UserId, emoji: &str) {
+        let chat = store.agent_tasks(user).unwrap()[0].chat_id;
+        let mut entry = store.entries(chat, None).unwrap().pop().unwrap();
+        entry.reactions.push(Reaction {
+            by: Role::User,
+            emoji: emoji.into(),
+            at: 1,
+        });
+        store.replace_entry(chat, &entry).unwrap();
+    }
+
+    #[test]
+    fn pane_run_has_title_chat_entry_and_reaction() {
+        let (_dir, store, ada, _) = test_store();
+        let objectives = objectives(&store);
+        let made = create(&store, &objectives, ada, "Ship the kite");
+        let run = store
+            .claim_task(made.tasks[0].id, NOW + 10_000_000)
+            .unwrap()
+            .unwrap();
+        let said = Some("How is the frame coming along?");
+        end_run(
+            &store,
+            ada,
+            run,
+            (RunOutcome::Spoke, "x", Some(5), said),
+            false,
+        );
+        react(&store, ada, "👍");
+        let chat = store.main_chat(ada).unwrap().id;
+        let check = Check {
+            at: "2026-01-02T09:00".into(),
+            why: "ask how the talk went".into(),
+        };
+        let (follow_up, _) = objectives
+            .schedule(TurnOwner { user: ada, chat }, None, check)
+            .unwrap();
+        let run = store
+            .claim_task(follow_up.id, NOW + 10_000_000)
+            .unwrap()
+            .unwrap();
+        end_run(
+            &store,
+            ada,
+            run,
+            (RunOutcome::Silent, "", None, None),
+            false,
+        );
+
+        let read = serde_json::to_value(objectives.pane(ada).unwrap()).unwrap();
+        let row = |run: &Value| {
+            let keys = [
+                "title",
+                "objectiveId",
+                "why",
+                "chatId",
+                "entryId",
+                "reaction",
+            ];
+            keys.map(|key| run[key].clone())
+        };
+        assert_eq!(
+            row(&read["runs"][0]),
+            [
+                json!("Follow-up"),
+                Value::Null,
+                json!("ask how the talk went"),
+                json!(chat.0),
+                Value::Null,
+                Value::Null
+            ]
+        );
+        let entry = store.entries(made.objective.chat_id, None).unwrap()[0].id;
+        assert_eq!(
+            row(&read["runs"][1]),
+            [
+                json!("Ship the kite"),
+                json!(made.objective.id.0),
+                json!("see whether the first step is done"),
+                json!(made.objective.chat_id.0),
+                json!(entry.number()),
+                json!("👍")
+            ]
+        );
+        assert_eq!(
+            read["objectives"][0]["hasOpenCheck"], false,
+            "its check is done"
+        );
     }
 
     struct NoTools;
@@ -424,7 +627,13 @@ mod tests {
             .subscribe(None, None)
             .unwrap();
         let run = store.claim_task(task, NOW + 10_000_000).unwrap().unwrap();
-        end_run(&store, ada, run, (RunOutcome::Silent, "", None), false);
+        end_run(
+            &store,
+            ada,
+            run,
+            (RunOutcome::Silent, "", None, None),
+            false,
+        );
         chats.pane_changed(ada);
         assert_eq!(events.try_recv().unwrap().event["kind"], "paneChanged");
         assert!(others.try_recv().is_err(), "another user hears nothing");

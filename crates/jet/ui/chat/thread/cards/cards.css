@@ -128,7 +128,7 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 
 .fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; padding: 4px 6px; }
 .fields dt { color: var(--muted); }
-.fields dd { margin: 0; }
+.fields dd { margin: 0; white-space: pre-line; }
 .fields pre { margin: 0; font: 12px/17px var(--mono); white-space: pre-wrap; }
 
 /* "[n]" in Jet's text. The ::after widens the target without moving the lines of text. */
@@ -168,36 +168,8 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .file-action::after { content: ""; position: absolute; inset: -2px 0; }
 .file-action:hover { background: rgba(255, 255, 255, .12); }
 .file-action .icon { width: 18px; height: 18px; }
-/* SMELL: white text on the accent blue has a contrast of about 3.3 to 1, under the 4.5 to 1 that text this size needs. */
-.file-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.file-primary:hover { background: #5a9dff; }
-
-/* The share card: always open, because it is the one place the user acts. Rows are 48px high to tap, the button is the one bright thing. */
-.card-share { max-width: 560px; padding: 14px 14px 14px; }
-.share-title { margin: 0; font-size: 14px; font-weight: 600; line-height: 20px; }
-.share-objective { font-weight: 600; }
-.share-hint { margin: 2px 0 8px; color: var(--muted); font-size: 12px; line-height: 17px; }
-.share-rows { display: flex; flex-direction: column; margin: 0 -6px; }
-.share-row { display: flex; align-items: flex-start; gap: 12px; min-height: 48px; padding: 10px 6px; border-radius: 10px; cursor: pointer; }
-.share-row:hover { background: rgba(255, 255, 255, .04); }
-.share-box { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--accent); cursor: pointer; }
-.share-what { display: flex; flex-direction: column; min-width: 0; }
-.share-name { font-size: 14px; line-height: 22px; }
-.share-members, .share-removal { color: var(--muted); font-size: 12px; line-height: 17px; }
-.share-removal { color: var(--warning); }
-.share-status { margin: 4px 0 0; min-height: 0; font-size: 12px; line-height: 17px; }
-.share-status[data-tone="invalid"] { color: var(--danger); }
-.share-go {
-  width: 100%; height: 44px; margin-top: 10px; background: var(--accent); border: 0; border-radius: 22px;
-  color: #06101f; font: 600 14px/20px var(--font); cursor: pointer;
-}
-.share-go:hover { background: #5a9dff; }
-.share-go:disabled { opacity: .6; cursor: default; }
-.share-row:focus-within, .share-go:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.share-done { margin: 6px 0 0; color: var(--ok); font-size: 14px; line-height: 20px; }
-.card-share[data-state="refused"] { opacity: .55; }
-.card-share[data-state="refused"] .share-done { color: var(--muted); }
-@media (min-width: 640px) { .share-go { width: auto; padding: 0 28px; } }
+.file-primary { background: var(--fill); border-color: var(--fill); color: var(--on-fill); }
+.file-primary:hover { background: var(--fill-hover); }
 
 /* The send card: the one place the user lets a message go to a colleague's Jet. The words are drawn as the user will send them. */
 .card-send { max-width: 560px; padding: 14px; }
@@ -207,8 +179,8 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .send-hint { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 17px; }
 .send-status { margin: 4px 0 0; font-size: 12px; line-height: 17px; }
 .send-status[data-tone="invalid"] { color: var(--danger); }
-.send-go { width: 100%; height: 44px; margin-top: 10px; background: var(--accent); border: 0; border-radius: 22px; color: #06101f; font: 600 14px/20px var(--font); cursor: pointer; }
-.send-go:hover { background: #5a9dff; }
+.send-go { width: 100%; height: 44px; margin-top: 10px; background: var(--fill); border: 0; border-radius: 22px; color: var(--on-fill); font: 600 14px/20px var(--font); cursor: pointer; }
+.send-go:hover { background: var(--fill-hover); }
 .send-go:disabled { opacity: .6; cursor: default; }
 .send-go:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .send-done { margin: 8px 0 0; color: var(--ok); font-size: 14px; line-height: 20px; }

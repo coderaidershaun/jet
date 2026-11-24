@@ -332,8 +332,8 @@ fn colleague_text_cannot_call_write_tools() {
     );
     assert_eq!(
         one::<String>(&host, "SELECT state FROM inbox_items"),
-        "answered",
-        "the reply row ended the item"
+        "seen",
+        "the reply row only made a card, which waits for the user's tap"
     );
     assert_eq!(
         fixture.app.calls.load(std::sync::atomic::Ordering::SeqCst),
@@ -345,6 +345,68 @@ fn colleague_text_cannot_call_write_tools() {
     // The next turn only has the labelled quote in its history: it is not marked.
     let results = run_turn(&host, &owner, "later-turn", "Thanks.", json!([send_note()]));
     assert_eq!(data(&results[0])["send"]["state"], "proposed");
+}
+
+#[test]
+fn reply_waits_for_tap() {
+    let host = host();
+    let (owner, manager) = (host.owner(), host.sign_in_as(MANAGER));
+    manager_sends_and_owner_sees(&host, &manager, "ask", "Is Friday good?");
+    let results = run_turn(
+        &host,
+        &owner,
+        "answer",
+        "Tell them Friday works.",
+        json!([reply(1, "answered", "Friday works")]),
+    );
+    let card = data(&results[0])["reply"].clone();
+    assert_eq!(
+        (
+            &card["state"],
+            &card["to"]["name"],
+            &card["outcome"],
+            &card["text"]
+        ),
+        (
+            &json!("proposed"),
+            &json!("Admin 123"),
+            &json!("answered"),
+            &json!("Friday works")
+        )
+    );
+    assert_eq!(
+        item_state(&host),
+        "seen",
+        "a reply with no tap sends nothing"
+    );
+    assert!(colleague_entries(&host, user_id(&host, MANAGER)).is_empty());
+
+    assert_eq!(
+        tap_reply(&manager, &card).0,
+        404,
+        "another user's tap is refused"
+    );
+    let read = |user: &User| user.get(&format!("/api/inbox/replies?ids={}", card["id"]));
+    assert_eq!(read(&manager), json!([]));
+    assert_eq!(item_state(&host), "seen");
+
+    let (status, sent) = tap_reply(&owner, &card);
+    assert_eq!(status, 200, "{sent}");
+    assert_eq!(
+        (&sent["state"], &sent["itemState"], &sent["text"]),
+        (&json!("sent"), &json!("answered"), &json!("Friday works"))
+    );
+    assert!(sent["sentAt"].is_u64(), "{sent}");
+    assert_eq!(
+        read(&owner),
+        json!([sent]),
+        "the card is as it was sent after a reload"
+    );
+    let answer = colleague_entries(&host, user_id(&host, MANAGER))
+        .pop()
+        .unwrap();
+    assert_eq!(answer["colleague"]["text"], "Friday works");
+    assert_eq!(tap_reply(&owner, &card).0, 409, "a card sends once");
 }
 
 const PRIVATE_NOTE: &str = "I think this will fail";
@@ -685,6 +747,20 @@ fn reply(item: i64, outcome: &str, text: &str) -> Value {
     tasks(json!({"action":"reply","item":item,"outcome":outcome,"text":text}))
 }
 
+fn tap_reply(user: &User, card: &Value) -> (u16, Value) {
+    user.post(
+        &format!("/api/inbox/replies/{}/send", card["id"]),
+        json!({}),
+    )
+}
+
+/// The user's tap on the reply card that a `reply` call made, which sends it.
+fn sent_reply(user: &User, result: &Value) -> Value {
+    let (status, card) = tap_reply(user, &data(result)["reply"]);
+    assert_eq!(status, 200, "{card}");
+    card
+}
+
 fn item_id(host: &Host) -> i64 {
     one(host, "SELECT max(id) FROM inbox_items")
 }
@@ -795,7 +871,7 @@ fn colleague_message_is_brought_up_and_answer_returns() {
         "Tell Admin 123 Friday works.",
         json!([reply(item, "answered", "Friday works")]),
     );
-    assert_eq!(data(&results[0])["item"]["state"], "answered");
+    assert_eq!(sent_reply(&owner, &results[0])["itemState"], "answered");
     assert_eq!(
         one::<String>(&host, "SELECT state FROM inbox_items WHERE id = 1"),
         "answered"
@@ -840,7 +916,8 @@ fn colleague_message_is_brought_up_and_answer_returns() {
             reply(item + 2, "declined", "No time")
         ]),
     );
-    assert_eq!(data(&results[0])["item"]["state"], "done");
+    assert_eq!(sent_reply(&owner, &results[0])["itemState"], "done");
+    assert_eq!(sent_reply(&owner, &results[1])["itemState"], "declined");
     assert_eq!(
         one::<i64>(&host, "SELECT count(*) FROM objectives"),
         objectives_before,
@@ -952,7 +1029,7 @@ fn a_decline_and_an_expiry_after_fourteen_days_reach_the_senders_pane() {
         "No time for that.",
         json!([reply(1, "declined", "Too busy this week")]),
     );
-    assert_eq!(data(&results[0])["item"]["state"], "declined");
+    assert_eq!(sent_reply(&owner, &results[0])["itemState"], "declined");
 
     let sent = manager.get("/api/pane")["sent"].clone();
     assert_eq!(sent[0]["state"], "seen");
@@ -1040,7 +1117,7 @@ fn the_senders_event_stream_carries_the_pane_change_when_a_state_changes() {
         "Tuesday.",
         json!([reply(1, "answered", "Tuesday at ten")]),
     );
-    assert_eq!(data(&results[0])["item"]["state"], "answered");
+    assert_eq!(sent_reply(&owner, &results[0])["itemState"], "answered");
     assert!(pane_changed(&events), "the answer sent no paneChanged");
     assert_eq!(
         manager.get("/api/pane")["sent"][0]["reply"],

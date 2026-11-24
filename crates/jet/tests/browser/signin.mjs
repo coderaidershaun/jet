@@ -107,11 +107,13 @@ try {
   const clipped = await cdp.evaluate(`[...document.querySelectorAll('button:not([hidden])')].filter(button => { const box = button.getBoundingClientRect(); return box.width > 0 && (box.left < 0 || box.right > innerWidth); }).map(button => button.id || button.className)`);
   assert.deepEqual(clipped, [], 'no control is cut off at the edge of a phone');
   await shoot('signed-in-390-rail.png');
-  // On a phone the drawer is a rail with the person's initial; opened, it says whose Jet this is.
-  await cdp.evaluate(`document.getElementById('jet-toggle').click()`);
+  // On a phone the thread has the whole width; the chats button in the head opens the drawer, which says whose Jet this is, and the scrim closes it.
+  assert.equal(await cdp.evaluate(`document.getElementById('drawer').getBoundingClientRect().width`), 0, 'on a phone the drawer is folded away');
+  await cdp.evaluate(`document.querySelector('.chats-toggle').click()`);
   await delay(400);
+  assert.equal(await cdp.evaluate(`document.getElementById('account-name').getBoundingClientRect().width > 0`), true, 'the open drawer names the person');
   await shoot('signed-in-390.png');
-  await cdp.evaluate(`document.getElementById('jet-toggle').click()`);
+  await cdp.evaluate(`document.querySelector('.drawer-scrim').click()`);
 
   // The page stays signed in past several expiries, without a reload, on the stream it opened first.
   await cdp.evaluate('window.stillTheSamePage = true');
@@ -138,6 +140,10 @@ try {
   await delay(800);
   await shoot('signed-in-desktop.png');
 
+  // One stray tap only asks; the second signs out.
+  await cdp.evaluate(`document.getElementById('signout').click()`);
+  await delay(300);
+  assert.equal(await cdp.evaluate(`location.pathname + ' ' + document.getElementById('signout').textContent`), '/ Sign out?', 'the first tap asks before signing out');
   await cdp.evaluate(`document.getElementById('signout').click()`);
   await until(() => cdp.evaluate(`location.pathname === '/signin/'`), 'signing out did not open the sign-in page');
   await open(`${jet}/`);

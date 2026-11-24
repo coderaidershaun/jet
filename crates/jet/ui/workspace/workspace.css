@@ -3,7 +3,6 @@
 .workspace-shell[data-expanded="true"] { grid-template-columns: var(--drawer-w) minmax(0, 1fr) var(--pane-w); }
 .workspace-content { position: relative; grid-column: 2; min-width: 0; min-height: 0; overflow: hidden; }
 .workspace-shell[data-pane="open"] { --pane-w: clamp(320px, 30vw, 400px); }
-.side-pane { grid-column: 3; min-width: 0; min-height: 0; overflow: auto; background: var(--surface); border-left: 1px solid var(--line); }
 .workspace-frames, #tools-content { height: 100%; min-width: 0; overflow: auto; }
 .workspace-notice:empty { display: none; }
 .workspace-notice { position: absolute; bottom: 8px; left: 8px; margin: 0; background: var(--surface); }
@@ -21,10 +20,22 @@
 .workspace-shell[data-expanded="false"] .settings-label { display: none; }
 @media (max-width: 1023px) {
   .workspace-shell[data-pane="open"] { --pane-w: 0px; }
-  .side-pane { position: fixed; z-index: 20; inset: 0 0 0 auto; width: min(440px, 100vw); box-shadow: -12px 0 40px #0008; }
 }
+.chats-toggle { display: none; }
+.drawer-scrim { position: fixed; inset: 0; z-index: 9; background: rgba(0, 0, 0, .55); }
+/* On a phone the thread takes the whole width: the drawer is gone until the chats button in the chat's head opens it over the page. */
 @media (max-width: 759px) {
-  .workspace-shell[data-expanded="true"] { grid-template-columns: 64px minmax(0, 1fr) var(--pane-w); }
+  .workspace-shell, .workspace-shell[data-expanded="true"] { grid-template-columns: 0 minmax(0, 1fr) var(--pane-w); }
+  .workspace-shell[data-expanded="false"] .drawer { display: none; }
   .workspace-shell[data-expanded="true"] .drawer { position: absolute; z-index: 10; inset: 0 auto 0 0; width: min(var(--drawer-w), calc(100vw - 48px)); box-shadow: 12px 0 40px #0008; }
+  .chats-toggle {
+    position: absolute; z-index: 4; top: 4px; left: max(6px, env(safe-area-inset-left)); display: grid; place-items: center;
+    width: 44px; height: 44px; padding: 0; background: none; border: 0; border-radius: 12px; color: var(--fg);
+  }
+  .chats-toggle .icon { width: 22px; height: 22px; }
+  .chats-count {
+    position: absolute; top: 0; right: -4px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: var(--fill); color: var(--on-fill); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--ground);
+  }
 }
 @media (max-height: 560px) { :root { --empty-scale: .32; } .context-capacity { padding-top: 2px; padding-bottom: 4px; } }

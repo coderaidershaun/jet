@@ -68,7 +68,8 @@ They are marked `Secure` when `--public-origin` is HTTPS, so plain HTTP on 127.0
 The sign-in page is `/signin/`; a visit with a sign-in that can still be renewed goes straight
 back to Jet. An open page renews its access token shortly before it runs out, and once more when
 a request is refused, one tab at a time, so the person never sees the renewal and the event
-stream stays open. The drawer's foot shows who is signed in and the way to sign out.
+stream stays open. The drawer's foot shows who is signed in and the way to sign out; the first tap
+on it only asks ("Sign out?"), and a second tap within four seconds signs out.
 The signing secret is `signing-secret` in the data directory, made on first start with owner-only
 access, or `JET_SIGNING_SECRET` (at least 32 bytes). A request that changes state must carry
 Jet's own `Origin`. Five failed sign-ins for one email, or twenty from one address, wait 15
@@ -116,9 +117,15 @@ The pane lists the user's chats above the apps: the main chat first (it can be r
 deleted), then the others by latest activity, each with its unread badge. **New chat** opens an
 empty chat at once with no form; the server titles it from the first message. On each row a pencil
 renames the title in place (Enter saves, Escape cancels) and a bin deletes the chat on a second tap
-of the same row (it asks again after four seconds). The open chat's title is also shown above the
-thread, because a phone shows the drawer as a rail. In the rail a chat is its glyph with a badge on
-the corner.
+of the same row (it asks again after four seconds). The open chat's title is shown in a solid band
+above the thread. In the rail a chat is its glyph with a badge on the corner: the main chat's speech
+bubble, or the chat's first letter, in a round mark for an objective's chat. The tab's title counts
+every unread entry, as "(3) Jet".
+
+Below 760 px the thread takes the whole width and the drawer is hidden: the **Chats** button (three
+lines) at the left of the title band carries the total unread count and opens the drawer over the
+page; a tap on the dimmed page, Escape or opening a chat closes it. Only the row of the live Jet keeps
+its lane. On a touch screen rename and delete show on the open chat's row only, 44 px each.
 
 The page keeps the open chat's id in its bridge (`ui/bridge/browser-agent.js`), so `status`,
 `snapshot`, `send`, `react`, `stop` and `forget` all carry `?chat={id}`. Opening a chat reads its
@@ -126,7 +133,11 @@ snapshot, shows it, and moves its read mark; events of the one stream for the op
 snapshot already holds are skipped. An `unread` event for another chat raises its badge; one for the
 open chat (while the page is visible) calls `POST /api/chats/{id}/read` and raises none. A
 `chatsChanged` event reloads the list, and the main chat shows if the open chat is gone. The shell
-has a third grid column, `#side-pane` (`ui/workspace/workspace.css`), which holds the plan pane.
+has a third grid column (`ui/workspace/workspace.css`), which holds the plan pane, `#side-pane`
+(its own rules are in `ui/plan/plan.css`). The plan pane opens a chat at one entry with
+`openChat(chatId, entryId)`, which `ui/chat/main.js` gives the shell: it opens the chat, scrolls to
+the entry and marks it. It puts a sentence in the message box with a `jet:draft` event on the page,
+`{ detail: { text } }`.
 
 ## This server's deployment
 
@@ -189,7 +200,7 @@ the account and settings at the foot. Context capacity stays folded
 behind a chevron beside Jet's name. Selecting an app fills the content and collapses the
 drawer to an icon rail. Jet returns to the preserved chat and desktop drawer;
 last selected app context remains available to Jet. Narrow screens default to the
-rail, with an expandable drawer and settings always available. `/tools` opens the
+rail; below 760 px the drawer hides behind the Chats button, with settings always one tap away. `/tools` opens the
 tool browser in the main content. Switching views preserves drafts, visited frames
 and active replies. `/app reload` reloads only its target; a full browser reload
 clears live iframe state. One reply can run across all tabs; other sends receive a
@@ -225,7 +236,7 @@ Jet is served publicly, so every path is bounded: 32 MiB for a file, 10 files fo
 
 ## App tools
 
-Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees seventeen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `github_activity`, the six that record objectives and agent-tasks and change the directory (see Objectives and agent-tasks), and `chats_read` (see Many chats). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link. After a web read, a `github_activity` call or a read of a colleague's shared objectives, the rest of that reply cannot call `apps_update`, `people_update`, `objectives_update` with `propose_share`, or an app tool that is not read-only. Codex and agy have no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
+Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees seventeen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `github_activity`, the six that record objectives and agent-tasks and change the directory (see Objectives and agent-tasks), and `chats_read` (see Many chats). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link; the reason starts with the fixed mark `[page-not-linked]`, which the page matches. After a web read, a `github_activity` call or a read of a colleague's shared objectives, the rest of that reply cannot call `apps_update`, `people_update`, `objectives_update` with `propose_share`, or an app tool that is not read-only. Codex and agy have no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
 
 Tools shows searchable summaries, actual input/output schemas, annotations, server identity, capabilities and instructions. Refresh retries failed metadata; stale results remain visibly marked. Only explicitly marked free discovery operations can expand into a hierarchy. Inspect a leaf or use Ask Jet to draft a request; browsing never executes ordinary business tools. In particular, normal Quanty search can cost money.
 
@@ -301,9 +312,10 @@ turn only, and every row is private to its owner until the owner shares it (see 
 - `objectives_update` takes one typed `command`: `create` (title, deliverable, due date, optional
   start date, steps and sources, and the **first check**, which it cannot be made without; `chat`
   is `new` for a chat of its own or `this` to take the current one), `edit`, `step_add`, `step_tick`,
-  `dates` (with the reason), `note` (status `on track`, `at risk`, `blocked` or `done`, what moved,
+  `step_edit` (one step's new title, new due date, or both, as when a step slips),
+  `dates` (with the reason, for the whole objective), `note` (status `on track`, `at risk`, `blocked` or `done`, what moved,
   blockers, and a `private` flag) and `close` (`done` or `dropped`, which also cancels the waiting
-  checks). Every change raises the objective's `version`.
+  checks and keeps the instant as `closedAt`). Every change raises the objective's `version`.
 - `tasks_list` reads Jet's own agent-tasks and its newest runs, so Jet looks before it adds one.
 - `tasks_update` takes `schedule` (with an `objectiveId` it moves that objective's open check, or adds
   it; without one it adds a follow-up in this chat) or `cancel`. There is at most one open check for
@@ -324,7 +336,8 @@ IANA name, as `timeZone` in the body of `POST /api/chat/send`; the server keeps 
 the local time into UTC with it, and refuses a time that is in the past, that the clocks skip, or that
 cannot be read. When the clocks go back and a time happens twice, the earlier instant is taken. A
 create with a new chat adds a chat of kind objective titled after the objective, opens it with a short
-summary, and leaves a line in the chat where it was agreed. A create on the main chat only links it.
+summary (its dates in words, such as `From Sun 1 Feb 2026 to Sun 1 Mar 2026.`, in a paragraph of their
+own), and leaves the line "I have recorded the objective" in the chat where it was agreed. A create on the main chat only links it.
 A turn in a chat may read pages on the hosts of the page sources of that chat's open objectives.
 
 ### Sharing an objective
@@ -348,47 +361,83 @@ chat, its sources and its agent-tasks are never returned, and when nothing is sh
 empty list, the same as for an owner with no objectives. Update notes reach the people an objective is
 shared with as soon as they are written. The pane of an objective changes who it is shared with
 through `POST /api/objectives/{id}/share-proposals` and the same tap, shows it with
-`GET /api/objectives/{id}/shares`, and flips a note with `PUT /api/objectives/{id}/notes/{note}`.
+`GET /api/objectives/{id}/shares`, lists everyone it could be shared with, ticked when it is, with
+`GET /api/objectives/{id}/directory` (for the owner only; anyone else gets 404, and the read shares
+nothing), and flips a note with `PUT /api/objectives/{id}/notes/{note}`; the pane's card lists the directory, and its one tap makes the proposal and applies it.
 
 ### The plan pane (server)
 
 `GET /api/pane` gives the signed-in user everything the right-hand pane draws, in one answer:
 `objectives` (all of the user's own, active and closed, with duration, days left, steps, notes with
 the private ones, sources, who each is shared with, `private` while it is shared with nobody, and its
-chat id), `tasks` (Jet's open agent-tasks with the due instant, the user's zone, the one-line why, the
-objective's title, who set it and `isDefault` when the server set the time), `runs` (the newest
-twenty, each with a `cost` once the run has one) and `sharedWithMe` (what colleagues shared: owner
+chat id, `hasOpenCheck` false when no check of it waits, and `closedAt` once it is closed), `tasks`
+(Jet's open agent-tasks with the due instant, the user's zone, the one-line why, the objective's
+title, who set it, `isDefault` when the server set the time, and `snoozeAt`, where a snooze would land),
+`runs` (the newest twenty, each with a `cost` once the run has one, the objective's `title` or
+"Follow-up", the task's `why`, and the `chatId`, `entryId` and user's `reaction` of its check-in) and `sharedWithMe` (what colleagues shared: owner
 name, title, due, days left, steps and the latest public note, never a private note, chat or
 source). The one-tap controls are `PUT /api/objectives/{id}/steps/{step}` with `{"done": true|false}`,
-`POST /api/tasks/{id}/snooze` (to the next 08:00 in the user's zone, strictly after now) and
+`POST /api/tasks/{id}/snooze` (to the next 08:00 in the user's zone strictly after the task's own time,
+or after now when that has passed, so a snooze never brings a check forward) and
 `POST /api/tasks/{id}/cancel`. Each acts only on the signed-in user's own things, answers another
 user's id as a missing one (404), carries the same `Origin` rule as every change, and raises the
 version of what it changed. Each tap, the note flip and a share tap are kept and Jet is told of each
 once, before the user's next message in the chat it concerns. `Chats::pane_changed(user)` puts
 `{"kind":"paneChanged"}` on the user's one event stream; a tool's `objectives_update` or
 `tasks_update` and every tap call it, and the people an objective is shared with hear of a change to it
-too. A finished check will call it once the scheduler is wired to it (the scheduler's job, not yet done);
-`pane_changed_publishes_pane_changed_to_that_users_stream_only` proves only that the call publishes.
+too. A finished check calls it too.
 
 ### The plan pane (page)
 
 `ui/plan/` draws the pane: `model.js` (pure words and counts, tested against `tests/fixtures/pane.json`),
-`view.js` (the cards), `pane.js` (reading, taps, open state) and `plan.css`. It reads `GET /api/pane`
-once on load and again on each `paneChanged` event of the one stream (also after the stream
-reconnects), so Jet's replies, finished checks and taps in another window show with no reload.
-Sections, in order: a glance strip, Objectives (active ones with dates, days left, steps you can
-tick, the latest note with its lock and a private/shared flip, who it is shared with, the chat; done
-and dropped ones fold below), Jet's plan (each open task in the user's zone with Snooze and Cancel,
-and a mark when the time is the server's default), Recent checks (how each ended in plain words, what
-it found, sources, tokens and cost) and Shared with you. An empty pane only invites the user to tell
-Jet what they are working on; nothing in it is a form. "Change who sees it" opens the share card
-inside the pane (a card needs someone to start from, so a private objective offers "Ask Jet to
-share", which opens its chat). At 1024 px and wider the pane takes a column and the choice to close
-it is kept in the browser (`jet.pane`); below that one button in the corner of the chat opens it over
-the chat, with a count of what is new since the user last opened it (`jet.pane.seen`). A later
-section, such as the messages the user sent to colleagues' Jets, is a new field of the read, a new
-function in `view.js` added to `planNodes`, and needs no new event.
+`taps.js` (pure: which Cancel waits for its second tap, and the words of a failed tap), `view.js` (the
+cards), `pane.js` (reading, taps, open state, the dialog) and `plan.css`. It reads `GET /api/pane` once on
+load and again on each `paneChanged` event of the one stream (also after the stream reconnects), so Jet's
+replies, finished checks and taps in another window show with no reload. At the top three tiles (working
+on, next check, last check) name their subject and jump to their section. Objectives are folded to one
+summary each (latest status, title, days left, progress, and the next check or "No check is set"); a tap
+unfolds the deliverable, dates, steps (late ones in red, today's in amber), the latest note with its
+Private control, who it is shared with and the chat. The most overdue objective, else the one changed
+last, starts open. Done and dropped ones fold below with the day each closed. Jet's plan lists each open
+task in the user's zone with "Snooze to <where it lands>" and Cancel, which takes a second tap within 4
+seconds. Recent checks are headed by their objective (or "Follow-up" and why), with "Open check-in", which
+opens that chat at the check-in, and the user's reaction on it; tokens and cost show only when not zero.
+Then the sent list and Shared with you, where a colleague's steps are read, not ticked. A tap keeps the
+focus on its control and is said aloud; a failed one leaves a notice in plain words until a later tap
+works. "Change who sees it" (or "Share" while private) draws the share card from
+`GET /api/objectives/{id}/directory`, and the owner's tap on it posts the ticked set to
+`share-proposals` and applies it at once. An empty pane only invites the user to tell Jet what they are
+working on; its example sentence is a button that puts the sentence in the message box (the `jet:draft`
+event). Nothing in the pane is a form. At 1024 px and wider the pane takes a column and the choice to
+close it is kept in the browser (`jet.pane`); below that the Plan control in the corner of the chat opens
+it as a dialog over the page, which is inert behind a scrim that closes it on a tap, and from 760 to 1023
+px the drawer folds to its rail beside it. The control's count is what Jet and colleagues did since the
+user last opened the pane (`jet.pane.seen`): checks run, checks set or moved, colleagues' updates and
+answers; the user's own taps do not count. A later section is a new field of the read, a new function in
+`view.js` added to `planNodes`, and needs no new event.
 `tests/browser/plan.mjs` drives it against the real host.
+
+### The thread (page)
+
+`ui/chat/thread/` draws the thread. A call to Jet's own records (`objectives_update`, `objectives_list`,
+`tasks_update`, `tasks_list`, `people_list`, `people_update`) is worded in `cards/records.js` from its
+typed command and result, one sentence per command, and opens to named fields with dates in words;
+two or more in one reply fold into "Jet updated your plan · N changes" (or "Jet read your plan").
+A send card and a reply card (`cards/send-view.js`) never fold: they show the recipient and the exact
+words with **Send to <name>**, and after the tap what was sent and where the item stands; each reads
+itself again on every `paneChanged` (the page raises `jet:pane-changed`), so it follows the item with
+no reload. A reply card whose item ended another way, or expired, has no Send and says so ("Not sent:
+their question was already answered"). A check-in has the label "Check-in · <day>, <time>" above its bubble. A failed reply says
+"Jet could not finish this reply." with the raw words behind **Details**; while the server is away the
+thread shows "Waiting for the connection…", which goes as soon as the stream is open again. A held message's chip shows its first words.
+
+The first Tab stop is **Skip to the message box**; with a mouse the message box has the focus after
+load. The reaction controls are not Tab stops: from the thread the arrow keys move between Jet's
+messages, Tab then reaches that message's control, the arrows move between the picks and Escape
+gives the focus back. On a phone the chooser's picks are 44 px tall and it moves left to stay inside
+the screen. Settings say "Changes save as you type" and then "Saved", and their Forget button names
+the chat it clears: Forget “<chat title>”. `tests/browser/thread.mjs`
+drives all of this against the real host.
 
 ## Checks
 
@@ -472,15 +521,18 @@ Migration `0011_inbox.sql` holds the send cards and the items.
   no instruction; a `<` in the words becomes `&lt;`). Jet posts its own line in the objective's
   chat when the recipient owns the objective the item names, else in the main chat; the colleague's
   words are kept beside it, as a quote with the sender's id (`Entry.colleague`), never in the line.
-- **Only the recipient's own words reply.** `tasks_update` `reply` (item, `answered`, `declined` or
-  `done`, the words) ends the item; the sender's chat gets an entry shown as the colleague's words
-  and an unread count. A task becomes an objective only by the normal way.
+- **Only the recipient's own tap replies.** `tasks_update` `reply` (item, `answered`, `declined` or
+  `done`, the words) sends nothing: the thread shows a reply card with the colleague's name and the
+  exact words, and only the recipient's own tap on Send (`POST /api/inbox/replies/{id}/send`) ends the
+  item; the sender's chat gets an entry shown as the colleague's words and an unread count.
+  `GET /api/inbox/replies?ids=` shows a reply card as it is after a reload. Migration
+  `0012_closed_and_reply_cards.sql` holds the reply cards. A task becomes an objective only by the normal way.
 - **States.** `sent`, `seen` (brought up), `answered`, `declined`, `done`, or `expired` after 14 days.
   The sender's pane lists them (`sent[]` in `GET /api/pane`), and `paneChanged` follows each change.
 - **A colleague's words never make Jet act.** They reach a model only in the labelled block. The check
   of an item is read-only; a user turn whose prompt first carries a colleague's words is refused what
-  is refused after web text, and `send`, from its first call. `reply` and `create` with no sources stay
-  allowed there.
+  is refused after web text, and `send`, from its first call. `reply` (which only makes a card) and
+  `create` with no sources stay allowed there.
 
 ## Quanty
 

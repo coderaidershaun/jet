@@ -66,3 +66,63 @@ test('a colleague\'s words are drawn as text and never become elements', async (
   assert.deepEqual(made.map((item) => item.tag).sort(), ['blockquote', 'p', 'p', 'span', 'span']);
   assert.equal(Object.hasOwn(node, 'innerHTML'), false);
 });
+
+// A stand-in for the document that keeps text as the browser does: a null child becomes the text "null".
+class Element {
+  constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.dataset = {}; this.listeners = {}; }
+  append(...kids) { this.children.push(...kids.map((kid) => (kid instanceof Element ? kid : String(kid)))); }
+  replaceChildren(...kids) { this.children = []; this.append(...kids); }
+  setAttribute(key, value) { this.attributes[key] = value; }
+  addEventListener(kind, run) { this.listeners[kind] = run; }
+  querySelector() { return null; }
+  get isConnected() { return true; }
+  set textContent(value) { this.children = [String(value)]; }
+  get textContent() { return this.children.map((kid) => (typeof kid === 'string' ? kid : kid.textContent)).join(''); }
+}
+const fakeDocument = { createElement: (tag) => new Element(tag), addEventListener() {} };
+
+test('no send or reply card draws null, with or without an objective and with an empty reply', async () => {
+  globalThis.document = fakeDocument;
+  globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  const { replyCard, sendCard } = await import('./send-view.js');
+  const reply = { id: 1, itemId: 1, to: { id: 2, name: 'Admin 123' }, kind: 'question', outcome: 'declined', text: '', state: 'proposed', sentAt: null, itemState: 'seen' };
+  const drawn = [
+    sendCard(cardOf(call({ send: { ...proposed, objectiveId: null, objectiveTitle: null } }))),
+    sendCard(cardOf(call({ send: { ...proposed, objectiveTitle: null, state: 'sent', sentAt: 5, itemState: 'seen' } }))),
+    replyCard(cardOf(call({ reply }))),
+    replyCard(cardOf(call({ reply: { ...reply, state: 'sent', sentAt: 5, itemState: 'declined' } }))),
+  ];
+  for (const card of drawn) assert.doesNotMatch(card.textContent, /null|undefined/, card.textContent);
+  assert.match(drawn[2].textContent, /^Reply to Admin 123Declines their question/);
+  assert.match(drawn[3].textContent, /Sent to Admin 123 · you declined it/);
+});
+
+test("the reply card shows the recipient and the exact words, and only the user's tap posts to the reply route", async () => {
+  const { replyOf, tapReply, replyHeading, replyAbout } = await import('./reply.js');
+  const raw = { id: 7, itemId: 3, to: { id: 2, name: 'Admin 123' }, kind: 'question', outcome: 'answered', text: 'Friday works', state: 'proposed', sentAt: null, itemState: 'seen' };
+  const card = cardOf({ ...call({ reply: raw }), input: { command: { action: 'reply', item: 3, outcome: 'answered', text: 'Friday works' } } });
+  assert.equal(card.body.kind, 'reply');
+  const view = card.body.view;
+  assert.equal(replyHeading(view), 'Reply to Admin 123');
+  assert.equal(replyAbout(view), 'Answers their question');
+  assert.equal(view.text, 'Friday works');
+  const made = [];
+  const fetcher = async (path, init) => { made.push({ path, method: init.method, body: init.body }); return { ok: true, json: async () => ({ ...raw, state: 'sent', sentAt: 9, itemState: 'answered' }) }; };
+  const after = await tapReply(view, fetcher);
+  assert.deepEqual(made, [{ path: '/api/inbox/replies/7/send', method: 'POST', body: '{}' }]);
+  assert.equal(after.state, 'sent');
+  assert.equal(replyOf({ ...raw, outcome: 'maybe' }), null);
+});
+
+test('a reply card whose item ended another way says so and has no Send control', async () => {
+  globalThis.document = fakeDocument;
+  globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  const { replyCard } = await import('./send-view.js');
+  const open = { id: 4, itemId: 1, to: { id: 2, name: 'Admin 123' }, kind: 'question', outcome: 'answered', text: 'Friday', state: 'proposed', sentAt: null, itemState: 'seen' };
+  assert.match(replyCard(cardOf(call({ reply: open }))).textContent, /Send to Admin 123/);
+  for (const [itemState, words] of [['answered', 'was already answered'], ['declined', 'was already declined'], ['done', 'was already marked done'], ['expired', 'expired']]) {
+    const text = replyCard(cardOf(call({ reply: { ...open, itemState } }))).textContent;
+    assert.doesNotMatch(text, /Send to|Nothing goes until/, itemState);
+    assert.match(text, new RegExp('Not sent: their question ' + words), itemState);
+  }
+});

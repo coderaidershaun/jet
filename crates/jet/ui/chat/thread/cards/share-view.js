@@ -3,7 +3,7 @@
 
 import { requestJson } from '../../../bridge/browser-agent.js';
 import { h } from '../../../dom.js';
-import { buttonWords, shareOf, sharedWords, tapAnswer, tapBody } from './share.js';
+import { shareButton, shareOf, sharedWords, tapAnswer, tapBody } from './share.js';
 
 /** One read for all the cards that were drawn in the same moment, such as every card of a reloaded snapshot. */
 const waiting = new Map();
@@ -26,7 +26,7 @@ function currentCard(id) {
 
 function entryRow(entry, ticked, onToggle) {
   const box = h('input', { type: 'checkbox', class: 'share-box', ...(ticked.has(entry.key) ? { checked: true } : {}), onChange: () => onToggle(entry.key, box.checked) });
-  const wasShared = !entry.ticked;
+  const removal = entry.shared ? (entry.ticked ? 'Shared now' : 'Shared now, will be removed unless you tick it') : null;
   return h(
     'label',
     { class: 'share-row', 'data-kind': entry.kind },
@@ -36,12 +36,15 @@ function entryRow(entry, ticked, onToggle) {
       { class: 'share-what' },
       h('span', { class: 'share-name', text: entry.kind === 'team' ? entry.name + ' team' : entry.name }),
       entry.members.length > 0 ? h('span', { class: 'share-members', text: entry.members.join(', ') }) : null,
-      wasShared ? h('span', { class: 'share-removal', text: 'Shared now, will be removed unless you tick it' }) : null,
+      removal ? h('span', { class: 'share-removal', 'data-ticked': String(entry.ticked), text: removal }) : null,
     ),
   );
 }
 
-/** @param {import('./model.js').Card} card */
+/**
+ * @param {import('./model.js').Card & { apply?: (body: { people: number[], teams: number[] }) => Promise<unknown> }} card
+ *   `apply` replaces the tap's route for a card that has no proposal yet, such as the plan pane's card from the directory
+ */
 export function shareCard(card) {
   const el = h('div', { class: 'card card-share', 'data-key': card.key, 'data-call': card.id });
   let view = card.body.view;
@@ -55,14 +58,14 @@ export function shareCard(card) {
     el.dataset.state = view.state;
     const title = h('p', { class: 'share-title' }, view.state === 'applied' ? 'Shared · ' : 'Share · ', h('span', { class: 'share-objective', text: view.title }));
     if (view.state === 'proposed') {
-      const toggle = (key, on) => { if (on) ticked.add(key); else ticked.delete(key); button.textContent = buttonWords(ticked); };
-      button.textContent = buttonWords(ticked);
-      button.disabled = busy;
+      const label = () => { const next = shareButton(view, ticked); button.textContent = next.words; button.disabled = busy || !next.enabled; };
+      const toggle = (key, on) => { if (on) ticked.add(key); else ticked.delete(key); label(); };
+      label();
       el.replaceChildren(title, h('p', { class: 'share-hint', text: 'Tick who should see it, then tap Share. Nothing is shared until you do.' }), h('div', { class: 'share-rows' }, ...view.entries.map((entry) => entryRow(entry, ticked, toggle))), status, button);
     } else if (view.state === 'applied') {
       el.replaceChildren(title, h('p', { class: 'share-done', text: sharedWords(view) }));
     } else {
-      el.replaceChildren(title, h('p', { class: 'share-done', text: 'Replaced by a newer card, which Jet made after this one.' }));
+      el.replaceChildren(title, h('p', { class: 'share-done', text: 'Replaced by a newer card.' }));
     }
   }
 
@@ -78,7 +81,8 @@ export function shareCard(card) {
     button.textContent = 'Sharing…';
     status.textContent = '';
     try {
-      const next = shareOf(await requestJson('/api/shares/proposals/' + view.id + '/apply', tapBody(view, ticked)));
+      const body = tapBody(view, ticked);
+      const next = shareOf(await (card.apply ? card.apply(body) : requestJson('/api/shares/proposals/' + view.id + '/apply', body)));
       if (next) view = next;
       busy = false;
       draw();
@@ -88,11 +92,11 @@ export function shareCard(card) {
       draw();
       status.textContent = answer.words;
       status.dataset.tone = 'invalid';
-      if (answer.reread) await reread();
+      if (answer.reread && view.id !== null) await reread();
     }
   }
 
   draw();
-  reread();
+  if (view.id !== null) reread();
   return el;
 }

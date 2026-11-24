@@ -1,21 +1,47 @@
 /* The plan pane: what Jet tracks for the user. One scrolling column of cards, at 390 px as on a desktop. */
-.side-pane { display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+.side-pane { grid-column: 3; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; background: var(--surface); border-left: 1px solid var(--line); }
+/* Below 1024 px the open pane is a dialog over the chat, with a scrim that closes it on a tap. */
+.pane-scrim { position: fixed; z-index: 19; inset: 0; background: var(--veil); }
+@media (max-width: 1023px) {
+  .side-pane { position: fixed; z-index: 20; inset: 0 0 0 auto; width: min(440px, 100vw); box-shadow: -12px 0 40px #0008; }
+}
+/*
+ * From 760 to 1023 px the drawer folds to its rail while the pane is open, so the chat stays in sight beside it.
+ * SMELL: these repeat the drawer's own rail rules for one more case, because the shell's expanded state is not this
+ * pane's to change. A shell state for "rail" would let the drawer's rules serve both.
+ */
+@media (min-width: 760px) and (max-width: 1023px) {
+  .workspace-shell[data-pane="open"][data-expanded="true"] { grid-template-columns: 64px minmax(0, 1fr) var(--pane-w); }
+  .workspace-shell[data-pane="open"] :is(.drawer-persona, .context-capacity, .context-toggle, .nav-label, .settings-label, .nav-heading, .new-chat-label, .chat-actions, .account-who) { display: none !important; }
+  .workspace-shell[data-pane="open"] :is(.nav-head, .chat-open) { justify-content: center; padding: 0; }
+  .workspace-shell[data-pane="open"] .new-chat { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 12px; }
+  .workspace-shell[data-pane="open"] .account { flex-direction: column; gap: 4px; padding: 10px 0 4px; }
+  .workspace-shell[data-pane="open"] .chat-open .nav-icon { margin: 0; }
+  .workspace-shell[data-pane="open"] .badge { position: absolute; top: 2px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; box-shadow: 0 0 0 2px var(--surface); }
+  .pane-scrim { left: 64px; background: rgba(11, 20, 27, .45); }
+}
 .pane-head { position: sticky; top: 0; z-index: 2; flex: none; background: var(--surface); border-bottom: 1px solid var(--line); }
 .pane-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 6px 16px; }
 .pane-title { margin: 0; font-size: 15px; font-weight: 650; }
 .pane-body { display: flex; flex-direction: column; gap: 22px; padding: 14px 14px max(28px, env(safe-area-inset-bottom)); min-width: 0; }
 .pane-notice { margin: 0; padding: 8px 16px; background: rgba(242, 177, 84, .12); color: var(--warning); font-size: 12px; line-height: 17px; }
+.pane-alert { background: rgba(255, 123, 114, .12); color: var(--danger); }
 .pane-notice:empty { display: none; }
 
-/* The button in the corner of the chat that opens and closes the pane. */
-.pane-toggle { position: absolute; z-index: 4; top: 4px; right: max(6px, env(safe-area-inset-right)); display: grid; place-items: center; width: 44px; height: 44px; padding: 0; background: none; border: 0; border-radius: 12px; color: var(--muted); }
+/* The button in the corner of the chat that opens and closes the pane. Its count sits beside the word, never on the icon. */
+.pane-toggle { position: absolute; z-index: 4; top: 4px; right: max(6px, env(safe-area-inset-right)); display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 10px; background: none; border: 0; border-radius: 12px; color: var(--muted); font-size: 13px; font-weight: 600; }
 .pane-toggle:hover, .workspace-shell[data-pane="open"] .pane-toggle { background: rgba(255, 255, 255, .06); color: var(--fg); }
-.pane-toggle .icon { width: 22px; height: 22px; }
-.pane-count { position: absolute; top: 2px; right: 3px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pane-toggle .icon { width: 20px; height: 20px; }
+/* While the column is open its own close button does the job. */
+@media (min-width: 1024px) { .workspace-shell[data-pane="open"] .pane-toggle { display: none; } }
+.pane-count { display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--fill); color: var(--on-fill); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .pane-section { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.pane-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-.pane-aside { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; text-align: right; }
+.pane-heading { display: flex; align-items: baseline; gap: 8px; margin: 0; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; scroll-margin-top: 72px; }
+.pane-heading:focus { outline: none; }
+.pane-heading:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.pane-heading-count { padding: 0 6px; border-radius: 8px; background: rgba(255, 255, 255, .06); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.pane-aside { margin-left: auto; font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; text-align: right; }
 .pane-hint { margin: 0; color: var(--muted); font-size: 13px; line-height: 19px; }
 .stack { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; min-width: 0; }
 
@@ -23,10 +49,11 @@
 .plan-card p, .plan-card h4 { margin: 0; }
 
 .glance { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; }
+.tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; color: var(--fg); text-align: left; font: inherit; cursor: pointer; }
+.tile:hover { background: rgba(255, 255, 255, .07); }
 .tile-label { color: var(--muted); font-size: 11px; line-height: 14px; }
 .tile-value { font-size: 14px; font-weight: 650; line-height: 19px; overflow-wrap: anywhere; }
-.tile-detail { color: var(--muted); font-size: 11px; line-height: 15px; overflow-wrap: anywhere; }
+.tile-detail { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--muted); font-size: 11px; line-height: 15px; overflow-wrap: anywhere; }
 
 .chip { display: inline-flex; align-items: center; flex: none; max-width: 100%; padding: 1px 9px; border-radius: 11px; background: rgba(255, 255, 255, .06); color: var(--muted); font-size: 12px; font-weight: 600; line-height: 20px; }
 .chip[data-tone="good"] { background: rgba(61, 220, 151, .13); color: var(--ok); }
@@ -35,12 +62,25 @@
 .chip[data-tone="running"] { background: rgba(61, 139, 255, .16); color: var(--link-jet); }
 .chip[data-tone="stopped"], .chip[data-tone="kind"] { background: rgba(140, 196, 255, .1); color: var(--link-jet); }
 
-.objective { display: flex; flex-direction: column; gap: 8px; }
-.objective-top { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px 8px; }
+.objective { display: flex; flex-direction: column; gap: 8px; padding: 0; }
+.objective[data-status="paused"] { border-style: dashed; }
+.objective-head { margin: 0; font: inherit; }
+/* The folded summary is one button: chips, title, progress and the next check, and a tap unfolds the rest. */
+.objective-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; width: 100%; padding: 12px 14px; background: none; border: 0; border-radius: 14px; color: var(--fg); text-align: left; font: inherit; cursor: pointer; }
+.objective-summary:hover { background: rgba(255, 255, 255, .03); }
+.objective-top { display: flex; align-items: flex-start; gap: 6px 8px; min-width: 0; }
+.objective-summary .objective-top { flex: 1 0 100%; }
 .objective-title { flex: 1 1 140px; min-width: 0; font-size: 15px; font-weight: 650; line-height: 21px; }
+.objective-summary .objective-top > .icon { flex: none; width: 18px; height: 18px; margin-top: 2px; color: var(--muted); transition: transform .15s; }
+.objective-summary[aria-expanded="true"] .objective-top > .icon { transform: rotate(180deg); }
+.objective-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.objective-summary .progress { flex: 1 1 140px; }
+.objective-check { display: flex; align-items: center; flex: 1 0 100%; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; line-height: 17px; }
+.objective-check .icon { flex: none; width: 14px; height: 14px; color: var(--link-jet); }
+.objective-check[data-tone="warn"], .objective-check[data-tone="warn"] .icon { color: var(--warning); }
+.objective-body { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 14px; }
 .objective-deliverable { color: var(--fg); font-size: 13px; line-height: 19px; }
 .objective-range { color: var(--muted); font-size: 12px; line-height: 17px; }
-.objective[data-status="paused"] { opacity: .8; }
 
 .progress { display: flex; align-items: center; gap: 10px; }
 .bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .08); overflow: hidden; }
@@ -57,18 +97,26 @@ button.step:hover { background: rgba(255, 255, 255, .05); }
 .step-title { flex: 1; min-width: 0; }
 .step[data-done="true"] .step-title { color: var(--muted); text-decoration: line-through; }
 .step-due { flex: none; color: var(--muted); font-size: 12px; line-height: 22px; }
-button.step:disabled { opacity: .6; }
+.step-due[data-tone="bad"] { color: var(--danger); font-weight: 600; }
+.step-due[data-tone="warn"] { color: var(--warning); font-weight: 600; }
+/* A colleague's steps are read, not ticked: no box to tap. */
+.step-read { display: flex; align-items: flex-start; gap: 10px; padding: 3px 6px; font-size: 14px; line-height: 22px; }
+.step-read > .icon { flex: none; width: 16px; height: 16px; margin-top: 3px; color: var(--ok); stroke-width: 3; }
+.step-dot { flex: none; width: 6px; height: 6px; margin: 8px 5px 0; border-radius: 3px; background: var(--muted); }
+.step-read[data-done="true"] .step-title { color: var(--muted); text-decoration: line-through; }
 
 .note { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: rgba(255, 255, 255, .035); border-left: 3px solid var(--line); border-radius: 4px 10px 10px 4px; font-size: 13px; line-height: 19px; }
 .note[data-private="true"] { border-left-color: var(--warning); }
 .note-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
 .note-when { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; }
 .note-blockers b, .note-dates b { color: var(--muted); font-weight: 600; }
-.note-flip[data-private="true"] { color: var(--warning); }
+.note-flip[data-private="true"] { color: var(--warning); border-color: rgba(242, 177, 84, .5); }
+.note-who { color: var(--muted); font-size: 12px; line-height: 17px; }
 
 .pane-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 12px; background: rgba(255, 255, 255, .05); border: 1px solid var(--line); border-radius: 18px; color: var(--fg); font-size: 12px; font-weight: 600; line-height: 16px; }
 .pane-button:hover:not(:disabled) { background: rgba(255, 255, 255, .1); }
-.pane-button:disabled { opacity: .5; }
+.pane-button:disabled, .pane-button[aria-disabled="true"] { opacity: .6; }
+.pane-button.danger.is-armed { background: var(--danger); border-color: var(--danger); color: var(--ground); }
 .pane-button .icon { width: 15px; height: 15px; }
 .pane-button.danger { color: var(--danger); }
 .pane-button.icon-only { min-width: 36px; padding: 0 9px; }
@@ -105,8 +153,10 @@ button.step:disabled { opacity: .6; }
 .task[data-state="running"] { border-color: rgba(61, 139, 255, .5); }
 
 .run { display: flex; flex-direction: column; gap: 6px; }
-.run-top { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; }
+.run-top { display: flex; align-items: flex-start; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; }
+.run-title { flex: 1 1 140px; min-width: 0; font-size: 14px; font-weight: 650; line-height: 20px; }
 .run-when { color: var(--muted); font-size: 12px; }
+.run-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .run-found { font-size: 13px; line-height: 19px; }
 .sources { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .source-chip { max-width: 100%; padding: 1px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font: 11px/18px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
@@ -121,7 +171,9 @@ button.step:disabled { opacity: .6; }
 .invite > .icon { width: 44px; height: 44px; color: var(--link-jet); }
 .invite p { margin: 0; font-size: 14px; line-height: 21px; }
 .invite-title { margin: 0; color: var(--fg); font-size: 17px; font-weight: 650; }
-.invite-example { color: var(--link-jet); font-style: italic; }
+.invite-example { padding: 10px 14px; background: rgba(140, 196, 255, .08); border: 1px solid rgba(140, 196, 255, .3); border-radius: 14px; color: var(--link-jet); font: italic 14px/21px var(--font); cursor: pointer; }
+.invite-example:hover { background: rgba(140, 196, 255, .14); }
+.invite-hint { font-size: 12px !important; }
 
 /* The sent list: what the user sent to colleagues' Jets and where each item stands. */
 .sent-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
@@ -135,3 +187,9 @@ button.step:disabled { opacity: .6; }
 .sent-reply p { margin: 2px 0 0 !important; white-space: pre-wrap; }
 .sent-from { color: var(--muted); font-size: 12px; }
 .sent-chat { margin-top: 10px; }
+
+/* Every control of the pane is at least 44 px high where the pointer is a finger. */
+@media (pointer: coarse) {
+  .pane-button, .note-flip { min-height: 44px; }
+  .pane-button.icon-only { min-width: 44px; }
+}

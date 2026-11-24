@@ -219,6 +219,10 @@ async fn authorize(State(facade): State<Arc<Facade>>, request: Request, next: Ne
     response
 }
 
+/// The fixed start of the reason a page read is refused with. The page matches it to show its own
+/// friendly line, so it must not change with the wording after it.
+const PAGE_REFUSED_MARK: &str = "[page-not-linked]";
+
 /// Claude Code asks here before each page read, with the hosts of the turn in the `hosts` query.
 /// Any other address, and any request that cannot be read, is refused, and the reason tells Jet to
 /// ask for the link.
@@ -235,7 +239,7 @@ async fn web_hook(Query(query): Query<HashMap<String, String>>, body: Bytes) -> 
     Json(json!({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
-        "permissionDecisionReason": "Jet reads pages only on sites whose link the user wrote in this chat or that an objective of this chat names. The user can paste the link to this page here, so ask them to.",
+        "permissionDecisionReason": format!("{PAGE_REFUSED_MARK} Jet reads pages only on sites whose link the user wrote in this chat or that an objective of this chat names. The user can paste the link to this page here, so ask them to."),
     }}))
 }
 
@@ -253,6 +257,10 @@ mod tests {
         let reason = refused["hookSpecificOutput"]["permissionDecisionReason"]
             .as_str()
             .unwrap();
+        assert!(
+            reason.starts_with(PAGE_REFUSED_MARK),
+            "the page matches this mark: {reason}"
+        );
         assert!(reason.contains("The user can paste the link"), "{reason}");
         assert!(reason.contains("objective"), "{reason}");
 

@@ -21,6 +21,7 @@ const SAVE_AFTER_EDIT_MS = 600;
  * @property {() => boolean} systemReducesMotion   true when the system asks for less motion
  * @property {(claude: import('../../bridge/agent.js').ClaudeStatus) => void} onClaudeChecked   the page's banner follows each check
  * @property {() => Promise<void>} onForget
+ * @property {() => string} [chatTitle]   the title of the open chat, which Forget clears
  */
 
 /**
@@ -37,9 +38,11 @@ export function createSheet({ dialog, context, onChange, save }) {
     try {
       await save();
       saveError.textContent = '';
+      saved.textContent = 'Saved';
       if (checkProgram) programs.refresh();
     } catch (error) {
       needsProgramCheck ||= checkProgram;
+      saved.textContent = 'Not saved';
       saveError.textContent = 'Settings could not be saved: ' + (error.message ?? String(error));
     }
   };
@@ -48,6 +51,7 @@ export function createSheet({ dialog, context, onChange, save }) {
     if (kind === 'persona') paintNames(body, displayName(ctx.settings));
     if (kind === 'claude' || kind === 'model') needsProgramCheck = true;
     clearTimeout(saveTimer);
+    saved.textContent = 'Saving…';
     saveTimer = setTimeout(saveEdits, SAVE_AFTER_EDIT_MS);
   };
   const ctx = { ...context, changed };
@@ -58,10 +62,12 @@ export function createSheet({ dialog, context, onChange, save }) {
   const memory = buildMemory(ctx);
   const programs = buildClaude(ctx);
   const saveError = h('p', { class: 'settings-save-error', role: 'alert' });
+  // There is no Save button: every change saves itself a moment after the user stops typing, and this line says so.
+  const saved = h('p', { class: 'sheet-saved', role: 'status', text: 'Changes save as you type' });
   const body = h('div', { class: 'sheet-body' }, saveError, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, buildGithub(ctx), ...programs.el);
 
   const closeButton = h('button', { class: 'icon-button', type: 'button', 'aria-label': 'Close settings', onClick: () => sheet.close() }, icon('close'));
-  dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), closeButton), body);
+  dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), saved, closeButton), body);
 
   dialog.addEventListener('cancel', (event) => {
     event.preventDefault();

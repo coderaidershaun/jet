@@ -242,7 +242,19 @@ fn steps_dates_notes_checks_and_close_do_what_they_say() {
             ),
             tool("objectives_list"),
             tool("tasks_list"),
+            objectives(
+                json!({"action":"step_edit","id":id,"step":step,"title":"Frame it","due":"2099-07-01"})
+            ),
         ]),
+    );
+    let edited = &data(&results[9])["objective"];
+    assert_eq!(
+        (
+            &edited["steps"][0]["title"],
+            &edited["steps"][0]["due"],
+            &edited["version"]
+        ),
+        (&json!("Frame it"), &json!("2099-07-01"), &json!(6))
     );
     let listed = &data(&results[7])["objectives"][0];
     assert!(listed["steps"][0]["doneAt"].is_u64(), "{listed}");

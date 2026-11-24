@@ -2,11 +2,13 @@
   "objectives": [
     {
       "chatId": 1,
+      "closedAt": null,
       "createdAt": 1767225600,
       "daysLeft": 31,
       "deliverable": "Ship the kite delivered",
       "due": "2026-02-01",
       "durationDays": 31,
+      "hasOpenCheck": true,
       "id": 1,
       "notes": [
         {
@@ -72,22 +74,60 @@
       "title": "Ship the kite",
       "updatedAt": 1767225600,
       "version": 3
+    },
+    {
+      "chatId": 1,
+      "closedAt": 1767225600,
+      "createdAt": 1767225600,
+      "daysLeft": 31,
+      "deliverable": "Paint the kite delivered",
+      "due": "2026-02-01",
+      "durationDays": 31,
+      "hasOpenCheck": false,
+      "id": 3,
+      "notes": [],
+      "private": true,
+      "sharedWith": {
+        "people": [],
+        "teams": []
+      },
+      "sources": [],
+      "start": "2026-01-01",
+      "status": "done",
+      "steps": [
+        {
+          "doneAt": null,
+          "due": null,
+          "id": 3,
+          "position": 1,
+          "title": "First step"
+        }
+      ],
+      "tasks": [],
+      "title": "Paint the kite",
+      "updatedAt": 1767225600,
+      "version": 2
     }
   ],
   "runs": [
     {
+      "chatId": 1,
       "cost": null,
       "endedAt": 1777225700,
-      "entryId": null,
+      "entryId": 1,
       "found": "The frame is built",
       "id": 1,
+      "objectiveId": 1,
       "outcome": "spoke",
+      "reaction": "👍",
       "sourcesRead": [
         "github octo/kite"
       ],
       "startedAt": 1777225600,
       "taskId": 1,
-      "tokens": 1200
+      "title": "Ship the kite",
+      "tokens": 1200,
+      "why": "see whether the first step is done"
     }
   ],
   "sent": [
@@ -148,6 +188,7 @@
       "objectiveId": 1,
       "objectiveTitle": "Ship the kite",
       "setBy": "jet",
+      "snoozeAt": 1767686400,
       "state": "scheduled",
       "timeZone": "Europe/London",
       "version": 3,

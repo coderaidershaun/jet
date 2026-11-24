@@ -486,3 +486,51 @@ fn the_objective_pane_calls_show_change_and_flip() {
     assert!(!hidden.to_string().contains(PRIVATE_NOTE));
     assert_eq!(manager.put(&path, json!({"private":false})).0, 404);
 }
+
+#[test]
+fn directory_read_answers_only_the_owner() {
+    let host = host();
+    let (owner, manager) = (host.owner(), host.sign_in_as(MANAGER));
+    let (owner_id, manager_id) = (user_id(&host, OWNER), user_id(&host, MANAGER));
+    owner_makes_a_kite(&host, &owner);
+    let card = owner
+        .post(
+            "/api/objectives/1/share-proposals",
+            json!({"people":[manager_id]}),
+        )
+        .1;
+    tap(&owner, &card, json!([manager_id]), json!([]));
+
+    let directory = owner.get("/api/objectives/1/directory");
+    let people = directory["people"].as_array().unwrap();
+    assert!(
+        people.iter().all(|person| person["id"] != owner_id),
+        "not the owner"
+    );
+    let ticked: Vec<&Value> = people
+        .iter()
+        .filter(|person| person["ticked"] == true)
+        .collect();
+    assert_eq!(
+        ticked,
+        [&json!({"id":manager_id,"name":"Admin 123","ticked":true})]
+    );
+    assert_eq!(
+        people.len(),
+        4,
+        "everyone else of the directory: {directory}"
+    );
+    let team = &directory["teams"][0];
+    assert_eq!(
+        (&team["id"], &team["ticked"]),
+        (&json!(commercial(&host)), &json!(false))
+    );
+    assert!(
+        team["members"]
+            .as_array()
+            .is_some_and(|members| !members.is_empty())
+    );
+
+    assert_eq!(manager.fetch("/api/objectives/1/directory").0, 404);
+    assert_eq!(owner.fetch("/api/objectives/99/directory").0, 404);
+}
