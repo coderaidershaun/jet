@@ -48,6 +48,18 @@ async function stop(child) {
   assert.equal(timedOut, false, `Child ${child.pid} did not stop within 10 seconds: ${child.spawnargs.join(' ')}`);
 }
 
+/**
+ * Signs the owner, an admin, in from Node and saves these settings for them. A `claudePath`
+ * among them sets the provider program the whole server runs.
+ */
+export async function saveOwnerSettings(origin, settings) {
+  const signedIn = await fetch(origin + '/api/auth/signin', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ email: 'shaunsurfing@gmail.com', password: '000111' }) });
+  assert.equal(signedIn.status, 200, 'the owner could not sign in');
+  const cookie = signedIn.headers.getSetCookie().map(line => line.split(';')[0]).join('; ');
+  const saved = await fetch(origin + '/api/settings', { method: 'PUT', headers: { origin, cookie, 'content-type': 'application/json' }, body: JSON.stringify(settings) });
+  assert.equal(saved.status, 200, `the owner's settings were not saved: ${await saved.text()}`);
+}
+
 /** Opens Jet in a Playwright page and signs the owner in through the sign-in form, as a person does. */
 export async function signIn(page, origin) {
   await page.goto(origin);

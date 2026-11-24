@@ -97,6 +97,12 @@ pub struct SessionId(pub String);
 #[serde(transparent)]
 pub struct EntryId(pub(crate) u64);
 
+impl EntryId {
+    pub fn number(self) -> u64 {
+        self.0
+    }
+}
+
 impl std::fmt::Display for EntryId {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(formatter)

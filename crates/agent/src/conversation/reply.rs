@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use super::memory::{DataDir, MemoryError, NewEntry, Session, Transcript, now_ms};
+use super::memory::{MemoryError, NewEntry, Saved, Session, now_ms};
 use super::session_policy::FreshReason;
 use super::{Claim, shown};
 use crate::chat::{Entry, EntryId, EntryStatus, Event, Failure, Role, SessionId, TurnIdentity};
@@ -16,7 +16,7 @@ use crate::turn::{
 /// Everything a reply needs to know about the message it answers.
 pub(super) struct Context {
     pub identity: Option<TurnIdentity>,
-    pub dir: DataDir,
+    pub memory: Saved,
     pub transport: Arc<dyn Transport>,
     pub request: Request,
     /// What Claude reads of the message, without the local time line.
@@ -128,7 +128,7 @@ impl Reply {
     // mark here, so Claude only sees them in a later fresh conversation.
     fn save_new_session(&self, session_id: &SessionId) -> Result<(), MemoryError> {
         let Context {
-            dir,
+            memory: storage,
             request,
             saved,
             prompt_hash,
@@ -139,10 +139,11 @@ impl Reply {
             _ => None,
         };
         // The review may have moved on since this message was sent, so read its progress again.
-        let reviewed = Session::load(dir)?
+        let reviewed = storage
+            .session()?
             .or_else(|| saved.clone())
             .unwrap_or_default();
-        Session {
+        storage.save_session(&Session {
             session_id: session_id.clone(),
             last_request_at: self.spawned_at,
             context_tokens: kept.map_or(0, |saved| saved.context_tokens),
@@ -150,8 +151,7 @@ impl Reply {
             prompt_hash: prompt_hash.clone(),
             reviewed_through: reviewed.reviewed_through,
             reviewed_at: reviewed.reviewed_at,
-        }
-        .save(dir)
+        })
     }
 
     /// Saves Jet's emoji on the user's message at once, so the page shows it while the reply runs.
@@ -160,7 +160,11 @@ impl Reply {
         let Some(id) = self.context.react_on else {
             return;
         };
-        match Transcript::open(&self.context.dir).react(id, Role::Jet, Some(emoji), now_ms()) {
+        match self
+            .context
+            .memory
+            .react(id, Role::Jet, Some(emoji), now_ms())
+        {
             Ok(Some((entry, true))) => self.queue.push_back(Event::Reactions {
                 entry_id: entry.id,
                 reactions: entry.reactions,
@@ -202,9 +206,9 @@ impl Reply {
     /// Forgets the id Claude no longer knows, so the next message starts fresh even when
     /// this retry fails too.
     fn drop_vanished_session(&self) -> Result<(), MemoryError> {
-        let dir = &self.context.dir;
-        match Session::load(dir)? {
-            Some(session) => session.without_conversation().save(dir),
+        let saved = &self.context.memory;
+        match saved.session()? {
+            Some(session) => saved.save_session(&session.without_conversation()),
             None => Ok(()),
         }
     }
@@ -262,7 +266,7 @@ impl Reply {
         let unsaved = self.jet_entry(EntryStatus::Failed, Some(message.clone()));
         Event::Failed {
             failure: Failure::Io { message },
-            entry: shown(unsaved.into_entry(EntryId(0), now_ms())),
+            entry: shown(unsaved.into_entry(0, now_ms())),
         }
     }
 
@@ -292,8 +296,7 @@ impl Reply {
     }
 
     fn save_jet_entry(&self, entry: NewEntry, ending: &Ending) -> Result<Entry, MemoryError> {
-        let dir = &self.context.dir;
-        let entry = Transcript::open(dir).append(entry, now_ms())?;
+        let entry = self.context.memory.append(entry, now_ms())?;
         if let Ending::Finished(summary) = ending {
             self.save_context(summary)?;
         }
@@ -301,14 +304,14 @@ impl Reply {
     }
 
     fn save_context(&self, summary: &Summary) -> Result<(), MemoryError> {
-        let dir = &self.context.dir;
-        let Some(mut session) = Session::load(dir)? else {
+        let saved = &self.context.memory;
+        let Some(mut session) = saved.session()? else {
             return Ok(());
         };
         session.context_tokens = summary.context_tokens;
         session.context = summary.context.clone();
         session.context.model = Some(self.context.request.model);
-        session.save(dir)
+        saved.save_session(&session)
     }
 }
 
@@ -366,7 +369,7 @@ mod tests {
             .then(gone())
             .then(gone())
             .then(Script::lines(reply_lines("third-session", "Third")));
-        let chat = Chat::with_transport("reply-vanished", scripted);
+        let chat = Chat::with_transport(scripted);
         chat.send(message("hello"));
         let events = chat.send(message("are you there?"));
 
@@ -423,10 +426,7 @@ mod tests {
         let missing = TransportError::ClaudeMissing {
             searched: vec!["/a/claude".into(), "/b/claude".into()],
         };
-        let chat = Chat::with_transport(
-            "reply-missing",
-            Scripted::new().then(Script::cannot_start(missing)),
-        );
+        let chat = Chat::with_transport(Scripted::new().then(Script::cannot_start(missing)));
         let events = chat.send(message("hello"));
         let [Event::Failed { failure, entry }] = &events[..] else {
             panic!("expected one Failed event, got {events:?}");
@@ -459,7 +459,7 @@ mod tests {
             delta_line("mood: neutral\nRead it."),
             result_line("Read it."),
         ];
-        let chat = Chat::with_transport("reply-web", Scripted::new().then(Script::lines(lines)));
+        let chat = Chat::with_transport(Scripted::new().then(Script::lines(lines)));
         let events = chat.send(message("read https://github.com/anthropics"));
 
         let cards: Vec<(&str, &str, &serde_json::Value)> = events

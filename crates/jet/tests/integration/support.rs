@@ -22,7 +22,13 @@ pub struct Host {
     pub origin: String,
 }
 impl Host {
+    /// A fresh data directory with the Claude Code stand-in `provider.py` set as the server's
+    /// program by the owner, who is an admin.
     pub fn start() -> Self {
+        Self::start_with(&[])
+    }
+    /// Like `start`, with extra flags for the host.
+    pub fn start_with(flags: &[&str]) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let program = dir.path().join("provider.py");
         std::fs::write(&program, include_str!("provider.py")).unwrap();
@@ -31,12 +37,9 @@ impl Host {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
-        std::fs::write(
-            dir.path().join("settings.json"),
-            json!({"model":"sonnet","claudePath":program}).to_string(),
-        )
-        .unwrap();
-        Self::launch(dir)
+        let host = Self::launch_with(dir, flags);
+        host.set_programs(json!({"claudePath": program}));
+        host
     }
     fn launch(dir: tempfile::TempDir) -> Self {
         Self::launch_with(dir, &[])
@@ -53,19 +56,7 @@ impl Host {
             .stderr(Stdio::inherit())
             .spawn()
             .unwrap();
-        let mut line = String::new();
-        BufReader::new(child.stdout.take().unwrap())
-            .read_line(&mut line)
-            .unwrap();
-        assert!(
-            line.starts_with("Jet listening on "),
-            "server did not start: {line}"
-        );
-        let url: String = line
-            .trim()
-            .strip_prefix("Jet listening on ")
-            .unwrap()
-            .into();
+        let url = listening_url(&mut child);
         let origin = flags
             .iter()
             .position(|flag| *flag == "--public-origin")
@@ -78,6 +69,30 @@ impl Host {
             origin,
             url,
             dir,
+        }
+    }
+    /// Sets where the provider programs are, as the owner does on the settings page. Only an admin
+    /// may, and the owner is one.
+    pub fn set_programs(&self, paths: Value) {
+        let (status, body) = self.put("/api/settings", paths);
+        assert_eq!(status, 200, "the owner could not set the programs: {body}");
+    }
+    /// The owner, as a client of the host.
+    pub fn owner(&self) -> User {
+        User {
+            url: self.url.clone(),
+            origin: self.origin.clone(),
+            cookie: self.cookie.clone(),
+        }
+    }
+    /// Signs in another account of the seeded organisation.
+    pub fn sign_in_as(&self, email: &str) -> User {
+        let response = sign_in(&self.url, &self.origin, email, PASSWORD);
+        assert_eq!(response.status(), 200, "{email} could not sign in");
+        User {
+            url: self.url.clone(),
+            origin: self.origin.clone(),
+            cookie: cookie_header(&response),
         }
     }
     /// Adds the owner's sign-in to a request, with the `Origin` that a request from Jet's page has.
@@ -97,35 +112,13 @@ impl Host {
         Self::launch(dir)
     }
     pub fn get(&self, path: &str) -> Value {
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(REQUEST_LIMIT))
-            .build()
-            .into();
-        let text = self
-            .signed(agent.get(format!("{}{path}", self.url)))
-            .call()
-            .unwrap()
-            .body_mut()
-            .read_to_string()
-            .unwrap();
-        serde_json::from_str(&text).unwrap()
+        self.owner().get(path)
     }
     pub fn post(&self, path: &str, value: Value) -> (u16, Value) {
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .timeout_global(Some(REQUEST_LIMIT))
-            .build()
-            .into();
-        let mut response = self
-            .signed(agent.post(format!("{}{path}", self.url)))
-            .header("content-type", "application/json")
-            .send(value.to_string())
-            .unwrap();
-        let status = response.status().as_u16();
-        (
-            status,
-            serde_json::from_str(&response.body_mut().read_to_string().unwrap()).unwrap(),
-        )
+        self.owner().post(path, value)
+    }
+    pub fn put(&self, path: &str, value: Value) -> (u16, Value) {
+        self.owner().put(path, value)
     }
     /// Posts raw bytes, the way the page posts a clip of audio.
     pub fn post_bytes(&self, path: &str, bytes: &[u8]) -> (u16, Value) {
@@ -145,25 +138,8 @@ impl Host {
             serde_json::from_str(&response.body_mut().read_to_string().unwrap()).unwrap(),
         )
     }
-    /// Uploads a file as the raw request body, the way the page does. The name travels in the
-    /// query, percent-encoded.
     pub fn upload(&self, name: &str, bytes: &[u8]) -> (u16, Value) {
-        let name: String = url::form_urlencoded::byte_serialize(name.as_bytes()).collect();
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .timeout_global(Some(REQUEST_LIMIT))
-            .build()
-            .into();
-        let mut response = self
-            .signed(agent.post(format!("{}/api/files?name={name}", self.url)))
-            .header("content-type", "application/octet-stream")
-            .send(bytes)
-            .unwrap();
-        let status = response.status().as_u16();
-        (
-            status,
-            serde_json::from_str(&response.body_mut().read_to_string().unwrap()).unwrap(),
-        )
+        self.owner().upload(name, bytes)
     }
     pub fn delete(&self, path: &str) -> u16 {
         let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -178,6 +154,103 @@ impl Host {
             .as_u16()
     }
     pub fn until(&self, condition: impl Fn(&Value) -> bool) -> Value {
+        self.owner().until(condition)
+    }
+    pub fn send_without_ack(&self, request: &Value) -> std::net::TcpStream {
+        let mut socket =
+            std::net::TcpStream::connect(self.url.trim_start_matches("http://")).unwrap();
+        let body = request.to_string();
+        write!(socket, "POST /api/chat/send HTTP/1.1\r\nHost: {}\r\n{}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", self.url.trim_start_matches("http://"), self.signed_lines(), body.len()).unwrap();
+        socket
+    }
+    /// Opens the event stream. A read that stalls fails the test instead of hanging it.
+    pub fn events(&self, epoch: &str, cursor: u64) -> ureq::http::Response<ureq::Body> {
+        self.owner().events(epoch, cursor)
+    }
+    /// The bytes of the database and its write-ahead log, to look for what must not be in them.
+    pub fn database_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for name in ["jet.sqlite3", "jet.sqlite3-wal"] {
+            bytes.extend(std::fs::read(self.dir.path().join(name)).unwrap_or_default());
+        }
+        bytes
+    }
+    pub fn invocations(&self) -> usize {
+        std::fs::read_to_string(self.dir.path().join("calls"))
+            .unwrap_or_default()
+            .lines()
+            .count()
+    }
+}
+impl Drop for Host {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// One signed-in account talking to the host, as its page does.
+#[derive(Clone)]
+pub struct User {
+    pub url: String,
+    pub origin: String,
+    pub cookie: String,
+}
+impl User {
+    fn agent() -> ureq::Agent {
+        ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_global(Some(REQUEST_LIMIT))
+            .build()
+            .into()
+    }
+    fn signed<B>(&self, request: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
+        request
+            .header("cookie", &self.cookie)
+            .header("origin", &self.origin)
+    }
+    /// Gets JSON; any status but 200 fails the test.
+    pub fn get(&self, path: &str) -> Value {
+        let (status, value) = self.fetch(path);
+        assert_eq!(status, 200, "GET {path}: {value}");
+        value
+    }
+    /// Gets a path and gives its status and its body, as JSON when it is JSON.
+    pub fn fetch(&self, path: &str) -> (u16, Value) {
+        let response = self
+            .signed(Self::agent().get(format!("{}{path}", self.url)))
+            .call()
+            .unwrap();
+        answer(response)
+    }
+    pub fn post(&self, path: &str, value: Value) -> (u16, Value) {
+        let response = self
+            .signed(Self::agent().post(format!("{}{path}", self.url)))
+            .header("content-type", "application/json")
+            .send(value.to_string())
+            .unwrap();
+        answer(response)
+    }
+    pub fn put(&self, path: &str, value: Value) -> (u16, Value) {
+        let response = self
+            .signed(Self::agent().put(format!("{}{path}", self.url)))
+            .header("content-type", "application/json")
+            .send(value.to_string())
+            .unwrap();
+        answer(response)
+    }
+    /// Uploads a file as the raw request body, the way the page does. The name travels in the
+    /// query, percent-encoded.
+    pub fn upload(&self, name: &str, bytes: &[u8]) -> (u16, Value) {
+        let name: String = url::form_urlencoded::byte_serialize(name.as_bytes()).collect();
+        let response = self
+            .signed(Self::agent().post(format!("{}/api/files?name={name}", self.url)))
+            .header("content-type", "application/octet-stream")
+            .send(bytes)
+            .unwrap();
+        answer(response)
+    }
+    pub fn until(&self, condition: impl Fn(&Value) -> bool) -> Value {
         let deadline = Instant::now() + Duration::from_secs(8);
         loop {
             let snapshot = self.get("/api/snapshot");
@@ -187,13 +260,6 @@ impl Host {
             assert!(Instant::now() < deadline, "snapshot timed out: {snapshot}");
             std::thread::sleep(Duration::from_millis(15));
         }
-    }
-    pub fn send_without_ack(&self, request: &Value) -> std::net::TcpStream {
-        let mut socket =
-            std::net::TcpStream::connect(self.url.trim_start_matches("http://")).unwrap();
-        let body = request.to_string();
-        write!(socket, "POST /api/chat/send HTTP/1.1\r\nHost: {}\r\n{}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", self.url.trim_start_matches("http://"), self.signed_lines(), body.len()).unwrap();
-        socket
     }
     /// Opens the event stream. A read that stalls fails the test instead of hanging it.
     pub fn events(&self, epoch: &str, cursor: u64) -> ureq::http::Response<ureq::Body> {
@@ -208,18 +274,26 @@ impl Host {
         .call()
         .unwrap()
     }
-    pub fn invocations(&self) -> usize {
-        std::fs::read_to_string(self.dir.path().join("calls"))
-            .unwrap_or_default()
-            .lines()
-            .count()
-    }
 }
-impl Drop for Host {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
+
+/// The status of an answer and its body, as JSON, or as a JSON string when it is not JSON.
+fn answer(mut response: ureq::http::Response<ureq::Body>) -> (u16, Value) {
+    let status = response.status().as_u16();
+    let text = response.body_mut().read_to_string().unwrap_or_default();
+    let value = serde_json::from_str(&text).unwrap_or(Value::String(text));
+    (status, value)
+}
+
+/// Reads the address the host prints once it listens.
+pub fn listening_url(child: &mut Child) -> String {
+    let mut line = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    line.trim()
+        .strip_prefix("Jet listening on ")
+        .unwrap_or_else(|| panic!("server did not start: {line}"))
+        .to_owned()
 }
 
 /// Posts a sign-in with the given `Origin` and returns the whole answer, cookies included.
@@ -269,11 +343,7 @@ pub fn host() -> Host {
             fake.display()
         );
     }
-    std::fs::write(
-        host.dir.path().join("settings.json"),
-        json!({"claudePath":claude,"codexPath":codex}).to_string(),
-    )
-    .unwrap();
+    host.set_programs(json!({"claudePath":claude,"codexPath":codex}));
     host
 }
 pub fn send(host: &Host, id: &str, model: &str, script: Value, active: Value) -> Value {

@@ -144,8 +144,11 @@ impl HttpMcpClient {
             StreamableHttpClientTransport,
             streamable_http_client::StreamableHttpClientTransportConfig,
         };
+        // A redirect could take Jet to a service on the server itself that the app's owner may not
+        // reach, so none is followed.
         let client = reqwest::Client::builder()
             .connect_timeout(DEADLINE)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(failure)?;
         // A write with an uncertain outcome must never be sent a second time.

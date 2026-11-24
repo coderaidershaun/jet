@@ -13,7 +13,7 @@ mod token;
 pub use error::AccountError;
 pub(crate) use guard::guard;
 pub(crate) use routes::router;
-pub(crate) use seed::seed;
+pub(crate) use seed::{OWNER, seed};
 pub(crate) use token::Keys;
 
 use crate::{
@@ -69,10 +69,9 @@ impl<S: Send + Sync> FromRequestParts<S> for SignedIn {
 }
 
 impl Accounts {
-    /// Opens the database, seeds the demo organisation when it holds no user yet, and loads the
-    /// signing secret.
-    pub(crate) fn open(config: &ServerConfig) -> Result<Self, AccountError> {
-        let store = Store::open(&config.data_dir)?;
+    /// Seeds the demo organisation when the database holds no user yet, and loads the signing
+    /// secret.
+    pub(crate) fn open(config: &ServerConfig, store: Store) -> Result<Self, AccountError> {
         if store.user_count()? == 0 {
             seed(&store)?;
         }

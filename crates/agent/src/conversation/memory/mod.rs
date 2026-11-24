@@ -1,101 +1,132 @@
-//! The files the app keeps in its data folder: the thread, the session record and the
-//! three notes. Each file sits behind one small module so a database could replace it.
+//! What one chat keeps between messages: its thread, its provider session and its user's three
+//! notes. The host decides where they are saved by implementing [`Storage`], one value for each
+//! chat, so this crate never knows about users, files or databases.
 
+mod entry;
+mod in_memory;
 mod notes;
 mod session;
-mod transcript;
 
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(crate) use session::Session;
-pub(crate) use transcript::{NewEntry, Transcript};
+pub use entry::NewEntry;
+pub use in_memory::InMemory;
+pub use session::Session;
 
-/// The folder that holds everything the app remembers.
-#[derive(Debug, Clone)]
-pub struct DataDir {
-    root: PathBuf,
+use crate::chat::{Entry, EntryId, Notes, Role};
+
+/// Where one chat's thread and session, and the notes of the user it belongs to, are saved. Each
+/// call acts only for that chat and that user.
+pub trait Storage: Send + Sync {
+    /// Every entry of the thread, oldest first. Entries of a forgotten thread are not in it.
+    fn entries(&self) -> Result<Vec<Entry>, MemoryError>;
+    /// The newest `limit` entries of the thread, oldest first.
+    fn last_entries(&self, limit: usize) -> Result<Vec<Entry>, MemoryError>;
+    /// Saves the entry under the next id of this chat, one more than any id it ever gave, and
+    /// gives it back.
+    fn add_entry(&self, entry: NewEntry, at: u64) -> Result<Entry, MemoryError>;
+    /// Replaces the saved entry that has the same id.
+    fn replace_entry(&self, entry: &Entry) -> Result<(), MemoryError>;
+    /// Starts the thread over: every entry so far leaves it.
+    fn forget_entries(&self, at: u64) -> Result<(), MemoryError>;
+    fn session(&self) -> Result<Option<Session>, MemoryError>;
+    /// Saves the session record, or removes it with `None`.
+    fn save_session(&self, session: Option<&Session>) -> Result<(), MemoryError>;
+    /// The notes as saved; never-written notes are empty.
+    fn notes(&self) -> Result<Notes, MemoryError>;
+    fn save_notes(&self, notes: &Notes) -> Result<(), MemoryError>;
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum MemoryError {
-    #[error("could not read {path}: {source}")]
-    Read {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("could not write {path}: {source}")]
-    Write {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("{path} line {line} is not valid: {source}")]
-    Json {
-        path: PathBuf,
-        line: usize,
-        #[source]
-        source: serde_json::Error,
-    },
+    #[error("the saved chat could not be read or written: {0}")]
+    Storage(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
-impl DataDir {
-    pub fn new(root: impl Into<PathBuf>) -> DataDir {
-        DataDir { root: root.into() }
-    }
+/// The chat's storage, shared by the conversation and the replies it starts.
+#[derive(Clone)]
+pub(crate) struct Saved {
+    storage: Arc<dyn Storage>,
+    /// Held while a reaction is read and written back, so the user and Jet reacting at the same
+    /// moment cannot undo each other's change.
+    reacting: Arc<Mutex<()>>,
+}
 
-    pub(crate) fn root(&self) -> &Path {
-        &self.root
-    }
-
-    fn path(&self, name: &str) -> PathBuf {
-        self.root.join(name)
-    }
-
-    /// The text of a file, or `None` when it does not exist yet.
-    fn read(&self, name: &str) -> Result<Option<String>, MemoryError> {
-        let path = self.path(name);
-        match std::fs::read_to_string(&path) {
-            Ok(text) => Ok(Some(text)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(source) => Err(MemoryError::Read { path, source }),
+impl Saved {
+    pub(crate) fn new(storage: Arc<dyn Storage>) -> Saved {
+        Saved {
+            storage,
+            reacting: Arc::new(Mutex::new(())),
         }
     }
 
-    /// Replaces a file in one step, so a crash leaves the old or the new text, never half.
-    /// Each write gets its own temporary file, because the reply and the review can save
-    /// the same file at the same moment.
-    fn write(&self, name: &str, text: &str) -> Result<(), MemoryError> {
-        static NEXT_WRITE: AtomicU64 = AtomicU64::new(0);
-        let path = self.path(name);
-        let write_number = NEXT_WRITE.fetch_add(1, Ordering::Relaxed);
-        let temporary = self.path(&format!("{name}.{write_number}.tmp"));
-        let write_failed = |source| MemoryError::Write {
-            path: path.clone(),
-            source,
+    pub(crate) fn entries(&self) -> Result<Vec<Entry>, MemoryError> {
+        self.storage.entries()
+    }
+
+    pub(crate) fn last(&self, limit: usize) -> Result<Vec<Entry>, MemoryError> {
+        self.storage.last_entries(limit)
+    }
+
+    /// Entries newer than `id`, oldest first.
+    pub(crate) fn after(&self, id: EntryId) -> Result<Vec<Entry>, MemoryError> {
+        let mut entries = self.entries()?;
+        entries.retain(|entry| entry.id > id);
+        Ok(entries)
+    }
+
+    pub(crate) fn append(&self, entry: NewEntry, at: u64) -> Result<Entry, MemoryError> {
+        self.storage.add_entry(entry, at)
+    }
+
+    /// Puts one side's emoji on the other side's entry, or takes it off with `None`, and gives the
+    /// entry back with `true` when it changed. `None` when no entry of the other side has that id.
+    pub(crate) fn react(
+        &self,
+        id: EntryId,
+        by: Role,
+        emoji: Option<&str>,
+        at: u64,
+    ) -> Result<Option<(Entry, bool)>, MemoryError> {
+        let _reacting = crate::lock(&self.reacting);
+        let Some(mut entry) = self.entries()?.into_iter().find(|entry| entry.id == id) else {
+            return Ok(None);
         };
-        std::fs::create_dir_all(&self.root).map_err(write_failed)?;
-        std::fs::write(&temporary, text).map_err(write_failed)?;
-        std::fs::rename(&temporary, &path).map_err(write_failed)
-    }
-
-    fn remove(&self, name: &str) -> Result<(), MemoryError> {
-        let path = self.path(name);
-        match std::fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(source) => Err(MemoryError::Write { path, source }),
+        if entry.role == by {
+            return Ok(None);
         }
+        if entry.reaction_by(by) == emoji {
+            return Ok(Some((entry, false)));
+        }
+        entry.set_reaction(by, emoji, at);
+        self.storage.replace_entry(&entry)?;
+        Ok(Some((entry, true)))
     }
 
-    /// An empty folder under the system temp folder, for tests.
-    #[cfg(test)]
-    pub(crate) fn scratch(name: &str) -> DataDir {
-        let root = std::env::temp_dir().join(format!("agent-test-{}-{name}", std::process::id()));
-        std::fs::remove_dir_all(&root).ok();
-        DataDir::new(root)
+    pub(crate) fn forget(&self, at: u64) -> Result<(), MemoryError> {
+        self.storage.forget_entries(at)?;
+        self.storage.save_session(None)
+    }
+
+    pub(crate) fn session(&self) -> Result<Option<Session>, MemoryError> {
+        self.storage.session()
+    }
+
+    pub(crate) fn save_session(&self, session: &Session) -> Result<(), MemoryError> {
+        self.storage.save_session(Some(session))
+    }
+
+    /// The notes, cut to their limits.
+    pub(crate) fn notes(&self) -> Result<Notes, MemoryError> {
+        Ok(self.storage.notes()?.trimmed())
+    }
+
+    /// Saves the notes after cutting them to their limits, and returns what was saved.
+    pub(crate) fn save_notes(&self, notes: &Notes) -> Result<Notes, MemoryError> {
+        let notes = notes.trimmed();
+        self.storage.save_notes(&notes)?;
+        Ok(notes)
     }
 }
 
@@ -111,84 +142,35 @@ pub fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chat::{Entry, EntryId, MEMORY_LIMIT, Mood, Notes, Role, USER_LIMIT};
+    use crate::chat::{MEMORY_LIMIT, Mood, USER_LIMIT};
 
     #[test]
-    fn saved_files_survive_a_crash_and_older_versions() {
-        // Notes are cut to their caps on a line boundary.
+    fn notes_are_cut_on_a_line_boundary_and_ids_keep_counting_after_forget() {
         assert_eq!(notes::trim_to_limit("a\nbb\nccc", 4), "a\nbb");
         assert_eq!(notes::trim_to_limit("ééééé\nnext", 3), "ééé");
-        let dir = DataDir::scratch("notes-caps");
-        let saved = Notes {
-            memory: "- fact\n".repeat(MEMORY_LIMIT),
-            user: "u".repeat(USER_LIMIT + 50),
-            recent: String::new(),
-        }
-        .save(&dir)
-        .unwrap();
-        assert!(saved.memory.chars().count() <= MEMORY_LIMIT);
-        assert!(saved.memory.ends_with("- fact"), "cut on a line boundary");
-        assert_eq!(saved.user.chars().count(), USER_LIMIT);
-        assert_eq!(Notes::load(&dir).unwrap(), saved);
-
-        // Notes and a session record written by an older version still load.
-        let old = DataDir::scratch("older-shape");
-        old.write("MEMORY.md", &"- old fact\n".repeat(MEMORY_LIMIT))
+        let saved = Saved::new(Arc::new(InMemory::default()));
+        let kept = saved
+            .save_notes(&Notes {
+                memory: "- fact\n".repeat(MEMORY_LIMIT),
+                user: "u".repeat(USER_LIMIT + 50),
+                recent: String::new(),
+            })
             .unwrap();
-        let notes = Notes::load(&old).unwrap();
-        assert!(
-            notes.memory.starts_with("- old fact") && notes.memory.chars().count() <= MEMORY_LIMIT
-        );
-        assert_eq!((notes.user.as_str(), notes.recent.as_str()), ("", ""));
-        old.write(
-            "session.json",
-            r#"{"sessionId":"abc","startedAt":5,"lastRequestAt":7,"contextTokens":9}"#,
-        )
-        .unwrap();
-        let session = Session::load(&old).unwrap().unwrap();
-        assert_eq!(session.session_id.0, "abc");
-        assert_eq!((session.last_request_at, session.context_tokens), (7, 9));
+        assert!(kept.memory.chars().count() <= MEMORY_LIMIT);
+        assert!(kept.memory.ends_with("- fact"), "cut on a line boundary");
+        assert_eq!(kept.user.chars().count(), USER_LIMIT);
+        assert_eq!(saved.notes().unwrap(), kept);
 
-        // A half-written last line is skipped, then replaced by the next entry.
-        let dir = DataDir::scratch("transcript-torn");
-        let transcript = Transcript::open(&dir);
-        transcript.append(NewEntry::user("one"), 10).unwrap();
+        saved.append(NewEntry::user_text("one"), 10).unwrap();
         let reply = NewEntry {
             role: Role::Jet,
             mood: Some(Mood::Hello),
-            ..NewEntry::user("two")
+            ..NewEntry::user_text("two")
         };
-        transcript.append(reply, 20).unwrap();
-        let path = dir.path("transcript.jsonl");
-        let mut file = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&path)
-            .unwrap();
-        std::io::Write::write_all(&mut file, br#"{"id":3,"role":"us"#).unwrap();
-
-        let entries = transcript.entries().unwrap();
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[1].text, "two");
-        for word in [
-            "happy", "excited", "thinking", "curious", "sorry", "alert", "annoyed", "unknown",
-        ] {
-            let mut json = serde_json::to_value(&entries[1]).unwrap();
-            json["mood"] = serde_json::json!(word);
-            let entry = serde_json::from_value::<Entry>(json).unwrap();
-            assert_eq!(entry.mood, Some(Mood::Neutral), "{word}");
-        }
-        let third = transcript.append(NewEntry::user("three"), 30).unwrap();
+        saved.append(reply, 20).unwrap();
+        saved.forget(30).unwrap();
+        assert!(saved.entries().unwrap().is_empty());
+        let third = saved.append(NewEntry::user_text("three"), 40).unwrap();
         assert_eq!(third.id, EntryId(3));
-        assert_eq!(transcript.entries().unwrap().len(), 3);
-
-        // A bad line anywhere else is an error, not a silent gap.
-        let broken = std::fs::read_to_string(&path)
-            .unwrap()
-            .replacen("\"two\"", "tw0", 1);
-        std::fs::write(&path, broken).unwrap();
-        assert!(matches!(
-            transcript.entries(),
-            Err(MemoryError::Json { line: 2, .. })
-        ));
     }
 }

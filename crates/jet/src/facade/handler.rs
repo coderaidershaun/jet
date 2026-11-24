@@ -8,6 +8,7 @@ use agent::{
     mcp::{ToolRequest, ToolTarget},
 };
 use rmcp::{RoleServer, ServerHandler, model::*, service::RequestContext};
+use serde_json::to_value;
 use serde_json::{Map, Value, json};
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 use tokio::sync::mpsc;
@@ -55,7 +56,7 @@ impl ServerHandler for Handler {
         let arguments = Value::Object(params.arguments.unwrap_or_default());
         tools::validate(&params.name, &arguments)?;
         if params.name == "files_read" {
-            return Ok(match self.read_file(&arguments).await {
+            return Ok(match self.read_file(&arguments, &binding).await {
                 Ok(result) => result,
                 Err(error) => CallToolResult::structured_error(json!({"error":error})),
             }
@@ -117,7 +118,11 @@ fn message(error: impl Display) -> Value {
 impl Handler {
     /// Reads part of a file. A picture comes back as an image block with its facts beside it as
     /// text, and no structured result, so the picture's bytes never reach the saved transcript.
-    async fn read_file(&self, arguments: &Value) -> Result<CallToolResult, Value> {
+    async fn read_file(
+        &self,
+        arguments: &Value,
+        binding: &Binding,
+    ) -> Result<CallToolResult, Value> {
         let number = |key: &str| {
             arguments[key]
                 .as_u64()
@@ -129,7 +134,8 @@ impl Handler {
             count: number("count"),
         };
         let id = arguments["id"].as_str().unwrap_or_default();
-        let (about, reading) = self.0.files.read(id, &range).await.map_err(message)?;
+        let user = binding.owner.user;
+        let (about, reading) = self.0.files.read(user, id, &range).await.map_err(message)?;
         Ok(match reading {
             Reading::Image {
                 data,
@@ -153,7 +159,11 @@ impl Handler {
 
     /// The arguments for the tool, with each `{"$file": id}` replaced by the address of that file.
     /// A file the model cannot see is refused here, so the tool is never called with its address.
-    async fn with_file_addresses(&self, arguments: &Value) -> Result<Map<String, Value>, Value> {
+    async fn with_file_addresses(
+        &self,
+        arguments: &Value,
+        binding: &Binding,
+    ) -> Result<Map<String, Value>, Value> {
         let ids: Vec<String> = handoff::file_ids(arguments)
             .into_iter()
             .map(str::to_owned)
@@ -161,9 +171,10 @@ impl Handler {
         let mut addressed = arguments.clone();
         if !ids.is_empty() {
             let files = self.0.files.clone();
+            let user = binding.owner.user;
             let visible = on_worker(move || {
                 ids.into_iter()
-                    .map(|id| match files.visible_id(&id) {
+                    .map(|id| match files.visible_id(user, &id) {
                         Some(file) => Ok((id, file)),
                         None => Err(id),
                     })
@@ -202,19 +213,21 @@ impl Handler {
         }
         if !binding.reads_web {
             let is_allowed = !binding.has_read_github
-                || (name == "tools_call" && self.read_only(arguments).await);
+                || (name == "tools_call" && self.read_only(arguments, binding).await);
             return (!is_allowed).then_some(WriteRefused::WriteAfterWebText);
         }
         let card = context
             .meta
             .get(agent::TOOL_USE_META)
             .and_then(Value::as_str);
-        let chat = lock(&self.0.chat).upgrade();
+        let chat = self.0.chat_of(binding);
         let read_web = match (card, chat) {
             (Some(card), Some(chat)) => chat.read_web_before(&binding.turn, card).await,
             _ => None,
         };
-        if read_web == Some(false) || (name == "tools_call" && self.read_only(arguments).await) {
+        if read_web == Some(false)
+            || (name == "tools_call" && self.read_only(arguments, binding).await)
+        {
             return None;
         }
         Some(match (card, read_web) {
@@ -224,11 +237,15 @@ impl Handler {
         })
     }
 
-    /// Whether the app marks the tool `readOnlyHint`. A tool that cannot be found is not.
-    async fn read_only(&self, arguments: &Value) -> bool {
+    /// Whether the app marks the tool `readOnlyHint`. A tool that cannot be found, or of an app
+    /// that is not the turn's user's, is not.
+    async fn read_only(&self, arguments: &Value, binding: &Binding) -> bool {
         let Ok(target) = serde_json::from_value::<ToolTarget>(arguments.clone()) else {
             return false;
         };
+        if self.owned(&target.app_id, binding).is_err() {
+            return false;
+        }
         let Ok(catalogue) = self.0.mcp.catalogue(&target.app_id).await else {
             return false;
         };
@@ -249,6 +266,7 @@ impl Handler {
         context: RequestContext<RoleServer>,
     ) -> Result<Value, Value> {
         let target: ToolTarget = serde_json::from_value(arguments.clone()).map_err(message)?;
+        self.owned(&target.app_id, &binding)?;
         // A call that names no card has its card found by the arguments the model wrote, so they
         // are kept from before any `$file` swap.
         let sent = arguments["arguments"].clone();
@@ -256,7 +274,7 @@ impl Handler {
         let request = ToolRequest {
             request_id: request_id.clone(),
             target: target.clone(),
-            arguments: self.with_file_addresses(&sent).await?,
+            arguments: self.with_file_addresses(&sent, &binding).await?,
         };
         let running = RunningCall {
             card_id: context
@@ -281,8 +299,7 @@ impl Handler {
             tokio::select! {
                 result = &mut call => break result,
                 Some(update) = progress.recv() => {
-                    let chat = lock(&self.0.chat).upgrade();
-                    if let Some(chat) = chat {
+                    if let Some(chat) = self.0.chat_of(&binding) {
                         chat.tool_progress(&binding.turn, &running, update);
                     }
                 }
@@ -304,50 +321,65 @@ impl Handler {
         binding: Binding,
         context: RequestContext<RoleServer>,
     ) -> Result<Value, Value> {
+        let user = binding.owner.user;
         match name {
-            "apps_list" => Ok(json!(lock(&self.0.registry).list())),
-            "apps_update" => self.apps_update(&arguments).await,
+            "apps_list" => Ok(json!(self.0.apps.list(user))),
+            "apps_update" => self.apps_update(&arguments, &binding).await,
             "apps_open" => self.apps_open(&arguments, &binding),
-            "tools_search" => self.tools_search(&arguments).await,
-            "tools_describe" => self.tools_describe(arguments).await,
+            "tools_search" => self.tools_search(&arguments, &binding).await,
+            "tools_describe" => self.tools_describe(arguments, &binding).await,
             "tools_call" => self.tools_call(arguments, token, binding, context).await,
-            "files_export" => self.files_export(arguments).await,
+            "files_export" => self.files_export(arguments, &binding).await,
             "github_activity" => self.github_activity(&arguments, token, &binding).await,
             "files_list" => {
                 let files = self.0.files.clone();
-                let listed = on_worker(move || files.list()).await.map_err(message)?;
+                let listed = on_worker(move || files.list(user))
+                    .await
+                    .map_err(message)?
+                    .map_err(message)?;
                 Ok(json!({"files": listed}))
             }
             _ => Err(message("unknown facade tool")),
         }
     }
 
-    async fn apps_update(&self, arguments: &Value) -> Result<Value, Value> {
+    /// Changes the turn's user's apps, with the same rule as the page: only an admin may save an
+    /// app at a port, a loopback or a private address. A refusal comes back with its kind.
+    async fn apps_update(&self, arguments: &Value, binding: &Binding) -> Result<Value, Value> {
         let command: RegistryCommand =
             serde_json::from_value(arguments["command"].clone()).map_err(message)?;
-        let registry = self.0.registry.clone();
-        on_worker(move || lock(&registry).execute(command))
+        let (apps, user) = (self.0.apps.clone(), binding.owner.user);
+        on_worker(move || apps.execute(user, command))
             .await
             .map_err(message)?
             .map(|result| json!(result))
-            .map_err(message)
+            .map_err(|error| to_value(&error).unwrap_or_else(|_| message(&error)))
+    }
+
+    /// Refuses an app that is not the turn's user's, in the same words as a missing one.
+    fn owned(&self, id: &AppId, binding: &Binding) -> Result<(), Value> {
+        match self.0.apps.owned(binding.owner.user, id) {
+            Some(_) => Ok(()),
+            None => Err(message("app is no longer registered")),
+        }
     }
 
     fn apps_open(&self, arguments: &Value, binding: &Binding) -> Result<Value, Value> {
         let id: AppId = serde_json::from_value(arguments["appId"].clone()).map_err(message)?;
-        if lock(&self.0.registry).get(&id).is_none() {
-            return Err(message("app is no longer registered"));
-        }
-        let chat = lock(&self.0.chat)
-            .upgrade()
+        self.owned(&id, binding)?;
+        let chat = self
+            .0
+            .chat_of(binding)
             .ok_or_else(|| message("host closed"))?;
         chat.open_app(&binding.turn, &id).map_err(message)?;
         Ok(json!({"appId":id,"opened":true}))
     }
 
-    async fn tools_search(&self, arguments: &Value) -> Result<Value, Value> {
-        let ids: Vec<_> = lock(&self.0.registry)
-            .list()
+    async fn tools_search(&self, arguments: &Value, binding: &Binding) -> Result<Value, Value> {
+        let ids: Vec<_> = self
+            .0
+            .apps
+            .list(binding.owner.user)
             .iter()
             .filter(|app| app.enabled && app.mcp_url.is_some())
             .map(|app| app.id.clone())
@@ -394,8 +426,9 @@ impl Handler {
         Ok(json!({"tools":found,"errors":errors,"truncated":truncated}))
     }
 
-    async fn tools_describe(&self, arguments: Value) -> Result<Value, Value> {
+    async fn tools_describe(&self, arguments: Value, binding: &Binding) -> Result<Value, Value> {
         let target: ToolTarget = serde_json::from_value(arguments).map_err(message)?;
+        self.owned(&target.app_id, binding)?;
         let catalogue = self
             .0
             .mcp
@@ -429,7 +462,7 @@ impl Handler {
             bound.has_read_github = true;
         }
         let evidence = self.0.evidence.clone();
-        let user = binding.user;
+        let user = binding.owner.user;
         let repo = arguments["repo"].as_str().unwrap_or_default().to_owned();
         let since = arguments["since"].as_str().unwrap_or_default().to_owned();
         on_worker(move || evidence.github_activity(user, &repo, &since))
@@ -438,10 +471,10 @@ impl Handler {
             .map_err(|error| json!({"kind": error.kind(), "message": error.to_string()}))
     }
 
-    async fn files_export(&self, arguments: Value) -> Result<Value, Value> {
+    async fn files_export(&self, arguments: Value, binding: &Binding) -> Result<Value, Value> {
         let request: ExportRequest = serde_json::from_value(arguments).map_err(message)?;
-        let files = self.0.files.clone();
-        let saved = on_worker(move || files.export(request))
+        let (files, user) = (self.0.files.clone(), binding.owner.user);
+        let saved = on_worker(move || files.export(user, request))
             .await
             .map_err(message)?
             .map_err(message)?;

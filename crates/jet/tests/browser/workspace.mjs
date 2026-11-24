@@ -1,6 +1,6 @@
-import { createProcesses, signIn, until } from './process.mjs';
+import { createProcesses, saveOwnerSettings, signIn, until } from './process.mjs';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -16,7 +16,6 @@ let browser, page, origin;
 try {
   const data = path.join(scratch, 'data');
   await mkdir(data);
-  const settings = JSON.parse(await readFile(path.join(root, 'crates/jet/ui/bridge/default-settings.json')));
   const provider = path.join(scratch, 'provider.cjs');
   const markdown = '## Compact content\n\n| Long heading alpha | Long heading beta | Long heading gamma |\n|---|---|---|\n| A complete table cell | Another complete cell | A third complete cell |\n\n$$x^2 + y^2 = z^2$$\n\n```js\nconst longLine = "A deliberately long code line stays inside the conversation bubble";\n```';
   await writeFile(provider, '#!' + process.execPath + '\n' + `
@@ -43,9 +42,8 @@ if (input.includes('fail-before-init')) {
 }
 `);
   await chmod(provider, 0o755);
-  Object.assign(settings, { model: 'sonnet', claudePath: provider, reducedMotion: true });
-  await writeFile(path.join(data, 'settings.json'), JSON.stringify(settings));
   origin = await launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', '127.0.0.1:0', '--data-dir', data, '--ui-dir', path.join(root, 'crates/jet/ui'), '--disable-feelings', '--disable-voice'], /Jet listening on (http:\/\/\S+)/);
+  await saveOwnerSettings(origin, { model: 'sonnet', claudePath: provider, reducedMotion: true });
   const fixture = name => launch('node', [path.join(root, 'crates/jet/tests/fixtures/proxy.mjs')], /"url":"([^"]+)"/, { ...process.env, FIXTURE_NAME: name });
   const first = await fixture('First notebook'), second = await fixture('Second notebook');
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');

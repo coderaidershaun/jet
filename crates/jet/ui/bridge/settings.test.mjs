@@ -12,7 +12,7 @@ test('saved model and thinking choices load as a supported pair', async () => {
       [{ model: null, effort: 'unknown' }, ['sonnet', 'high']],
     ]) {
       globalThis.fetch = async () => ({ ok: true, json: async () => saved });
-      const settings = await loadSettings();
+      const settings = await loadSettings({ isAdmin: false });
       assert.deepEqual([settings.model, settings.effort], expected);
     }
   } finally {

@@ -1,6 +1,9 @@
 //! A fake app that speaks MCP over real HTTP, with a registry and client pointed at it.
 use agent::{
-    apps::{AddApp, App, AppOverrides, McpOverride, Registry, RegistryCommand},
+    apps::{
+        AddApp, App, AppOverrides, AppOwner, AppsInMemory, McpOverride, Reach, Registry,
+        RegistryCommand,
+    },
     mcp::{HttpMcpClient, ToolRequest, ToolTarget},
 };
 use rmcp::{
@@ -93,8 +96,9 @@ pub struct World {
     pub client: Arc<HttpMcpClient>,
     pub app: App,
     task: tokio::task::JoinHandle<()>,
-    _dir: tempfile::TempDir,
 }
+/// The one owner of every app in these tests.
+pub const OWNER: AppOwner = AppOwner(1);
 impl World {
     pub async fn new() -> Self {
         let fixture = Fixture::default();
@@ -120,19 +124,24 @@ impl World {
             .await
             .unwrap()
         });
-        let dir = tempfile::tempdir().unwrap();
-        let registry = Arc::new(Mutex::new(Registry::open(dir.path()).unwrap()));
+        let registry = Arc::new(Mutex::new(
+            Registry::open(Box::new(AppsInMemory::default())).unwrap(),
+        ));
         let reg = registry.clone();
         let app = tokio::task::spawn_blocking(move || {
             reg.lock()
                 .unwrap()
-                .execute(RegistryCommand::Add(AddApp {
-                    address,
-                    overrides: AppOverrides {
-                        mcp: McpOverride::Url("mcp".into()),
-                        ..Default::default()
-                    },
-                }))
+                .execute(
+                    OWNER,
+                    Reach::Anywhere,
+                    RegistryCommand::Add(AddApp {
+                        address,
+                        overrides: AppOverrides {
+                            mcp: McpOverride::Url("mcp".into()),
+                            ..Default::default()
+                        },
+                    }),
+                )
                 .unwrap()
                 .app
                 .unwrap()
@@ -147,7 +156,6 @@ impl World {
             client,
             app,
             task,
-            _dir: dir,
         }
     }
     pub async fn register(&self, address: String) -> App {
@@ -156,13 +164,17 @@ impl World {
             registry
                 .lock()
                 .unwrap()
-                .execute(RegistryCommand::Add(AddApp {
-                    address,
-                    overrides: AppOverrides {
-                        mcp: McpOverride::Url("mcp".into()),
-                        ..Default::default()
-                    },
-                }))
+                .execute(
+                    OWNER,
+                    Reach::Anywhere,
+                    RegistryCommand::Add(AddApp {
+                        address,
+                        overrides: AppOverrides {
+                            mcp: McpOverride::Url("mcp".into()),
+                            ..Default::default()
+                        },
+                    }),
+                )
                 .unwrap()
                 .app
                 .unwrap()

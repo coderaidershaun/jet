@@ -1,7 +1,7 @@
-//! Lets the page list the registered apps and change them.
+//! Lets the page list the signed-in user's apps and change them.
 
 use super::Apps;
-use crate::{chat::BridgeError, lock, on_worker};
+use crate::{account::SignedIn, chat::BridgeError, on_worker};
 use agent::apps::{App, RegistryCommand, RegistryResult};
 use axum::{
     Json, Router,
@@ -17,21 +17,18 @@ where
     Router::new().route("/api/apps", get(apps).post(update_apps))
 }
 
-async fn apps(State(state): State<Apps>) -> Result<Json<Vec<App>>, BridgeError> {
-    Ok(Json(
-        on_worker(move || lock(&state.registry).list().to_vec()).await?,
-    ))
+async fn apps(
+    State(apps): State<Apps>,
+    signed_in: SignedIn,
+) -> Result<Json<Vec<App>>, BridgeError> {
+    let user = signed_in.user.id;
+    Ok(Json(on_worker(move || apps.list(user)).await?))
 }
 async fn update_apps(
-    State(state): State<Apps>,
+    State(apps): State<Apps>,
+    signed_in: SignedIn,
     Json(command): Json<RegistryCommand>,
 ) -> Result<Json<RegistryResult>, BridgeError> {
-    Ok(Json(
-        on_worker(move || {
-            lock(&state.registry)
-                .execute(command)
-                .map_err(|error| BridgeError::InvalidRequest(error.to_string()))
-        })
-        .await??,
-    ))
+    let user = signed_in.user.id;
+    Ok(Json(on_worker(move || apps.execute(user, command)).await??))
 }

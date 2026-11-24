@@ -1,8 +1,9 @@
 //! Every parse of a stored file runs in a child of the running program, started with
 //! `--read-file`. The child has a memory cap and the parent a time limit, so a file built to
-//! exhaust memory or to hang kills only the child, never the server.
+//! exhaust memory or to hang kills only the child, never the server. The child gets the job and
+//! the file's bytes on its standard input and opens no file itself.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{ExitCode, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,18 +33,12 @@ const LOOSE_MEMORY_LIMIT_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 /// Readers allowed at once, so the memory cap cannot be multiplied without end.
 const READERS_AT_ONCE: usize = 2;
 
+/// The first line of the child's input; the file's bytes follow it.
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "lowercase")]
 enum Job {
-    Describe {
-        kind: FileKind,
-        path: PathBuf,
-    },
-    Read {
-        kind: FileKind,
-        path: PathBuf,
-        range: Range,
-    },
+    Describe { kind: FileKind },
+    Read { kind: FileKind, range: Range },
 }
 
 /// What the reader prints: the answer, or the message for a sheet that does not exist.
@@ -67,7 +62,7 @@ impl Sandbox {
         }
     }
 
-    /// The details of the file at `path`, as [`describe`] works them out.
+    /// The details of the file, as [`describe`] works them out.
     ///
     /// # Errors
     /// [`FileError::Unreadable`] when the reader fails, runs out of memory or time, or says the
@@ -75,17 +70,13 @@ impl Sandbox {
     pub async fn describe(
         &self,
         kind: FileKind,
-        path: &Path,
+        contents: &[u8],
         name: &str,
     ) -> Result<String, FileError> {
-        let job = Job::Describe {
-            kind,
-            path: path.to_owned(),
-        };
-        self.run(&job, name).await
+        self.run(&Job::Describe { kind }, contents, name).await
     }
 
-    /// The part of the file at `path` that `range` asks for.
+    /// The part of the file that `range` asks for.
     ///
     /// # Errors
     /// - [`FileError::Unreadable`] as for [`Sandbox::describe`].
@@ -93,21 +84,25 @@ impl Sandbox {
     pub async fn read(
         &self,
         kind: FileKind,
-        path: &Path,
+        contents: &[u8],
         name: &str,
         range: &Range,
     ) -> Result<Reading, FileError> {
         let job = Job::Read {
             kind,
-            path: path.to_owned(),
             range: range.clone(),
         };
-        self.run(&job, name).await
+        self.run(&job, contents, name).await
     }
 
     // SMELL: the wait for a free reader has no deadline, so when many slow files arrive at once
     // an upload or a read of a file waits for as long as the queue ahead of it takes.
-    async fn run<T: DeserializeOwned>(&self, job: &Job, name: &str) -> Result<T, FileError> {
+    async fn run<T: DeserializeOwned>(
+        &self,
+        job: &Job,
+        contents: &[u8],
+        name: &str,
+    ) -> Result<T, FileError> {
         let refuse = |why: &dyn std::fmt::Display| {
             eprintln!("jet: could not read {name:?}: {why}");
             FileError::Unreadable(name.to_owned())
@@ -121,20 +116,23 @@ impl Sandbox {
         let mut stdin = child.stdin.take().expect("stdin was piped");
         let mut stdout = child.stdout.take().expect("stdout was piped");
         let work = async {
-            let request = serde_json::to_vec(job).expect("a job is plain data");
-            stdin
-                .write_all(&request)
-                .await
-                .map_err(|why| refuse(&why))?;
-            drop(stdin);
-            // The output is read while the child runs, because a child that fills the pipe stops
-            // until someone reads it and would then never exit.
+            let mut request = serde_json::to_vec(job).expect("a job is plain data");
+            request.push(b'\n');
+            // The input is written while the output is read, because a child that fills its
+            // output pipe stops until someone reads it, and would then never take the rest of a
+            // large file.
+            let write = async {
+                stdin.write_all(&request).await?;
+                stdin.write_all(contents).await?;
+                drop(stdin);
+                Ok::<(), std::io::Error>(())
+            };
             let mut output = Vec::new();
-            (&mut stdout)
-                .take(MAX_OUTPUT_BYTES as u64 + 1)
-                .read_to_end(&mut output)
-                .await
-                .map_err(|why| refuse(&why))?;
+            let mut limited = (&mut stdout).take(MAX_OUTPUT_BYTES as u64 + 1);
+            let read = limited.read_to_end(&mut output);
+            let (written, read) = tokio::join!(write, read);
+            written.map_err(|why| refuse(&why))?;
+            read.map_err(|why| refuse(&why))?;
             if output.len() > MAX_OUTPUT_BYTES {
                 return Err(refuse(&"it printed too much"));
             }
@@ -163,10 +161,7 @@ fn start_reader() -> Result<Child, FileError> {
         .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|source| FileError::Io {
-            path: program,
-            source,
-        })
+        .map_err(|source| FileError::Reader { program, source })
 }
 
 /// The running program itself. On Linux the path is `/proc/self/exe`, which keeps working after
@@ -208,18 +203,17 @@ pub fn run_file_reader() -> ExitCode {
 
 fn serve() -> Result<(), ServeError> {
     limit_resources()?;
-    let mut input = String::new();
-    std::io::Read::read_to_string(&mut std::io::stdin(), &mut input).map_err(ServeError::Input)?;
-    let job: Job = serde_json::from_str(&input).map_err(ServeError::Job)?;
+    let mut input = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::stdin(), &mut input).map_err(ServeError::Input)?;
+    let end = input
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .unwrap_or(input.len());
+    let job: Job = serde_json::from_slice(&input[..end]).map_err(ServeError::Job)?;
+    let bytes = input.get(end + 1..).unwrap_or_default();
     let printed = match job {
-        Job::Describe { kind, path } => {
-            let bytes = std::fs::read(path).map_err(ServeError::Input)?;
-            serde_json::to_string(&answer(describe(kind, &bytes))?)
-        }
-        Job::Read { kind, path, range } => {
-            let bytes = std::fs::read(path).map_err(ServeError::Input)?;
-            serde_json::to_string(&answer(read(kind, &bytes, &range))?)
-        }
+        Job::Describe { kind } => serde_json::to_string(&answer(describe(kind, bytes))?),
+        Job::Read { kind, range } => serde_json::to_string(&answer(read(kind, bytes, &range))?),
     };
     let printed = printed.map_err(|error| ServeError::Output(error.into()))?;
     println!("{printed}");

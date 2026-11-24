@@ -1,4 +1,5 @@
-//! Review notes after quiet periods without tying provider work to a browser connection.
+//! Review a chat's notes after it has been quiet, without tying provider work to a browser
+//! connection. Each chat has its own timer, so one chat's quiet never starts another's review.
 
 use super::ChatState;
 use agent::{ReviewOutcome, Transport};
@@ -8,8 +9,8 @@ use std::sync::{
 };
 use std::time::Duration;
 
-/// One second past the quiet wait, so the review is due when the timer fires.
-const REVIEW_DELAY: Duration = agent::REVIEW_QUIET.saturating_add(Duration::from_secs(1));
+/// How long past the quiet wait the timer fires, so the review is due by then.
+const MARGIN: Duration = Duration::from_millis(500);
 
 pub(super) struct ReviewTarget {
     pub transport: Arc<dyn Transport>,
@@ -33,9 +34,11 @@ impl ReviewTimer {
         let waiting = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let generation = self.generation.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(REVIEW_DELAY);
+            std::thread::sleep(host.review_quiet + MARGIN);
             if generation.load(Ordering::SeqCst) != waiting
-                || !host.conversation.review_due(agent::now_ms())
+                || !host
+                    .conversation
+                    .review_due(agent::now_ms(), host.review_quiet)
             {
                 return;
             }
@@ -43,7 +46,7 @@ impl ReviewTimer {
                 .conversation
                 .review_notes(&*target.transport, &target.name)
             {
-                Ok(ReviewOutcome::Updated(notes)) => host.memory_updated(notes),
+                Ok(ReviewOutcome::Updated(notes)) => host.notes_changed(&notes),
                 Ok(_) => {}
                 Err(error) => eprintln!("jet: notes review failed: {error}"),
             }

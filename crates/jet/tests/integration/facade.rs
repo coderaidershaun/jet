@@ -174,11 +174,8 @@ fn both_providers_use_global_facade_without_resetting_conversation() {
             401,
             "completed turn credentials expire"
         );
-        assert!(
-            !std::fs::read_to_string(host.dir.path().join("transcript.jsonl"))
-                .unwrap_or_default()
-                .contains(&token)
-        );
+        let saved = String::from_utf8_lossy(&host.database_bytes()).into_owned();
+        assert!(!saved.contains(&token), "the turn's credential was saved");
     }
 }
 #[test]
@@ -406,7 +403,7 @@ fn exported_file_downloads_and_forget_removes_it() {
     assert!(policy.contains("sandbox"), "{policy}");
 
     assert_eq!(fetch("/api/files/not-an-id").0, 404);
-    assert_eq!(fetch("/api/files/..%2Fsettings.json").0, 404);
+    assert_eq!(fetch("/api/files/..%2Fjet.sqlite3").0, 404);
 
     assert_eq!(host.post("/api/chat/forget", json!({})).0, 200);
     assert_eq!(fetch(&format!("/api/files/{id}")).0, 404);

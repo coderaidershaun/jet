@@ -201,8 +201,8 @@ fn attached_files_reach_jet_as_details_and_are_read_on_request() {
         saved.get("data").is_none(),
         "picture bytes stay out of the transcript"
     );
-    let transcript = std::fs::read_to_string(host.dir.path().join("transcript.jsonl")).unwrap();
-    assert!(!transcript.contains(&blocks[0]["data"].as_str().unwrap()[..200]));
+    let saved = String::from_utf8_lossy(&host.database_bytes()).into_owned();
+    assert!(!saved.contains(&blocks[0]["data"].as_str().unwrap()[..200]));
 
     let (status, accepted) = send_with_files(&host, "files-alone", "", &[&png_id]);
     assert_eq!(status, 200, "{accepted}");

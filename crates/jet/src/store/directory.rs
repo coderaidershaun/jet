@@ -91,13 +91,21 @@ impl Store {
         })
     }
 
+    /// Adds the user with an empty main chat; nothing else is saved for them until they change it.
     pub(crate) fn add_user(&self, user: &NewUser) -> Result<UserId, StoreError> {
         self.with(|db| {
-            db.execute(
+            let transaction = db.transaction()?;
+            transaction.execute(
                 "INSERT INTO users (email, display_name, password_hash, is_admin) VALUES (?1, ?2, ?3, ?4)",
                 params![user.email.as_str(), user.display_name, user.password_hash, user.is_admin],
             )?;
-            Ok(UserId(db.last_insert_rowid()))
+            let id = transaction.last_insert_rowid();
+            transaction.execute(
+                "INSERT INTO chats (user_id, kind, created_at) VALUES (?1, 'main', unixepoch())",
+                [id],
+            )?;
+            transaction.commit()?;
+            Ok(UserId(id))
         })
     }
 

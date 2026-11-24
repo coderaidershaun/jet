@@ -3,6 +3,7 @@
 use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
+    time::Duration,
 };
 
 use super::ServerError;
@@ -19,6 +20,8 @@ pub struct ServerConfig {
     pub(crate) access_seconds: u64,
     /// The reverse proxy whose `X-Forwarded-For` is believed; loopback when not set.
     pub(crate) trusted_proxy: Option<IpAddr>,
+    /// How long a chat must be quiet before its notes review runs. Tests shorten it.
+    pub(crate) review_quiet: Duration,
 }
 
 impl ServerConfig {
@@ -35,6 +38,7 @@ impl ServerConfig {
             disable_voice: false,
             access_seconds: crate::account::ACCESS_SECONDS,
             trusted_proxy: None,
+            review_quiet: agent::REVIEW_QUIET,
         };
         let mut args = args.into_iter().map(Into::into);
         while let Some(flag) = args.next() {
@@ -64,6 +68,16 @@ impl ServerConfig {
                         .filter(|seconds| *seconds > 0)
                         .ok_or_else(|| {
                             ServerError::Config(format!("invalid access lifetime: {value}"))
+                        })?
+                }
+                "--review-quiet-seconds" => {
+                    config.review_quiet = value
+                        .parse()
+                        .ok()
+                        .filter(|seconds| *seconds > 0)
+                        .map(Duration::from_secs)
+                        .ok_or_else(|| {
+                            ServerError::Config(format!("invalid review wait: {value}"))
                         })?
                 }
                 "--trusted-proxy" => {

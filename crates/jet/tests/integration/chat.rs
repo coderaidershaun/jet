@@ -121,26 +121,14 @@ fn accepted_turn_is_idempotent_and_reconnects() {
 #[test]
 fn restart_recovers_request_identity_without_replaying_provider() {
     let host = Host::start();
-    let legacy = [
-        serde_json::json!({"id":1,"role":"user","text":"old question","status":"complete","at":10}),
-        serde_json::json!({"id":2,"role":"jet","text":"old answer","status":"complete","at":11}),
-    ]
-    .map(|entry| entry.to_string())
-    .join("\n")
-        + "\n";
-    std::fs::write(host.dir.path().join("transcript.jsonl"), legacy).unwrap();
-    assert_eq!(
-        host.get("/api/snapshot")["history"][0]["text"],
-        "old question"
-    );
     let request = request("restart");
     let (_, accepted) = host.post("/api/chat/send", request.clone());
     host.until(|snapshot| snapshot["active"]["text"] == "Partial browser reply");
     let host = host.restart();
     let snapshot = host.get("/api/snapshot");
     assert!(snapshot["active"].is_null());
-    assert_eq!(snapshot["history"][3]["status"], "stopped");
-    assert!(snapshot["history"][3]["error"].is_string());
+    assert_eq!(snapshot["history"][1]["status"], "stopped");
+    assert!(snapshot["history"][1]["error"].is_string());
     assert_eq!(
         host.post("/api/chat/send", request.clone()).1["turnId"],
         accepted["turnId"]
@@ -155,7 +143,7 @@ fn restart_recovers_request_identity_without_replaying_provider() {
             .as_array()
             .unwrap()
             .len(),
-        4
+        2
     );
     assert_eq!(host.invocations(), 1);
 

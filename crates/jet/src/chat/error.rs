@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::WorkerFailed;
 use crate::files::FileError;
-use crate::settings::SettingsError;
+use crate::store::StoreError;
 
 /// Why a command failed. The page reads `kind` to decide what to show.
 #[derive(Debug, thiserror::Error)]
@@ -19,7 +19,10 @@ pub enum BridgeError {
     #[error(transparent)]
     Memory(#[from] MemoryError),
     #[error(transparent)]
-    Settings(#[from] SettingsError),
+    Store(#[from] StoreError),
+    /// Only an admin may do this, because it reaches services or programs on the server itself.
+    #[error("{0}")]
+    AdminOnly(String),
     #[error("request ID was already accepted with different content")]
     Conflict,
     #[error("request was cancelled before it started")]
@@ -41,7 +44,8 @@ impl BridgeError {
         match self {
             BridgeError::Busy => "busy",
             BridgeError::ClaudeMissing(_) => "claudeMissing",
-            BridgeError::Io(_) | BridgeError::Memory(_) | BridgeError::Settings(_) => "io",
+            BridgeError::Io(_) | BridgeError::Memory(_) | BridgeError::Store(_) => "io",
+            BridgeError::AdminOnly(_) => "adminOnly",
             BridgeError::Conflict => "conflict",
             BridgeError::Cancelled => "cancelled",
             BridgeError::InvalidRequest(_) => "invalidRequest",
@@ -118,6 +122,7 @@ impl axum::response::IntoResponse for BridgeError {
             Self::Busy | Self::Conflict | Self::Cancelled => StatusCode::CONFLICT,
             Self::InvalidRequest(_) => StatusCode::BAD_REQUEST,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
+            Self::AdminOnly(_) => StatusCode::FORBIDDEN,
             Self::Unsupported(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::TooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
             Self::ShuttingDown => StatusCode::SERVICE_UNAVAILABLE,

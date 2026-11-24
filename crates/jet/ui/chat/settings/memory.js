@@ -9,9 +9,9 @@ import { countCodePoints } from './form.js';
 import { named } from './names.js';
 
 const NOTES = [
-  ['memory', 'MEMORY.md', 'Ongoing work, decisions and things {name} agreed to do'],
-  ['user', 'USER.md', 'Who you are and how you like to work'],
-  ['recent', 'RECENT.md', 'What the last conversation was about'],
+  ['memory', 'Long-term memory', 'Ongoing work, decisions and things {name} agreed to do'],
+  ['user', 'About you', 'Who you are and how you like to work'],
+  ['recent', 'Recent', 'What the last conversation was about'],
 ];
 
 /** @param {import('./sheet.js').SheetContext} ctx */
@@ -21,8 +21,8 @@ export function buildMemory({ agent, settings }) {
   /** @type {Record<string, number> | null} Sent by the server with the notes; until then nothing is capped. */
   let limits = null;
 
-  const editors = NOTES.map(([key, file, hint]) => {
-    const area = h('textarea', { class: 'mono', rows: 6, spellcheck: 'false', 'aria-label': file });
+  const editors = NOTES.map(([key, label, hint]) => {
+    const area = h('textarea', { class: 'mono', rows: 6, spellcheck: 'false', 'aria-label': label });
     const counter = h('span', { class: 'counter' });
     const status = h('span', { class: 'status', role: 'status' });
     const reload = button('Reload', { hidden: true });
@@ -51,7 +51,7 @@ export function buildMemory({ agent, settings }) {
       reload.hidden = true;
       paint();
     });
-    const top = h('span', { class: 'field-top' }, h('span', { class: 'field-label', text: file }), counter);
+    const top = h('span', { class: 'field-top' }, h('span', { class: 'field-label', text: label }), counter);
     const actions = h('div', { class: 'row-actions' }, save, reload, status);
     const el = h('div', { class: 'field' }, top, named(h('span', { class: 'help' }), hint, displayName(settings)), area, actions);
     return { key, area, reload, paint, el, dirty };

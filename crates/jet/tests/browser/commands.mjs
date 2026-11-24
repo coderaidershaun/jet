@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { createProcesses, signIn, until } from './process.mjs';
+import { createProcesses, saveOwnerSettings, signIn, until } from './process.mjs';
 import { catalogueAndSafeDiscovery } from './discovery.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -16,7 +16,6 @@ try {
   const fixture = async () => JSON.parse(await processes.launch('node', [path.join(root, 'crates/agent/tests/fixtures/app/server.mjs')], /(\{"ui":.*\})/, { ...process.env, DISCOVERY_TEST: '1' }));
   const first = await fixture(), second = await fixture();
   const data = path.join(scratch, 'data'); await mkdir(data);
-  const settings = JSON.parse(await readFile(path.join(root, 'crates/jet/ui/bridge/default-settings.json')));
   const provider = path.join(scratch, 'provider.sh');
   const processor = path.join(scratch, 'prompt.cjs'), promptFile = path.join(scratch, 'prompt.txt');
   await writeFile(processor, `
@@ -31,9 +30,8 @@ fs.writeFileSync(${JSON.stringify(promptFile)},input);
   const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
   await writeFile(provider, '#!/bin/sh\n' + quote(process.execPath) + ' ' + quote(processor) + '\nexec ' + quote(path.join(root, 'target/debug/fake-claude')) + ' "$@" < ' + quote(promptFile) + '\n');
   await chmod(provider, 0o755);
-  Object.assign(settings, { model: 'sonnet', claudePath: provider, reducedMotion: true });
-  await writeFile(path.join(data, 'settings.json'), JSON.stringify(settings));
   const base = await processes.launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', '127.0.0.1:0', '--data-dir', data, '--ui-dir', path.join(root, 'crates/jet/ui'), '--disable-feelings', '--disable-voice'], /Jet listening on (http:\/\/\S+)/);
+  await saveOwnerSettings(base, { model: 'sonnet', claudePath: provider, reducedMotion: true });
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
   browser = await chromium.launch({ executablePath: process.env.CHROME_BINARY, headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });

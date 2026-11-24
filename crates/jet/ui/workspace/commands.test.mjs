@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createCommands } from './commands.js';
+import { requestJson } from '../bridge/browser-agent.js';
 import { createCommandMenu } from './completion.js';
 import { createComposer } from '../chat/composer/state.js';
 import { createComposerView } from '../chat/composer/view.js';
@@ -129,4 +130,13 @@ test('commands_route_before_chat_and_preserve_composer_keys', async () => {
     await new Promise(setImmediate);
     assert.equal(held, 1);
   } finally { globalThis.document = previous; }
+});
+
+test('a refused /app add shows the server\'s reason in words', async () => {
+  const message = 'only an admin can register an app at http://127.0.0.1:8080/, because a port, a loopback or a private address reaches services on the server itself; use the app\'s public address, or ask an admin';
+  const refuse = async () => ({ ok: false, status: 403, json: async () => ({ kind: 'adminOnly', message }) });
+  const reports = [];
+  const commands = createCommands({ workspace: {}, settings: {}, save: async () => {}, report: text => reports.push(text), request: (path, body) => requestJson(path, body, 'POST', refuse) });
+  await commands.submit('/app add 8080', () => {});
+  assert.deepEqual(reports, [message]);
 });

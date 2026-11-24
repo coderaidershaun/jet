@@ -7,7 +7,5 @@
   },
   "model": "sonnet",
   "effort": "medium",
-  "turnBudgetUsd": 10.0,
-  "claudePath": null,
-  "codexPath": null
+  "turnBudgetUsd": 10.0
 }

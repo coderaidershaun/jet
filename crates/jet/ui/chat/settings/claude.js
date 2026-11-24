@@ -4,7 +4,7 @@ import { button, note, section, textField } from './controls.js';
 import { named } from './names.js';
 
 /** @param {import('./sheet.js').SheetContext} ctx */
-export function buildClaude({ settings, agent, changed, onClaudeChecked, onForget }) {
+export function buildClaude({ settings, agent, isAdmin, changed, onClaudeChecked, onForget }) {
   const status = h('p', { class: 'status', role: 'status' });
   const path = textField({
     label: 'Path to claude',
@@ -50,7 +50,8 @@ export function buildClaude({ settings, agent, changed, onClaudeChecked, onForge
 
   return {
     el: [
-      section('claude', 'Agent programs', codexPath.el, path.el, status),
+      // Whoever sets a path chooses the program the server runs, so only an admin gets the fields.
+      section('claude', 'Agent programs', ...(isAdmin ? [codexPath.el, path.el] : []), status),
       section('forget', 'Forget this conversation', note('Start again with an empty thread.'), ask, confirmBox, failure),
     ],
 
@@ -58,7 +59,7 @@ export function buildClaude({ settings, agent, changed, onClaudeChecked, onForge
     async refresh() {
       try {
         const { program } = await agent.status();
-        status.textContent = program.found ? (program.provider ?? 'Agent') + ' found at ' + program.path : 'Not found. Looked in ' + program.searched.join(', ');
+        status.textContent = programStatus(program);
         status.dataset.found = String(program.found);
         onClaudeChecked(program);
       } catch (error) {
@@ -66,4 +67,11 @@ export function buildClaude({ settings, agent, changed, onClaudeChecked, onForge
       }
     },
   };
+}
+
+/** A non-admin's status has no path and no list of places searched. */
+function programStatus({ provider, found, path, searched }) {
+  const name = provider ?? 'Agent';
+  if (found) return path ? name + ' found at ' + path : name + ' found';
+  return searched ? 'Not found. Looked in ' + searched.join(', ') : name + ' was not found on the server. Ask an admin to set where it is.';
 }

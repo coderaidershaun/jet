@@ -1,19 +1,20 @@
 # Jet
 
-Jet is a browser home for independently running apps, with one shared assistant conversation. Its Rust server runs the installed Claude Code or Codex CLI, keeps the transcript and notes, and serves the existing HTML/JavaScript interface.
+Jet is a browser home for independently running apps, with an assistant of each user's own. Its Rust server runs the installed Claude Code or Codex CLI, keeps each user's chat, notes, settings, apps and files in one SQLite database, and serves the existing HTML/JavaScript interface.
 
 ## Layout
 
 ```text
 crates/jet/                       the server program (axum) and the page it serves
   src/apps/                       app routes: registry (/api/apps), tool browser, proxy to running apps
-  src/chat/                       chat commands, the streamed reply, reconnect snapshots, the notes review timer
+  src/chat/                       one runtime per chat: commands, the streamed reply, reconnect snapshots, the notes review timer
   src/evidence/                   outside evidence: a GitHub repository's activity, each user's sealed GitHub token
   src/facade/                     the ten MCP tools the provider sees
-  src/files/                      uploads, files Jet writes, the sandboxed reader child, export
+  src/files/                      uploads, files Jet writes, the sandboxed reader child, export, all kept in the store
   src/server/                     shared host state, listen address and the remaining routes
   src/voice/                      the speak and hear routes and their limits
-  src/settings.rs                 saved user settings
+  src/settings.rs                 each user's settings and the admin-only provider program paths
+  src/store/                      the SQLite store, its migrations, and the one-time import of an older Jet's files
   ui/bridge/                      the page's HTTP commands, event stream and default settings
   ui/chat/                        message box, thread, drawer, settings, speaker (voice/) and microphone (hear/)
   ui/jet/                         the kite character: parts, clips, director, player
@@ -75,8 +76,23 @@ only from loopback or from `--trusted-proxy ADDRESS`.
 Registered app pages are served in a sandbox with an opaque origin: they cannot read Jet's page
 or send its cookies, and reach their own app through an address that carries a proof for that
 app. Browser storage and cookies of an app do not work inside Jet. The `/mcp` endpoint takes the
-provider's per-turn token instead of a sign-in. Per-user data is not built yet: the transcript,
-notes, settings and apps are shared by whoever signs in.
+provider's per-turn token instead of a sign-in.
+
+## Each user's own Jet
+
+Every account has its own main chat (history and provider session), its own notes, settings
+(the name and persona of their Jet, model, thinking effort, reduced motion, turn budget), apps
+and files, all in `jet.sqlite3`. Each chat has a runtime of its own, so two users' replies run at
+once, each page gets only its own user's snapshot and events, and each chat's notes review runs
+after that chat is quiet (`--review-quiet-seconds`, 90 by default) and writes only its user's
+notes. Every user's Jet runs on the server's one signed-in provider. The facade's tools act for
+the user of the turn: their apps, their files and their GitHub token.
+
+The paths of the provider programs are one server-wide setting: `GET /api/settings` shows
+`claudePath` and `codexPath` only to an admin, and `PUT` saves them only from an admin (anyone
+else's are ignored). Only an admin may register an app at a port, a loopback address or a private
+address, from the page or by telling Jet; anyone may register an app at a public address. A
+refusal is `403` with `{"kind":"adminOnly","message":...}`.
 
 ## This server's deployment
 
@@ -115,15 +131,15 @@ build, rebuild and deploy its server, then use `/app reload Quanty` to reload th
 
 ## Existing data
 
-Point `--data-dir` at an existing conversation directory, or a copy. It contains `transcript.jsonl`, `session.json`, `MEMORY.md`, `USER.md` and `RECENT.md`. Copy the old desktop `settings.json` from its configuration directory into the selected data directory to retain provider/persona settings. Old transcript entries remain readable.
+Point `--data-dir` at a directory an older Jet kept its files in, or a copy. At the first start on it, Jet copies `transcript.jsonl` into the owner's main chat, `session.json` into its provider session, `MEMORY.md`, `USER.md` and `RECENT.md` into the owner's notes, `settings.json` into the owner's settings (its program paths into the server's), `apps.json` into the owner's apps and `files/` into the owner's files. The owner is the seeded admin `shaunsurfing@gmail.com`. The old files are never moved, changed or deleted, and a row of the database records that the import ran, so a later start copies nothing again. Archived `transcript.<time>.jsonl` threads, and process-command app settings of a much older version, are not copied.
 
-Old process-command app settings are rejected with re-registration instructions and never launched or silently erased. Follow [the app contract](docs/app-contract.md) to preserve the original file and register each running app by URL. New installs contain no machine-specific app defaults.
+New installs contain no machine-specific app defaults.
 
 ## Browser behavior
 
 The server owns the active reply. Closing a tab, reconnecting or hiding the interface does not cancel it; Stop does. A browser request ID is saved with the accepted transcript entry before provider dispatch. Retrying a lost acknowledgment returns that same turn. After a server crash, unfinished accepted turns are marked interrupted and never rerun automatically.
 
-An authoritative history/current-turn snapshot and bounded event replay restore browsers after reload. Settings and memory are saved on the server. Source images use the originating app’s stable mount, even after switching workspaces. Unsupported images, including historical filesystem references, show an unavailable fallback; Jet never reads arbitrary server files; `/api/files/{id}` serves only a file Jet wrote or the user uploaded, found by its UUID.
+An authoritative history/current-turn snapshot and bounded event replay restore browsers after reload. Settings and memory are saved on the server. Source images use the originating app’s stable mount, even after switching workspaces. Unsupported images, including historical filesystem references, show an unavailable fallback; Jet never reads arbitrary server files; `/api/files/{id}` serves only a file Jet wrote for the signed-in user or that user uploaded, found by its UUID.
 
 ## Apps and workspace
 
@@ -174,7 +190,7 @@ Jet is served publicly, so every path is bounded: 32 MiB for a file, 10 files fo
 
 ## App tools
 
-Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees ten stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read` and `github_activity`. Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat; Jet's `/web-hook` refuses every other site. After a web read or a `github_activity` call, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex has no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live under `files/` in the data directory until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
+Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees ten stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read` and `github_activity`. Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat; Jet's `/web-hook` refuses every other site. After a web read or a `github_activity` call, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex has no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
 
 Tools shows searchable summaries, actual input/output schemas, annotations, server identity, capabilities and instructions. Refresh retries failed metadata; stale results remain visibly marked. Only explicitly marked free discovery operations can expand into a hierarchy. Inspect a leaf or use Ask Jet to draft a request; browsing never executes ordinary business tools. In particular, normal Quanty search can cost money.
 
@@ -197,7 +213,7 @@ one address without a token, and one call makes four. For a private repository t
 pastes a token once in Settings (a fine-grained token with read access to Contents, Pull requests,
 Issues and Metadata of that repository is enough). `GET`, `PUT` and `DELETE /api/github/token`
 answer only whether one is saved; the token is never sent back, and it is kept out of
-`settings.json`, the prompt, the events, the transcript and the logs. It is stored in the user's
+the settings, the prompt, the events, the transcript and the logs. It is stored in the user's
 row of `jet.sqlite3`, sealed with ChaCha20-Poly1305 under the key `github-token-key` in the data
 directory, made on first start with owner-only access, or `JET_GITHUB_TOKEN_KEY` (at least 32
 bytes). Changing the key makes every saved token unreadable, and Jet then asks the user to paste

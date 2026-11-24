@@ -20,8 +20,8 @@ pub use chat::{
     USER_LIMIT,
 };
 pub use conversation::{
-    Conversation, ConversationError, DataDir, MemoryError, Message, REVIEW_QUIET, Reply,
-    ReviewError, ReviewOutcome, now_ms,
+    Conversation, ConversationError, InMemory, MemoryError, Message, NewEntry, REVIEW_QUIET, Reply,
+    ReviewError, ReviewOutcome, Session, Storage, now_ms,
 };
 pub use feeling::{Feeling, JevError, feel_message};
 pub use markdown::{CUES, Cue, dollar_math, render_markdown};

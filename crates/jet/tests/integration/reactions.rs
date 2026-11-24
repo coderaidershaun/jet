@@ -140,33 +140,6 @@ fn d_a_reaction_that_jet_finds_needs_nothing_leaves_the_thread_unchanged() {
 }
 
 #[test]
-fn e_a_transcript_written_before_reactions_loads_and_takes_one() {
-    let host = host();
-    let old = [
-        json!({"id":1,"role":"user","text":"old question","status":"complete","at":10,"old":1}),
-        json!({"id":2,"role":"jet","text":"old answer","mood":"hello","status":"complete","at":11}),
-    ]
-    .map(|entry| entry.to_string())
-    .join("\n")
-        + "\n";
-    let path = host.dir.path().join("transcript.jsonl");
-    std::fs::write(&path, &old).unwrap();
-    let thread = host.get("/api/snapshot")["history"].clone();
-    assert_eq!(thread[1]["text"], "old answer");
-    assert!(thread[1].get("reactions").is_none());
-
-    react(&host, "e-1", &json!(2), json!("❤️"));
-    let thread = settled(&host, 1);
-    assert_eq!(thread.len(), 2);
-    assert_eq!(thread[0]["text"], "old question");
-    assert_eq!(thread[1]["mood"], "hello");
-    assert_eq!(thread[1]["reactions"][0]["emoji"], "❤️");
-    // The line that did not change keeps its text exactly, even a field this version ignores.
-    let saved = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(saved.lines().next(), old.lines().next());
-}
-
-#[test]
 fn f_a_reaction_placed_while_a_reply_runs_is_saved_and_answered_after_it() {
     let host = host();
     say(&host, "f-1", &["mood: neutral\nFirst reply."], None);

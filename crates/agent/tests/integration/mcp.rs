@@ -1,5 +1,6 @@
 //! Calls and catalogues between the MCP client and an app, over real HTTP sessions.
 use super::mcp_fixture::{World, calls, eventually, within_seconds};
+use agent::apps::Reach;
 use agent::{
     apps::{AppOverrides, McpOverride, RegistryCommand},
     mcp::McpError,
@@ -152,7 +153,11 @@ async fn a_disabled_app_lets_a_running_call_settle_and_refuses_new_ones() {
         .registry
         .lock()
         .unwrap()
-        .execute(RegistryCommand::Disable { id: id.clone() })
+        .execute(
+            super::mcp_fixture::OWNER,
+            Reach::Anywhere,
+            RegistryCommand::Disable { id: id.clone() },
+        )
         .unwrap();
     assert!(matches!(
         world.client.call(world.request("disabled", "hello")).await,
@@ -168,7 +173,11 @@ async fn a_disabled_app_lets_a_running_call_settle_and_refuses_new_ones() {
         .registry
         .lock()
         .unwrap()
-        .execute(RegistryCommand::Remove { id })
+        .execute(
+            super::mcp_fixture::OWNER,
+            agent::apps::Reach::Anywhere,
+            RegistryCommand::Remove { id },
+        )
         .unwrap();
     assert!(matches!(
         world.client.call(world.request("removed", "hello")).await,
@@ -212,14 +221,18 @@ async fn a_failed_call_to_an_old_endpoint_leaves_the_new_endpoints_session_alone
         registry
             .lock()
             .unwrap()
-            .execute(RegistryCommand::Edit {
-                id,
-                address: None,
-                overrides: Some(AppOverrides {
-                    mcp: McpOverride::Url(endpoint),
-                    ..Default::default()
-                }),
-            })
+            .execute(
+                super::mcp_fixture::OWNER,
+                Reach::Anywhere,
+                RegistryCommand::Edit {
+                    id,
+                    address: None,
+                    overrides: Some(AppOverrides {
+                        mcp: McpOverride::Url(endpoint),
+                        ..Default::default()
+                    }),
+                },
+            )
             .unwrap()
     })
     .await
@@ -283,4 +296,29 @@ async fn a_removed_discovery_promise_prevents_execution() {
         Err(McpError::InvalidArguments { .. })
     ));
     assert_eq!(calls(&world.fixture), 1);
+}
+
+#[tokio::test]
+async fn a_redirect_from_an_apps_endpoint_is_not_followed() {
+    // An app on a public address must not send Jet on to a service on the server itself.
+    let world = World::new().await;
+    let target = world.app.mcp_url.clone().unwrap().to_string();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let redirector = format!("http://{}/", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let redirect = axum::routing::any(move || async move {
+            (
+                axum::http::StatusCode::TEMPORARY_REDIRECT,
+                [(axum::http::header::LOCATION, target)],
+            )
+        });
+        axum::serve(listener, axum::Router::new().fallback(redirect))
+            .await
+            .unwrap();
+    });
+    let redirecting = world.register(redirector).await;
+    let opened = world.fixture.sessions_opened.load(Ordering::SeqCst);
+    assert!(world.client.catalogue(&redirecting.id).await.is_err());
+    assert_eq!(world.fixture.sessions_opened.load(Ordering::SeqCst), opened);
+    server.abort();
 }

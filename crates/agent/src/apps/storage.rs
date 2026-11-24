@@ -1,10 +1,11 @@
-//! Replace registry files atomically and leave old process settings intact.
+//! Where registered apps are saved, chosen by the host, and why a registry change can fail.
 use super::{App, AppId};
-use serde::{Deserialize, Serialize};
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::sync::{Arc, Mutex};
+
+/// Who added an app. The host decides what the number means; an app is listed and changed only
+/// for its owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AppOwner(pub i64);
 
 #[derive(Debug, thiserror::Error)]
 pub enum RegistryError {
@@ -17,138 +18,46 @@ pub enum RegistryError {
     #[error("address is already registered as app {0}")]
     DuplicateAddress(AppId),
     #[error(
-        "{path} contains process-command integrations; register running apps by HTTP(S) address instead; keep this file as a backup"
+        "only an admin can register an app at {0}, because a port, a loopback or a private address reaches services on the server itself; use the app's public address, or ask an admin"
     )]
-    LegacyCommands { path: PathBuf },
-    #[error("registry {path} uses unsupported version {version}; expected version 1")]
-    UnsupportedVersion { path: PathBuf, version: u64 },
-    #[error("could not read or write registry {path}: {source}")]
-    Io {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("invalid registry {path}: {source}")]
-    Json {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("invalid registry {path}: {reason}")]
-    InvalidRegistry { path: PathBuf, reason: String },
+    ServerSide(String),
+    #[error("the saved apps could not be read or written: {0}")]
+    Storage(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SavedRegistry {
-    version: u64,
-    apps: Vec<App>,
+/// Where the registry saves its apps. A change is saved before the registry shows it, so a failed
+/// save changes nothing.
+pub trait AppStorage: Send {
+    /// Every saved app, with who added it.
+    fn load(&self) -> Result<Vec<(AppOwner, App)>, RegistryError>;
+    /// Adds the app, or replaces the saved app with the same id.
+    fn save(&self, owner: AppOwner, app: &App) -> Result<(), RegistryError>;
+    fn remove(&self, id: &AppId) -> Result<(), RegistryError>;
 }
 
-pub(super) fn load(path: &Path) -> Result<Vec<App>, RegistryError> {
-    let Some(value) = read_json(path)? else {
-        return Ok(Vec::new());
-    };
-    reject_commands(path, &value)?;
-    let version = value
-        .get("version")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    if version != 1 {
-        return Err(RegistryError::UnsupportedVersion {
-            path: path.into(),
-            version,
-        });
+/// Apps kept only in this process, for tests. Clones share the same apps, so a registry opened
+/// again on a clone sees what the first one saved.
+#[derive(Clone, Default)]
+pub struct AppsInMemory {
+    apps: Arc<Mutex<Vec<(AppOwner, App)>>>,
+}
+
+impl AppStorage for AppsInMemory {
+    fn load(&self) -> Result<Vec<(AppOwner, App)>, RegistryError> {
+        Ok(crate::lock(&self.apps).clone())
     }
-    let saved: SavedRegistry =
-        serde_json::from_value(value).map_err(|source| RegistryError::Json {
-            path: path.into(),
-            source,
-        })?;
-    for (index, app) in saved.apps.iter().enumerate() {
-        if saved.apps[..index]
-            .iter()
-            .any(|previous| previous.id == app.id || previous.base_url == app.base_url)
-        {
-            return Err(RegistryError::InvalidRegistry {
-                path: path.into(),
-                reason: "duplicate identity or base address".into(),
-            });
+
+    fn save(&self, owner: AppOwner, app: &App) -> Result<(), RegistryError> {
+        let mut apps = crate::lock(&self.apps);
+        match apps.iter_mut().find(|(_, saved)| saved.id == app.id) {
+            Some(saved) => *saved = (owner, app.clone()),
+            None => apps.push((owner, app.clone())),
         }
-        super::descriptor::validate_app(app)?;
+        Ok(())
     }
-    Ok(saved.apps)
-}
 
-pub(super) fn check_legacy_settings(path: &Path) -> Result<(), RegistryError> {
-    if let Some(value) = read_json(path)?
-        && let Some(mcp) = value.get("mcp")
-    {
-        reject_commands(path, mcp)?;
+    fn remove(&self, id: &AppId) -> Result<(), RegistryError> {
+        crate::lock(&self.apps).retain(|(_, app)| &app.id != id);
+        Ok(())
     }
-    Ok(())
-}
-
-fn reject_commands(path: &Path, value: &serde_json::Value) -> Result<(), RegistryError> {
-    fn has_command(value: &serde_json::Value) -> bool {
-        match value {
-            serde_json::Value::Object(fields) => {
-                fields
-                    .get("command")
-                    .is_some_and(|command| command.as_str() != Some(""))
-                    || (fields.contains_key("command")
-                        && (fields.get("enabled").and_then(serde_json::Value::as_bool)
-                            == Some(true)
-                            || fields.get("cwd").is_some_and(|cwd| !cwd.is_null())))
-                    || fields.values().any(has_command)
-            }
-            serde_json::Value::Array(items) => items.iter().any(has_command),
-            _ => false,
-        }
-    }
-    if has_command(value) {
-        return Err(RegistryError::LegacyCommands { path: path.into() });
-    }
-    Ok(())
-}
-
-fn read_json(path: &Path) -> Result<Option<serde_json::Value>, RegistryError> {
-    let bytes = match std::fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(source) => {
-            return Err(RegistryError::Io {
-                path: path.into(),
-                source,
-            });
-        }
-    };
-    serde_json::from_slice(&bytes)
-        .map(Some)
-        .map_err(|source| RegistryError::Json {
-            path: path.into(),
-            source,
-        })
-}
-
-pub(super) fn save(path: &Path, apps: &[App]) -> Result<(), RegistryError> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let io = |source| RegistryError::Io {
-        path: path.into(),
-        source,
-    };
-    std::fs::create_dir_all(parent).map_err(io)?;
-    let bytes = serde_json::to_vec_pretty(&SavedRegistry {
-        version: 1,
-        apps: apps.to_vec(),
-    })
-    .map_err(|source| RegistryError::Json {
-        path: path.into(),
-        source,
-    })?;
-    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(io)?;
-    temporary.write_all(&bytes).map_err(io)?;
-    temporary.as_file().sync_all().map_err(io)?;
-    temporary.persist(path).map_err(|error| io(error.error))?;
-    Ok(())
 }

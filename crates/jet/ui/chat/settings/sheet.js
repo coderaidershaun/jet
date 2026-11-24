@@ -16,6 +16,7 @@ const SAVE_AFTER_EDIT_MS = 600;
  * @typedef {object} SheetContext
  * @property {import('../../bridge/settings.js').Settings} settings   edited in place
  * @property {*} agent   what the page talks to the agent through
+ * @property {boolean} isAdmin   only an admin sees and sets the program paths
  * @property {(kind: string) => void} changed   tell the page what changed; saving follows
  * @property {() => boolean} systemReducesMotion   true when the system asks for less motion
  * @property {(claude: import('../../bridge/agent.js').ClaudeStatus) => void} onClaudeChecked   the page's banner follows each check

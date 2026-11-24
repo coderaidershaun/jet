@@ -9,20 +9,23 @@ import { requestJson } from './browser-agent.js';
  * @property {string} model
  * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'} effort
  * @property {number} turnBudgetUsd
- * @property {string | null} codexPath   null = find Codex automatically
- * @property {string | null} claudePath   null = find Claude Code on its own
+ * @property {string | null} [codexPath]   admin only; null = find Codex automatically
+ * @property {string | null} [claudePath]   admin only; null = find Claude Code on its own
  */
 
-/** Mirrors `Settings::default()` on the Rust side. @returns {Settings} */
-function defaultSettings() {
+/**
+ * Mirrors `Settings::default()` on the Rust side. The program paths decide which program the
+ * server runs, so only an admin's settings carry them.
+ * @returns {Settings}
+ */
+function defaultSettings(isAdmin) {
   return {
     reducedMotion: false,
     persona: { name: 'Jet', jobTitle: 'First-mate', notes: '' },
     model: 'sonnet',
     effort: 'medium',
     turnBudgetUsd: 10,
-    claudePath: null,
-    codexPath: null,
+    ...(isAdmin ? { claudePath: null, codexPath: null } : {}),
   };
 }
 
@@ -39,9 +42,12 @@ function merge(base, saved) {
   return out;
 }
 
-/** @returns {Promise<Settings>} */
-export async function loadSettings() {
-  const defaults = defaultSettings();
+/**
+ * @param {{ isAdmin: boolean }} user   who is signed in
+ * @returns {Promise<Settings>}
+ */
+export async function loadSettings({ isAdmin }) {
+  const defaults = defaultSettings(isAdmin);
   const settings = merge(defaults, await requestJson('/api/settings'));
   if (!MODELS.some(([model]) => model === settings.model)) settings.model = defaults.model;
   if (!effortsFor(settings.model).includes(settings.effort)) settings.effort = 'high';

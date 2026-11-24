@@ -1,9 +1,9 @@
 //! Lets the page upload, delete, download and view files.
 
 use super::{About, FileError, FileKind, Files, MAX_FILE_BYTES};
-use crate::on_worker;
+use crate::{account::SignedIn, on_worker};
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     body::Bytes,
     extract::{DefaultBodyLimit, FromRef, Path, Query, State},
     http::{
@@ -45,17 +45,23 @@ struct UploadName {
 // arrive at once, so the server's memory grows with the bytes that visitors are sending.
 async fn upload_file(
     State(files): State<Files>,
+    signed_in: SignedIn,
     Query(query): Query<UploadName>,
     body: Bytes,
 ) -> Result<Json<About>, FileError> {
-    Ok(Json(files.upload(&query.name, Vec::from(body)).await?))
+    let user = signed_in.user.id;
+    Ok(Json(
+        files.upload(user, &query.name, Vec::from(body)).await?,
+    ))
 }
 /// Deletes an upload that was never sent.
 async fn remove_file(
     State(files): State<Files>,
+    signed_in: SignedIn,
     Path(id): Path<String>,
 ) -> Result<StatusCode, FileError> {
-    on_worker(move || files.remove(&id))
+    let user = signed_in.user.id;
+    on_worker(move || files.remove(user, &id))
         .await
         .map_err(FileError::Worker)??;
     Ok(StatusCode::NO_CONTENT)
@@ -70,25 +76,31 @@ enum Disposition {
     Inline,
 }
 
+/// A signed-in user gets only their own files. A request with no sign-in got past the guard only
+/// with the proof that names this one file, which Jet gave an app for a tool call.
 async fn download_file(
     State(files): State<Files>,
+    signed_in: Option<Extension<SignedIn>>,
     Path(id): Path<String>,
 ) -> Result<Response, FileError> {
-    serve_file(files, id, Disposition::Attachment).await
+    let user = signed_in.map(|Extension(signed_in)| signed_in.user.id);
+    serve_file(files, user, id, Disposition::Attachment).await
 }
 async fn view_file(
     State(files): State<Files>,
+    signed_in: SignedIn,
     Path(id): Path<String>,
 ) -> Result<Response, FileError> {
-    serve_file(files, id, Disposition::Inline).await
+    serve_file(files, Some(signed_in.user.id), id, Disposition::Inline).await
 }
 
 async fn serve_file(
     files: Files,
+    user: Option<crate::store::UserId>,
     id: String,
     disposition: Disposition,
 ) -> Result<Response, FileError> {
-    let file = on_worker(move || files.open(&id))
+    let file = on_worker(move || files.open(user, &id))
         .await
         .map_err(FileError::Worker)??;
     let content_type = match disposition {

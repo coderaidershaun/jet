@@ -1,16 +1,17 @@
-//! Bind the stable provider tool surface to one initiating browser turn.
+//! Bind the stable provider tool surface to one initiating browser turn, acting for the user who
+//! sent its message: their apps, their files and their credentials only.
 mod handler;
 mod handoff;
 mod marks;
 mod tools;
 
 use crate::account::Keys;
-use crate::chat::{ChatState, TurnContext, TurnTools};
+use crate::apps::Apps;
+use crate::chat::{ChatState, Chats, TurnContext, TurnOwner, TurnTools};
 use crate::evidence::Evidence;
 use crate::files::Files;
 use crate::lock;
-use crate::store::UserId;
-use agent::{McpConnection, TurnIdentity, apps::Registry, mcp::HttpMcpClient};
+use agent::{McpConnection, TurnIdentity, mcp::HttpMcpClient};
 use axum::{
     Json, Router,
     body::Bytes,
@@ -36,16 +37,17 @@ struct Binding {
     calls: HashSet<String>,
     /// The provider may search and read the web in this turn.
     reads_web: bool,
-    /// The signed-in user who sent the message. Tools that need a credential use only theirs.
-    user: UserId,
+    /// The signed-in user who sent the message, and the chat the turn runs in. Every tool acts
+    /// for that user only.
+    owner: TurnOwner,
     /// `github_activity` ran in this turn, so it has read text written by strangers.
     has_read_github: bool,
 }
 pub(crate) struct Facade {
-    registry: Arc<Mutex<Registry>>,
+    apps: Apps,
     mcp: Arc<HttpMcpClient>,
     files: Files,
-    pub(crate) chat: Mutex<Weak<ChatState>>,
+    pub(crate) chats: Mutex<Weak<Chats>>,
     url: Mutex<String>,
     public_origin: Option<String>,
     keys: Keys,
@@ -55,8 +57,7 @@ pub(crate) struct Facade {
 }
 impl Facade {
     pub fn new(
-        registry: Arc<Mutex<Registry>>,
-        mcp: Arc<HttpMcpClient>,
+        apps: Apps,
         files: Files,
         url: String,
         public_origin: Option<String>,
@@ -64,10 +65,10 @@ impl Facade {
         evidence: Evidence,
     ) -> Arc<Self> {
         Arc::new(Self {
-            registry,
-            mcp,
+            mcp: apps.mcp().clone(),
+            apps,
             files,
-            chat: Mutex::new(Weak::new()),
+            chats: Mutex::new(Weak::new()),
             url: Mutex::new(url),
             public_origin,
             keys,
@@ -92,6 +93,10 @@ impl Facade {
     fn binding(&self, token: &str) -> Option<Binding> {
         lock(&self.bindings).get(token).cloned()
     }
+    /// The runtime of the chat the turn runs in, while the server is open.
+    fn chat_of(&self, binding: &Binding) -> Option<Arc<ChatState>> {
+        lock(&self.chats).upgrade()?.open_chat(binding.owner.chat)
+    }
     pub fn router(self: &Arc<Self>) -> Router {
         let state = self.clone();
         let service = StreamableHttpService::new(
@@ -106,7 +111,7 @@ impl Facade {
     }
 }
 impl TurnTools for Facade {
-    fn bind(&self, identity: &TurnIdentity, reads_web: bool, user: UserId) -> McpConnection {
+    fn bind(&self, identity: &TurnIdentity, reads_web: bool, owner: TurnOwner) -> McpConnection {
         let token = uuid::Uuid::new_v4().to_string();
         lock(&self.bindings).insert(
             token.clone(),
@@ -114,7 +119,7 @@ impl TurnTools for Facade {
                 turn: TurnContext::from(identity),
                 calls: HashSet::new(),
                 reads_web,
-                user,
+                owner,
                 has_read_github: false,
             },
         );
@@ -123,11 +128,11 @@ impl TurnTools for Facade {
             token,
         }
     }
-    fn revoke(&self, request_id: &str) {
+    fn revoke(&self, owner: TurnOwner, request_id: &str) {
         let mut bindings = lock(&self.bindings);
         let tokens: Vec<_> = bindings
             .iter()
-            .filter(|(_, binding)| binding.turn.request_id == request_id)
+            .filter(|(_, binding)| binding.owner == owner && binding.turn.request_id == request_id)
             .map(|(token, _)| token.clone())
             .collect();
         for token in tokens {
@@ -142,10 +147,10 @@ impl TurnTools for Facade {
     fn shutdown(&self) {
         let requests: Vec<_> = lock(&self.bindings)
             .values()
-            .map(|binding| binding.turn.request_id.clone())
+            .map(|binding| (binding.owner, binding.turn.request_id.clone()))
             .collect();
-        for request in requests {
-            self.revoke(&request);
+        for (owner, request) in requests {
+            self.revoke(owner, &request);
         }
     }
 }

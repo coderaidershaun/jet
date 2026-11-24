@@ -1,16 +1,22 @@
 use super::support::{Host, request};
+use serde_json::json;
 use std::time::{Duration, Instant};
 
 #[test]
 fn shutdown_bounds_provider_and_review_cleanup() {
-    let mut host = Host::start();
+    let mut host = Host::start_with(&["--review-quiet-seconds", "1"]);
     host.post("/api/chat/send", request("shutdown"));
     host.until(|snapshot| snapshot["active"]["text"] == "Partial browser reply");
-    host.post(
-        "/api/chat/stop",
-        serde_json::json!({"requestId":"shutdown"}),
-    );
+    host.post("/api/chat/stop", json!({"requestId":"shutdown"}));
     host.until(|snapshot| snapshot["active"].is_null());
+    // The chat goes quiet, so its notes review starts. The stand-in never answers the review of a
+    // thread that says "hang", so the review is still running when the server stops.
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while host.invocations() < 2 {
+        assert!(Instant::now() < deadline, "the notes review did not start");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
     let sleeper = host.dir.path().join("no-read.sh");
     std::fs::write(&sleeper, "#!/bin/sh\nexec sleep 120\n").unwrap();
     #[cfg(unix)]
@@ -18,12 +24,7 @@ fn shutdown_bounds_provider_and_review_cleanup() {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&sleeper, std::fs::Permissions::from_mode(0o700)).unwrap();
     }
-    let mut settings = host.get("/api/settings");
-    settings["claudePath"] = sleeper.to_str().unwrap().into();
-    host.signed(ureq::put(format!("{}/api/settings", host.url)))
-        .header("content-type", "application/json")
-        .send(settings.to_string())
-        .unwrap();
+    host.set_programs(json!({"claudePath": sleeper}));
     let mut blocked = request("no-stdin-reader");
     blocked["text"] = "x".repeat(100_000).into();
     let client: ureq::Agent = ureq::Agent::config_builder()
@@ -52,7 +53,10 @@ fn shutdown_bounds_provider_and_review_cleanup() {
         if host.child.try_wait().unwrap().is_some() {
             break;
         }
-        assert!(began.elapsed() < Duration::from_secs(5));
+        assert!(
+            began.elapsed() < Duration::from_secs(5),
+            "the running reply and review kept the server up"
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
     let host = host.restart();
@@ -61,40 +65,7 @@ fn shutdown_bounds_provider_and_review_cleanup() {
     assert_eq!(snapshot["history"][1]["status"], "stopped");
     assert_eq!(
         host.invocations(),
-        1,
-        "shutdown must not start an unbounded exit review"
+        2,
+        "shutdown and restart must not start another review"
     );
-    let conversation = agent::Conversation::new(agent::DataDir::new(host.dir.path()));
-    let review = conversation.clone();
-    let transport = agent::ClaudeCli::at(
-        host.dir.path().join("provider.py"),
-        host.dir.path().to_path_buf(),
-    );
-    let (sender, receiver) = std::sync::mpsc::channel();
-    std::thread::spawn(move || sender.send(review.review_notes(&transport, "Jet")).unwrap());
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while host.invocations() < 2 {
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    conversation.stop_review();
-    assert!(
-        receiver
-            .recv_timeout(Duration::from_secs(3))
-            .unwrap()
-            .is_err()
-    );
-    assert_eq!(
-        conversation
-            .review_notes(
-                &agent::ClaudeCli::at(
-                    host.dir.path().join("provider.py"),
-                    host.dir.path().to_path_buf()
-                ),
-                "Jet"
-            )
-            .unwrap(),
-        agent::ReviewOutcome::Skipped
-    );
-    assert_eq!(host.invocations(), 2);
 }

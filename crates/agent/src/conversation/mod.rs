@@ -12,8 +12,8 @@ mod session_policy;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-pub use memory::{DataDir, MemoryError, now_ms};
-use memory::{NewEntry, Session, Transcript};
+use memory::Saved;
+pub use memory::{InMemory, MemoryError, NewEntry, Session, Storage, now_ms};
 pub use reply::Reply;
 pub use review::{REVIEW_QUIET, ReviewError, ReviewOutcome};
 use session_policy::decide;
@@ -70,7 +70,7 @@ pub enum ConversationError {
 /// The saved thread and notes, and the right to run one answer and one review at a time.
 #[derive(Clone)]
 pub struct Conversation {
-    dir: DataDir,
+    saved: Saved,
     answering: Arc<AtomicBool>,
     reviewing: Arc<AtomicBool>,
     review_stop: Arc<Mutex<Option<Stopper>>>,
@@ -95,9 +95,9 @@ impl Drop for Claim {
 }
 
 impl Conversation {
-    pub fn new(dir: DataDir) -> Conversation {
+    pub fn new(storage: Arc<dyn Storage>) -> Conversation {
         Conversation {
-            dir,
+            saved: Saved::new(storage),
             answering: Arc::new(AtomicBool::new(false)),
             reviewing: Arc::new(AtomicBool::new(false)),
             review_stop: Arc::new(Mutex::new(None)),
@@ -120,12 +120,11 @@ impl Conversation {
         identity: Option<TurnIdentity>,
     ) -> Result<(ShownEntry, Reply), ConversationError> {
         let claim = Claim::take(&self.answering).ok_or(ConversationError::Busy)?;
-        let transcript = Transcript::open(&self.dir);
-        let recent = transcript.last(REACTIONS_SHOWN)?;
-        let mut user = NewEntry::user(&message.text);
+        let recent = self.saved.last(REACTIONS_SHOWN)?;
+        let mut user = NewEntry::user_text(&message.text);
         user.turn = identity.clone();
         user.attachments = message.attachments.clone();
-        let user_entry = transcript.append(user, now_ms())?;
+        let user_entry = self.saved.append(user, now_ms())?;
         let words = persona::reaction_words(&recent) + &persona::message_words(&message);
         let answer = Answer {
             words,
@@ -147,7 +146,8 @@ impl Conversation {
         id: EntryId,
         emoji: Option<&str>,
     ) -> Result<(ShownEntry, bool), ConversationError> {
-        let (entry, changed) = Transcript::open(&self.dir)
+        let (entry, changed) = self
+            .saved
             .react(id, Role::User, emoji, now_ms())?
             .ok_or(ConversationError::NotJetMessage(id))?;
         Ok((shown(entry), changed))
@@ -173,7 +173,7 @@ impl Conversation {
             attachments: Vec::new(),
             ..message
         };
-        let entries = Transcript::open(&self.dir).entries()?;
+        let entries = self.saved.entries()?;
         let target = entries.iter().find(|entry| entry.id == reacted);
         let Some((target, emoji)) =
             target.and_then(|entry| Some((entry, entry.reaction_by(Role::User)?)))
@@ -210,15 +210,15 @@ impl Conversation {
             answers_reaction,
         } = answer;
         let now = now_ms();
-        let notes = Notes::load(&self.dir)?;
+        let notes = self.saved.notes()?;
         let prompt_hash = persona::prompt_hash(&message.persona, message.model, message.effort);
-        let saved = Session::load(&self.dir)?;
+        let saved = self.saved.session()?;
         let decision = decide(saved.as_ref(), &prompt_hash, now);
         let prompt = match decision.mode {
             SessionMode::New => reply::first_message(&message.local_time, &words),
             _ => words.clone(),
         };
-        let entries = Transcript::open(&self.dir).entries()?;
+        let entries = self.saved.entries()?;
         let request = Request {
             prompt,
             system_prompt: persona::compose(&message.persona, &notes, message.model),
@@ -233,12 +233,13 @@ impl Conversation {
         if request.session == SessionMode::New
             && let Some(session) = &saved
         {
-            session.clone().without_conversation().save(&self.dir)?;
+            self.saved
+                .save_session(&session.clone().without_conversation())?;
         }
         let started = Turn::start(&*transport, &request);
         let context = reply::Context {
             identity,
-            dir: self.dir.clone(),
+            memory: self.saved.clone(),
             transport,
             request,
             text: words,
@@ -259,29 +260,28 @@ impl Conversation {
 
     /// The newest `limit` entries of the thread, oldest first.
     pub fn history(&self, limit: usize) -> Result<Vec<ShownEntry>, MemoryError> {
-        let entries = Transcript::open(&self.dir).last(limit)?;
+        let entries = self.saved.last(limit)?;
         Ok(entries.into_iter().map(shown).collect())
     }
 
     /// Starts the thread over. The notes stay.
     pub fn forget(&self) -> Result<(), ConversationError> {
         let _claim = Claim::take(&self.answering).ok_or(ConversationError::Busy)?;
-        Transcript::open(&self.dir).rotate(now_ms())?;
-        Session::delete(&self.dir)?;
+        self.saved.forget(now_ms())?;
         Ok(())
     }
 
     pub fn notes(&self) -> Result<Notes, MemoryError> {
-        Notes::load(&self.dir)
+        self.saved.notes()
     }
 
     /// Saves notes the user edited. The next message starts a fresh conversation, so
     /// Claude sees them.
     pub fn save_notes(&self, notes: Notes) -> Result<Notes, MemoryError> {
-        let saved = notes.save(&self.dir)?;
-        if let Some(mut session) = Session::load(&self.dir)? {
+        let saved = self.saved.save_notes(&notes)?;
+        if let Some(mut session) = self.saved.session()? {
             session.prompt_hash.clear();
-            session.save(&self.dir)?;
+            self.saved.save_session(&session)?;
         }
         Ok(saved)
     }
@@ -291,7 +291,7 @@ impl Conversation {
     /// # Errors
     /// Returns a memory error if the saved session cannot be read.
     pub fn context_status(&self, model: Model) -> Result<crate::chat::ContextStatus, MemoryError> {
-        let session = Session::load(&self.dir)?.unwrap_or_default();
+        let session = self.saved.session()?.unwrap_or_default();
         if session.context.model == Some(model) {
             Ok(session.context)
         } else {
@@ -334,30 +334,30 @@ mod test_support {
         }
     }
 
-    /// A conversation in a scratch folder, talking to a scripted Claude.
+    /// A conversation kept in memory, talking to a scripted Claude.
     pub(super) struct Chat {
         pub conversation: Conversation,
-        pub dir: DataDir,
+        pub storage: Arc<InMemory>,
         transport: Arc<Scripted>,
     }
 
     impl Chat {
         /// One scripted reply for each session id, in order.
-        pub fn new<const N: usize>(name: &str, sessions: [&str; N]) -> Chat {
+        pub fn new<const N: usize>(sessions: [&str; N]) -> Chat {
             let scripted = sessions.iter().fold(Scripted::new(), |scripted, id| {
                 scripted.then(Script::lines(reply_lines(id, "mood: neutral\nHi")))
             });
-            Chat::with_transport(name, scripted)
+            Chat::with_transport(scripted)
         }
 
-        pub fn with_transport(name: &str, scripted: Scripted) -> Chat {
-            Chat::in_dir(DataDir::scratch(name), scripted)
+        pub fn with_transport(scripted: Scripted) -> Chat {
+            Chat::in_storage(Arc::new(InMemory::default()), scripted)
         }
 
-        pub fn in_dir(dir: DataDir, scripted: Scripted) -> Chat {
+        pub fn in_storage(storage: Arc<InMemory>, scripted: Scripted) -> Chat {
             Chat {
-                conversation: Conversation::new(dir.clone()),
-                dir,
+                conversation: Conversation::new(storage.clone()),
+                storage,
                 transport: Arc::new(scripted),
             }
         }
@@ -379,7 +379,8 @@ mod test_support {
         }
 
         pub fn saved_session(&self) -> Session {
-            Session::load(&self.dir)
+            self.storage
+                .session()
                 .unwrap()
                 .expect("a session was saved")
         }
@@ -387,7 +388,7 @@ mod test_support {
         pub fn edit_session(&self, change: impl FnOnce(&mut Session)) {
             let mut session = self.saved_session();
             change(&mut session);
-            session.save(&self.dir).unwrap();
+            self.storage.save_session(Some(&session)).unwrap();
         }
     }
 }

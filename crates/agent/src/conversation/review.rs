@@ -7,7 +7,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::memory::{MemoryError, Session, Transcript, now_ms};
+use super::memory::{MemoryError, Session, now_ms};
 use super::persona::{fill, note_or_empty};
 use super::{Claim, Conversation};
 use crate::chat::{Effort, Entry, MEMORY_LIMIT, Notes, RECENT_LIMIT, Role, USER_LIMIT};
@@ -15,7 +15,7 @@ use crate::turn::{Request, SessionMode, Step, Summary, Transport, Turn, TurnErro
 
 const PROMPT: &str = include_str!("review.md");
 
-/// How long the chat must be quiet before a review is due.
+/// How long the chat must be quiet before a review is due, unless the host sets its own wait.
 pub const REVIEW_QUIET: Duration = Duration::from_secs(90);
 
 /// Two reviews are at least this far apart.
@@ -74,15 +74,15 @@ impl Conversation {
         }
     }
 
-    /// Whether it is time for a review: something new was said, the chat has been quiet
-    /// for 90 seconds, and the last review was at least ten minutes ago.
-    pub fn review_due(&self, now_ms: u64) -> bool {
+    /// Whether it is time for a review: something new was said, the chat has been quiet for
+    /// `quiet`, and the last review was at least ten minutes ago.
+    pub fn review_due(&self, now_ms: u64, quiet: Duration) -> bool {
         self.pending_since_last_review()
             .ok()
             .flatten()
             .is_some_and(|(session, pending)| {
                 let last_said = pending.last().map_or(0, |entry| entry.at);
-                Duration::from_millis(now_ms.saturating_sub(last_said)) >= REVIEW_QUIET
+                Duration::from_millis(now_ms.saturating_sub(last_said)) >= quiet
                     && now_ms.saturating_sub(session.reviewed_at) >= MIN_GAP_BETWEEN_REVIEWS_MS
             })
     }
@@ -100,7 +100,7 @@ impl Conversation {
         let Some((_, pending)) = self.pending_since_last_review()? else {
             return Ok(ReviewOutcome::Skipped);
         };
-        let before = Notes::load(&self.dir)?;
+        let before = self.saved.notes()?;
         let request = Request {
             prompt: review_prompt(&before, &pending, name),
             system_prompt: system_prompt(name),
@@ -126,35 +126,35 @@ impl Conversation {
         let summary = result?;
         let verdict = read_verdict(summary)?;
 
-        let Some(mut session) = Session::load(&self.dir)? else {
+        let Some(mut session) = self.saved.session()? else {
             return Ok(ReviewOutcome::Stale);
         };
         // A thread forgotten meanwhile starts again at id 1, so it must not be marked as read.
-        let thread = Transcript::open(&self.dir).entries()?;
+        let thread = self.saved.entries()?;
         let Some(last_read) = pending.last().filter(|last| thread.contains(last)) else {
             return Ok(ReviewOutcome::Stale);
         };
-        if Notes::load(&self.dir)? != before {
+        if self.saved.notes()? != before {
             return Ok(ReviewOutcome::Stale);
         }
         let outcome = if verdict.changed {
-            ReviewOutcome::Updated(verdict.notes.save(&self.dir)?)
+            ReviewOutcome::Updated(self.saved.save_notes(&verdict.notes)?)
         } else {
             ReviewOutcome::Unchanged
         };
         session.reviewed_through = last_read.id;
         session.reviewed_at = now_ms();
-        session.save(&self.dir)?;
+        self.saved.save_session(&session)?;
         Ok(outcome)
     }
 
     /// The session and the entries with text that the review has not read yet, or `None`
     /// when there is no session or nothing new.
     fn pending_since_last_review(&self) -> Result<Option<(Session, Vec<Entry>)>, MemoryError> {
-        let Some(session) = Session::load(&self.dir)? else {
+        let Some(session) = self.saved.session()? else {
             return Ok(None);
         };
-        let mut pending = Transcript::open(&self.dir).after(session.reviewed_through)?;
+        let mut pending = self.saved.after(session.reviewed_through)?;
         pending.retain(|entry| !entry.text.trim().is_empty());
         Ok((!pending.is_empty()).then_some((session, pending)))
     }
@@ -249,44 +249,42 @@ fn schema() -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::super::memory::{DataDir, NewEntry};
+    use super::super::memory::{InMemory, NewEntry, Storage};
     use super::super::test_support::Chat;
     use super::*;
     use crate::chat::{EntryId, Model, SessionId};
     use crate::turn::scripted::{Script, Scripted, structured_result_line};
+    use std::sync::Arc;
 
     fn jet_says(text: &str) -> NewEntry {
         NewEntry {
             turn: None,
             role: Role::Jet,
-            ..NewEntry::user(text)
+            ..NewEntry::user_text(text)
         }
     }
 
     /// A thread of four entries with the first two already reviewed.
-    fn reviewed_thread(chat: &Chat, said_at: u64) {
-        let transcript = Transcript::open(&chat.dir);
+    fn reviewed_thread(storage: &InMemory, said_at: u64) {
         for entry in [
-            NewEntry::user("I am Sam"),
+            NewEntry::user_text("I am Sam"),
             jet_says("Hi Sam"),
-            NewEntry::user("I just shipped my first app"),
+            NewEntry::user_text("I just shipped my first app"),
             jet_says("Congratulations!"),
         ] {
-            transcript.append(entry, said_at).unwrap();
+            storage.add_entry(entry, said_at).unwrap();
         }
-        Session {
+        let session = Session {
             session_id: SessionId("s1".into()),
             reviewed_through: EntryId(2),
             ..Session::default()
-        }
-        .save(&chat.dir)
-        .unwrap();
-        Notes {
+        };
+        storage.save_session(Some(&session)).unwrap();
+        let notes = Notes {
             memory: "- old fact".into(),
             ..Notes::default()
-        }
-        .save(&chat.dir)
-        .unwrap();
+        };
+        storage.save_notes(&notes).unwrap();
     }
 
     fn verdict(changed: bool, memory: &str) -> Script {
@@ -296,17 +294,23 @@ mod tests {
 
     #[test]
     fn review_covers_entries_since_last_review_and_updates_recent() {
-        let chat = Chat::with_transport(
-            "review-batch",
-            Scripted::new().then(verdict(true, "- old fact\n- shipped app")),
-        );
+        let chat =
+            Chat::with_transport(Scripted::new().then(verdict(true, "- old fact\n- shipped app")));
         let said_at = 1_000_000;
-        let due_after = |after_ms: u64| chat.conversation.review_due(said_at + after_ms);
+        let due_after = |after_ms: u64| {
+            chat.conversation
+                .review_due(said_at + after_ms, REVIEW_QUIET)
+        };
         assert!(!due_after(10_000_000), "no thread yet");
-        reviewed_thread(&chat, said_at);
+        reviewed_thread(&chat.storage, said_at);
 
         assert!(!due_after(89_999), "still typing");
         assert!(due_after(90_000));
+        assert!(
+            chat.conversation
+                .review_due(said_at + 5_000, Duration::from_secs(5)),
+            "the host may set a shorter wait"
+        );
         chat.edit_session(|session| session.reviewed_at = said_at + 100_000);
         assert!(!due_after(100_000 + 599_999), "reviewed too recently");
         assert!(due_after(100_000 + 600_000));
@@ -344,17 +348,17 @@ mod tests {
         );
     }
 
-    /// Reviews the thread of `reviewed_thread` while `meanwhile` changes the data folder.
-    fn review_while(name: &str, meanwhile: impl Fn(&DataDir) + Send + Sync + 'static) -> Chat {
-        let dir = DataDir::scratch(name);
+    /// Reviews the thread of `reviewed_thread` while `meanwhile` changes the saved chat.
+    fn review_while(meanwhile: impl Fn(&Arc<InMemory>) + Send + Sync + 'static) -> Chat {
+        let storage = Arc::new(InMemory::default());
         let scripted = Scripted::new()
             .then(verdict(true, "- from the review"))
             .before_start({
-                let dir = dir.clone();
-                move || meanwhile(&dir)
+                let storage = storage.clone();
+                move || meanwhile(&storage)
             });
-        let chat = Chat::in_dir(dir, scripted);
-        reviewed_thread(&chat, 1000);
+        let chat = Chat::in_storage(storage, scripted);
+        reviewed_thread(&chat.storage, 1000);
         let outcome = chat.conversation.review_notes(&*chat.transport(), "Jet");
         assert_eq!(outcome.unwrap(), ReviewOutcome::Stale);
         chat
@@ -362,13 +366,12 @@ mod tests {
 
     #[test]
     fn review_is_discarded_when_notes_changed_meanwhile() {
-        let chat = review_while("review-stale", |dir| {
-            Notes {
+        let chat = review_while(|storage| {
+            let typed = Notes {
                 memory: "- typed by the user".into(),
                 ..Notes::default()
-            }
-            .save(dir)
-            .unwrap();
+            };
+            storage.save_notes(&typed).unwrap();
         });
         assert_eq!(
             chat.conversation.notes().unwrap().memory,
@@ -380,18 +383,18 @@ mod tests {
             "no progress"
         );
 
-        // A thread forgotten and begun again meanwhile restarts its ids at 1, so none of it
-        // counts as read.
-        let chat = review_while("review-forgotten", |dir| {
-            Conversation::new(dir.clone()).forget().unwrap();
-            Transcript::open(dir)
-                .append(NewEntry::user("hello again"), 5)
+        // A thread forgotten and begun again meanwhile has none of the read entries, so none of
+        // it counts as read.
+        let chat = review_while(|storage| {
+            Conversation::new(storage.clone()).forget().unwrap();
+            storage
+                .add_entry(NewEntry::user_text("hello again"), 5)
                 .unwrap();
             let fresh = Session {
                 session_id: SessionId("s2".into()),
                 ..Session::default()
             };
-            fresh.save(dir).unwrap();
+            storage.save_session(Some(&fresh)).unwrap();
         });
         assert_eq!(chat.saved_session().reviewed_through, EntryId(0));
     }

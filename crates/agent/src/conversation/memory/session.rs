@@ -1,16 +1,13 @@
-//! `session.json`: which Claude Code conversation the thread continues, when it was last
-//! used, and how far the notes review has read.
+//! Which provider conversation the thread continues, when it was last used, and how far the
+//! notes review has read.
 
 use serde::{Deserialize, Serialize};
 
-use super::{DataDir, MemoryError};
 use crate::chat::{EntryId, SessionId};
-
-const FILE_NAME: &str = "session.json";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-pub(crate) struct Session {
+pub struct Session {
     /// Empty when Claude lost the conversation, so the next message must start a fresh one.
     pub session_id: SessionId,
     pub last_request_at: u64,
@@ -26,32 +23,6 @@ pub(crate) struct Session {
 }
 
 impl Session {
-    pub(crate) fn load(dir: &DataDir) -> Result<Option<Session>, MemoryError> {
-        let Some(text) = dir.read(FILE_NAME)? else {
-            return Ok(None);
-        };
-        serde_json::from_str(&text)
-            .map(Some)
-            .map_err(|source| MemoryError::Json {
-                path: dir.path(FILE_NAME),
-                line: source.line(),
-                source,
-            })
-    }
-
-    pub(crate) fn save(&self, dir: &DataDir) -> Result<(), MemoryError> {
-        let text = serde_json::to_string_pretty(self).map_err(|source| MemoryError::Json {
-            path: dir.path(FILE_NAME),
-            line: 0,
-            source,
-        })?;
-        dir.write(FILE_NAME, &text)
-    }
-
-    pub(crate) fn delete(dir: &DataDir) -> Result<(), MemoryError> {
-        dir.remove(FILE_NAME)
-    }
-
     pub(crate) fn has_conversation(&self) -> bool {
         !self.session_id.0.is_empty()
     }

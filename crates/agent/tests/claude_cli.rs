@@ -8,15 +8,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use agent::{
-    Conversation, DataDir, Effort, Event, McpConnection, Message, Model, Mood, Persona,
+    Conversation, Effort, Event, InMemory, McpConnection, Message, Model, Mood, Persona,
     SessionMode, Step, ToolStart, Turn,
 };
 use support::{chat_request, fake_claude};
 
 #[test]
 fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
-    let (claude, cwd) = fake_claude();
-    let conversation = Conversation::new(DataDir::new(cwd.path().join("data")));
+    let (claude, _cwd) = fake_claude();
+    let storage = Arc::new(InMemory::default());
+    let conversation = Conversation::new(storage.clone());
     let message = Message {
         text: "fixture:quanty-search-reply".to_owned(),
         attachments: Vec::new(),
@@ -99,7 +100,7 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
     assert_eq!(capacity.used_tokens, Some(8373));
     assert_eq!(capacity.limit_tokens, Some(1_000_000));
     assert!(!capacity.estimated);
-    let reloaded = Conversation::new(DataDir::new(cwd.path().join("data")));
+    let reloaded = Conversation::new(storage);
     assert_eq!(reloaded.context_status(Model::Sonnet).unwrap(), capacity);
     assert_eq!(
         reloaded.context_status(Model::Opus).unwrap().used_tokens,

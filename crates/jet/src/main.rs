@@ -11,7 +11,7 @@ fn main() -> ExitCode {
     }
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
-            "jet [--listen 127.0.0.1:8787] [--data-dir jet-data] [--public-origin https://jet.example] [--ui-dir PATH] [--disable-feelings] [--disable-voice] [--access-seconds 900] [--trusted-proxy 127.0.0.1]\njet seed [--data-dir jet-data]"
+            "jet [--listen 127.0.0.1:8787] [--data-dir jet-data] [--public-origin https://jet.example] [--ui-dir PATH] [--disable-feelings] [--disable-voice] [--access-seconds 900] [--trusted-proxy 127.0.0.1] [--review-quiet-seconds 90]\njet seed [--data-dir jet-data]"
         );
         return ExitCode::SUCCESS;
     }

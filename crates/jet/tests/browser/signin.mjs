@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { createProcesses, until } from './process.mjs';
+import { createProcesses, saveOwnerSettings, until } from './process.mjs';
 
 const ACCESS_SECONDS = 5;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -55,8 +55,8 @@ try {
   const provider = path.join(scratch, 'provider.py');
   await copyFile(path.join(root, 'crates/jet/tests/integration/provider.py'), provider);
   await chmod(provider, 0o700);
-  await writeFile(path.join(data, 'settings.json'), JSON.stringify({ model: 'sonnet', claudePath: provider }));
   const jet = await processes.launch(jetBinary, ['--listen', '127.0.0.1:0', '--data-dir', data, '--ui-dir', path.join(root, 'crates/jet/ui'), '--disable-feelings', '--disable-voice', '--access-seconds', String(ACCESS_SECONDS)], /Jet listening on (http:\/\/\S+)/);
+  await saveOwnerSettings(jet, { model: 'sonnet', claudePath: provider });
   const profile = path.join(scratch, 'chrome');
   chrome = spawn(chromeBinary, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
   const cdp = await devtools(profile);

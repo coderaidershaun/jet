@@ -1,68 +1,100 @@
-//! Keep saved app identities stable across edits and restarts.
-use agent::apps::{AddApp, AppOverrides, Registry, RegistryCommand, RegistryError};
+//! Keep saved app identities stable across edits and restarts, and each app with its owner.
+use agent::apps::{
+    AddApp, AppOverrides, AppOwner, AppsInMemory, Reach, Registry, RegistryCommand, RegistryError,
+};
+
+const OWNER: AppOwner = AppOwner(1);
+const OTHER: AppOwner = AppOwner(2);
 
 #[test]
-fn registry_lifecycle_survives_restart() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("MEMORY.md"), "keep me").unwrap();
-    let mut registry = Registry::open(dir.path()).unwrap();
-    let events = registry.subscribe();
-    assert!(registry.list().is_empty());
+fn registry_lifecycle_survives_restart_and_stays_with_its_owner() {
+    let storage = AppsInMemory::default();
+    let mut registry = Registry::open(Box::new(storage.clone())).unwrap();
+    assert!(registry.list(OWNER).is_empty());
     let added = registry
-        .execute(RegistryCommand::Add(AddApp {
-            address: "http://127.0.0.1:9/".into(),
-            overrides: AppOverrides {
-                label: Some("Notebook".into()),
-                ..Default::default()
-            },
-        }))
+        .execute(
+            OWNER,
+            Reach::Anywhere,
+            RegistryCommand::Add(AddApp {
+                address: "http://127.0.0.1:9/".into(),
+                overrides: AppOverrides {
+                    label: Some("Notebook".into()),
+                    ..Default::default()
+                },
+            }),
+        )
         .unwrap();
     let id = added.app.unwrap().id;
-    assert_eq!(events.recv().unwrap().app_id, id);
+    assert_eq!(added.change.unwrap().app_id, id);
     registry
-        .execute(RegistryCommand::Edit {
-            id: id.clone(),
-            address: None,
-            overrides: Some(AppOverrides {
-                label: Some("Research".into()),
-                ..Default::default()
-            }),
-        })
+        .execute(
+            OWNER,
+            Reach::Anywhere,
+            RegistryCommand::Edit {
+                id: id.clone(),
+                address: None,
+                overrides: Some(AppOverrides {
+                    label: Some("Research".into()),
+                    ..Default::default()
+                }),
+            },
+        )
         .unwrap();
     registry
-        .execute(RegistryCommand::Disable { id: id.clone() })
+        .execute(
+            OWNER,
+            Reach::Anywhere,
+            RegistryCommand::Disable { id: id.clone() },
+        )
         .unwrap();
     drop(registry);
-    let mut restored = Registry::open(dir.path()).unwrap();
+    let mut restored = Registry::open(Box::new(storage.clone())).unwrap();
     let app = restored.get(&id).unwrap();
     assert_eq!(app.label, "Research");
     assert!(!app.enabled);
     assert_eq!(app.id, id);
-    let failed_events = restored.subscribe();
-    let saved_path = dir.path().join("apps.json");
-    let backup_path = dir.path().join("apps.backup.json");
-    std::fs::rename(&saved_path, &backup_path).unwrap();
-    std::fs::create_dir(&saved_path).unwrap();
-    assert!(
-        restored
-            .execute(RegistryCommand::Enable { id: id.clone() })
-            .is_err()
-    );
-    assert!(!restored.get(&id).unwrap().enabled);
-    assert!(failed_events.try_recv().is_err());
-    std::fs::remove_dir(&saved_path).unwrap();
-    std::fs::rename(&backup_path, &saved_path).unwrap();
+
+    // Another owner neither lists nor changes the app, and may add the same address as its own.
+    assert!(restored.list(OTHER).is_empty());
+    for command in [
+        RegistryCommand::Enable { id: id.clone() },
+        RegistryCommand::Remove { id: id.clone() },
+    ] {
+        assert!(matches!(
+            restored.execute(OTHER, Reach::Anywhere, command),
+            Err(RegistryError::NotFound(_))
+        ));
+    }
+    let theirs = restored
+        .execute(
+            OTHER,
+            Reach::Anywhere,
+            RegistryCommand::Add(AddApp {
+                address: "http://127.0.0.1:9/".into(),
+                overrides: AppOverrides::default(),
+            }),
+        )
+        .unwrap();
+    assert_ne!(theirs.app.unwrap().id, id);
+    assert_eq!(restored.list(OWNER).len(), 1);
+
     restored
-        .execute(RegistryCommand::Enable { id: id.clone() })
+        .execute(
+            OWNER,
+            Reach::Anywhere,
+            RegistryCommand::Enable { id: id.clone() },
+        )
         .unwrap();
     restored
-        .execute(RegistryCommand::Remove { id: id.clone() })
+        .execute(
+            OWNER,
+            Reach::Anywhere,
+            RegistryCommand::Remove { id: id.clone() },
+        )
         .unwrap();
-    assert!(Registry::open(dir.path()).unwrap().list().is_empty());
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("MEMORY.md")).unwrap(),
-        "keep me"
-    );
+    let reopened = Registry::open(Box::new(storage)).unwrap();
+    assert!(reopened.list(OWNER).is_empty());
+    assert_eq!(reopened.list(OTHER).len(), 1);
 
     // What an app announces never overrides what the user set, and a failed refresh keeps the app.
     use agent::apps::{DiscoveryStatus, Embedding, McpOverride};
@@ -77,23 +109,31 @@ fn registry_lifecycle_survives_restart() {
         (200, descriptor("Changed")),
         (200, json!({"version":99}).to_string()),
     ]);
-    let dir = tempfile::tempdir().unwrap();
-    let mut registry = Registry::open(dir.path()).unwrap();
+    let storage = AppsInMemory::default();
+    let mut registry = Registry::open(Box::new(storage.clone())).unwrap();
     let added = registry
-        .execute(RegistryCommand::Add(AddApp {
-            address: address.clone(),
-            overrides: AppOverrides {
-                label: Some("Mine".into()),
-                ui: Some("manual/".into()),
-                ..Default::default()
-            },
-        }))
+        .execute(
+            OWNER,
+            Reach::Anywhere,
+            RegistryCommand::Add(AddApp {
+                address: address.clone(),
+                overrides: AppOverrides {
+                    label: Some("Mine".into()),
+                    ui: Some("manual/".into()),
+                    ..Default::default()
+                },
+            }),
+        )
         .unwrap();
     assert_eq!(added.discovery, Some(DiscoveryStatus::Missing));
     let id = added.app.unwrap().id;
     let refresh = |registry: &mut Registry| {
         registry
-            .execute(RegistryCommand::Refresh { id: id.clone() })
+            .execute(
+                OWNER,
+                Reach::Anywhere,
+                RegistryCommand::Refresh { id: id.clone() },
+            )
             .unwrap()
     };
     let refreshed = refresh(&mut registry);
@@ -104,15 +144,19 @@ fn registry_lifecycle_survives_restart() {
     assert_eq!(app.mcp_url.unwrap().as_str(), format!("{address}mcp"));
     assert_eq!(app.embedding, Embedding::RelativePaths);
     let edited = registry
-        .execute(RegistryCommand::Edit {
-            id: id.clone(),
-            address: None,
-            overrides: Some(AppOverrides {
-                label: Some("Renamed".into()),
-                mcp: McpOverride::Disabled,
-                ..Default::default()
-            }),
-        })
+        .execute(
+            OWNER,
+            Reach::Anywhere,
+            RegistryCommand::Edit {
+                id: id.clone(),
+                address: None,
+                overrides: Some(AppOverrides {
+                    label: Some("Renamed".into()),
+                    mcp: McpOverride::Disabled,
+                    ..Default::default()
+                }),
+            },
+        )
         .unwrap();
     assert!(edited.app.unwrap().mcp_url.is_none());
     let incompatible = refresh(&mut registry);
@@ -128,51 +172,33 @@ fn registry_lifecycle_survives_restart() {
         Some(DiscoveryStatus::Unavailable { .. })
     ));
     assert_eq!(unavailable.app.unwrap().id, id);
-    let saved = std::fs::read_to_string(dir.path().join("apps.json")).unwrap();
-    assert!(!saved.contains("Unavailable"));
     assert_eq!(
-        Registry::open(dir.path()).unwrap().discovery_status(&id),
+        Registry::open(Box::new(storage))
+            .unwrap()
+            .discovery_status(&id),
         DiscoveryStatus::NotChecked
     );
-
-    // Saved commands from an older version are refused, and the file they were in stays as it was.
-    let fresh = tempfile::tempdir().unwrap();
-    std::fs::write(fresh.path().join("settings.json"), r#"{"mcp":{"quanty":{"enabled":false,"command":"","cwd":null},"polysim":{"enabled":false,"command":"","cwd":null}}}"#).unwrap();
-    assert!(Registry::open(fresh.path()).unwrap().list().is_empty());
-    for (filename, content) in [
-        (
-            "apps.json",
-            r#"{"version":1,"apps":[{"command":"old-mcp"}]}"#,
-        ),
-        (
-            "settings.json",
-            r#"{"persona":{"name":"Ada"},"mcp":{"old":{"command":"old-mcp","enabled":false}}}"#,
-        ),
-    ] {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(filename);
-        std::fs::write(&path, content).unwrap();
-        let error = Registry::open(dir.path()).err().unwrap();
-        assert!(matches!(error, RegistryError::LegacyCommands { .. }));
-        assert!(error.to_string().contains("register running apps"));
-        assert_eq!(std::fs::read_to_string(path).unwrap(), content);
-    }
 }
 
 #[test]
 fn normalized_addresses_deduplicate_and_invalid_inputs_do_not_mutate() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut registry = Registry::open(dir.path()).unwrap();
+    let storage = AppsInMemory::default();
+    let mut registry = Registry::open(Box::new(storage.clone())).unwrap();
     let add = |address: &str| {
         RegistryCommand::Add(AddApp {
             address: address.into(),
             overrides: AppOverrides::default(),
         })
     };
-    let id = registry.execute(add(":9")).unwrap().app.unwrap().id;
+    let id = registry
+        .execute(OWNER, Reach::Anywhere, add(":9"))
+        .unwrap()
+        .app
+        .unwrap()
+        .id;
     for address in ["9", "http://127.0.0.1:9", "http://127.0.0.1:9/"] {
         assert!(
-            matches!(registry.execute(add(address)), Err(RegistryError::DuplicateAddress(existing)) if existing == id)
+            matches!(registry.execute(OWNER, Reach::Anywhere, add(address)), Err(RegistryError::DuplicateAddress(existing)) if existing == id)
         );
     }
     for address in [
@@ -189,24 +215,31 @@ fn normalized_addresses_deduplicate_and_invalid_inputs_do_not_mutate() {
     ] {
         assert!(
             matches!(
-                registry.execute(add(address)),
+                registry.execute(OWNER, Reach::Anywhere, add(address)),
                 Err(RegistryError::InvalidAddress(_))
             ),
             "{address}"
         );
     }
-    let invalid_override = registry.execute(RegistryCommand::Edit {
-        id: id.clone(),
-        address: None,
-        overrides: Some(AppOverrides {
-            ui: Some(r"\\example.com/ui".into()),
-            ..Default::default()
-        }),
-    });
+    let invalid_override = registry.execute(
+        OWNER,
+        Reach::Anywhere,
+        RegistryCommand::Edit {
+            id: id.clone(),
+            address: None,
+            overrides: Some(AppOverrides {
+                ui: Some(r"\\example.com/ui".into()),
+                ..Default::default()
+            }),
+        },
+    );
     assert!(matches!(
         invalid_override,
         Err(RegistryError::InvalidAddress(_))
     ));
-    assert_eq!(registry.list().len(), 1);
-    assert_eq!(Registry::open(dir.path()).unwrap().list().len(), 1);
+    assert_eq!(registry.list(OWNER).len(), 1);
+    assert_eq!(
+        Registry::open(Box::new(storage)).unwrap().list(OWNER).len(),
+        1
+    );
 }

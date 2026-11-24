@@ -8,7 +8,7 @@ use agent::{ClaudeCli, CodexCli, ContextStatus, Lines, Model, Request, Transport
 use serde::Serialize;
 
 use super::error::BridgeError;
-use crate::settings::Settings;
+use crate::settings::{ProgramPaths, Settings};
 
 /// A missing provider reaches the page through the same failure path as a failed run.
 struct MissingAgent {
@@ -32,18 +32,18 @@ struct Selected {
 }
 
 /// This is the one place that maps a model to a provider.
-fn select(model: Model, settings: &Settings, data_dir: &Path) -> Result<Selected, BridgeError> {
+fn select(model: Model, paths: &ProgramPaths, data_dir: &Path) -> Result<Selected, BridgeError> {
     let (name, located, missing): (_, _, fn(_) -> _) = if model.is_codex() {
         (
             "Codex",
-            CodexCli::locate(settings.codex_path.as_deref(), data_dir)
+            CodexCli::locate(paths.codex_path.as_deref(), data_dir)
                 .map(|cli| (cli.program().to_path_buf(), Arc::new(cli) as _)),
             |searched| TransportError::CodexMissing { searched },
         )
     } else {
         (
             "Claude Code",
-            ClaudeCli::locate(settings.claude_path.as_deref(), data_dir)
+            ClaudeCli::locate(paths.claude_path.as_deref(), data_dir)
                 .map(|cli| (cli.program().to_path_buf(), Arc::new(cli) as _)),
             |searched| TransportError::ClaudeMissing { searched },
         )
@@ -70,10 +70,39 @@ fn select(model: Model, settings: &Settings, data_dir: &Path) -> Result<Selected
 
 pub(super) fn transport_for(
     model: Model,
-    settings: &Settings,
+    paths: &ProgramPaths,
     data_dir: &Path,
 ) -> Result<Arc<dyn Transport>, BridgeError> {
-    Ok(select(model, settings, data_dir)?.transport)
+    Ok(select(model, paths, data_dir)?.transport)
+}
+
+/// What a reply that could not start says instead of the places of the program on the server.
+const PLACES_HIDDEN: &str = "the places set on this server";
+
+/// A provider whose start failures name no place on the server, for a user who is not an admin.
+pub(super) struct PlacesHidden(pub Arc<dyn Transport>);
+
+impl Transport for PlacesHidden {
+    fn review_model(&self) -> Model {
+        self.0.review_model()
+    }
+
+    fn start(&self, request: &Request) -> Result<Lines, TransportError> {
+        let hidden = || vec![PLACES_HIDDEN.to_owned()];
+        self.0.start(request).map_err(|error| match error {
+            TransportError::ClaudeMissing { .. } => {
+                TransportError::ClaudeMissing { searched: hidden() }
+            }
+            TransportError::CodexMissing { .. } => {
+                TransportError::CodexMissing { searched: hidden() }
+            }
+            TransportError::Spawn { source, .. } => TransportError::Spawn {
+                program: PathBuf::from(PLACES_HIDDEN),
+                source,
+            },
+            other => other,
+        })
+    }
 }
 
 #[derive(Serialize)]
@@ -87,17 +116,29 @@ pub struct AgentStatus {
 struct ProgramStatus {
     provider: &'static str,
     found: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     searched: Vec<String>,
+}
+
+impl AgentStatus {
+    /// The status without the places of the program, which only an admin may read.
+    pub(crate) fn without_program_paths(mut self) -> AgentStatus {
+        self.program.path = None;
+        self.program.searched.clear();
+        self
+    }
 }
 
 /// Where the selected agent is and the last measured context.
 pub(super) fn agent_status(
     settings: &Settings,
+    paths: &ProgramPaths,
     data_dir: &Path,
     conversation: &agent::Conversation,
 ) -> Result<AgentStatus, BridgeError> {
-    let selected = select(settings.model, settings, data_dir)?;
+    let selected = select(settings.model, paths, data_dir)?;
     let program = match selected.program {
         Ok(path) => ProgramStatus {
             provider: selected.name,

@@ -4,7 +4,9 @@ use export::{Document, Format, Source};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{FileError, Files, io_error};
+use super::upload::MAX_STORE_BYTES;
+use super::{About, FileError, FileKind, Files, Origin};
+use crate::store::{Added, UserId};
 
 /// What the model asks for: the whole document as Markdown, written the way chat maths is
 /// written, and the sources it cites in order.
@@ -30,13 +32,14 @@ pub(crate) struct SavedFile {
 }
 
 impl Files {
-    /// Writes the document into a new folder. The file is written in a `.part` folder that is
-    /// renamed when it is whole, so a crash never leaves a half-written file to be served.
+    /// Writes the document and keeps it among the user's files. The renderer writes to a path, so
+    /// the file is made in a private temporary folder that is gone when this returns.
     ///
     /// # Errors
     /// - [`FileError::Export`] when the renderer cannot make the file.
-    /// - [`FileError::Io`] when the files folder cannot be used.
-    pub fn export(&self, request: ExportRequest) -> Result<SavedFile, FileError> {
+    /// - [`FileError::Scratch`] when the temporary folder cannot be used.
+    /// - [`FileError::StoreFull`] when it would take the store past 2 GiB.
+    pub fn export(&self, user: UserId, request: ExportRequest) -> Result<SavedFile, FileError> {
         let id = Uuid::new_v4();
         let format = request.format;
         let name = format.file_name(&request.title);
@@ -54,25 +57,33 @@ impl Files {
                 })
                 .collect(),
         };
-        let part = self.root.join(format!("{id}.part"));
-        let folder = self.root.join(id.to_string());
-        std::fs::create_dir_all(&part).map_err(io_error(&part))?;
-        let written = export::write(&document, format, &part.join(&name))
-            .map_err(FileError::from)
-            .and_then(|()| std::fs::rename(&part, &folder).map_err(io_error(&folder)));
-        if let Err(error) = written {
-            // A `.part` folder is never served, so a failed clean-up leaves nothing to reach.
-            let _ = std::fs::remove_dir_all(&part);
-            return Err(error);
-        }
-        let saved = folder.join(&name);
-        let bytes = std::fs::metadata(&saved).map_err(io_error(&saved))?.len();
-        Ok(SavedFile {
+        let scratch = tempfile::tempdir().map_err(FileError::Scratch)?;
+        let path = scratch.path().join(&name);
+        export::write(&document, format, &path)?;
+        let contents = std::fs::read(&path).map_err(FileError::Scratch)?;
+        let kind = FileKind::of_name(&name).ok_or_else(|| FileError::Unsupported(name.clone()))?;
+        let about = About {
             id,
-            name,
-            title: request.title,
-            format,
-            bytes,
-        })
+            name: name.clone(),
+            kind,
+            bytes: contents.len() as u64,
+            details: String::new(),
+            origin: Origin::Export,
+            attached: true,
+            at: agent::now_ms(),
+        };
+        match self
+            .store
+            .add_file(user, &about, &contents, MAX_STORE_BYTES)?
+        {
+            Added::Kept => Ok(SavedFile {
+                id,
+                name,
+                title: request.title,
+                format,
+                bytes: about.bytes,
+            }),
+            Added::Full => Err(FileError::StoreFull),
+        }
     }
 }

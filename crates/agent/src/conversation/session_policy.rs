@@ -142,8 +142,8 @@ mod tests {
                 false,
             ),
         ];
-        for (number, (name, edit_session, edit_message, fresh)) in cases.into_iter().enumerate() {
-            let chat = Chat::new(&format!("policy-{number}"), ["old-session", "new-session"]);
+        for (name, edit_session, edit_message, fresh) in cases {
+            let chat = Chat::new(["old-session", "new-session"]);
             let first = chat.send(connected("hello", "first"));
             assert_eq!(notices(&first), 0, "the very first session needs no notice");
             chat.edit_session(edit_session);

@@ -25,7 +25,9 @@ use crate::{
     account::{self, SignedIn},
     apps,
     chat::{Accepted, AgentStatus, BridgeError, ReactRequest, SendRequest, Snapshot},
-    evidence, files, on_worker, settings, voice,
+    evidence, files, on_worker,
+    settings::{AdminSettings, ProgramPaths, Settings},
+    voice,
 };
 
 pub(super) fn router(host: Server) -> Router {
@@ -62,11 +64,27 @@ pub(super) fn router(host: Server) -> Router {
         .merge(facade)
 }
 
-async fn status(State(host): State<Server>) -> Result<Json<AgentStatus>, BridgeError> {
-    Ok(Json(on_worker(move || host.chat.status()).await??))
+/// What the chat page reads: the signed-in user's main chat. The places of the provider programs
+/// are left out for anyone who is not an admin.
+async fn status(
+    State(host): State<Server>,
+    signed_in: SignedIn,
+) -> Result<Json<AgentStatus>, BridgeError> {
+    let user = signed_in.user;
+    let status = on_worker(move || host.chats.main(user.id)?.status()).await??;
+    Ok(Json(match user.is_admin {
+        true => status,
+        false => status.without_program_paths(),
+    }))
 }
-async fn snapshot(State(host): State<Server>) -> Result<Json<Snapshot>, BridgeError> {
-    Ok(Json(on_worker(move || host.chat.snapshot()).await??))
+async fn snapshot(
+    State(host): State<Server>,
+    signed_in: SignedIn,
+) -> Result<Json<Snapshot>, BridgeError> {
+    let user = signed_in.user.id;
+    Ok(Json(
+        on_worker(move || host.chats.main(user)?.snapshot()).await??,
+    ))
 }
 async fn send(
     State(host): State<Server>,
@@ -75,7 +93,7 @@ async fn send(
 ) -> Result<Json<Accepted>, BridgeError> {
     let user = signed_in.user.id;
     Ok(Json(
-        on_worker(move || host.chat.send(request, user)).await??,
+        on_worker(move || host.chats.main(user)?.send(request)).await??,
     ))
 }
 async fn react(
@@ -84,7 +102,7 @@ async fn react(
     Json(request): Json<ReactRequest>,
 ) -> Result<Json<Value>, BridgeError> {
     let user = signed_in.user.id;
-    let entry = on_worker(move || host.chat.react(request, user)).await??;
+    let entry = on_worker(move || host.chats.main(user)?.react(request)).await??;
     Ok(Json(json!({"entry": entry})))
 }
 #[derive(Deserialize)]
@@ -94,47 +112,82 @@ struct StopRequest {
 }
 async fn stop(
     State(host): State<Server>,
+    signed_in: SignedIn,
     Json(request): Json<StopRequest>,
 ) -> Result<Json<Value>, BridgeError> {
-    host.chat.stop(&request.request_id)?;
+    let user = signed_in.user.id;
+    on_worker(move || host.chats.main(user)?.stop(&request.request_id)).await??;
     Ok(Json(json!({})))
 }
-async fn forget(State(host): State<Server>) -> Result<Json<Value>, BridgeError> {
-    on_worker(move || {
-        host.chat.forget()?;
-        Ok(Json(json!({})))
-    })
-    .await?
+async fn forget(
+    State(host): State<Server>,
+    signed_in: SignedIn,
+) -> Result<Json<Value>, BridgeError> {
+    let user = signed_in.user.id;
+    on_worker(move || host.chats.main(user)?.forget()).await??;
+    Ok(Json(json!({})))
 }
+/// The user's settings; an admin's carry the server's program paths beside them.
 async fn load_settings(
     State(host): State<Server>,
-) -> Result<Json<settings::Settings>, BridgeError> {
-    on_worker(move || Ok(Json(settings::read_from(&host.config.data_dir)?))).await?
+    signed_in: SignedIn,
+) -> Result<Json<Value>, BridgeError> {
+    let user = signed_in.user;
+    on_worker(move || {
+        let settings = host.store.settings(user.id)?;
+        Ok(Json(match user.is_admin {
+            true => json!(AdminSettings {
+                settings,
+                paths: host.store.program_paths()?,
+            }),
+            false => json!(settings),
+        }))
+    })
+    .await?
 }
+/// Saves the user's settings. The program paths in an admin's body are saved for the server;
+/// in anyone else's they are ignored.
 async fn save_settings(
     State(host): State<Server>,
-    Json(settings): Json<settings::Settings>,
+    signed_in: SignedIn,
+    Json(body): Json<Value>,
 ) -> Result<Json<Value>, BridgeError> {
+    let user = signed_in.user;
+    let settings: Settings = serde_json::from_value(body.clone())
+        .map_err(|error| BridgeError::InvalidRequest(format!("invalid settings: {error}")))?;
+    let paths = (user.is_admin && ProgramPaths::named_in(&body))
+        .then(|| serde_json::from_value::<ProgramPaths>(body))
+        .transpose()
+        .map_err(|error| BridgeError::InvalidRequest(format!("invalid program path: {error}")))?;
     on_worker(move || {
-        settings::write_to(&host.config.data_dir, &settings)?;
+        host.store.set_settings(user.id, &settings)?;
+        if let Some(paths) = paths {
+            host.store.set_program_paths(&paths)?;
+        }
         Ok(Json(json!({})))
     })
     .await?
 }
-async fn load_memory(State(host): State<Server>) -> Result<Json<Value>, BridgeError> {
+async fn load_memory(
+    State(host): State<Server>,
+    signed_in: SignedIn,
+) -> Result<Json<Value>, BridgeError> {
+    let user = signed_in.user.id;
     on_worker(move || {
-        let notes = host.chat.conversation.notes()?;
+        let notes = host.chats.main(user)?.conversation.notes()?;
         Ok(Json(json!({"memory":notes.memory,"user":notes.user,"recent":notes.recent,
             "limits":{"memory":agent::MEMORY_LIMIT,"user":agent::USER_LIMIT,"recent":agent::RECENT_LIMIT}})))
     }).await?
 }
 async fn save_memory(
     State(host): State<Server>,
+    signed_in: SignedIn,
     Json(notes): Json<Notes>,
 ) -> Result<Json<Notes>, BridgeError> {
+    let user = signed_in.user.id;
     on_worker(move || {
-        let notes = host.chat.conversation.save_notes(notes)?;
-        host.chat.memory_updated(notes.clone());
+        let notes = host.chats.main(user)?.conversation.save_notes(notes)?;
+        host.chats.notes_changed(user, &notes);
         Ok(Json(notes))
     })
     .await?
@@ -173,10 +226,14 @@ async fn events(
     signed_in: SignedIn,
     Query(resume): Query<Resume>,
 ) -> Result<impl axum::response::IntoResponse, BridgeError> {
-    let chat = host.chat.clone();
+    let (chats, user) = (host.chats.clone(), signed_in.user.id);
     let accounts = host.accounts.clone();
-    let (initial, mut receiver) =
-        on_worker(move || chat.subscribe(resume.epoch.as_deref(), resume.cursor)).await??;
+    let (initial, mut receiver) = on_worker(move || {
+        chats
+            .main(user)?
+            .subscribe(resume.epoch.as_deref(), resume.cursor)
+    })
+    .await??;
     let (sender, stream) = mpsc::channel(32);
     tokio::spawn(async move {
         for value in initial {

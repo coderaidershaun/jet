@@ -39,7 +39,7 @@ mod tests {
                 "mood: neutral\nTry https://jet-said.example/page",
             )))
             .then(Script::lines(reply_lines("s3", "mood: neutral\nok")));
-        let chat = Chat::with_transport("linked-hosts", scripted);
+        let chat = Chat::with_transport(scripted);
         chat.send(message("an older chat: https://older-chat.example/x"));
         chat.conversation.forget().unwrap();
         chat.send(message("where can I read about it?"));

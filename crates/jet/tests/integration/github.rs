@@ -45,12 +45,6 @@ fn start(github: &Paths) -> Host {
     let bins = std::path::Path::new(env!("CARGO_BIN_EXE_jet"))
         .parent()
         .unwrap();
-    std::fs::write(
-        dir.path().join("settings.json"),
-        json!({"claudePath":bins.join("fake-claude"),"codexPath":bins.join("fake-codex")})
-            .to_string(),
-    )
-    .unwrap();
     let log = std::fs::File::create(dir.path().join(LOG)).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_jet"))
         .args(["--listen", "127.0.0.1:0", "--data-dir"])
@@ -72,13 +66,17 @@ fn start(github: &Paths) -> Host {
         .unwrap_or_else(|| panic!("server did not start: {line}"))
         .to_owned();
     let cookie = signed_in_cookie(&url, OWNER);
-    Host {
+    let host = Host {
         child,
         origin: url.clone(),
         url,
         dir,
         cookie,
-    }
+    };
+    host.set_programs(
+        json!({"claudePath":bins.join("fake-claude"),"codexPath":bins.join("fake-codex")}),
+    );
+    host
 }
 
 fn signed_in_cookie(url: &str, email: &str) -> String {
@@ -138,7 +136,8 @@ fn run_turn(
     assert_eq!(status, 200, "{accepted}");
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let snapshot = host.get("/api/snapshot");
+        let (_, snapshot) = call(host, cookie, "GET", "/api/snapshot", None);
+        let snapshot: Value = serde_json::from_str(&snapshot).unwrap();
         let history = snapshot["history"].as_array().unwrap();
         if snapshot["active"].is_null() && history.len() == entries {
             assert_eq!(history[entries - 1]["status"], "complete", "{snapshot}");
@@ -191,7 +190,15 @@ fn a_token_saved_by_one_user_is_sent_only_on_that_users_calls() {
         json!([activity()]),
         2,
     );
-    let manager_turn = run_turn(&host, &manager, "manager", "sonnet", json!([activity()]), 4);
+    // Acceptance: a fact read with one user's token reaches only that user's history and events.
+    let (_, theirs) = call(&host, &manager, "GET", "/api/snapshot", None);
+    let theirs: Value = serde_json::from_str(&theirs).unwrap();
+    assert_eq!(theirs["history"], json!([]), "{theirs}");
+    assert_eq!(
+        theirs["cursor"], 0,
+        "no event of the owner's turn: {theirs}"
+    );
+    let manager_turn = run_turn(&host, &manager, "manager", "sonnet", json!([activity()]), 2);
 
     for result in [&owner_turn[0], &manager_turn[0]] {
         let facts = &result["structuredContent"];
@@ -213,6 +220,11 @@ fn a_token_saved_by_one_user_is_sent_only_on_that_users_calls() {
 
     // The call shows as a card in the thread, kept with the reply.
     let history = host.get("/api/snapshot")["history"].clone();
+    assert_eq!(
+        history.as_array().unwrap().len(),
+        2,
+        "the manager's turn left nothing in the owner's thread: {history}"
+    );
     let card = &history[1]["tools"][0];
     assert_eq!(
         (&card["server"], &card["tool"], &card["ok"]),
@@ -305,19 +317,13 @@ fn the_token_is_in_no_file_event_transcript_log_or_answer() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    for expected in [
-        "jet.sqlite3",
-        "jet.sqlite3-wal",
-        "settings.json",
-        "transcript.jsonl",
-        LOG,
-    ] {
+    for expected in ["jet.sqlite3", "jet.sqlite3-wal", LOG] {
         assert!(
             names.iter().any(|name| name == expected),
             "{expected} was not written: {names:?}"
         );
     }
-    assert!(files >= 5);
+    assert!(files >= 3);
 }
 
 #[test]

@@ -4,24 +4,22 @@
 mod config;
 mod routes;
 
-use crate::account::{AccountError, Accounts};
+use crate::account::{self, AccountError, Accounts};
 use crate::apps::{Apps, Proxy};
-use crate::chat::TurnTools;
+use crate::chat::{BridgeError, Chats, TurnTools};
 use crate::evidence::{Evidence, GithubTokens, TokenError};
 use crate::facade::Facade;
 use crate::files::Files;
 use crate::lock;
-use crate::store::Store;
+use crate::store::{Email, ImportError, Store, StoreError};
 use crate::voice::Voice;
 use agent::{apps::Registry, mcp::HttpMcpClient};
 use axum::{Router, extract::FromRef};
+pub use config::ServerConfig;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-
-use crate::chat::{BridgeError, ChatState};
-pub use config::ServerConfig;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
@@ -35,6 +33,10 @@ pub enum ServerError {
     Account(#[from] AccountError),
     #[error(transparent)]
     Token(#[from] TokenError),
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    #[error("could not copy the older Jet's files into the database")]
+    Import(#[from] ImportError),
     #[error("server network operation failed: {0}")]
     Io(#[from] std::io::Error),
     #[error("server task failed: {0}")]
@@ -44,7 +46,8 @@ pub enum ServerError {
 #[derive(Clone)]
 pub struct Server {
     accounts: Accounts,
-    chat: Arc<ChatState>,
+    store: Store,
+    chats: Arc<Chats>,
     apps: Apps,
     facade: Arc<Facade>,
     files: Files,
@@ -87,44 +90,38 @@ impl Server {
     pub fn open(config: ServerConfig) -> Result<Self, ServerError> {
         let proxy = Proxy::new(config.public_origin.as_deref(), config.listen)
             .map_err(|error| ServerError::Config(error.to_string()))?;
-        let registry = Arc::new(Mutex::new(Registry::open(&config.data_dir)?));
-        let accounts = Accounts::open(&config)?;
-        // SMELL: a second connection to the database, because the sign-in code keeps its own
-        // connection private. Both are safe together, but every table should share one.
-        let store = Store::open(&config.data_dir).map_err(TokenError::from)?;
-        let github_tokens = GithubTokens::open(store, &config.data_dir)?;
+        let store = Store::open(&config.data_dir)?;
+        let accounts = Accounts::open(&config, store.clone())?;
+        if store.import_legacy(&config.data_dir, &Email::from(account::OWNER))? {
+            eprintln!("jet: copied the older Jet's files into the owner's account; the files stay");
+        }
+        let registry = Arc::new(Mutex::new(Registry::open(Box::new(store.clone()))?));
+        let github_tokens = GithubTokens::open(store.clone(), &config.data_dir)?;
         let mcp = Arc::new(HttpMcpClient::new(registry.clone()));
-        let files = Files::new(&config.data_dir);
+        let files = Files::new(store.clone());
+        let apps = Apps::new(registry, mcp, proxy, store.clone());
         let facade = Facade::new(
-            registry.clone(),
-            mcp.clone(),
+            apps.clone(),
             files.clone(),
             format!("http://{}/mcp", config.listen),
             config.public_origin.clone(),
             accounts.keys().clone(),
             Evidence::new(github_tokens.clone()),
         );
-        let chat = ChatState::open(config.data_dir.clone(), facade.clone(), files.clone())?;
-        *lock(&facade.chat) = Arc::downgrade(&chat);
-        let events = lock(&registry).subscribe();
-        let weak = Arc::downgrade(&chat);
-        std::thread::spawn(move || {
-            loop {
-                let Some(chat) = weak.upgrade() else { break };
-                if chat.is_closing() {
-                    break;
-                }
-                match events.recv_timeout(Duration::from_millis(200)) {
-                    Ok(event) => chat.registry_changed(event),
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                    Err(_) => break,
-                }
-            }
-        });
+        let chats = Chats::new(
+            store.clone(),
+            facade.clone(),
+            files.clone(),
+            config.data_dir.clone(),
+            config.review_quiet,
+        );
+        *lock(&facade.chats) = Arc::downgrade(&chats);
+        apps.tell_chats(Arc::downgrade(&chats));
         Ok(Self {
             accounts,
-            chat,
-            apps: Apps::new(registry, mcp, proxy),
+            store,
+            chats,
+            apps,
             facade,
             files,
             github_tokens,
@@ -141,8 +138,8 @@ impl Server {
     async fn shutdown(&self) {
         self.facade.shutdown();
         self.apps.shutdown().await;
-        let chat = self.chat.clone();
-        if let Err(error) = tokio::task::spawn_blocking(move || chat.shutdown()).await {
+        let chats = self.chats.clone();
+        if let Err(error) = tokio::task::spawn_blocking(move || chats.shutdown()).await {
             eprintln!("jet: shutdown worker failed: {error}");
         }
     }

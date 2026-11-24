@@ -1,33 +1,37 @@
 //! Keep provider work alive independently of browser connections and expose recoverable turns.
+//! Each chat has a runtime of its own: one reply at a time in it, while other chats reply at once.
 
+mod chats;
 mod error;
 mod events;
+mod memory;
 mod provider;
 mod review_timer;
 mod turn_tools;
 
 use agent::{
-    Conversation, ConversationError, DataDir, Effort, EntryId, Event, Message, Model, Persona,
-    Reaction, Reply, ShownEntry, Transport, TurnIdentity, mcp::Progress,
+    Conversation, ConversationError, Effort, EntryId, Event, Message, Model, Persona, Reaction,
+    Reply, ShownEntry, Transport, TurnIdentity, mcp::Progress,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    sync::{Arc, Mutex, Weak},
+    time::Duration,
 };
 use tokio::sync::broadcast;
 
 use crate::files::{About, FileError, Files};
-use crate::store::UserId;
-use crate::{lock, settings};
+use crate::lock;
+use crate::store::{Chat, Store, UserId};
+pub(crate) use chats::Chats;
 pub use error::BridgeError;
 use events::{ActiveTurn, Reacted, Runtime};
 pub(crate) use events::{Envelope, RunningCall, Snapshot, TurnContext};
 pub(crate) use provider::AgentStatus;
 use review_timer::{ReviewTarget, ReviewTimer};
-pub(crate) use turn_tools::TurnTools;
+pub(crate) use turn_tools::{TurnOwner, TurnTools};
 
 /// The longest request or client ID the page may send, in bytes.
 pub(crate) const MAX_ID_BYTES: usize = 128;
@@ -36,11 +40,16 @@ const MAX_ATTACHMENTS: usize = 10;
 /// How many entries of the thread a snapshot shows, the newest ones.
 const SHOWN_HISTORY: usize = 200;
 
+/// The runtime of one chat: its conversation, its running turn and events, and its review timer.
 pub(crate) struct ChatState {
+    pub chat: Chat,
     pub conversation: Conversation,
+    hub: Weak<Chats>,
+    store: Store,
     tools: Arc<dyn TurnTools>,
     files: Files,
-    pub data_dir: PathBuf,
+    data_dir: PathBuf,
+    review_quiet: Duration,
     runtime: Mutex<Runtime>,
     review: ReviewTimer,
 }
@@ -163,8 +172,6 @@ pub(crate) struct PendingReaction {
     request: ReactRequest,
     /// Found when the reaction came in, so starting the turn later looks nothing up.
     transport: Arc<dyn Transport>,
-    /// The signed-in user who reacted; the turn's tools act for them.
-    user: UserId,
 }
 
 #[derive(Serialize)]
@@ -176,40 +183,52 @@ pub(crate) struct Accepted {
 }
 
 impl ChatState {
-    pub fn open(
-        data_dir: PathBuf,
-        tools: Arc<dyn TurnTools>,
-        files: Files,
-    ) -> Result<Arc<Self>, BridgeError> {
-        let conversation = Conversation::new(DataDir::new(data_dir.clone()));
-        conversation.recover_interrupted()?;
-        Ok(Arc::new(Self {
+    fn new(hub: &Arc<Chats>, chat: Chat, conversation: Conversation) -> Arc<Self> {
+        Arc::new(Self {
+            chat,
             conversation,
-            tools,
-            files,
-            data_dir,
+            hub: Arc::downgrade(hub),
+            store: hub.store.clone(),
+            tools: hub.tools.clone(),
+            files: hub.files.clone(),
+            data_dir: hub.data_dir.clone(),
+            review_quiet: hub.review_quiet,
             runtime: Mutex::new(Runtime::new()),
             review: ReviewTimer::new(),
-        }))
+        })
+    }
+
+    fn user(&self) -> UserId {
+        self.chat.user
     }
 
     pub fn status(&self) -> Result<AgentStatus, BridgeError> {
-        let settings = settings::read_from(&self.data_dir)?;
-        provider::agent_status(&settings, &self.data_dir, &self.conversation)
+        let settings = self.store.settings(self.user())?;
+        let paths = self.store.program_paths()?;
+        provider::agent_status(&settings, &paths, &self.data_dir, &self.conversation)
     }
 
-    pub fn send(
-        self: &Arc<Self>,
-        request: SendRequest,
-        user: UserId,
-    ) -> Result<Accepted, BridgeError> {
+    /// The provider that runs `model`, from the server's program paths. Finding the program can
+    /// take seconds, so callers do it before they take the runtime's lock.
+    /// Only an admin's failed replies may name where the program is on the server.
+    fn transport_for(&self, model: Model) -> Result<Arc<dyn Transport>, BridgeError> {
+        let paths = self.store.program_paths()?;
+        let transport = provider::transport_for(model, &paths, &self.data_dir)?;
+        let is_admin = self
+            .store
+            .user(self.user())?
+            .is_some_and(|user| user.is_admin);
+        Ok(match is_admin {
+            true => transport,
+            false => Arc::new(provider::PlacesHidden(transport)),
+        })
+    }
+
+    pub fn send(self: &Arc<Self>, request: SendRequest) -> Result<Accepted, BridgeError> {
         request.check()?;
         let payload = json!(&request);
-        // Finding the program can take seconds, so it runs before the lock. Its error waits
-        // until the other checks have passed.
-        let transport = settings::read_from(&self.data_dir)
-            .map_err(BridgeError::from)
-            .and_then(|saved| provider::transport_for(request.model, &saved, &self.data_dir));
+        // Its error waits until the other checks have passed.
+        let transport = self.transport_for(request.model);
         let mut runtime = lock(&self.runtime);
         if let Some(accepted) = self.accepted_before(&request.request_id, &payload)? {
             return Ok(accepted);
@@ -223,12 +242,12 @@ impl ChatState {
             transport: transport.clone(),
             name: request.persona.name.clone(),
         };
-        let (identity, message) = self.bind_new_turn(request, payload, attachments, user);
+        let (identity, message) = self.bind_new_turn(request, payload, attachments);
         let (user, reply) = self
             .conversation
             .send(transport, message, Some(identity.clone()))
             .inspect_err(|_| {
-                self.tools.revoke(&identity.request_id);
+                self.tools.revoke(self.owner(), &identity.request_id);
             })?;
         let identity = TurnContext::from(&identity);
         let accepted = Accepted {
@@ -244,15 +263,9 @@ impl ChatState {
     /// Saves the user's reaction and tells every browser at once, even while a turn runs. A new
     /// or changed emoji lets Jet answer it now, or after the running turn as the one pending
     /// reaction turn. Taking a reaction off starts nothing.
-    pub fn react(
-        self: &Arc<Self>,
-        request: ReactRequest,
-        user: UserId,
-    ) -> Result<ShownEntry, BridgeError> {
+    pub fn react(self: &Arc<Self>, request: ReactRequest) -> Result<ShownEntry, BridgeError> {
         request.check()?;
-        let transport = settings::read_from(&self.data_dir)
-            .map_err(BridgeError::from)
-            .and_then(|saved| provider::transport_for(request.model, &saved, &self.data_dir));
+        let transport = self.transport_for(request.model);
         let mut runtime = lock(&self.runtime);
         if runtime.closing {
             return Err(BridgeError::ShuttingDown);
@@ -278,11 +291,7 @@ impl ChatState {
         }
         // Only Jet's answer needs the settings and the provider, so the reaction is saved first.
         let transport = transport?;
-        runtime.pending = Some(PendingReaction {
-            request,
-            transport,
-            user,
-        });
+        runtime.pending = Some(PendingReaction { request, transport });
         self.start_pending(&mut runtime);
         Ok(entry)
     }
@@ -293,12 +302,7 @@ impl ChatState {
         if runtime.active.is_some() || runtime.closing {
             return;
         }
-        let Some(PendingReaction {
-            request,
-            transport,
-            user,
-        }) = runtime.pending.take()
-        else {
+        let Some(PendingReaction { request, transport }) = runtime.pending.take() else {
             return;
         };
         if runtime.cancelled_requests.contains(&request.request_id) {
@@ -319,7 +323,7 @@ impl ChatState {
             name: request.persona.name.clone(),
         };
         let (identity, message) =
-            self.bind_new_turn(request.as_send(), json!(&request), Vec::new(), user);
+            self.bind_new_turn(request.as_send(), json!(&request), Vec::new());
         let started = self.conversation.answer_reaction(
             transport.clone(),
             message,
@@ -329,13 +333,9 @@ impl ChatState {
         let reply = match started {
             Ok(reply) => reply,
             Err(error) => {
-                self.tools.revoke(&identity.request_id);
+                self.tools.revoke(self.owner(), &identity.request_id);
                 if matches!(error, ConversationError::Busy) {
-                    runtime.pending = Some(PendingReaction {
-                        request,
-                        transport,
-                        user,
-                    });
+                    runtime.pending = Some(PendingReaction { request, transport });
                 } else {
                     eprintln!(
                         "jet: the reaction on message {} was not answered: {error}",
@@ -401,7 +401,6 @@ impl ChatState {
         request: SendRequest,
         payload: Value,
         attachments: Vec<agent::Attachment>,
-        user: UserId,
     ) -> (TurnIdentity, Message) {
         let identity = TurnIdentity {
             request_id: request.request_id,
@@ -419,7 +418,7 @@ impl ChatState {
             effort: request.effort,
             budget_usd: request.budget_usd,
             local_time: request.local_time,
-            mcp: Some(self.tools.bind(&identity, reads_web, user)),
+            mcp: Some(self.tools.bind(&identity, reads_web, self.owner())),
             active_app_id: request.active_app_id,
             feeling: request.feeling,
             spoken: request.spoken,
@@ -449,12 +448,12 @@ impl ChatState {
             }
             runtime.publish(Some(identity.clone()), json!(event));
             if terminal {
-                self.tools.revoke(&identity.request_id);
+                self.tools.revoke(self.owner(), &identity.request_id);
                 runtime.active = None;
                 runtime.stopper = None;
             }
         }
-        self.tools.revoke(&identity.request_id);
+        self.tools.revoke(self.owner(), &identity.request_id);
         drop(reply);
         let mut runtime = lock(&self.runtime);
         if !runtime.closing {
@@ -472,7 +471,7 @@ impl ChatState {
                 unique.push(id);
             }
         }
-        match self.files.attach(&unique) {
+        match self.files.attach(self.user(), &unique) {
             Ok(uploads) => Ok(uploads.iter().map(About::attachment).collect()),
             Err(FileError::NotFound(id)) => Err(BridgeError::InvalidRequest(format!(
                 "{id} is not an uploaded file"
@@ -534,7 +533,7 @@ impl ChatState {
         }
         let mut runtime = lock(&self.runtime);
         runtime.cancel_request(request_id);
-        self.tools.revoke(request_id);
+        self.tools.revoke(self.owner(), request_id);
         if runtime
             .active
             .as_ref()
@@ -546,22 +545,19 @@ impl ChatState {
         Ok(())
     }
 
-    /// Clears the thread and deletes every file, the ones Jet wrote and the ones the user attached.
-    /// The runtime stays locked throughout, so no turn can start and write a file in between.
+    /// Clears the thread and deletes every file of the user, the ones Jet wrote and the ones the
+    /// user attached. The runtime stays locked throughout, so no turn can start and write a file in
+    /// between.
     pub fn forget(&self) -> Result<(), BridgeError> {
         let mut runtime = lock(&self.runtime);
         self.conversation.forget()?;
         runtime.pending = None;
         runtime.publish(None, json!({"kind":"historyChanged"}));
-        self.files.clear()?;
+        self.files.clear(self.user())?;
         Ok(())
     }
 
-    pub fn is_closing(&self) -> bool {
-        lock(&self.runtime).closing
-    }
-
-    pub fn registry_changed(&self, event: agent::apps::RegistryEvent) {
+    fn registry_changed(&self, event: &agent::apps::RegistryEvent) {
         lock(&self.runtime).publish(
             None,
             json!({"kind":"registryChanged", "appId":event.app_id, "change":event.change}),
@@ -633,12 +629,26 @@ impl ChatState {
         }
     }
 
-    pub fn memory_updated(&self, notes: agent::Notes) {
+    fn memory_updated(&self, notes: agent::Notes) {
         lock(&self.runtime).publish(None, json!({"kind":"memoryUpdated", "notes":notes}));
     }
 
-    pub fn shutdown(&self) {
-        self.tools.shutdown();
+    /// Tells every open chat of this chat's user that the notes changed.
+    fn notes_changed(&self, notes: &agent::Notes) {
+        if let Some(hub) = self.hub.upgrade() {
+            hub.notes_changed(self.user(), notes);
+        }
+    }
+
+    fn owner(&self) -> TurnOwner {
+        TurnOwner {
+            user: self.user(),
+            chat: self.chat.id,
+        }
+    }
+
+    /// Stops the running turn and any review, refuses new work, and ends the event streams.
+    fn close(&self) {
         {
             let mut runtime = lock(&self.runtime);
             runtime.closing = true;
@@ -649,15 +659,6 @@ impl ChatState {
             runtime.publish(None, json!({"kind":"shutdown"}));
         }
         self.conversation.stop_review();
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while self.conversation.is_busy() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        if self.conversation.is_busy() {
-            eprintln!(
-                "jet: provider cleanup exceeded three seconds; request will be recovered on restart"
-            );
-        }
     }
 }
 

@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-import json, sys, time
+import json, re, sys, time
 prompt = sys.stdin.read()
+review = '--json-schema' in sys.argv
+# A thread that says "hang" keeps the reply, and its notes review, running until it is stopped.
+hang = re.search(r'\bhang\b', prompt) is not None
 with open('calls', 'a') as calls:
-    calls.write('review\n' if '--json-schema' in sys.argv else 'reply\n')
+    calls.write('review\n' if review else 'reply\n')
 def emit(value):
     print(json.dumps(value), flush=True)
+if review and not hang:
+    # The notes review: what the user last said becomes their RECENT note.
+    said = re.findall(r'^user: (.*)$', prompt, re.MULTILINE)
+    notes = {'changed': True, 'memory': '', 'user': '', 'recent': '- ' + said[-1] if said else ''}
+    emit({'type':'result','subtype':'success','is_error':False,'result':'','structured_output':notes,'duration_ms':1,'total_cost_usd':0,'usage':{}})
+    sys.exit(0)
 emit({'type':'system','subtype':'init','session_id':'fixture-session','model':'fixture-model'})
 emit({'type':'assistant','message':{'role':'assistant','content':[{'type':'tool_use','id':'read-1','name':'mcp__fixture__read','input':{'page':1}}]}})
 emit({'type':'user','message':{'role':'user','content':[{'type':'tool_result','tool_use_id':'read-1','content':'{"text":"free fixture"}'}]}})
@@ -13,7 +22,7 @@ for text in ['mood: neutral\n', 'Partial browser reply']:
 if 'flood' in prompt:
     for _ in range(600):
         emit({'type':'stream_event','event':{'type':'content_block_delta','index':0,'delta':{'type':'text_delta','text':'.'}}})
-if 'hang' in prompt or '--json-schema' in sys.argv:
+if hang:
     time.sleep(120)
 else:
     time.sleep(1)

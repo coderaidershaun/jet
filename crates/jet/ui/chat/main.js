@@ -38,7 +38,7 @@ async function start() {
   // Every request of the page goes through the renewal, also those of modules that call fetch themselves.
   globalThis.fetch = session.fetch;
   const user = await session.whoAmI();
-  const settings = await loadSettings();
+  const settings = await loadSettings(user);
   const agent = connectAgent({ beforeReconnect: session.whoAmI });
   const [history, status, voiceStatus] = await Promise.all([
     agent.history(),
@@ -177,7 +177,8 @@ async function start() {
       view.setBanner(null);
       return;
     }
-    const message = "I couldn't find " + (program.provider ?? "Claude Code") + ". I looked in: " + program.searched.join(', ');
+    const where = program.searched ? "I looked in: " + program.searched.join(', ') : "Ask an admin to set where it is.";
+    const message = "I couldn't find " + (program.provider ?? "Claude Code") + ". " + where;
     view.setBanner(message, { label: 'Settings', run: () => sheet.open('claude') });
   }
   let statusNumber = 0;
@@ -299,6 +300,7 @@ async function start() {
     context: {
       settings,
       agent,
+      isAdmin: user.isAdmin,
       systemReducesMotion: () => systemReduces.matches,
       onClaudeChecked: showProgramStatus,
       onForget: forget,

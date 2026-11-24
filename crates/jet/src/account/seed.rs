@@ -7,7 +7,8 @@ use crate::store::{Email, NewUser, Store, UserId};
 const PASSWORD: &str = "000111";
 const TEAM: &str = "Commercial";
 
-const OWNER: &str = "shaunsurfing@gmail.com";
+/// The deployment's owner: the admin who gets what an older Jet kept in files.
+pub(crate) const OWNER: &str = "shaunsurfing@gmail.com";
 const MANAGER: &str = "admin123@gmail.com";
 const TEAM_MEMBERS: [&str; 2] = ["admin1@gmail.com", "admin2@gmail.com"];
 

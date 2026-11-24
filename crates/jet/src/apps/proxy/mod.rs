@@ -5,7 +5,7 @@ mod headers;
 mod target;
 
 use super::Apps;
-use crate::lock;
+use crate::{account::SignedIn, lock};
 use agent::apps::{App, AppId, DiscoveryStatus};
 use axum::{
     Json, Router,
@@ -102,19 +102,19 @@ where
         .route("/apps/{id}/{*tail}", any(forward))
         .route("/api/apps/{id}/ui-status", get(ui_status))
 }
-fn app(apps: &Apps, id: &str) -> Result<App, ProxyError> {
+/// The app when it belongs to the signed-in user; another user's app is missing to them.
+fn app(apps: &Apps, signed_in: &SignedIn, id: &str) -> Result<App, ProxyError> {
     let id: AppId = id.parse().map_err(|_| ProxyError::Missing)?;
-    lock(&apps.registry)
-        .get(&id)
-        .cloned()
+    apps.owned(signed_in.user.id, &id)
         .ok_or(ProxyError::Missing)
 }
 async fn slash(
     State(apps): State<Apps>,
+    signed_in: SignedIn,
     Path(id): Path<String>,
     uri: Uri,
 ) -> Result<Response, ProxyError> {
-    app(&apps, &id)?;
+    app(&apps, &signed_in, &id)?;
     let mut location = format!("{}/", uri.path());
     if let Some(query) = uri.query() {
         location.push('?');
@@ -124,6 +124,7 @@ async fn slash(
 }
 async fn forward(
     State(apps): State<Apps>,
+    signed_in: SignedIn,
     uri: Uri,
     mut request: Request<Body>,
 ) -> Result<Response, ProxyError> {
@@ -132,7 +133,7 @@ async fn forward(
         .strip_prefix("/apps/")
         .and_then(|path| path.split('/').next())
         .ok_or(ProxyError::Missing)?;
-    let app = app(&apps, id)?;
+    let app = app(&apps, &signed_in, id)?;
     if request.method() == axum::http::Method::OPTIONS
         && let Some(answer) = headers::preflight(request.headers())
     {
@@ -190,9 +191,10 @@ async fn forward(
 }
 async fn ui_status(
     State(apps): State<Apps>,
+    signed_in: SignedIn,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ProxyError> {
-    let app = app(&apps, &id)?;
+    let app = app(&apps, &signed_in, &id)?;
     let discovery = lock(&apps.registry).discovery_status(&app.id);
     if let DiscoveryStatus::Incompatible { message } = discovery {
         return Ok(Json(json!({"status":"incompatible","message":message})));

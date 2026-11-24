@@ -1,11 +1,20 @@
 //! The one SQLite database of the data directory. Every SQL statement of the server lives in this
 //! module: each table module adds typed calls to `Store`, and each migration adds its tables.
 
+mod apps;
+mod chats;
 mod directory;
+mod files;
 mod github_tokens;
+mod import;
+mod notes;
+mod settings;
 mod signins;
 
+pub(crate) use chats::{Chat, ChatId};
 pub(crate) use directory::{Email, NewUser, User, UserId};
+pub(crate) use files::Added;
+pub use import::ImportError;
 pub(crate) use signins::{Rotation, SigninId};
 
 use crate::lock;
@@ -23,6 +32,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0001_directory.sql"),
     include_str!("migrations/0002_signins.sql"),
     include_str!("migrations/0003_github_tokens.sql"),
+    include_str!("migrations/0004_personal_jet.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -49,6 +59,12 @@ pub enum StoreError {
     TooNew { found: usize, known: usize },
     #[error("database query failed")]
     Query(#[from] rusqlite::Error),
+    #[error("{what} in the database is not valid JSON of its kind")]
+    Json {
+        what: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 #[derive(Clone)]
@@ -86,6 +102,28 @@ impl Store {
     ) -> Result<T, StoreError> {
         Ok(call(&mut lock(&self.connection))?)
     }
+
+    /// Like `with`, for a call that can also fail with a store error of its own.
+    fn try_with<T>(
+        &self,
+        call: impl FnOnce(&mut Connection) -> Result<T, StoreError>,
+    ) -> Result<T, StoreError> {
+        call(&mut lock(&self.connection))
+    }
+}
+
+fn to_json(value: &impl serde::Serialize) -> Result<String, StoreError> {
+    serde_json::to_string(value).map_err(|source| StoreError::Json {
+        what: "a value",
+        source,
+    })
+}
+
+fn from_json<T: serde::de::DeserializeOwned>(
+    what: &'static str,
+    text: &str,
+) -> Result<T, StoreError> {
+    serde_json::from_str(text).map_err(|source| StoreError::Json { what, source })
 }
 
 /// A time in seconds since 1970 as SQLite stores it.

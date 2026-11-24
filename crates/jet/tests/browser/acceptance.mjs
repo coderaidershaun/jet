@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { createProcesses, signIn, until } from './process.mjs';
+import { createProcesses, saveOwnerSettings, signIn, until } from './process.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const scratch = await mkdtemp(path.join(os.tmpdir(), 'jet-acceptance-'));
@@ -37,13 +37,11 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
 }
 `);
   await chmod(provider, 0o755);
-  const settings = JSON.parse(await readFile(path.join(root, 'crates/jet/ui/bridge/default-settings.json')));
-  Object.assign(settings, { model: 'sonnet', claudePath: provider, reducedMotion: true });
-  settings.persona.name = 'Acceptance Jet';
-  await writeFile(path.join(data, 'settings.json'), JSON.stringify(settings));
+  const settings = { model: 'sonnet', claudePath: provider, reducedMotion: true, persona: { name: 'Acceptance Jet', jobTitle: 'First-mate', notes: '' } };
   const jet = listen => processes.launch(process.env.JET_BINARY ?? path.join(root, 'target/debug/jet'), ['--listen', listen, '--data-dir', data, '--ui-dir', path.join(root, 'crates/jet/ui'), '--disable-feelings', '--disable-voice'], /Jet listening on (http:\/\/\S+)/);
   const quanty = listen => processes.launch(process.env.QUANTY_BINARY, ['--home', home, '--listen', listen, '--fixture', 'black-scholes', '--trusted-integration'], /listening on (http:\/\/\S+)/, { PATH: process.env.PATH });
   const origin = await jet('127.0.0.1:0'), quantyUrl = await quanty('127.0.0.1:0');
+  await saveOwnerSettings(origin, settings);
   const generic = await processes.launch('node', [path.join(root, 'crates/jet/tests/fixtures/proxy.mjs')], /"url":"([^"]+)"/, { ...process.env, FIXTURE_NAME: 'Generic notebook' });
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
   browser = await chromium.launch({ executablePath: process.env.CHROME_BINARY, headless: true, args: ['--enable-unsafe-swiftshader'] });
