@@ -1655,6 +1655,7 @@ dependencies = [
  "jsonschema",
  "jsonwebtoken",
  "pdf-extract",
+ "ring",
  "rlimit",
  "rmcp",
  "rusqlite",

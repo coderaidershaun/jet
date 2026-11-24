@@ -186,9 +186,10 @@ impl Handler {
     }
 
     /// Refuses `apps_update`, and a `tools_call` whose tool is not marked read-only, once the turn
-    /// has read web text. It first waits until the turn's stream has passed this call's own
-    /// tool-use line, so every web read before the call has been seen. When the order cannot be
-    /// known, the call is refused too.
+    /// has read web text or `github_activity`. It first waits until the turn's stream has passed
+    /// this call's own tool-use line, so every web read before the call has been seen. When the
+    /// order cannot be known, the call is refused too. A Codex turn has no web tools, and its
+    /// calls reach the facade one after another, so only an earlier `github_activity` counts.
     async fn refuse_after_web_text(
         &self,
         name: &str,
@@ -196,8 +197,13 @@ impl Handler {
         binding: &Binding,
         context: &RequestContext<RoleServer>,
     ) -> Option<WriteRefused> {
-        if !binding.reads_web || !matches!(name, "apps_update" | "tools_call") {
+        if !matches!(name, "apps_update" | "tools_call") {
             return None;
+        }
+        if !binding.reads_web {
+            let is_allowed = !binding.has_read_github
+                || (name == "tools_call" && self.read_only(arguments).await);
+            return (!is_allowed).then_some(WriteRefused::WriteAfterWebText);
         }
         let card = context
             .meta
@@ -306,6 +312,7 @@ impl Handler {
             "tools_describe" => self.tools_describe(arguments).await,
             "tools_call" => self.tools_call(arguments, token, binding, context).await,
             "files_export" => self.files_export(arguments).await,
+            "github_activity" => self.github_activity(&arguments, token, &binding).await,
             "files_list" => {
                 let files = self.0.files.clone();
                 let listed = on_worker(move || files.list()).await.map_err(message)?;
@@ -408,6 +415,27 @@ impl Handler {
             described["cost"] = json!(cost);
         }
         Ok(described)
+    }
+
+    /// Reads the repository for the user of the turn. The turn is marked first, so a later call
+    /// that changes something knows that text from strangers came in.
+    async fn github_activity(
+        &self,
+        arguments: &Value,
+        token: &str,
+        binding: &Binding,
+    ) -> Result<Value, Value> {
+        if let Some(bound) = lock(&self.0.bindings).get_mut(token) {
+            bound.has_read_github = true;
+        }
+        let evidence = self.0.evidence.clone();
+        let user = binding.user;
+        let repo = arguments["repo"].as_str().unwrap_or_default().to_owned();
+        let since = arguments["since"].as_str().unwrap_or_default().to_owned();
+        on_worker(move || evidence.github_activity(user, &repo, &since))
+            .await
+            .map_err(message)?
+            .map_err(|error| json!({"kind": error.kind(), "message": error.to_string()}))
     }
 
     async fn files_export(&self, arguments: Value) -> Result<Value, Value> {

@@ -19,6 +19,7 @@ image = { workspace = true }
 jsonschema = { workspace = true }
 jsonwebtoken = { workspace = true }
 pdf-extract = { workspace = true }
+ring = { workspace = true }
 rlimit = { workspace = true }
 rmcp = { workspace = true }
 rusqlite = { workspace = true }
@@ -32,8 +33,9 @@ tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
+ureq = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-ureq = { workspace = true }
+agent = { path = "../agent", features = ["test-server"] }

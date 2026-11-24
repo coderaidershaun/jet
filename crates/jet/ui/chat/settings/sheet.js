@@ -3,6 +3,7 @@
 import { displayName } from '../../bridge/settings.js';
 import { h, icon } from '../../dom.js';
 import { buildClaude } from './claude.js';
+import { buildGithub } from './github.js';
 import { buildMotion } from './motion.js';
 import { buildMemory } from './memory.js';
 import { buildModel } from './model.js';
@@ -56,7 +57,7 @@ export function createSheet({ dialog, context, onChange, save }) {
   const memory = buildMemory(ctx);
   const programs = buildClaude(ctx);
   const saveError = h('p', { class: 'settings-save-error', role: 'alert' });
-  const body = h('div', { class: 'sheet-body' }, saveError, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, ...programs.el);
+  const body = h('div', { class: 'sheet-body' }, saveError, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, buildGithub(ctx), ...programs.el);
 
   const closeButton = h('button', { class: 'icon-button', type: 'button', 'aria-label': 'Close settings', onClick: () => sheet.close() }, icon('close'));
   dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), closeButton), body);

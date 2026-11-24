@@ -32,7 +32,7 @@
 .field-label { font-size: 13px; line-height: 18px; font-weight: 600; }
 .counter { font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; color: var(--muted); }
 .counter.over { color: var(--danger); }
-.sheet input[type="text"], .sheet input[type="number"], .sheet textarea {
+.sheet input[type="text"], .sheet input[type="password"], .sheet input[type="number"], .sheet textarea {
   width: 100%; min-height: 44px; padding: 10px 14px;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
   font-size: 16px; line-height: 22px;

@@ -6,8 +6,10 @@ mod tools;
 
 use crate::account::Keys;
 use crate::chat::{ChatState, TurnContext, TurnTools};
+use crate::evidence::Evidence;
 use crate::files::Files;
 use crate::lock;
+use crate::store::UserId;
 use agent::{McpConnection, TurnIdentity, apps::Registry, mcp::HttpMcpClient};
 use axum::{
     Json, Router,
@@ -34,6 +36,10 @@ struct Binding {
     calls: HashSet<String>,
     /// The provider may search and read the web in this turn.
     reads_web: bool,
+    /// The signed-in user who sent the message. Tools that need a credential use only theirs.
+    user: UserId,
+    /// `github_activity` ran in this turn, so it has read text written by strangers.
+    has_read_github: bool,
 }
 pub(crate) struct Facade {
     registry: Arc<Mutex<Registry>>,
@@ -43,6 +49,7 @@ pub(crate) struct Facade {
     url: Mutex<String>,
     public_origin: Option<String>,
     keys: Keys,
+    evidence: Evidence,
     bindings: Mutex<HashMap<String, Binding>>,
     sessions: Mutex<HashMap<String, String>>,
 }
@@ -54,6 +61,7 @@ impl Facade {
         url: String,
         public_origin: Option<String>,
         keys: Keys,
+        evidence: Evidence,
     ) -> Arc<Self> {
         Arc::new(Self {
             registry,
@@ -63,6 +71,7 @@ impl Facade {
             url: Mutex::new(url),
             public_origin,
             keys,
+            evidence,
             bindings: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
         })
@@ -97,7 +106,7 @@ impl Facade {
     }
 }
 impl TurnTools for Facade {
-    fn bind(&self, identity: &TurnIdentity, reads_web: bool) -> McpConnection {
+    fn bind(&self, identity: &TurnIdentity, reads_web: bool, user: UserId) -> McpConnection {
         let token = uuid::Uuid::new_v4().to_string();
         lock(&self.bindings).insert(
             token.clone(),
@@ -105,6 +114,8 @@ impl TurnTools for Facade {
                 turn: TurnContext::from(identity),
                 calls: HashSet::new(),
                 reads_web,
+                user,
+                has_read_github: false,
             },
         );
         McpConnection {

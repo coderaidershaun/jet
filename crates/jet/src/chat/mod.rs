@@ -20,6 +20,7 @@ use std::{
 use tokio::sync::broadcast;
 
 use crate::files::{About, FileError, Files};
+use crate::store::UserId;
 use crate::{lock, settings};
 pub use error::BridgeError;
 use events::{ActiveTurn, Reacted, Runtime};
@@ -162,6 +163,8 @@ pub(crate) struct PendingReaction {
     request: ReactRequest,
     /// Found when the reaction came in, so starting the turn later looks nothing up.
     transport: Arc<dyn Transport>,
+    /// The signed-in user who reacted; the turn's tools act for them.
+    user: UserId,
 }
 
 #[derive(Serialize)]
@@ -195,7 +198,11 @@ impl ChatState {
         provider::agent_status(&settings, &self.data_dir, &self.conversation)
     }
 
-    pub fn send(self: &Arc<Self>, request: SendRequest) -> Result<Accepted, BridgeError> {
+    pub fn send(
+        self: &Arc<Self>,
+        request: SendRequest,
+        user: UserId,
+    ) -> Result<Accepted, BridgeError> {
         request.check()?;
         let payload = json!(&request);
         // Finding the program can take seconds, so it runs before the lock. Its error waits
@@ -216,7 +223,7 @@ impl ChatState {
             transport: transport.clone(),
             name: request.persona.name.clone(),
         };
-        let (identity, message) = self.bind_new_turn(request, payload, attachments);
+        let (identity, message) = self.bind_new_turn(request, payload, attachments, user);
         let (user, reply) = self
             .conversation
             .send(transport, message, Some(identity.clone()))
@@ -237,7 +244,11 @@ impl ChatState {
     /// Saves the user's reaction and tells every browser at once, even while a turn runs. A new
     /// or changed emoji lets Jet answer it now, or after the running turn as the one pending
     /// reaction turn. Taking a reaction off starts nothing.
-    pub fn react(self: &Arc<Self>, request: ReactRequest) -> Result<ShownEntry, BridgeError> {
+    pub fn react(
+        self: &Arc<Self>,
+        request: ReactRequest,
+        user: UserId,
+    ) -> Result<ShownEntry, BridgeError> {
         request.check()?;
         let transport = settings::read_from(&self.data_dir)
             .map_err(BridgeError::from)
@@ -267,7 +278,11 @@ impl ChatState {
         }
         // Only Jet's answer needs the settings and the provider, so the reaction is saved first.
         let transport = transport?;
-        runtime.pending = Some(PendingReaction { request, transport });
+        runtime.pending = Some(PendingReaction {
+            request,
+            transport,
+            user,
+        });
         self.start_pending(&mut runtime);
         Ok(entry)
     }
@@ -278,7 +293,12 @@ impl ChatState {
         if runtime.active.is_some() || runtime.closing {
             return;
         }
-        let Some(PendingReaction { request, transport }) = runtime.pending.take() else {
+        let Some(PendingReaction {
+            request,
+            transport,
+            user,
+        }) = runtime.pending.take()
+        else {
             return;
         };
         if runtime.cancelled_requests.contains(&request.request_id) {
@@ -299,7 +319,7 @@ impl ChatState {
             name: request.persona.name.clone(),
         };
         let (identity, message) =
-            self.bind_new_turn(request.as_send(), json!(&request), Vec::new());
+            self.bind_new_turn(request.as_send(), json!(&request), Vec::new(), user);
         let started = self.conversation.answer_reaction(
             transport.clone(),
             message,
@@ -311,7 +331,11 @@ impl ChatState {
             Err(error) => {
                 self.tools.revoke(&identity.request_id);
                 if matches!(error, ConversationError::Busy) {
-                    runtime.pending = Some(PendingReaction { request, transport });
+                    runtime.pending = Some(PendingReaction {
+                        request,
+                        transport,
+                        user,
+                    });
                 } else {
                     eprintln!(
                         "jet: the reaction on message {} was not answered: {error}",
@@ -377,6 +401,7 @@ impl ChatState {
         request: SendRequest,
         payload: Value,
         attachments: Vec<agent::Attachment>,
+        user: UserId,
     ) -> (TurnIdentity, Message) {
         let identity = TurnIdentity {
             request_id: request.request_id,
@@ -394,7 +419,7 @@ impl ChatState {
             effort: request.effort,
             budget_usd: request.budget_usd,
             local_time: request.local_time,
-            mcp: Some(self.tools.bind(&identity, reads_web)),
+            mcp: Some(self.tools.bind(&identity, reads_web, user)),
             active_app_id: request.active_app_id,
             feeling: request.feeling,
             spoken: request.spoken,

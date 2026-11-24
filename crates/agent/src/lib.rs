@@ -8,8 +8,8 @@ mod env_file;
 mod feeling;
 mod markdown;
 pub mod mcp;
-#[cfg(test)]
-mod test_server;
+#[cfg(any(test, feature = "test-server"))]
+pub mod test_server;
 mod turn;
 pub mod voice;
 

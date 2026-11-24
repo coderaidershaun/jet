@@ -7,9 +7,11 @@ mod routes;
 use crate::account::{AccountError, Accounts};
 use crate::apps::{Apps, Proxy};
 use crate::chat::TurnTools;
+use crate::evidence::{Evidence, GithubTokens, TokenError};
 use crate::facade::Facade;
 use crate::files::Files;
 use crate::lock;
+use crate::store::Store;
 use crate::voice::Voice;
 use agent::{apps::Registry, mcp::HttpMcpClient};
 use axum::{Router, extract::FromRef};
@@ -31,6 +33,8 @@ pub enum ServerError {
     Chat(#[from] BridgeError),
     #[error(transparent)]
     Account(#[from] AccountError),
+    #[error(transparent)]
+    Token(#[from] TokenError),
     #[error("server network operation failed: {0}")]
     Io(#[from] std::io::Error),
     #[error("server task failed: {0}")]
@@ -44,6 +48,7 @@ pub struct Server {
     apps: Apps,
     facade: Arc<Facade>,
     files: Files,
+    github_tokens: GithubTokens,
     voice: Voice,
     config: ServerConfig,
 }
@@ -66,6 +71,12 @@ impl FromRef<Server> for Files {
     }
 }
 
+impl FromRef<Server> for GithubTokens {
+    fn from_ref(server: &Server) -> Self {
+        server.github_tokens.clone()
+    }
+}
+
 impl FromRef<Server> for Voice {
     fn from_ref(server: &Server) -> Self {
         server.voice.clone()
@@ -78,6 +89,10 @@ impl Server {
             .map_err(|error| ServerError::Config(error.to_string()))?;
         let registry = Arc::new(Mutex::new(Registry::open(&config.data_dir)?));
         let accounts = Accounts::open(&config)?;
+        // SMELL: a second connection to the database, because the sign-in code keeps its own
+        // connection private. Both are safe together, but every table should share one.
+        let store = Store::open(&config.data_dir).map_err(TokenError::from)?;
+        let github_tokens = GithubTokens::open(store, &config.data_dir)?;
         let mcp = Arc::new(HttpMcpClient::new(registry.clone()));
         let files = Files::new(&config.data_dir);
         let facade = Facade::new(
@@ -87,6 +102,7 @@ impl Server {
             format!("http://{}/mcp", config.listen),
             config.public_origin.clone(),
             accounts.keys().clone(),
+            Evidence::new(github_tokens.clone()),
         );
         let chat = ChatState::open(config.data_dir.clone(), facade.clone(), files.clone())?;
         *lock(&facade.chat) = Arc::downgrade(&chat);
@@ -111,6 +127,7 @@ impl Server {
             apps: Apps::new(registry, mcp, proxy),
             facade,
             files,
+            github_tokens,
             voice: Voice::new(config.disable_voice),
             config,
         })

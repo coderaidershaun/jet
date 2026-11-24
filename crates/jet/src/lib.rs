@@ -3,6 +3,7 @@
 mod account;
 mod apps;
 mod chat;
+mod evidence;
 mod facade;
 mod files;
 mod server;

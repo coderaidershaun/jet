@@ -16,7 +16,7 @@ pub const TURN_HEADER: &str = "x-jet-turn";
 /// the id of the call's card.
 pub const TOOL_USE_META: &str = "claudecode/toolUseId";
 
-pub const FACADE_TOOLS: [&str; 9] = [
+pub const FACADE_TOOLS: [&str; 10] = [
     "apps_list",
     "apps_update",
     "apps_open",
@@ -26,10 +26,13 @@ pub const FACADE_TOOLS: [&str; 9] = [
     "files_export",
     "files_list",
     "files_read",
+    "github_activity",
 ];
 
 /// The `server` of a card for the provider's own web search or page reading.
 const WEB_SERVER: &str = "web";
+/// Jet's own tool server, as the provider names it.
+const JET_SERVER: &str = "jet";
 
 impl McpConnection {
     pub fn config(&self) -> String {
@@ -84,10 +87,10 @@ pub struct ToolCall {
 }
 
 impl ToolCall {
-    /// True for a web search or page read, refused or not, since its result can hold a
-    /// stranger's text.
+    /// True for a web search or page read, refused or not, and for Jet's `github_activity`, since
+    /// each result can hold a stranger's text: a page, a commit message, an issue title.
     pub fn read_web(&self) -> bool {
-        self.server == WEB_SERVER
+        self.server == WEB_SERVER || (self.server == JET_SERVER && self.tool == "github_activity")
     }
 }
 

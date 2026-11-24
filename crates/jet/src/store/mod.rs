@@ -2,6 +2,7 @@
 //! module: each table module adds typed calls to `Store`, and each migration adds its tables.
 
 mod directory;
+mod github_tokens;
 mod signins;
 
 pub(crate) use directory::{Email, NewUser, User, UserId};
@@ -21,6 +22,7 @@ const FILE: &str = "jet.sqlite3";
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0001_directory.sql"),
     include_str!("migrations/0002_signins.sql"),
+    include_str!("migrations/0003_github_tokens.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]

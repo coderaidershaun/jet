@@ -3,6 +3,7 @@ mod accounts;
 mod attachments;
 mod chat;
 mod facade;
+mod github;
 mod mcp_fixture;
 mod proxy;
 mod reactions;

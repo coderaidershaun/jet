@@ -8,7 +8,8 @@ Jet is a browser home for independently running apps, with one shared assistant 
 crates/jet/                       the server program (axum) and the page it serves
   src/apps/                       app routes: registry (/api/apps), tool browser, proxy to running apps
   src/chat/                       chat commands, the streamed reply, reconnect snapshots, the notes review timer
-  src/facade/                     the nine MCP tools the provider sees
+  src/evidence/                   outside evidence: a GitHub repository's activity, each user's sealed GitHub token
+  src/facade/                     the ten MCP tools the provider sees
   src/files/                      uploads, files Jet writes, the sandboxed reader child, export
   src/server/                     shared host state, listen address and the remaining routes
   src/voice/                      the speak and hear routes and their limits
@@ -173,7 +174,7 @@ Jet is served publicly, so every path is bounded: 32 MiB for a file, 10 files fo
 
 ## App tools
 
-Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees nine stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list` and `files_read`. Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat; Jet's `/web-hook` refuses every other site. After a web read, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex has no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live under `files/` in the data directory until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
+Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees ten stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read` and `github_activity`. Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat; Jet's `/web-hook` refuses every other site. After a web read or a `github_activity` call, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex has no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live under `files/` in the data directory until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
 
 Tools shows searchable summaries, actual input/output schemas, annotations, server identity, capabilities and instructions. Refresh retries failed metadata; stale results remain visibly marked. Only explicitly marked free discovery operations can expand into a hierarchy. Inspect a leaf or use Ask Jet to draft a request; browsing never executes ordinary business tools. In particular, normal Quanty search can cost money.
 
@@ -184,6 +185,25 @@ The stable `/mcp` endpoint requires a random per-turn header supplied by the hos
 Read-only browser APIs are `GET /api/apps/{id}/tools`, `POST` to the same URL for refresh, and `POST /api/apps/{id}/discovery` with `{requestId, tool, arguments}`. Discovery requires the explicit `jet/discovery` version 1 marker; generic read-only annotations grant no execution permission. The response contains `{result, catalogue}`. `POST /api/tools/cancel` accepts `{requestId}`. There is no browser business-tool runner.
 
 Connections and catalogue refreshes have 15-second deadlines; calls have a 120-second deadline. Catalogues are capped at 64 pages, 4,096 tools and 2 MiB; results and SSE events are capped at 2 MiB. Search reports truncation after 128 apps or 200 matches. The installed MCP SDK is pinned to 3.5.1 for Quanty compatibility.
+
+## GitHub activity
+
+`github_activity {repo, since}` lets Jet look at a repository before it asks the user about it.
+Jet's server asks GitHub's REST API (`https://api.github.com` only, no redirect to another host,
+10 seconds and 2 MiB at most for each answer) and gives back the last push, the commits since
+`since`, the open pull requests and the issues updated since then, each with its address, and
+when they were fetched. Public repositories need nothing: GitHub allows 60 requests an hour from
+one address without a token, and one call makes four. For a private repository the signed-in user
+pastes a token once in Settings (a fine-grained token with read access to Contents, Pull requests,
+Issues and Metadata of that repository is enough). `GET`, `PUT` and `DELETE /api/github/token`
+answer only whether one is saved; the token is never sent back, and it is kept out of
+`settings.json`, the prompt, the events, the transcript and the logs. It is stored in the user's
+row of `jet.sqlite3`, sealed with ChaCha20-Poly1305 under the key `github-token-key` in the data
+directory, made on first start with owner-only access, or `JET_GITHUB_TOKEN_KEY` (at least 32
+bytes). Changing the key makes every saved token unreadable, and Jet then asks the user to paste
+it again. A call uses only the token of the user who sent the message. When GitHub asks for a wait
+of 10 seconds or less, the call waits once and tries again; a longer wait, a refused token and an
+unreachable GitHub come back as errors that tell Jet what to say to the user.
 
 ## Quanty
 

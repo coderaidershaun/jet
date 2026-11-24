@@ -25,7 +25,7 @@ use crate::{
     account::{self, SignedIn},
     apps,
     chat::{Accepted, AgentStatus, BridgeError, ReactRequest, SendRequest, Snapshot},
-    files, on_worker, settings, voice,
+    evidence, files, on_worker, settings, voice,
 };
 
 pub(super) fn router(host: Server) -> Router {
@@ -44,6 +44,7 @@ pub(super) fn router(host: Server) -> Router {
         .merge(apps::router())
         .merge(files::router())
         .merge(voice::router())
+        .merge(evidence::router())
         .route("/api/status", get(status))
         .route("/api/snapshot", get(snapshot))
         .route("/api/events", get(events))
@@ -69,15 +70,21 @@ async fn snapshot(State(host): State<Server>) -> Result<Json<Snapshot>, BridgeEr
 }
 async fn send(
     State(host): State<Server>,
+    signed_in: SignedIn,
     Json(request): Json<SendRequest>,
 ) -> Result<Json<Accepted>, BridgeError> {
-    Ok(Json(on_worker(move || host.chat.send(request)).await??))
+    let user = signed_in.user.id;
+    Ok(Json(
+        on_worker(move || host.chat.send(request, user)).await??,
+    ))
 }
 async fn react(
     State(host): State<Server>,
+    signed_in: SignedIn,
     Json(request): Json<ReactRequest>,
 ) -> Result<Json<Value>, BridgeError> {
-    let entry = on_worker(move || host.chat.react(request)).await??;
+    let user = signed_in.user.id;
+    let entry = on_worker(move || host.chat.react(request, user)).await??;
     Ok(Json(json!({"entry": entry})))
 }
 #[derive(Deserialize)]
