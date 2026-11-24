@@ -26,7 +26,7 @@
 .bubble {
   position: relative; min-width: 0;
   max-width: min(560px, calc(100% - var(--lane) - 8px));
-  padding: 8px 12px 6px; border-radius: 16px;
+  padding: 8px 12px 6px; border-radius: var(--r-bubble);
   font-size: var(--text-size); line-height: var(--text-line);
   overflow-wrap: anywhere;
 }
@@ -49,11 +49,11 @@
 .attachments { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 100%; }
 .attachments:empty { display: none; }
 .attach-row { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 100%; }
-.attach-thumb { display: block; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; line-height: 0; }
+.attach-thumb { display: block; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-s); line-height: 0; }
 .attach-image { display: block; min-width: 48px; min-height: 48px; max-width: 160px; max-height: 120px; object-fit: cover; }
 .attach-chip {
   display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; min-height: 44px; padding: 7px 14px 7px 10px;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; color: var(--fg); text-decoration: none;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-s); color: var(--fg); text-decoration: none;
 }
 a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22); }
 .attach-text { display: flex; flex-direction: column; min-width: 0; }
@@ -61,12 +61,12 @@ a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22
 .attach-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; line-height: 16px; }
 .sent-time { font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; color: var(--muted); }
 
-.row-jet:not(.first) .bubble { border-top-left-radius: 6px; }
-.row-jet:not(.last) .bubble { border-bottom-left-radius: 6px; }
-.row-jet.last .bubble { border-bottom-left-radius: 4px; }
-.row-user:not(.first) .bubble { border-top-right-radius: 6px; }
-.row-user:not(.last) .bubble { border-bottom-right-radius: 6px; }
-.row-user.last .bubble { border-bottom-right-radius: 4px; }
+.row-jet:not(.first) .bubble { border-top-left-radius: var(--r-s); }
+.row-jet:not(.last) .bubble { border-bottom-left-radius: var(--r-s); }
+.row-jet.last .bubble { border-bottom-left-radius: var(--r-s); }
+.row-user:not(.first) .bubble { border-top-right-radius: var(--r-s); }
+.row-user:not(.last) .bubble { border-bottom-right-radius: var(--r-s); }
+.row-user.last .bubble { border-bottom-right-radius: var(--r-s); }
 
 .time { position: absolute; right: 12px; bottom: 6px; font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; color: rgba(232, 237, 241, .55); }
 .row-user .time { color: rgba(243, 247, 250, .7); }
@@ -75,11 +75,11 @@ a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22
 
 .pill {
   width: fit-content; max-width: 100%; margin: 16px auto; padding: 4px 12px;
-  background: rgba(17, 27, 35, .85); border-radius: 999px;
   font-size: 12px; line-height: 16px; color: var(--muted); text-align: center;
 }
-.pill-notice.is-warning { color: var(--warning); border: 1px solid rgba(242, 177, 84, .35); }
-.pill-banner { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 14px; color: var(--fg); text-align: left; border: 1px solid var(--line); }
+/* A day or a plain notice is words alone; only a warning and a banner with a button keep an edge. */
+.pill-notice.is-warning { color: var(--warning); border: 1px solid rgba(242, 177, 84, .35); border-radius: var(--r-s); }
+.pill-banner { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 14px; color: var(--fg); text-align: left; border: 1px solid var(--line); border-radius: var(--r-s); }
 .pill-banner .action { position: relative; min-height: 36px; padding: 0 14px; font-size: 13px; }
 .pill-banner .action::after { content: ""; position: absolute; inset: -4px; }
 
@@ -105,7 +105,9 @@ a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22
 .error-details summary { min-height: 32px; cursor: pointer; }
 .error-details p { overflow-wrap: anywhere; font: 12px/17px var(--mono); }
 /* The label over a message Jet wrote by itself on a check. */
-.checkin-label { margin: 0 0 -2px 4px; color: var(--link-jet); font-size: 12px; font-weight: 600; line-height: 16px; }
+.checkin-label { margin: 0 0 -2px; color: var(--link-jet); font-size: 12px; font-weight: 600; line-height: 16px; }
+/* A check-in is a message of its own, so it stands apart from Jet's bubble above it. */
+.row:not(.first) .checkin-label { margin-top: 10px; }
 .bubble:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 .body > :first-child { margin-top: 0; }
@@ -116,13 +118,13 @@ a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22
 .body h3, .body h4, .body h5, .body h6 { margin: 12px 0 4px; font-size: var(--text-size); line-height: var(--text-line); font-weight: 700; }
 .body a { color: var(--link-jet); text-decoration: underline; text-underline-offset: 2px; }
 .row-user .body a { color: var(--link-user); }
-.body code { padding: 1px 5px; background: rgba(0, 0, 0, .28); border-radius: 4px; font: 13px/19px var(--mono); }
+.body code { padding: 1px 5px; background: rgba(0, 0, 0, .28); border-radius: var(--r-s); font: 13px/19px var(--mono); }
 .code { position: relative; margin: 8px 0; }
-.code pre { margin: 0; padding: 10px 12px; overflow-x: auto; background: rgba(0, 0, 0, .28); border-radius: 8px; font: 13px/19px var(--mono); }
+.code pre { margin: 0; padding: 10px 12px; overflow-x: auto; background: rgba(0, 0, 0, .28); border-radius: var(--r-s); font: 13px/19px var(--mono); }
 .code pre code { padding: 0; background: none; border-radius: 0; font: inherit; }
 .copy {
   position: absolute; top: 4px; right: 4px; min-width: 52px; min-height: 28px; padding: 0 10px;
-  background: rgba(255, 255, 255, .08); border: 0; border-radius: 6px;
+  background: rgba(255, 255, 255, .08); border: 0; border-radius: var(--r-s);
   font-size: 12px; opacity: .6; pointer-events: auto;
 }
 .copy::after { content: ""; position: absolute; inset: -8px; }
@@ -145,7 +147,7 @@ a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22
 .jump {
   position: absolute; left: 50%; bottom: 16px; z-index: 4; transform: translateX(-50%);
   display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 18px 0 12px;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: 22px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-s);
   font-size: 14px; font-weight: 600; box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
 }
 .jump .icon { width: 18px; height: 18px; }
@@ -156,7 +158,7 @@ a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22
 .row.has-reacts { margin-bottom: 10px; }
 .react-chip {
   display: inline-grid; place-items: center; min-width: 30px; height: 26px; padding: 0 6px;
-  background: var(--surface-2); border: 2px solid var(--ground); border-radius: 13px;
+  background: var(--surface-2); border: 2px solid var(--ground); border-radius: var(--r-s);
   font-size: 15px; line-height: 1;
 }
 button.react-chip { position: relative; }
@@ -166,7 +168,7 @@ button.react-chip:hover { background: #1d2c38; }
 /* The button that opens the chooser shows beside a Jet bubble while the pointer is on the message. On a touch screen a long press opens it instead. */
 .react-open {
   position: absolute; left: calc(100% + 6px); bottom: 2px; display: grid; place-items: center;
-  width: 32px; height: 32px; padding: 0; background: none; border: 0; border-radius: 16px; color: var(--muted);
+  width: 32px; height: 32px; padding: 0; background: none; border: 0; border-radius: var(--r-s); color: var(--muted);
   opacity: 0; pointer-events: none;
 }
 .react-open .icon { width: 20px; height: 20px; }
@@ -181,19 +183,19 @@ button.react-chip:hover { background: #1d2c38; }
 
 .react-chooser {
   position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 5; display: flex; align-items: center; gap: 2px; padding: 4px;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-m); box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
   animation: rise 120ms ease-out;
 }
 .react-chooser.below { top: calc(100% + 6px); bottom: auto; }
 .react-pick, .react-more {
   display: grid; place-items: center; width: 40px; height: 40px; padding: 0;
-  background: none; border: 0; border-radius: 20px; font-size: 24px; line-height: 1;
+  background: none; border: 0; border-radius: var(--r-s); font-size: 24px; line-height: 1;
 }
 .react-pick:hover, .react-more:hover, .react-pick[aria-pressed="true"] { background: rgba(255, 255, 255, .1); }
 .react-more { color: var(--muted); }
 .react-more .icon { width: 20px; height: 20px; }
 .react-field {
-  width: 232px; height: 40px; padding: 0 14px; background: var(--surface); border: 1px solid var(--edge); border-radius: 18px;
+  width: 232px; height: 40px; padding: 0 14px; background: var(--surface); border: 1px solid var(--edge); border-radius: var(--r-s);
   font-size: 16px;
 }
 .reduced .react-chooser { animation: none; }

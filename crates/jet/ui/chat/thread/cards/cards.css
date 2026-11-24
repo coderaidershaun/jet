@@ -1,37 +1,41 @@
-/* The cards of tool calls: the line with a spinner while a call runs, the folded
-   card of what came back (sources, pages, reports), the citation chips in Jet's
-   text, and the formulas and pictures inside a card. */
-.card {
-  min-width: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
-  font-size: 13px; line-height: 18px; overflow-wrap: anywhere;
-}
-.card[data-tone="invalid"] { border-color: rgba(255, 123, 114, .4); }
+/* What Jet did, as quiet lines: a muted line with a spinner while a call runs, and a line that opens to what came back
+   (sources, pages, reports), with no box. Only a card that waits for the user's tap, or a file, is boxed. The citation
+   chips in Jet's text, and the formulas and pictures inside a card, follow. */
+.card { min-width: 0; color: var(--muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.card-file, .card-send, .card-share { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-m); color: var(--fg); font-size: 13px; }
+/* A read that was refused keeps its red rule. */
+.card[data-tone="invalid"] { padding-left: 8px; border-left: 2px solid rgba(255, 123, 114, .6); }
 .card[data-tone="invalid"] .card-meta { color: var(--danger); }
-.card[data-tone="ok"] .card-meta { color: var(--ok); }
-.card.is-cited { border-color: var(--accent); }
+.card.is-cited { box-shadow: -2px 0 0 var(--accent); }
 
 .card-head { margin: 0; }
-.card-name { font-weight: 600; overflow-wrap: anywhere; }
+.card-name { overflow-wrap: anywhere; }
 .card-meta { color: var(--muted); }
 
 /* Summaries are plain blocks: the grid of a row lives on an inner span, because the app's engine has ignored a grid on summary. */
 .card > summary, .source > summary {
-  position: relative; display: block; min-height: 44px; cursor: pointer; list-style: none; outline-offset: -2px; border-radius: 12px;
+  position: relative; display: block; min-height: 28px; cursor: pointer; list-style: none; outline-offset: 2px; border-radius: var(--r-s);
 }
 .card > summary::-webkit-details-marker, .source > summary::-webkit-details-marker { display: none; }
-.card > summary { padding: 13px 36px 13px 14px; }
-.card > summary:hover, .source > summary:hover { background: rgba(255, 255, 255, .04); }
-.card > summary::after, .source > summary::after {
+.card > summary { padding: 4px 0; }
+.card > summary:hover { color: var(--fg); }
+.source > summary:hover { background: rgba(255, 255, 255, .04); }
+.source > summary::after {
   content: ""; position: absolute; right: 16px; top: 50%; width: 7px; height: 7px; margin-top: -6px;
   border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg);
 }
-details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
+/* The small chevron of a record line sits right after its words, and points down once it is open. */
+.card > summary::after {
+  content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 0 2px 8px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s;
+}
+.card[open] > summary::after { transform: rotate(45deg); }
+details[open] > .source > summary::after, .source[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 
-.card-running, .card-ended { min-height: 44px; }
-.card-running { display: flex; align-items: center; gap: 10px; padding: 0 14px; }
-.card-ended { color: var(--muted); }
-.card-ended .card-line { display: block; padding: 13px 14px; }
-.card-ended .card-head { padding: 13px 14px; }
+.card-running, .card-ended { min-height: 28px; }
+.card-running { display: flex; align-items: center; gap: 8px; padding: 0; }
+.card-ended .card-line { display: block; padding: 4px 0; }
+.card-ended .card-head { padding: 4px 0; }
 .card-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-running .card-line { flex: 1 1 auto; }
 
@@ -51,17 +55,17 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .reduced .spinner { width: 8px; height: 8px; margin: 2px; background: var(--accent); border: 0; animation: none; }
 
-.card-failed .card-head { padding: 13px 14px 4px; }
-.card-advice, .card-hint { margin: 0; padding: 0 14px 13px; }
+.card-failed .card-head { padding: 4px 0 2px; }
+.card-advice, .card-hint { margin: 0; padding: 0 0 4px; }
 .card-advice { padding-bottom: 4px; }
 .card-hint { color: var(--muted); }
 
-.card-body { padding: 0 8px 8px; }
+.card-body { padding: 0 0 6px 12px; }
 .card-asked { margin: 0; padding: 0 6px 6px; color: var(--muted); font-style: italic; }
 .card-empty, .card-note { margin: 0; padding: 4px 6px; color: var(--muted); }
 
 .source { border-top: 1px solid var(--line); }
-.source > summary { padding: 6px 28px 6px 6px; border-radius: 8px; }
+.source > summary { padding: 6px 28px 6px 6px; border-radius: var(--r-s); }
 .source > summary::after { right: 10px; }
 .source-line { display: grid; grid-template-columns: 28px minmax(0, 1fr) 40px; column-gap: 8px; align-items: center; }
 .source-n { color: var(--muted); font: 12px/18px var(--mono); }
@@ -69,15 +73,15 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .source-doc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .source-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; color: var(--muted); font-size: 12px; line-height: 16px; }
 .reason {
-  max-width: 100%; padding: 0 7px; overflow: hidden; background: rgba(255, 255, 255, .07); border-radius: 999px;
+  max-width: 100%; padding: 0 7px; overflow: hidden; background: rgba(255, 255, 255, .07); border-radius: var(--r-s);
   font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap;
 }
 .score { width: 40px; height: 4px; border: 0; -webkit-appearance: none; appearance: none; background: none; }
-.score::-webkit-meter-bar { height: 4px; background: rgba(255, 255, 255, .1); border: 0; border-radius: 2px; }
+.score::-webkit-meter-bar { height: 4px; background: rgba(255, 255, 255, .1); border: 0; border-radius: var(--r-s); }
 .score::-webkit-meter-optimum-value, .score::-webkit-meter-suboptimum-value, .score::-webkit-meter-even-less-good-value {
-  background: var(--accent); border-radius: 2px; opacity: .75;
+  background: var(--accent); border-radius: var(--r-s); opacity: .75;
 }
-.score::-moz-meter-bar { background: var(--accent); border-radius: 2px; opacity: .75; }
+.score::-moz-meter-bar { background: var(--accent); border-radius: var(--r-s); opacity: .75; }
 .source-body { padding: 4px 6px 10px 42px; }
 .source.is-cited > summary { background: rgba(61, 139, 255, .16); }
 .byline { margin: 0 0 6px; color: var(--muted); font-size: 12px; line-height: 16px; }
@@ -94,7 +98,7 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 
 .figure { margin: 8px 0 0; }
 .figure figcaption { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 16px; }
-.picture { display: block; max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
+.picture { display: block; max-width: 100%; height: auto; background: #fff; border-radius: var(--r-s); }
 .picture-wait, .picture-missing { margin: 0; color: var(--muted); font-size: 12px; line-height: 16px; }
 
 .answer-title { margin: 0; padding: 4px 6px; font-size: 14px; line-height: 20px; }
@@ -126,7 +130,7 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .health li[data-tone="invalid"] { color: var(--danger); }
 .health li[data-tone="invalid"]::before { background: var(--danger); }
 
-.fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; padding: 4px 6px; }
+.fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 0; padding: 2px 0; }
 .fields dt { color: var(--muted); }
 .fields dd { margin: 0; white-space: pre-line; }
 .fields pre { margin: 0; font: 12px/17px var(--mono); white-space: pre-wrap; }
@@ -134,7 +138,7 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 /* "[n]" in Jet's text. The ::after widens the target without moving the lines of text. */
 .cite {
   position: relative; display: inline-block; min-width: 18px; height: 18px; margin: 0 1px; padding: 0 5px; vertical-align: 1px;
-  background: rgba(61, 139, 255, .22); border: 0; border-radius: 9px;
+  background: rgba(61, 139, 255, .22); border: 0; border-radius: var(--r-s);
   color: var(--link-jet); font: 600 11px/18px var(--mono); font-variant-numeric: tabular-nums; text-align: center;
 }
 .cite::after { content: ""; position: absolute; inset: -4px -2px; }
@@ -161,7 +165,7 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .file-actions { display: flex; gap: 8px; margin-left: auto; }
 .file-action {
   position: relative; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 16px;
-  background: rgba(255, 255, 255, .06); border: 1px solid var(--line); border-radius: 20px;
+  background: rgba(255, 255, 255, .06); border: 1px solid var(--line); border-radius: var(--r-s);
   color: var(--fg); font-size: 14px; font-weight: 600; line-height: 20px; text-decoration: none;
 }
 /* The ::after makes each 40px pill a 44px touch target without moving it. */
@@ -175,11 +179,11 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .card-send { max-width: 560px; padding: 14px; }
 .send-title { margin: 0; font-size: 14px; font-weight: 600; line-height: 20px; }
 .send-about { margin: 0; color: var(--muted); font-size: 12px; line-height: 17px; }
-.send-text { margin: 8px 0 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: rgba(255, 255, 255, .04); border-radius: 0 10px 10px 0; font-size: 14px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.send-text { margin: 8px 0 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--accent); font-size: 14px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .send-hint { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 17px; }
 .send-status { margin: 4px 0 0; font-size: 12px; line-height: 17px; }
 .send-status[data-tone="invalid"] { color: var(--danger); }
-.send-go { width: 100%; height: 44px; margin-top: 10px; background: var(--fill); border: 0; border-radius: 22px; color: var(--on-fill); font: 600 14px/20px var(--font); cursor: pointer; }
+.send-go { width: 100%; height: 44px; margin-top: 10px; background: var(--fill); border: 0; border-radius: var(--r-s); color: var(--on-fill); font: 600 14px/20px var(--font); cursor: pointer; }
 .send-go:hover { background: var(--fill-hover); }
 .send-go:disabled { opacity: .6; cursor: default; }
 .send-go:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }

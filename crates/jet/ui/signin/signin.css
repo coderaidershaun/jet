@@ -1,11 +1,3 @@
-/* The sign-in page wears the chat's palette and tiled sky, so signing in feels like the first moment of Jet. */
-body {
-  background:
-    linear-gradient(var(--veil), var(--veil)),
-    url(/assets/tile.png) 0 0 / 512px 512px repeat,
-    var(--ground);
-}
-
 .signin {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   min-height: 100%; min-height: 100dvh;
@@ -26,18 +18,13 @@ body {
 .signin-title { margin: 0; font-size: 24px; line-height: 30px; font-weight: 650; letter-spacing: -.01em; }
 .signin-sub { margin: 6px 0 24px; color: var(--muted); font-size: 15px; line-height: 21px; }
 
-.signin-card {
-  display: flex; flex-direction: column; gap: 14px;
-  width: 100%; max-width: 380px; padding: 24px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 20px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, .35);
-  text-align: left;
-}
+/* The form stands on the page itself: two fields and one button need no box around them. */
+.signin-card { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 340px; text-align: left; }
 .signin-field { display: flex; flex-direction: column; gap: 6px; }
 .signin-label { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--muted); }
 .signin-input {
   width: 100%; min-height: 48px; padding: 12px 14px;
-  background: var(--surface-2); border: 1px solid var(--edge); border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--edge); border-radius: var(--r-s);
   font-size: 16px; line-height: 22px;
   transition: border-color 120ms, box-shadow 120ms;
 }
@@ -53,7 +40,7 @@ body {
 .signin-secret .signin-input { padding-right: 52px; }
 .signin-reveal {
   position: absolute; top: 2px; right: 2px; display: grid; place-items: center; width: 44px; height: 44px; padding: 0;
-  background: none; border: 0; border-radius: 10px; color: var(--muted);
+  background: none; border: 0; border-radius: var(--r-s); color: var(--muted);
 }
 .signin-reveal:hover { color: var(--fg); background: rgba(255, 255, 255, .06); }
 .signin-reveal .icon { width: 20px; height: 20px; }
@@ -64,7 +51,7 @@ body {
 .signin-submit {
   position: relative; display: flex; align-items: center; justify-content: center; gap: 10px;
   min-height: 48px; margin-top: 4px; padding: 0 20px;
-  background: var(--fill); border: 0; border-radius: 24px; color: var(--on-fill);
+  background: var(--fill); border: 0; border-radius: var(--r-s); color: var(--on-fill);
   font-size: 16px; font-weight: 600;
   transition: background 120ms, transform 120ms;
 }
@@ -81,7 +68,6 @@ body {
   .signin-kite { width: 120px; height: 144px; }
   .signin-title { font-size: 22px; line-height: 28px; }
   .signin-sub { margin-bottom: 20px; }
-  .signin-card { padding: 20px 16px; border-radius: 18px; }
 }
 @media (max-height: 640px) {
   .signin-kite { width: 90px; height: 108px; }

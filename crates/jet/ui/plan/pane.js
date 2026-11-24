@@ -8,7 +8,7 @@ import { numberOrNull } from '../chat/thread/cards/guard.js';
 import { directoryView, shareOf } from '../chat/thread/cards/share.js';
 import { shareCard } from '../chat/thread/cards/share-view.js';
 import { svgIcon } from './icons.js';
-import { dueWords, firstOpen, groupObjectives, isoDay, keysOf, newCount, readPane } from './model.js';
+import { dueWords, isoDay, keysOf, newCount, readPane, scopeOf } from './model.js';
 import { CONFIRM_MS, disarm, idleTaps, pressCancel, tapEnded } from './taps.js';
 import { planNodes } from './view.js';
 
@@ -47,9 +47,12 @@ export function createPlanPane({ shell, host, agent, openChat }) {
   let desktopOpen = stored.read(OPEN_KEY) !== 'closed';
   let overlayOpen = false, wasModal = false;
   let pane = null, problem = null, refreshNumber = 0, busy = false, armTimer = 0;
+  // The chat that is open, and the main chat; in a chat that holds an objective the pane shows only that, unless the user swaps.
+  let chatId = null, mainId = null, swapped = false, chatChanged = false;
   let taps = idleTaps;
   let seen = seenKeys();
-  const view = { showClosed: false, showAllRuns: false, open: null };
+  /** Which rows and fold lines the user opened or closed, by key; the rest keep their own default. */
+  const folds = new Map();
   const shares = new Map();
 
   const count = h('span', { class: 'pane-count', 'aria-hidden': 'true', hidden: true });
@@ -95,7 +98,8 @@ export function createPlanPane({ shell, host, agent, openChat }) {
       for (const el of behind()) el.inert = modal;
     }
     if (open || (pane && seen === null)) markSeen();
-    const fresh = !open && pane ? newCount(pane, seen) : 0;
+    const mine = pane && scopeOf(pane, chatId, mainId);
+    const fresh = !open && pane ? newCount(mine ? { ...pane, ...mine, sharedWithMe: [] } : pane, seen) : 0;
     count.hidden = fresh === 0;
     count.textContent = String(fresh);
     const label = (open ? 'Close the plan' : 'Open the plan') + (fresh ? `, ${fresh} new` : '');
@@ -113,16 +117,17 @@ export function createPlanPane({ shell, host, agent, openChat }) {
   function draw() {
     const focused = host.contains(document.activeElement) ? document.activeElement : null;
     const focus = focused?.dataset.key ?? null;
-    const scroll = host.scrollTop;
+    const scroll = chatChanged ? 0 : host.scrollTop;
+    chatChanged = false;
     // Writing the same words again would make a screen reader say them again on every redraw.
     if (notice.textContent !== (problem ?? '')) notice.textContent = problem ?? '';
     if (alert.textContent !== taps.notice) alert.textContent = taps.notice;
     const zone = pane?.timeZone ?? undefined;
     const now = Date.now() / 1000;
     const ctx = {
-      year: new Date().getFullYear(), now, today: isoDay(now, zone), timeZone: zone, shares, act, taps, open: view.open ?? new Set(),
-      showClosed: view.showClosed, showAllRuns: view.showAllRuns,
-      set: { closed: (on) => { view.showClosed = on; }, allRuns: (on) => { view.showAllRuns = on; draw(); } },
+      year: new Date().getFullYear(), now, today: isoDay(now, zone), timeZone: zone, shares, act, taps, mainId,
+      scope: pane ? scopeOf(pane, chatId, mainId) : null, overview: swapped,
+      isOpen: (key, byDefault = false) => folds.get(key) ?? byDefault,
     };
     body.replaceChildren(...(pane ? planNodes(pane, ctx) : [h('p', { class: 'pane-hint', text: 'Loading the plan…' })]));
     host.scrollTop = scroll;
@@ -138,7 +143,6 @@ export function createPlanPane({ shell, host, agent, openChat }) {
       if (current !== refreshNumber) return;
       pane = next;
       problem = null;
-      if (view.open === null) view.open = new Set([firstOpen(groupObjectives(pane.objectives).active)]);
     } catch (error) {
       if (current !== refreshNumber) return;
       problem = 'The plan could not be loaded: ' + (error?.message ?? 'check the connection');
@@ -162,7 +166,7 @@ export function createPlanPane({ shell, host, agent, openChat }) {
     if (error !== null) alert.textContent = '';
     busy = false;
     await refresh();
-    if (!focusKey(error === null ? focusAfter : el?.dataset.key)) focusKey('heading-plan');
+    if (!focusKey(error === null ? focusAfter : el?.dataset.key)) focusKey('heading-will');
   }
 
   function armCancel() {
@@ -177,7 +181,7 @@ export function createPlanPane({ shell, host, agent, openChat }) {
     const left = (pane?.tasks ?? []).filter((t) => t.state !== 'running');
     const at = left.findIndex((t) => t.id === task.id);
     const next = left[at + 1] ?? left[at - 1];
-    return next ? `snooze-${next.id}` : 'heading-plan';
+    return next ? `snooze-${next.id}` : 'heading-will';
   }
 
   async function toggleShare(objective, el) {
@@ -202,11 +206,6 @@ export function createPlanPane({ shell, host, agent, openChat }) {
     focusKey(`share-${objective.id}`);
   }
 
-  function jump(target) {
-    const heading = focusKey(`heading-${target}`);
-    heading?.scrollIntoView({ block: 'start' });
-  }
-
   function leaveFor(show) {
     if (overlay.matches) setOpen(false);
     show();
@@ -224,11 +223,15 @@ export function createPlanPane({ shell, host, agent, openChat }) {
       tap('The check could not be cancelled', () => requestJson(`/api/tasks/${task.id}/cancel`, {}, 'POST'), el, 'Cancelled the check', afterCancel(task));
     },
     share: toggleShare,
-    fold(objective) {
-      if (view.open.has(objective.id)) view.open.delete(objective.id); else view.open.add(objective.id);
+    fold(key, wasOpen) {
+      folds.set(key, !wasOpen);
       draw();
     },
-    jump,
+    swap(toOverview) {
+      swapped = toOverview;
+      draw();
+      focusKey('swap');
+    },
     openChat: (objective) => leaveFor(() => openChat(objective.chatId)),
     openRun: (run) => leaveFor(() => openChat(run.chatId, run.entryId)),
     draft: (text) => leaveFor(() => host.dispatchEvent(new CustomEvent('jet:draft', { bubbles: true, detail: { text } }))),
@@ -250,6 +253,13 @@ export function createPlanPane({ shell, host, agent, openChat }) {
     }
   });
   overlay.addEventListener('change', paint);
+  // The page says which chat is open; the pane keeps the read it has and draws what belongs to that chat.
+  document.addEventListener('jet:chat-opened', (event) => {
+    ({ id: chatId, mainId } = event.detail);
+    swapped = false;
+    chatChanged = true;
+    draw();
+  });
   agent.onChatEvent?.((envelope) => { if (envelope.event.kind === 'paneChanged') refresh(); });
   agent.onConnectionChanged?.((connected) => { if (connected) refresh(); });
   // Times such as "in 2 h" age while the page sits still.

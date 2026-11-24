@@ -82,6 +82,17 @@ pub(crate) struct Pane {
     sent: Vec<Sent>,
 }
 
+impl Pane {
+    /// What the pane shows anyone but an admin: no tokens or cost of a run.
+    pub(crate) fn without_admin_detail(mut self) -> Self {
+        for run in &mut self.runs {
+            run.run.tokens = None;
+            run.run.cost_usd = None;
+        }
+        self
+    }
+}
+
 impl Objectives {
     pub(crate) fn pane(&self, user: UserId) -> Result<Pane, ObjectiveError> {
         let objectives = self
@@ -467,6 +478,28 @@ mod tests {
                 at: NOW + 10_000_100,
             })
             .unwrap();
+    }
+
+    #[test]
+    fn a_user_who_is_not_an_admin_reads_no_cost() {
+        let (_dir, store, ada, _) = test_store();
+        let objectives = objectives(&store);
+        let made = create(&store, &objectives, ada, "Ship the kite");
+        let run = store
+            .claim_task(made.tasks[0].id, NOW + 10_000_000)
+            .unwrap()
+            .unwrap();
+        end_run(
+            &store,
+            ada,
+            run,
+            (RunOutcome::Silent, "", Some(5), None),
+            false,
+        );
+        let read = objectives.pane(ada).unwrap();
+        assert_eq!(serde_json::to_value(&read).unwrap()["runs"][0]["tokens"], 5);
+        let read = serde_json::to_value(read.without_admin_detail()).unwrap();
+        assert_eq!(read["runs"][0]["tokens"], Value::Null);
     }
 
     #[test]

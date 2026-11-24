@@ -117,10 +117,13 @@ The pane lists the user's chats above the apps: the main chat first (it can be r
 deleted), then the others by latest activity, each with its unread badge. **New chat** opens an
 empty chat at once with no form; the server titles it from the first message. On each row a pencil
 renames the title in place (Enter saves, Escape cancels) and a bin deletes the chat on a second tap
-of the same row (it asks again after four seconds). The open chat's title is shown in a solid band
-above the thread. In the rail a chat is its glyph with a badge on the corner: the main chat's speech
-bubble, or the chat's first letter, in a round mark for an objective's chat. The tab's title counts
-every unread entry, as "(3) Jet".
+of the same row (it asks again after four seconds); where the pointer hovers, the two show on the
+row it points at and on the open chat. The open chat's title is shown in a solid band above the
+thread. A row is one line: a quiet mark, then the title, which is stronger only while the chat has
+something unread. The main chat's mark is a speech bubble; every other chat wears one of twenty marks
+of air, sky and kite (`KITES` in `ui/dom.js`), picked by its id (`chatIcon` in
+`ui/chat/drawer/chats.js`), so it is the same on every load and nothing is stored. In the rail a chat
+is its mark with a badge on the corner. The tab's title counts every unread entry, as "(3) Jet".
 
 Below 760 px the thread takes the whole width and the drawer is hidden: the **Chats** button (three
 lines) at the left of the title band carries the total unread count and opens the drawer over the
@@ -389,31 +392,39 @@ too. A finished check calls it too.
 
 ### The plan pane (page)
 
-`ui/plan/` draws the pane: `model.js` (pure words and counts, tested against `tests/fixtures/pane.json`),
-`taps.js` (pure: which Cancel waits for its second tap, and the words of a failed tap), `view.js` (the
-cards), `pane.js` (reading, taps, open state, the dialog) and `plan.css`. It reads `GET /api/pane` once on
-load and again on each `paneChanged` event of the one stream (also after the stream reconnects), so Jet's
-replies, finished checks and taps in another window show with no reload. At the top three tiles (working
-on, next check, last check) name their subject and jump to their section. Objectives are folded to one
-summary each (latest status, title, days left, progress, and the next check or "No check is set"); a tap
-unfolds the deliverable, dates, steps (late ones in red, today's in amber), the latest note with its
-Private control, who it is shared with and the chat. The most overdue objective, else the one changed
-last, starts open. Done and dropped ones fold below with the day each closed. Jet's plan lists each open
-task in the user's zone with "Snooze to <where it lands>" and Cancel, which takes a second tap within 4
-seconds. Recent checks are headed by their objective (or "Follow-up" and why), with "Open check-in", which
-opens that chat at the check-in, and the user's reaction on it; tokens and cost show only when not zero.
-Then the sent list and Shared with you, where a colleague's steps are read, not ticked. A tap keeps the
-focus on its control and is said aloud; a failed one leaves a notice in plain words until a later tap
-works. "Change who sees it" (or "Share" while private) draws the share card from
-`GET /api/objectives/{id}/directory`, and the owner's tap on it posts the ticked set to
-`share-proposals` and applies it at once. An empty pane only invites the user to tell Jet what they are
+`ui/plan/` draws the pane: `model.js` (pure words and counts, and which things belong to the open chat, tested
+against `tests/fixtures/pane.json`), `taps.js` (pure: which Cancel waits for its second tap, and the words of a
+failed tap), `view.js` (the rows), `pane.js` (reading, taps, open state, the dialog) and `plan.css`. It is a list:
+one row per task, objective, run or item, a hairline between rows, plain headings, and a row unfolds in place
+(nothing starts unfolded). A row with a second thing to say puts it under the first, so neither is cut short.
+The pane's rows are `plan-row` in a `plan-rows` list, apart from the thread's `row`. A fact is plain text; colour marks only what needs the user (overdue, blocked, at risk,
+failed). Only a text button is a control. It reads `GET /api/pane` once on load and again on each `paneChanged`
+event of the one stream (also after the stream reconnects), so Jet's replies, finished checks and taps in another
+window show with no reload.
+
+The pane follows the open chat. `chat/main.js` says which chat is open (`jet:chat-opened`, with the main chat's id),
+and the page picks the view from the one read: in an objective's own chat (or one where Jet set a follow-up) the
+pane holds those things only, in this order: the objective (title, state, days left, steps as "2/5", dates, the
+deliverable), its steps, the latest note with its Private control, who sees it and "Change", "Jet's tasks" (its
+check and the follow-ups set in that chat, Snooze and Cancel in sight), what waits on colleagues, one line for the
+last look, and "All objectives and tasks", which swaps to the overview in place. In the main chat, and in a chat
+nothing belongs to, the pane is the overview: "Jet's tasks" (every open task under its day; today and tomorrow
+show, the rest wait behind "Later"; a row is the hour, the reason and, under it, the objective it is for, and
+unfolds to who set it, Cancel and the chat), "Objectives"
+(those that need the user first, then by due date; a row unfolds to steps to tick, the latest note and the chat),
+"Done and dropped", and three fold lines: "Waiting on colleagues" (open items only), "Shared with you" (a
+colleague's steps are read, not ticked) and "What Jet did" (the runs, opening by itself when a recent check failed
+or was held). Tokens and cost of a run are left out of the read for anyone who is not an admin. A tap keeps the focus on its control and is said aloud; a failed one leaves a notice in plain
+words until a later tap works. "Change" (or "Share" while private) draws the share card from
+`GET /api/objectives/{id}/directory`, and the owner's tap on it posts the ticked set to `share-proposals` and
+applies it at once. An empty pane only invites the user to tell Jet what they are
 working on; its example sentence is a button that puts the sentence in the message box (the `jet:draft`
 event). Nothing in the pane is a form. At 1024 px and wider the pane takes a column and the choice to
 close it is kept in the browser (`jet.pane`); below that the Plan control in the corner of the chat opens
 it as a dialog over the page, which is inert behind a scrim that closes it on a tap, and from 760 to 1023
 px the drawer folds to its rail beside it. The control's count is what Jet and colleagues did since the
 user last opened the pane (`jet.pane.seen`): checks run, checks set or moved, colleagues' updates and
-answers; the user's own taps do not count. A later section is a new field of the read, a new function in
+answers, counting only the open chat's things in a scoped chat; the user's own taps do not count. A later section is a new field of the read, a new function in
 `view.js` added to `planNodes`, and needs no new event.
 `tests/browser/plan.mjs` drives it against the real host.
 

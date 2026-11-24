@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { closedWords, clockWords, costWords, daysLeftWords, firstOpen, groupObjectives, heldReason, keysOf, dueWords, newCount, nextCheck, noteTone, outcomeOf, readPane, relativeWords, runTitle, sharedWithWords, stepDueWords, stepProgress, isEmpty, rangeWords, tokensWords } from './model.js';
+import { closedWords, clockWords, costWords, daysLeftWords, groupObjectives, heldReason, keysOf, dueWords, newCount, nextCheck, noteTone, outcomeOf, readPane, relativeWords, runTitle, sharedWithWords, stepDueWords, stepProgress, isEmpty, rangeWords, tokensWords, needsFirst, scopeOf, dayWords, timeWords, progressWords } from './model.js';
 
 const pane = readPane(JSON.parse(readFileSync(new URL('../../tests/fixtures/pane.json', import.meta.url), 'utf8')));
 
@@ -64,9 +64,26 @@ test('a passed step is late, today is amber, and a done objective shows the day 
   assert.equal(closedWords(pane.objectives[1], pane.timeZone, 2026), 'Closed 1 Jan');
 });
 
-test('the overdue objective, else the one changed last, is drawn open; each shows its next check', () => {
-  assert.equal(firstOpen([{ id: 1, daysLeft: 3, updatedAt: 9 }, { id: 2, daysLeft: 5, updatedAt: 1 }]), 1);
-  assert.equal(firstOpen([{ id: 1, daysLeft: 3, updatedAt: 9 }, { id: 2, daysLeft: -1, updatedAt: 1 }]), 2);
+test('objectives that need the user come first, each group by due date, and a day and time read in words', () => {
+  const calm = { id: 1, status: 'active', daysLeft: 9, due: '2026-02-01', notes: [{ status: 'on track' }], steps: [{ doneAt: 1 }, {}] };
+  const late = { id: 2, status: 'active', daysLeft: -2, due: '2026-03-01', notes: [], steps: [] };
+  const risky = { id: 3, status: 'active', daysLeft: 5, due: '2026-02-20', notes: [{ status: 'at risk' }], steps: [] };
+  assert.deepEqual(needsFirst([calm, late, risky]).map((o) => o.id), [3, 2, 1]);
+  assert.equal(progressWords(calm.steps), '1/2');
+  assert.equal(progressWords([]), '');
+  const at = pane.tasks[0].dueAt;
+  assert.deepEqual([dayWords(at, pane.timeZone, at - 60, 2026), dayWords(at, pane.timeZone, at - 86400, 2026), dayWords(at, pane.timeZone, at - 3 * 86400, 2026), timeWords(at, pane.timeZone)], ['Today', 'Tomorrow', 'Mon 5 Jan', '09:00']);
   assert.equal(nextCheck(pane.objectives[0]).id, 1);
   assert.equal(nextCheck(pane.objectives[1]), null);
+});
+
+test("an objective's own chat holds that objective, its tasks and the follow-ups set in it, and nothing else; the main chat holds all", () => {
+  const [kite] = pane.objectives;
+  const other = { id: 9, chatId: 99 };
+  const all = { ...pane, objectives: [kite, other], tasks: [...pane.tasks, { id: 50, objectiveId: null, chatId: kite.chatId }, { id: 51, objectiveId: 9, chatId: 99 }, { id: 52, objectiveId: null, chatId: 7 }] };
+  const scope = scopeOf(all, kite.chatId, 1000);
+  assert.deepEqual(scope.objectives.map((o) => o.id), [kite.id]);
+  assert.deepEqual(scope.tasks.map((t) => t.id), [...pane.tasks.filter((t) => t.objectiveId === kite.id).map((t) => t.id), 50]);
+  assert.equal(scopeOf(all, 1000, 1000), null);
+  assert.equal(scopeOf(all, 12345, 1000), null, 'a chat nothing belongs to shows the main view');
 });

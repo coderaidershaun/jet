@@ -17,13 +17,12 @@ use token::Grant;
 const SIGNIN_PAGE: &str = "/signin/";
 /// The sign-in page, the files it loads, and its endpoints. A path that ends in `/` opens every
 /// path below it.
-const OPEN_PATHS: [&str; 9] = [
+const OPEN_PATHS: [&str; 8] = [
     "/signin",
     "/signin/",
     "/jet/",
     "/dom.js",
     "/chat.css",
-    "/assets/tile.png",
     "/api/auth/signin",
     "/api/auth/refresh",
     "/api/auth/signout",

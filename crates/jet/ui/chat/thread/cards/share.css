@@ -4,7 +4,7 @@
 .share-objective { font-weight: 600; }
 .share-hint { margin: 2px 0 8px; color: var(--muted); font-size: 12px; line-height: 17px; }
 .share-rows { display: flex; flex-direction: column; margin: 0 -6px; }
-.share-row { display: flex; align-items: flex-start; gap: 12px; min-height: 48px; padding: 10px 6px; border-radius: 10px; cursor: pointer; }
+.share-row { display: flex; align-items: flex-start; gap: 12px; min-height: 48px; padding: 10px 6px; border-radius: var(--r-s); cursor: pointer; }
 .share-row:hover { background: rgba(255, 255, 255, .04); }
 .share-box { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--fill); cursor: pointer; }
 .share-what { display: flex; flex-direction: column; min-width: 0; }
@@ -15,7 +15,7 @@
 .share-status { margin: 4px 0 0; min-height: 0; font-size: 12px; line-height: 17px; }
 .share-status[data-tone="invalid"] { color: var(--danger); }
 .share-go {
-  width: 100%; height: 44px; margin-top: 10px; background: var(--fill); border: 0; border-radius: 22px;
+  width: 100%; height: 44px; margin-top: 10px; background: var(--fill); border: 0; border-radius: var(--r-s);
   color: var(--on-fill); font: 600 14px/20px var(--font); cursor: pointer;
 }
 .share-go:hover:not(:disabled) { background: var(--fill-hover); }

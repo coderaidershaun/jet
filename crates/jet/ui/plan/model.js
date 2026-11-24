@@ -6,17 +6,17 @@ import { isRecord, listOf, numberOrNull, orNull, recordOf, stringOf } from '../c
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-/** How a check ended, in the user's words, and a tone the page colours it by. A run that has not ended has no outcome. */
+/** How a check ended, in the user's words. Only a failed check is in the danger tone; a run that has not ended has no outcome. */
 const OUTCOMES = {
-  spoke: { words: 'Wrote to you', tone: 'good' },
+  spoke: { words: 'Wrote to you', tone: 'quiet' },
   silent: { words: 'Stayed quiet', tone: 'quiet' },
-  held: { words: 'Could not read a source', tone: 'warn' },
-  preempted: { words: 'Stopped because you wrote', tone: 'stopped' },
-  interrupted: { words: 'Cut off by a restart', tone: 'stopped' },
+  held: { words: 'Could not read a source', tone: 'quiet' },
+  preempted: { words: 'Stopped because you wrote', tone: 'quiet' },
+  interrupted: { words: 'Cut off by a restart', tone: 'quiet' },
   failed: { words: 'Failed', tone: 'bad' },
   stale: { words: 'Skipped, out of date', tone: 'quiet' },
 };
-const RUNNING = { words: 'Running', tone: 'running' };
+const RUNNING = { words: 'Running', tone: 'quiet' };
 
 export const outcomeOf = (outcome) => OUTCOMES[outcome] ?? RUNNING;
 
@@ -51,6 +51,12 @@ export function groupObjectives(objectives) {
 export function stepProgress(steps) {
   const list = listOf(steps);
   return { done: list.filter((step) => recordOf(step).doneAt != null).length, total: list.length };
+}
+
+/** '2/5', or nothing for an objective with no steps. */
+export function progressWords(steps) {
+  const { done, total } = stepProgress(steps);
+  return total === 0 ? '' : `${done}/${total}`;
 }
 
 /** '1 Feb' for '2026-02-01'; the year is added when it is not `year`. */
@@ -156,13 +162,6 @@ export function nextCheck(objective) {
   return open.sort((a, b) => a.dueAt - b.dueAt)[0] ?? null;
 }
 
-/** The one objective drawn open at first: the most overdue, else the one changed last. */
-export function firstOpen(objectives) {
-  const overdue = objectives.filter((objective) => numberOrNull(objective.daysLeft) !== null && objective.daysLeft < 0);
-  const pick = overdue.length ? overdue.sort((a, b) => a.daysLeft - b.daysLeft)[0] : [...objectives].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
-  return pick?.id ?? null;
-}
-
 /** The newest note of an objective, or null. Notes come oldest first. */
 export const latestNote = (objective) => listOf(objective.notes).filter(isRecord).at(-1) ?? null;
 
@@ -182,3 +181,48 @@ export function keysOf(pane) {
 
 /** How many things in the pane the user has not seen: keys that were not there when they last opened it. */
 export const newCount = (pane, seen) => keysOf(pane).filter((key) => !seen.has(key)).length;
+
+/** Whether an objective needs the user: it is overdue, or its latest note says blocked or at risk. */
+export function needsYou(objective) {
+  if (objective.status === 'done' || objective.status === 'dropped') return false;
+  const tone = noteTone(latestNote(objective)?.status);
+  return numberOrNull(objective.daysLeft) < 0 || tone === 'bad' || tone === 'warn';
+}
+
+/** Active objectives: those that need the user first, then by due date. */
+export function needsFirst(objectives) {
+  const byDue = (a, b) => stringOf(a.due).localeCompare(stringOf(b.due));
+  return [...objectives.filter(needsYou).sort(byDue), ...objectives.filter((objective) => !needsYou(objective)).sort(byDue)];
+}
+
+/** What the user has sent that still waits for an answer. */
+export const waitingItems = (sent) => sent.filter((item) => item.closedAt == null);
+
+/**
+ * What belongs to the open chat when it is not the main chat: the objectives whose chat it is, Jet's tasks for them
+ * and the follow-ups set in it, their runs, and what was sent about them or from it. Null when nothing belongs to it,
+ * so the main view shows.
+ */
+export function scopeOf(pane, chatId, mainId) {
+  if (chatId == null || chatId === mainId) return null;
+  const objectives = pane.objectives.filter((objective) => objective.chatId === chatId);
+  const own = new Set(objectives.map((objective) => objective.id));
+  const mine = (item) => own.has(item.objectiveId) || (item.objectiveId == null && item.chatId === chatId);
+  const tasks = pane.tasks.filter(mine);
+  if (objectives.length === 0 && tasks.length === 0) return null;
+  const sent = waitingItems(pane.sent).filter((item) => (own.has(item.objectiveId) && item.objectiveTitle != null) || item.chatId === chatId);
+  return { objectives, tasks, runs: pane.runs.filter(mine), sent };
+}
+
+/** 'Today', 'Tomorrow' or 'Fri 27 Nov' for the day a Unix second falls on in `timeZone`. */
+export function dayWords(seconds, timeZone, now, year) {
+  const day = isoDay(seconds, timeZone);
+  if (day <= isoDay(now, timeZone)) return 'Today';
+  if (day === isoDay(now + 86400, timeZone)) return 'Tomorrow';
+  return dueWords(seconds, timeZone, year).split(',')[0];
+}
+
+/** '09:00' for a Unix second in `timeZone`. */
+export function timeWords(seconds, timeZone) {
+  return dueWords(seconds, timeZone, 0).split(', ')[1] ?? '';
+}

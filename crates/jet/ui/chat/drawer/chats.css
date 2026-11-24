@@ -1,51 +1,55 @@
-/* The chat list and the apps in the left pane. At rail width a chat is its glyph with a badge on the corner. */
+/* The chat list and the apps in the left pane. A chat is one line: a quiet mark, then its title, which carries the row.
+   The marks sit on the kite's axis and the titles start under Jet's name. At rail width a chat is its mark with a badge on the corner. */
 .chats, .apps { display: flex; flex-direction: column; min-height: 0; padding: 4px 8px 0; }
 .chats { flex: 1 1 0; }
 .apps { flex: 0 1 auto; max-height: 36%; border-top: 1px solid var(--line); margin-top: 4px; }
 .apps:has(.app-list:empty) { display: none; }
-.nav-head { display: flex; align-items: center; justify-content: space-between; flex: none; gap: 8px; padding: 4px 0 6px 8px; }
-.nav-heading { margin: 0; color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
-.apps .nav-heading { padding: 6px 0 6px 8px; }
-.new-chat { position: relative; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 16px; color: var(--fg); font-size: 12px; font-weight: 600; }
-.new-chat::after { content: ""; position: absolute; inset: -6px -4px; }
-.new-chat:hover { background: #1d2c38; }
-.new-chat .icon { width: 16px; height: 16px; color: var(--link-jet); }
+.nav-head { display: flex; align-items: center; justify-content: space-between; flex: none; gap: 8px; padding: 2px 0 4px 8px; }
+.nav-heading { margin: 0; color: var(--muted); font-size: 12px; font-weight: 600; }
+.apps .nav-heading { padding: 8px 0 6px 8px; }
+.new-chat { position: relative; display: flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px 0 4px; background: none; border: 0; border-radius: var(--r-s); color: var(--muted); font-size: 12px; font-weight: 600; }
+.new-chat::after { content: ""; position: absolute; inset: -8px -4px; }
+.new-chat:hover { background: rgba(255, 255, 255, .06); color: var(--fg); }
+.new-chat .icon { width: 16px; height: 16px; }
 
-.chat-list { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; gap: 2px; margin: 0; padding: 0 0 8px; overflow: auto; list-style: none; scrollbar-width: thin; }
-.chat-row { position: relative; display: flex; align-items: center; flex: none; min-width: 0; border-radius: 10px; }
-.chat-row:hover, .chat-row:has(.chat-open[aria-current="true"]) { background: var(--surface-2); }
-.chat-row:has(.chat-open[aria-current="true"])::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--accent); }
+.chat-list { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; gap: 1px; margin: 0; padding: 0 0 8px; overflow: auto; list-style: none; scrollbar-width: thin; }
+.chat-row { position: relative; display: flex; align-items: center; flex: none; min-width: 0; border-radius: var(--r-s); }
+.chat-row:hover { background: rgba(255, 255, 255, .04); }
+.chat-row:has(.chat-open[aria-current="true"]) { background: var(--surface-2); }
 .chat-row > .nav-icon { margin-left: 8px; }
-.chat-open { display: flex; align-items: center; flex: 1; gap: 8px; min-width: 0; height: 44px; padding: 0 8px; border: 0; border-radius: 10px; background: none; text-align: left; }
-.chat-row[data-kind="main"] .nav-icon, .chat-row[data-kind="objective"] .nav-icon { color: var(--link-jet); }
-/* An objective's chat wears a round mark, so it reads apart from a plain topic. */
-.chat-row[data-kind="objective"] .nav-icon { border-color: rgba(140, 196, 255, .5); border-radius: 50%; }
+.chat-open { display: flex; align-items: center; flex: 1; gap: 8px; min-width: 0; height: 34px; padding: 0 8px; border: 0; border-radius: var(--r-s); background: none; text-align: left; }
+.chat-open:focus-visible { outline-offset: -2px; }
+.chat-row .nav-icon { color: var(--muted); }
+.chat-row:has(.chat-open[aria-current="true"]) .nav-icon { color: var(--fg); }
 .chat-row .nav-icon .icon { width: 18px; height: 18px; }
-.chat-title { flex: 1; color: var(--muted); }
-.chat-open[aria-current="true"] .chat-title, .chat-row:has(.badge) .chat-title { color: var(--fg); font-weight: 650; }
-.badge { display: grid; place-items: center; flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--fill); color: var(--on-fill); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.chat-title { flex: 1; }
+/* One weight for every title; only a chat with something unread is stronger. */
+.chat-row:has(.badge) .chat-title { font-weight: 650; }
+.badge { display: grid; place-items: center; flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--fill); color: var(--on-fill); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-.chat-actions { display: none; flex: none; padding-right: 4px; }
+.chat-actions { display: none; flex: none; padding-right: 3px; }
 .chat-row:hover .chat-actions, .chat-row:focus-within .chat-actions, .chat-row:has(.chat-open[aria-current="true"]) .chat-actions { display: flex; }
-.chat-action { display: grid; place-items: center; min-width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--muted); }
+.chat-action { display: grid; place-items: center; min-width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-s); background: none; color: var(--muted); }
 .chat-action:hover { color: var(--fg); background: rgba(255, 255, 255, .08); }
-.chat-action .icon { width: 16px; height: 16px; }
+.chat-action .icon { width: 15px; height: 15px; }
 .chat-delete:hover { color: var(--danger); }
-.chat-delete.is-confirming { padding: 0 10px; background: rgba(255, 123, 114, .18); color: var(--danger); font-size: 12px; font-weight: 650; }
+.chat-delete.is-confirming { padding: 0 8px; background: rgba(255, 123, 114, .18); color: var(--danger); font-size: 12px; font-weight: 650; }
 /* Asking "Delete?" gives the whole row to the question. */
 .chat-row:has(.is-confirming) .badge, .chat-row:has(.is-confirming) .chat-action:not(.is-confirming) { display: none; }
-.chat-rename { flex: 1; min-width: 0; height: 36px; margin: 0 6px 0 8px; padding: 0 8px; background: var(--ground); border: 1px solid var(--accent); border-radius: 8px; font-size: 13px; }
+.chat-rename { flex: 1; min-width: 0; height: 28px; margin: 3px 3px 3px 8px; padding: 0 8px; background: var(--ground); border: 1px solid var(--edge); border-radius: var(--r-s); outline-offset: 0; font-size: 13px; }
 /* A phone zooms into a field whose text is under 16 px. */
-@media (max-width: 759.98px) { .chat-rename { height: 44px; font-size: 16px; } }
+@media (max-width: 759.98px) { .chat-rename { height: 38px; font-size: 16px; } }
+/* A finger needs a 44 px row; the denser one is for a fine pointer. */
+@media (pointer: coarse) { .chat-open { height: 44px; } }
+/* Where the pointer hovers, rename and delete take the badge's place while the row is pointed at, so the title keeps its room. */
+@media (hover: hover) { .chat-row:hover .badge, .chat-row:focus-within .badge { display: none; } }
 
 .workspace-shell[data-expanded="false"] .nav-heading,
 .workspace-shell[data-expanded="false"] .new-chat-label,
 .workspace-shell[data-expanded="false"] .chat-actions { display: none !important; }
 .workspace-shell[data-expanded="false"] .nav-head { justify-content: center; padding-left: 0; }
-.workspace-shell[data-expanded="false"] .new-chat { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 12px; }
-.workspace-shell[data-expanded="false"] .chat-open { justify-content: center; padding: 0; }
-.workspace-shell[data-expanded="false"] .chat-open .nav-icon { margin: 0; }
-.workspace-shell[data-expanded="false"] .badge { position: absolute; top: 2px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; box-shadow: 0 0 0 2px var(--surface); }
-.workspace-shell[data-expanded="false"] .chat-row:has(.chat-open[aria-current="true"])::before { left: -8px; }
+.workspace-shell[data-expanded="false"] .new-chat { width: 44px; height: 44px; padding: 0; justify-content: center; }
+.workspace-shell[data-expanded="false"] .chat-open { justify-content: center; height: 40px; padding: 0; }
+.workspace-shell[data-expanded="false"] .badge { display: grid; position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; box-shadow: 0 0 0 2px var(--surface); }
 /* With no hover, rename and delete show only on the open chat, as on a desktop, and each is 44 px for a finger. */
 @media (hover: none) { .chat-row:not(:has(.chat-open[aria-current="true"])) .chat-actions { display: none; } .chat-action { min-width: 44px; height: 44px; } }

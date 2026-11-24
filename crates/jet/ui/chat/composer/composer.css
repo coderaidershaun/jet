@@ -18,15 +18,14 @@
    One line is 44 px: the field's 42 px and the one-pixel border above and below. The field grows with its text up to 152 px, which holds six lines, and then scrolls. */
 .field-box {
   position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column;
-  background: var(--surface-2); border: 1px solid var(--edge); border-radius: 22px;
+  background: var(--surface-2); border: 1px solid var(--edge); border-radius: var(--r-m);
 }
-.field-box.has-tray { border-radius: 20px; }
 .field-box:has(#field:focus-visible) { outline: 2px solid var(--focus); }
 .field-line { position: relative; isolation: isolate; display: flex; align-items: flex-end; }
 
 textarea#field {
   flex: 1; min-width: 0; min-height: 42px; max-height: 152px; padding: 10px 4px 10px 6px;
-  background: none; border: 0; border-radius: 0 22px 22px 0; outline: 0;
+  background: none; border: 0; outline: 0;
   font-size: 16px; line-height: 22px; resize: none; display: block;
 }
 textarea#field::placeholder { color: var(--muted); }
@@ -35,22 +34,22 @@ textarea#field::placeholder { color: var(--muted); }
    The ::after makes the press target 44 px across. The voice pill at the right end mirrors the + at the left. */
 .attach, .voice, .hear {
   position: relative; display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin: 3px 0 3px 4px; padding: 0;
-  background: none; border: 0; border-radius: 50%; color: var(--muted);
+  background: none; border: 0; border-radius: var(--r-s); color: var(--muted);
   transition: background 120ms, color 120ms;
 }
 .voice, .hear { margin: 0; }
-.attach::after, .voice::after, .hear::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
+.attach::after, .voice::after, .hear::after { content: ""; position: absolute; inset: -4px; }
 .attach:hover, .attach:focus-visible, .voice:hover, .voice:focus-visible, .hear:hover, .hear:focus-visible { background: rgba(255, 255, 255, .06); color: var(--fg); }
 .attach .icon, .voice .icon, .hear .icon { width: 20px; height: 20px; }
 
-/* Mic and speaker share one 36 px pill, and the whole pill takes the accent tint when either half is on. */
+/* Mic and speaker share one 36 px box, and the whole box takes the accent tint when either half is on. */
 .voice-pill {
-  display: flex; flex: none; height: 36px; margin: 3px 4px 3px 0; border-radius: 18px;
+  display: flex; flex: none; height: 36px; margin: 3px 4px 3px 0; border-radius: var(--r-s);
   transition: background 120ms;
 }
 .voice-pill.has-on { background: rgba(61, 139, 255, .14); }
-.voice-pill .hear { border-radius: 18px 0 0 18px; }
-.voice-pill .voice { border-left: 1px solid var(--line); border-radius: 0 18px 18px 0; }
+.voice-pill .hear { border-radius: var(--r-s) 0 0 var(--r-s); }
+.voice-pill .voice { border-left: 1px solid var(--line); border-radius: 0 var(--r-s) var(--r-s) 0; }
 
 .voice[aria-pressed="true"] { color: var(--accent); }
 .voice[aria-pressed="true"]:hover, .voice[aria-pressed="true"]:focus-visible { background: rgba(61, 139, 255, .22); color: var(--accent); }
@@ -85,9 +84,9 @@ textarea#field::placeholder { color: var(--muted); }
 .chip { position: relative; flex: none; animation: rise 160ms ease-out; }
 .chip-body {
   position: relative; display: flex; align-items: center; gap: 10px; height: 52px; max-width: 240px; padding: 0 14px 0 10px; overflow: hidden;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-s);
 }
-.chip.is-picture .chip-body { width: 52px; padding: 0; border-radius: 10px; }
+.chip.is-picture .chip-body { width: 52px; padding: 0; }
 .chip-thumb { display: block; width: 100%; height: 100%; object-fit: cover; }
 .chip-text { display: flex; flex-direction: column; min-width: 0; max-width: 180px; }
 .chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; line-height: 18px; }
@@ -102,12 +101,12 @@ textarea#field::placeholder { color: var(--muted); }
 .chip-bar::-moz-progress-bar { background: var(--accent); }
 .chip:not([data-state="uploading"]) .chip-bar { display: none; }
 
-/* The ::after makes the press target of the 22 px circle 44 px across. */
+/* The ::after makes the press target of the 22 px button 44 px across. */
 .chip-remove {
   position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 50%; color: var(--fg);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-s); color: var(--fg);
 }
-.chip-remove::after { content: ""; position: absolute; inset: -11px; border-radius: 50%; }
+.chip-remove::after { content: ""; position: absolute; inset: -11px; }
 .chip-remove:hover { background: #1d2c38; }
 .chip-remove .icon { width: 12px; height: 12px; }
 .tray-note { margin: 0; padding: 4px 16px 0; color: var(--danger); font-size: 12px; line-height: 16px; }
@@ -141,7 +140,7 @@ textarea#field::placeholder { color: var(--muted); }
 
 .held {
   justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px 0 16px;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: 22px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-m);
   font-size: 13px; color: var(--muted);
 }
 .held-files { white-space: pre; }

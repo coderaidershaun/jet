@@ -37,6 +37,10 @@
   --drawer-w: 260px;
   /* The width of the plan pane on the right of the window; the open pane's shell sets it. */
   --pane-w: 0px;
+  /* Corners: small for controls and rows, a little more for cards that wait for a tap and for menus, the most for message bubbles. */
+  --r-s: 4px;
+  --r-m: 8px;
+  --r-bubble: 14px;
   --lane: 60px;
   --lane-scale: .24;
   --empty-scale: .6;
@@ -78,10 +82,6 @@ button:disabled { cursor: default; }
 .stage {
   grid-row: 1; grid-column: 1;
   position: relative; min-height: 0;
-  background:
-    linear-gradient(var(--veil), var(--veil)),
-    url(assets/tile.png) 0 0 / 512px 512px repeat,
-    var(--ground);
 }
 
 /* Says which chat is open; on a phone the drawer is hidden, so this is the one place that tells. It is a solid band,
@@ -99,19 +99,19 @@ button:disabled { cursor: default; }
 /* The first stop of the keyboard: it shows when it has the focus and goes straight to the message box. */
 .skip-link {
   position: fixed; z-index: 30; top: 8px; left: 8px; padding: 10px 16px; transform: translateY(-200%);
-  background: var(--fill); color: var(--on-fill); border-radius: 22px; font-weight: 600; text-decoration: none;
+  background: var(--fill); color: var(--on-fill); border-radius: var(--r-s); font-weight: 600; text-decoration: none;
 }
 .skip-link:focus { transform: none; }
 
 .icon-button {
   display: grid; place-items: center; flex: none;
   width: 44px; height: 44px; padding: 0;
-  background: none; border: 0; border-radius: 12px; color: var(--fg);
+  background: none; border: 0; border-radius: var(--r-s); color: var(--fg);
 }
 .icon-button:hover { background: rgba(255, 255, 255, .06); }
 .action {
   min-height: 44px; padding: 0 16px;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: 22px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-s);
   font-size: 14px; font-weight: 600;
 }
 .action:hover:not(:disabled) { background: #1d2c38; }

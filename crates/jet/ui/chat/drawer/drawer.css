@@ -1,43 +1,50 @@
 .drawer { width: var(--drawer-w); overflow: hidden; background: var(--surface); border-right: 1px solid var(--line); }
 .drawer-inner { display: flex; flex-direction: column; height: 100%; padding-top: env(safe-area-inset-top); padding-left: env(safe-area-inset-left); }
-.drawer-id { display: flex; align-items: center; flex: none; gap: 8px; padding: 10px 8px; min-height: 68px; }
-.jet-toggle { position: relative; display: grid; place-items: center; flex: none; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 12px; background: none; }
+/* No gap after the kite: its 48 px button ends where every title in the pane starts. */
+.drawer-id { display: flex; align-items: center; flex: none; padding: 10px 8px; min-height: 68px; }
+.jet-toggle { position: relative; display: grid; place-items: center; flex: none; width: 48px; height: 48px; padding: 0; border: 0; border-radius: var(--r-s); background: none; }
 .jet-toggle:hover { background: var(--surface-2); }
 .drawer-jet { width: 44px; height: 44px; }
-.drawer-persona { min-width: 0; }
-.drawer-name { margin: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
-.drawer-title { margin: 1px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+/* The two lines sit close, and 1 px above the middle: the kite's weight is above its own middle, where its corners are. */
+.drawer-persona { min-width: 0; padding-bottom: 2px; }
+.drawer-name { margin: 0; font-size: 15px; line-height: 18px; font-weight: 650; overflow-wrap: anywhere; }
+.drawer-title { margin: 0; color: var(--muted); font-size: 12px; line-height: 15px; overflow-wrap: anywhere; }
 .drawer-status { margin: 2px 0 0; color: var(--danger); font-size: 12px; line-height: 16px; }
 .drawer-status:empty { display: none; }
 .drawer[data-connection="offline"] .jet-toggle::after { content: ""; position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 2px var(--surface); }
-.context-toggle { display: grid; place-items: center; flex: none; width: 32px; height: 32px; margin-left: auto; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--muted); }
+.context-toggle { display: grid; place-items: center; flex: none; width: 32px; height: 32px; margin-left: auto; padding: 0; border: 0; border-radius: var(--r-s); background: none; color: var(--muted); }
 .context-toggle:hover { color: var(--fg); background: var(--surface-2); }
 .context-toggle .icon { width: 18px; height: 18px; transition: transform 160ms; }
 .context-toggle[aria-expanded="true"] .icon { transform: rotate(180deg); }
 .context-capacity { flex: none; padding: 12px 16px 18px; font-size: 12px; line-height: 18px; }
-.context-capacity h2 { margin: 0 0 8px; font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
+.context-capacity h2 { margin: 0 0 8px; font-size: 12px; color: var(--muted); font-weight: 600; }
 .context-capacity p { margin: 4px 0; overflow-wrap: anywhere; }
 #context-model { font-weight: 600; }
 #context-tokens { font-variant-numeric: tabular-nums; }
-#context-bar { display: block; width: 100%; height: 5px; margin: 10px 0 7px; border: 0; border-radius: 8px; overflow: hidden; accent-color: var(--accent); }
+#context-bar { display: block; width: 100%; height: 5px; margin: 10px 0 7px; border: 0; border-radius: var(--r-s); overflow: hidden; accent-color: var(--accent); }
 #context-bar::-webkit-progress-bar { background: var(--surface-2); }
 #context-bar::-webkit-progress-value { background: var(--accent); }
 .context-note { color: var(--muted); font-size: 11px; }
-.drawer-foot { margin-top: auto; display: flex; align-items: center; flex: none; gap: 8px; padding: 4px 8px calc(4px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
-.gear { display: grid; place-items: center; width: 48px; height: 44px; padding: 0; background: none; border: 0; border-radius: 12px; color: var(--muted); }
-.gear:hover { color: var(--fg); background: var(--surface-2); }
-.settings-label { color: var(--muted); font-size: 12px; }
-.account { display: flex; align-items: center; flex: none; gap: 8px; margin-top: auto; padding: 8px 2px 8px 12px; border-top: 1px solid var(--line); }
-.account:not([hidden]) + .drawer-foot { margin-top: 0; }
+/* The foot: who is signed in and the way out, then Settings, as one more row of the pane. */
+.drawer-foot { margin-top: auto; flex: none; padding: 4px 8px calc(4px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+.gear { display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; padding: 0 8px; background: none; border: 0; border-radius: var(--r-s); color: var(--muted); text-align: left; }
+.gear:hover { color: var(--fg); background: rgba(255, 255, 255, .04); }
+.gear .icon { flex: none; width: 18px; height: 18px; margin: 0 7px; }
+.settings-label { color: var(--fg); }
+.account { display: flex; align-items: center; flex: none; gap: 8px; margin-top: auto; padding: 8px 8px 4px 16px; border-top: 1px solid var(--line); }
+.account:not([hidden]) + .drawer-foot { margin-top: 0; border-top: 0; }
 .account-mark { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 50%; background: rgba(61, 139, 255, .18); color: var(--link-jet); font-size: 14px; font-weight: 650; }
 .account-who { display: flex; flex-direction: column; flex: 1; min-width: 0; margin: 0; }
 .account-name { font-size: 13px; line-height: 18px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account-email { color: var(--muted); font-size: 11px; line-height: 15px; overflow-wrap: anywhere; }
-.signout { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; background: none; border: 0; border-radius: 12px; color: var(--muted); }
-.signout:hover { color: var(--fg); background: var(--surface-2); }
+.account-email { color: var(--muted); font-size: 11px; line-height: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.signout { position: relative; display: grid; place-items: center; flex: none; min-width: 28px; height: 28px; padding: 0; background: none; border: 0; border-radius: var(--r-s); color: var(--muted); }
+.signout::after { content: ""; position: absolute; inset: -8px; }
+.signout:hover { color: var(--fg); background: rgba(255, 255, 255, .08); }
 .signout:disabled { opacity: .45; }
-.signout .icon { width: 20px; height: 20px; }
+.signout .icon { width: 18px; height: 18px; }
+.signout.is-confirming { padding: 0 8px; background: rgba(255, 123, 114, .18); color: var(--danger); font-size: 12px; font-weight: 650; }
 .workspace-shell[data-expanded="false"] .signout.is-confirming { width: 52px; padding: 0 2px; font-size: 11px; line-height: 13px; }
-.signout.is-confirming { width: auto; padding: 0 12px; background: rgba(255, 123, 114, .18); color: var(--danger); font-size: 12px; font-weight: 650; }
-.workspace-shell[data-expanded="false"] .account { flex-direction: column; gap: 4px; padding: 10px 0 4px; }
+.workspace-shell[data-expanded="false"] .account { flex-direction: column; gap: 6px; padding: 10px 0 4px; }
 .workspace-shell[data-expanded="false"] .account-who { display: none; }
+.workspace-shell[data-expanded="false"] .gear { justify-content: center; padding: 0; }
+@media (pointer: coarse) { .gear { height: 44px; } .signout { min-width: 44px; height: 44px; } }

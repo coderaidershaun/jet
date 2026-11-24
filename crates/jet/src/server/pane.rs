@@ -42,8 +42,13 @@ async fn run<T: Serialize + Send + 'static>(
 }
 
 async fn read(State(host): State<Server>, signed_in: SignedIn) -> Result<Json<Pane>, Response> {
-    let user = signed_in.user.id;
-    run(host, false, user, move |objectives| objectives.pane(user)).await
+    let (user, is_admin) = (signed_in.user.id, signed_in.user.is_admin);
+    let Json(pane) = run(host, false, user, move |objectives| objectives.pane(user)).await?;
+    Ok(Json(if is_admin {
+        pane
+    } else {
+        pane.without_admin_detail()
+    }))
 }
 
 #[derive(Deserialize)]

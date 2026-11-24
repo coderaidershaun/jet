@@ -1,5 +1,5 @@
-// The sent list of the plan pane: what the user sent to colleagues' Jets, to whom, when, and where each item stands.
-// `sentRow` is the pure reading, tested; `sentSection` draws it, with the colleague's reply as text only.
+// The sent items of the plan pane: what the user sent to colleagues' Jets, to whom, when, and where each item stands.
+// `sentRow` is the pure reading, tested; `sentList` draws it, with the colleague's reply as text only.
 
 import { h } from '../dom.js';
 import { itemTone, itemWords } from '../chat/thread/cards/send.js';
@@ -7,7 +7,6 @@ import { isRecord, listOf, numberOrNull, orNull, recordOf, stringOf } from '../c
 import { clockWords } from './model.js';
 
 const KIND_WORDS = { question: 'Question', task: 'Task', note: 'Note' };
-const SHOWN = 5;
 
 /** One sent item as the pane shows it, from a record of `GET /api/pane`. */
 export function sentRow(item, timeZone) {
@@ -28,23 +27,19 @@ export function sentRow(item, timeZone) {
   };
 }
 
-function rowCard(row, ctx) {
-  return h('li', { class: 'plan-card sent-item', 'data-id': row.id, 'data-tone': row.tone },
-    h('div', { class: 'sent-top' }, h('span', { class: 'sent-heading', text: row.heading }), h('span', { class: 'sent-when', text: row.when })),
-    row.about ? h('p', { class: 'sent-about', text: 'About ' + row.about }) : null,
-    h('p', { class: 'sent-text', text: row.text }),
-    h('p', { class: 'sent-state', text: row.state }),
-    row.reply ? h('blockquote', { class: 'sent-reply' }, h('span', { class: 'sent-from', text: row.replyFrom }), h('p', { text: row.reply })) : null,
-    row.chatId === null ? null : h('button', { type: 'button', class: 'pane-button sent-chat', 'data-key': 'sent-chat-' + row.id, onClick: () => ctx.act.openChat({ chatId: row.chatId }) }, h('span', { text: 'Open chat' })));
+/** One sent item as a line that unfolds to its words, the answer and its chat. `foldRow` is the view's own. */
+function sentLine(row, ctx, foldRow) {
+  // The kind is `item`, the pane's word for it: `sent` is the thread's class for a sent message.
+  return foldRow('item', row.id, ctx,
+    [h('span', { class: 'row-stack' }, h('span', { class: 'row-title sent-heading', text: row.heading }), h('span', { class: 'fact', 'data-tone': row.tone === 'warn' ? 'warn' : 'quiet', text: row.state })),
+      h('span', { class: 'fact sent-when', text: row.when })],
+    [row.about ? h('p', { class: 'sent-about', text: 'About ' + row.about }) : null,
+      h('p', { class: 'sent-text', text: row.text }),
+      row.reply ? h('blockquote', { class: 'sent-reply' }, h('span', { class: 'sent-from', text: row.replyFrom }), h('p', { text: row.reply })) : null,
+      row.chatId === null ? null : h('button', { type: 'button', class: 'text-button', 'data-key': 'sent-chat-' + row.id, onClick: () => ctx.act.openChat({ chatId: row.chatId }), text: 'Open chat' })]);
 }
 
-/** The section, or null when nothing was sent. The rows after the first few wait in a fold. */
-export function sentSection(sent, ctx) {
-  const items = listOf(sent).filter(isRecord).map((item) => sentRow(item, ctx.timeZone));
-  if (items.length === 0) return null;
-  const rest = items.slice(SHOWN);
-  return h('section', { class: 'pane-section' },
-    h('h3', { class: 'pane-heading' }, h('span', { text: 'Sent to colleagues' })),
-    h('ul', { class: 'stack' }, ...items.slice(0, SHOWN).map((row) => rowCard(row, ctx))),
-    rest.length === 0 ? null : h('details', { class: 'closed' }, h('summary', { 'data-key': 'sent-more' }, h('span', { text: `Earlier (${rest.length})` })), h('ul', { class: 'closed-list' }, ...rest.map((row) => rowCard(row, ctx)))));
+/** The list of items that wait for a colleague's answer. */
+export function sentList(items, ctx, foldRow) {
+  return h('ul', { class: 'plan-rows' }, ...listOf(items).filter(isRecord).map((item) => sentLine(sentRow(item, ctx.timeZone), ctx, foldRow)));
 }

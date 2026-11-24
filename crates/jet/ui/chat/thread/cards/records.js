@@ -74,7 +74,6 @@ function objectiveFields(command, objective) {
   const steps = listOf(objective.steps).map(recordOf).map((step) => (step.doneAt ? '✓ ' : '○ ') + stringOf(step.title) + (step.due ? ' · ' + dayWords(step.due) : ''));
   const note = command.action === 'note' ? recordOf(listOf(objective.notes).at(-1)) : null;
   return [
-    { term: 'Objective', text: stringOf(objective.title) },
     { term: 'Deliverable', text: stringOf(objective.deliverable) },
     { term: 'Dates', text: range(objective) },
     { term: 'Status', text: stringOf(objective.status) },

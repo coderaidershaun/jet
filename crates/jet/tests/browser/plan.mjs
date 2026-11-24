@@ -1,5 +1,5 @@
 // Drives the plan pane against the real host: it seeds a user's objectives, Jet's checks and a colleague's
-// shared objective through the provider stand-in and rows in the database, then reads the pane at a glance, opens
+// shared objective through the provider stand-in and rows in the database, then reads the overview, follows the open chat, opens
 // a check-in from its run, taps steps, a snooze, a failed tap and a two-tap cancel by pointer and by keyboard, adds
 // a person to a share, works the pane as a dialog below 1024 px, and checks that nothing is wider than the window.
 // It takes the screenshots.
@@ -146,53 +146,57 @@ if (/^facade:/m.test(input)) {
   /** Whether the element lies wholly inside the pane's visible part. */
   const inPane = (locator) => locator.evaluate((el) => { const pane = document.getElementById('side-pane').getBoundingClientRect(), r = el.getBoundingClientRect(); return r.top >= pane.top && r.bottom <= pane.bottom; });
   const focusKey = (p) => p.evaluate(() => document.activeElement?.dataset.key ?? document.activeElement?.tagName);
-  const unfold = async (p, id) => {
-    const summary = p.locator(`.objective[data-id="${id}"] .objective-summary`);
+  const unfold = async (p, selector) => {
+    const summary = p.locator(`${selector} > .row-line > .row-summary`);
     if ((await summary.getAttribute('aria-expanded')) === 'false') await summary.click();
-    await p.locator(`.objective[data-id="${id}"] .objective-body`).waitFor();
+  };
+  const fold = async (p, key) => {
+    const line = p.locator(`[data-key="fold-${key}"]`);
+    if ((await line.getAttribute('aria-expanded')) === 'false') await line.click();
   };
   const taskTime = (p, id) => p.locator(`.task[data-id="${id}"] .task-time`).innerText();
+  /** Opens the pane at width 390, where it is a dialog that closes when a chat opens. */
+  const showPane = async (p, width) => {
+    if (width !== 1440 && (await p.locator('#side-pane').isHidden())) { await p.locator('.pane-toggle').tap(); await p.locator('#side-pane').waitFor({ state: 'visible' }); }
+  };
 
-  /** The checks both widths share: the glance, a run's check-in, taps by pointer and keyboard, a failed tap, a two-tap cancel and a share. */
+  /** The checks both widths share: the overview, taps by pointer and keyboard, a failed tap, a two-tap cancel, the pane of an objective's chat, a share and a check-in. */
   async function exercise(p, width) {
     const pane = p.locator('#side-pane');
     await p.locator('.objective').first().waitFor();
+    // The overview: Jet's tasks lead, then the objectives; each is a row, and nothing starts unfolded.
+    assert.equal(await p.locator('.tile, .chip, .plan-card').count(), 0, 'no tiles, chips or cards in the pane');
     assert.equal(await p.locator('.objective').count(), 4, 'four active objectives');
-    assert.equal(await p.locator('.objective[data-open="true"]').count(), 1, 'one objective starts open, the others are folded to their summary');
-    for (const summary of await p.locator('.objective-summary').all()) assert.match(await summary.innerText(), /Next check|No check is set/, 'each summary says when Jet looks in next');
-    assert.match(await p.locator('.objective[data-id="1"] .objective-summary').innerText(), /at risk[\s\S]*1 of 3 steps/, 'the summary has the latest status and the progress');
-    assert.ok(await inPane(p.locator('.pane-heading', { hasText: 'Objectives' })), 'the objectives start in the first screen');
+    assert.equal(await p.locator('.plan-row[data-open="true"]').count(), 0, 'nothing starts unfolded');
+    const headings = await p.locator('.pane-heading').allInnerTexts();
+    assert.match(headings[0], /^Jet's tasks/);
+    assert.match(headings[1], /^Objectives/);
+    assert.match(await p.locator('.objective[data-id="1"] .objective-summary').innerText(), /at risk[\s\S]*1\/3/, 'the row has the latest status and the progress');
+    assert.equal(await p.locator('.objective-summary', { hasText: /Next check/ }).count(), 0, 'a row does not repeat its next check');
+    assert.ok(await p.locator('.objective').first().getAttribute('data-id') === '1', 'the objective that needs the user comes first');
     await shoot(p, `${width}-01-top`);
-    await p.locator('.tile', { hasText: 'Next check' }).click();
-    assert.ok(await inPane(p.locator('.pane-heading', { hasText: "Jet's plan" })), "one tap on a tile shows Jet's plan");
-    await p.locator('.tile', { hasText: 'Last check' }).click();
-    const firstRun = p.locator('.run').first();
-    assert.ok(await inPane(firstRun), 'one tap on a tile shows the first recent check');
-    assert.equal(await firstRun.locator('.run-title').innerText(), 'Ship the kite page', 'a run names its objective');
-    assert.match(await firstRun.innerText(), /Seen 👍/, 'the reaction on the check-in shows');
-    assert.match(await p.locator('.run[data-outcome="silent"] .run-title').innerText(), /^Follow-up: /, 'a follow-up says why');
-    assert.equal(await p.locator('.run[data-outcome="stale"] .run-cost').count(), 0, 'a free check says nothing about cost');
-    await shoot(p, `${width}-02-recent-checks`);
+    assert.equal(await p.evaluate(() => document.scrollingElement.scrollHeight <= innerHeight), true, 'the page itself never scrolls');
 
-    // Jet's plan: the snooze button says where the check lands, a failed tap leaves its notice, Cancel takes two taps.
-    const snooze = p.locator('.task[data-id="1"]').getByRole('button', { name: /^Snooze to / });
-    const landing = (await snooze.innerText()).replace('Snooze to ', '');
+    // Jet's tasks: Snooze says where the check lands, a failed tap leaves its notice, Cancel takes two taps inside the unfolded row.
+    await fold(p, 'later');
+    const snooze = p.locator('.task[data-id="5"]').getByRole('button', { name: /^Snooze to / });
+    const landing = (await snooze.getAttribute('aria-label')).replace('Snooze to ', '');
     assert.match(landing, /08:00$/);
     await snooze.focus();
     await p.keyboard.press('Enter');
-    await until(async () => (await taskTime(p, 1)) === landing, 'the check lands where the button said');
-    assert.equal(await focusKey(p), 'snooze-1', 'after Enter on Snooze the focus stays on it');
+    await until(async () => (await taskTime(p, 5)) === '08:00', 'the check lands where the button said');
+    assert.equal(await focusKey(p), 'snooze-5', 'after Enter on Snooze the focus stays on it');
     await p.route('**/api/tasks/*/snooze', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ kind: 'internal', message: 'the store is busy' }) }), { times: 1 });
-    await p.locator('.task[data-id="5"]').getByRole('button', { name: /^Snooze/ }).click();
+    await p.locator('.task[data-id="2"]').getByRole('button', { name: /^Snooze/ }).click();
     const alert = p.locator('.pane-alert');
     await until(async () => (await alert.innerText()) === 'The check could not be snoozed. The store is busy. Try again.', 'a failed tap says so in plain words');
     await owner.put('/api/objectives/2/steps/5', { done: width === 1440 });
-    await until(async () => (await p.locator('.objective[data-id="2"] .progress-words').innerText()) === `${width === 1440 ? 1 : 0} of 2 steps`, 'the pane is read again');
+    await until(async () => (await p.locator('.objective[data-id="2"] .progress').innerText()) === `${width === 1440 ? 1 : 0}/2`, 'the pane is read again');
     assert.equal(await alert.isVisible(), true, 'the notice stays through the re-read');
-    await p.locator('.task[data-id="5"]').evaluate((el) => el.scrollIntoView({ block: 'center' }));
     await shoot(p, `${width}-03-tap-failed`);
     // The passport's check at 1440 px, the newsletter's at 390 px.
     const doomed = p.locator(`.task[data-id="${width === 1440 ? 6 : 5}"]`);
+    await unfold(p, `.task[data-id="${width === 1440 ? 6 : 5}"]`);
     await doomed.getByRole('button', { name: 'Cancel' }).click();
     await doomed.getByRole('button', { name: 'Tap again to cancel' }).waitFor();
     assert.equal(await doomed.count(), 1, 'the first tap cancels nothing');
@@ -200,15 +204,15 @@ if (/^facade:/m.test(input)) {
     await doomed.getByRole('button', { name: 'Tap again to cancel' }).click();
     await until(async () => (await doomed.count()) === 0, 'the second tap cancels the check');
     assert.equal(await alert.isVisible(), false, 'a tap that worked clears the notice');
-    assert.match(await focusKey(p), /^(snooze-\d+|heading-plan)$/, 'after Cancel the focus goes to the next check');
+    assert.match(await focusKey(p), /^(snooze-\d+|heading-will|fold-later)$/, 'after Cancel the focus goes to the next check');
     await p.locator('.objective[data-id="6"]').scrollIntoViewIfNeeded();
-    assert.match(await p.locator('.objective[data-id="6"] .objective-check').innerText(), /No check is set/, 'an objective with no check says so');
+    assert.match(await p.locator('.objective[data-id="6"] .row-warn').innerText(), /No check is set/, 'an objective with no check says so');
     await shoot(p, `${width}-05-no-check`);
 
     // Steps: a late step and today's step say so; Space ticks and keeps the focus.
-    await unfold(p, 5);
+    await unfold(p, '.objective[data-id="5"]');
     assert.match(await p.locator('.objective[data-id="5"] .step-due[data-tone="bad"]').innerText(), /late$/, 'a passed step is late');
-    await unfold(p, 6);
+    await unfold(p, '.objective[data-id="6"]');
     assert.equal(await p.locator('.objective[data-id="6"] .step-due[data-tone="warn"]').innerText(), 'Today');
     const step = p.locator('.objective[data-id="6"] .step').first();
     const stepKey = await step.getAttribute('data-key');
@@ -217,14 +221,26 @@ if (/^facade:/m.test(input)) {
     await until(async () => (await p.locator(`[data-key="${stepKey}"]`).getAttribute('aria-checked')) === 'true', 'Space ticks the step');
     await delay(300);
     assert.equal(await focusKey(p), stepKey, 'after Space the focus is still on the step');
-    await shoot(p, `${width}-06-step-focus`);
     await p.keyboard.press('Space');
     await until(async () => (await p.locator(`[data-key="${stepKey}"]`).getAttribute('aria-checked')) === 'false', 'Space unticks it');
 
+    // The pane follows the open chat: the kite's own chat holds the kite and what belongs to it, and nothing of the party.
+    await unfold(p, '.objective[data-id="1"]');
+    await p.locator('.objective[data-id="1"]').getByRole('button', { name: 'Open chat' }).click();
+    await until(async () => (await p.locator('.chat-head').innerText()).includes('Ship the kite page'), "the objective's chat opens");
+    await showPane(p, width);
+    const scoped = p.locator('.focus[data-id="1"]');
+    await scoped.waitFor();
+    const text = await pane.innerText();
+    assert.match(text, /see whether the frame is built/, "the pane holds the kite's own check");
+    assert.doesNotMatch(text, /Plan the launch party|ask whether the venue is booked|Renew the passport|Write the newsletter/, 'nothing of another objective');
+    assert.equal(await p.locator('.objective').count(), 0, 'no objective rows in an objective chat');
+    assert.equal(await p.locator('.scoped-task').getByRole('button', { name: 'Cancel' }).count() >= 1, true, 'Snooze and Cancel are both in sight');
+    await shoot(p, `${width}-06-objective-chat`);
+
     // Sharing: the card lists the directory, and the owner's tap adds a person.
-    await unfold(p, 1);
-    await p.locator('.objective[data-id="1"]').getByRole('button', { name: 'Change who sees it' }).click();
-    const card = p.locator('.objective[data-id="1"] .card-share');
+    await scoped.getByRole('button', { name: 'Change who sees it' }).click();
+    const card = scoped.locator('.card-share');
     await card.waitFor();
     assert.ok(await card.locator('.share-row').count() >= 4, 'the card lists the people and teams of the directory');
     assert.equal(await card.locator('.share-go').isDisabled(), true, 'with nothing changed the button does nothing');
@@ -232,19 +248,30 @@ if (/^facade:/m.test(input)) {
     await card.locator('.share-row', { hasText: new RegExp(`^${person}$`, 'm') }).first().locator('.share-box').focus();
     await p.keyboard.press('Space');
     await owner.put('/api/objectives/2/steps/5', { done: width !== 1440 });
-    await until(async () => (await p.locator('.objective[data-id="2"] .progress-words').innerText()) === `${width === 1440 ? 0 : 1} of 2 steps`, 'the pane is drawn again');
+    await delay(800);
     assert.equal(await p.evaluate(() => document.activeElement.classList.contains('share-box')), true, 'the focus stays on the tick through a redraw');
     assert.equal(await card.locator('.share-go').innerText(), 'Share');
-    await card.scrollIntoViewIfNeeded();
     await shoot(p, `${width}-07-share-directory`);
     await card.locator('.share-go').click();
     await card.locator('.share-done').waitFor();
     await until(async () => (await owner.get('/api/pane')).objectives.find((o) => o.id === 1).sharedWith.people.some((who) => who.name === person), 'the tap shares with the added person');
-    await p.locator('.objective[data-id="1"]').getByRole('button', { name: 'Close' }).click();
+    await scoped.getByRole('button', { name: 'Close' }).click();
 
-    // The run's control opens its chat at the check-in.
-    await p.locator('.tile', { hasText: 'Last check' }).click();
-    await p.locator('.run').first().getByRole('button', { name: 'Open check-in' }).click();
+    // One control swaps to the overview in place, and back.
+    await p.getByRole('button', { name: 'All objectives and tasks' }).click();
+    await p.locator('.objective').first().waitFor();
+    assert.equal(await p.locator('.objective').count(), 4, 'the overview holds every objective again');
+    await p.getByRole('button', { name: 'This chat only' }).click();
+    await p.locator('.focus[data-id="1"]').waitFor();
+    // A chat nothing belongs to, and the main chat, show the overview.
+    await p.getByRole('button', { name: 'All objectives and tasks' }).click();
+
+    // What Jet did: a run's line opens its chat at the check-in.
+    await fold(p, 'did');
+    assert.match(await p.locator('.run').first().innerText(), /Ship the kite page[\s\S]*👍/, 'a run names its objective and shows the reaction');
+    assert.equal(await p.locator('.run[data-outcome="stale"] .run-cost').count(), 0, 'a free check says nothing about cost');
+    await shoot(p, `${width}-02-recent-checks`);
+    await p.locator('.run-open').first().click();
     await until(async () => (await p.locator('.chat-head').innerText()).includes('Ship the kite page'), 'the check-in opens its chat');
     await p.locator('.row.is-marked').waitFor();
     await shoot(p, `${width}-08-check-in-opened`);
@@ -261,7 +288,7 @@ if (/^facade:/m.test(input)) {
   assert.ok(parseFloat(columns[2]) >= 320, 'the pane has its own column on a desktop window');
   assert.equal(await pane.getAttribute('role'), null, 'a column is not a dialog');
   await exercise(page, 1440);
-  await page.locator('.closed > summary').click();
+  await page.locator('[data-key="fold-closed"]').click();
   assert.match(await page.locator('.closed-row[data-status="done"] .closed-due').innerText(), /^Closed /, 'a done objective shows the day it closed');
   // Close the column, reload, and it stays closed; open it, reload, and it stays open.
   await page.locator('.pane-close').click();
@@ -312,12 +339,13 @@ if (/^facade:/m.test(input)) {
   for (const [view, name] of [[{ width: 1440, height: 900 }, '1440'], [{ width: 390, height: 844 }, '390']]) {
     const mgr = await open(MANAGER, view, name === '390' ? { hasTouch: true, isMobile: true } : {});
     if (name === '390') await mgr.page.locator('.pane-toggle').tap();
+    await mgr.page.locator('[data-key="fold-shared"]').click();
     await mgr.page.locator('.shared').waitFor();
     assert.equal(await mgr.page.locator('.shared').count(), 1);
     assert.match(await mgr.page.locator('.shared').innerText(), /Ship the kite page/);
+    await mgr.page.locator('.shared .row-summary').click();
     assert.equal(await mgr.page.locator('.shared .step-box').count(), 0, "a colleague's steps are not tick boxes");
     assert.doesNotMatch(await mgr.page.locator('#side-pane').innerText(), /Doubt I can fly|wind/, 'a private note never reaches a colleague');
-    await mgr.page.locator('.pane-heading', { hasText: 'Shared with you' }).scrollIntoViewIfNeeded();
     await shoot(mgr.page, `${name}-09-manager-shared`);
     await noOverflow(mgr.page, `${name} manager`);
     await mgr.context.close();
@@ -333,7 +361,7 @@ if (/^facade:/m.test(input)) {
     await out.context.close();
   }
   assert.deepEqual(errors, []);
-  console.log('PASS plan_pane_glance_checkins_taps_dialog_share_and_fit');
+  console.log('PASS plan_pane_rows_follow_the_chat_taps_dialog_share_and_fit');
   console.log('Screenshots: ' + screens);
 } catch (error) {
   if (page) { await page.screenshot({ path: path.join(screens, 'failure.png') }).catch(() => {}); console.error(await page.locator('body').innerText().catch(() => '')); }

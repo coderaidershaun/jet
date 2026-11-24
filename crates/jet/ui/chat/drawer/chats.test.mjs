@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createChats } from './chats.js';
+import { chatIcon, createChats } from './chats.js';
+import { KITES } from '../../dom.js';
 
 const summary = (id, kind, title, activeAt, unread = 0) => ({ id, kind, title, activeAt, unread });
 const LIST = [summary(2, 'topic', 'Boats', 300), summary(1, 'main', 'Main chat', 100), summary(3, 'objective', 'Ship it', 500, 1), summary(4, 'topic', 'Old', 50)];
@@ -57,4 +58,13 @@ test('while the page cannot be seen the open chat keeps its badge, and showing t
   chats.attend();
   assert.equal(chats.items.find((chat) => chat.id === 2).unread, 0);
   assert.deepEqual(marked, [[2, undefined]]);
+});
+
+test('a chat wears one of the twenty marks, the same on every draw, and the main chat keeps its own', () => {
+  const marks = Object.keys(KITES);
+  assert.equal(marks.length, 20);
+  assert.equal(chatIcon({ id: 1, kind: 'main' }), 'chat');
+  const worn = Array.from({ length: 20 }, (_, n) => chatIcon({ id: 41 + n, kind: 'topic' }));
+  assert.deepEqual(worn.toSorted(), marks.toSorted(), 'twenty chats made one after another wear all twenty');
+  assert.deepEqual(worn.map((_, n) => chatIcon({ id: 41 + n, kind: 'objective' })), worn);
 });

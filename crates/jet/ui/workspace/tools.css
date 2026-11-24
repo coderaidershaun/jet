@@ -11,5 +11,5 @@
 .discovery-view nav { display: flex; flex-wrap: wrap; }
 .tools-unsupported { color: #e6bc83; }
 
-#tools-content button, #tools-content select, #tools-content input { font: inherit; color: inherit; background: #182730; border: 1px solid #34444e; border-radius: 6px; padding: 7px 9px; }
+#tools-content button, #tools-content select, #tools-content input { font: inherit; color: inherit; background: #182730; border: 1px solid #34444e; border-radius: var(--r-s); padding: 7px 9px; }
 #tools-content button:disabled { opacity: .5; }

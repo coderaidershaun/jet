@@ -2,6 +2,7 @@
 // and delete after a second tap on the same row. It also tells the page how many entries are unread in all.
 
 import { h, icon } from '../../dom.js';
+import { chatIcon } from './chats.js';
 
 const CONFIRM_MS = 4000;
 const TITLE_LIMIT = 80;
@@ -26,8 +27,6 @@ export function createChatsView({ list, titleEl, newButton, chats, open, announc
   const rows = new Map();
 
   const problem = (what) => (error) => announce(`${what}: ${error?.message ?? 'Jet did not answer.'}`);
-  // Each chat but the main one shows its first letter, so two objectives in the rail can be told apart; the style marks an objective's.
-  const glyph = (chat) => (chat.kind === 'main' ? icon('chat') : chat.title.trim().charAt(0).toUpperCase() || '#');
 
   function stopConfirming() {
     clearTimeout(confirmTimer);
@@ -95,7 +94,7 @@ export function createChatsView({ list, titleEl, newButton, chats, open, announc
 
   function row(chat) {
     const current = chat.id === chats.openId;
-    const mark = h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, glyph(chat));
+    const mark = h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, icon(chatIcon(chat)));
     const item = h('li', { class: 'chat-row', 'data-chat-id': chat.id, 'data-kind': chat.kind });
     if (renaming === chat.id) {
       item.append(mark, renameInput(chat));

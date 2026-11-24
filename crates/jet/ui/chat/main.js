@@ -82,7 +82,7 @@ async function start() {
     preview: { make: (file) => URL.createObjectURL(file), revoke: (url) => URL.revokeObjectURL(url) },
   });
   const composer = createComposer({ empty: history.length === 0, tray });
-  $('gear').append(icon('gear'));
+  $('gear').prepend(icon('gear'));
   $('context-toggle').append(icon('chevron'));
   $('held-cancel').append(icon('close'));
   $('jump').prepend(icon('down'));
@@ -180,10 +180,18 @@ async function start() {
     else { view.setBanner(null); refreshStatus(); }
   });
 
+  let shownChat = null;
   const chats = createChats({
     agent,
     attending: () => !document.hidden,
-    onChange: () => chatsView.paint(),
+    onChange: () => {
+      chatsView.paint();
+      // The plan pane shows what belongs to the open chat.
+      if (chats.openId !== shownChat) {
+        shownChat = chats.openId;
+        document.dispatchEvent(new CustomEvent('jet:chat-opened', { detail: { id: shownChat, mainId: chats.mainId } }));
+      }
+    },
     onGone: () => showChat(chats.mainId),
   });
   const chatsView = createChatsView({

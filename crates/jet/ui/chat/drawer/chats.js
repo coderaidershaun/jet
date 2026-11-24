@@ -1,6 +1,16 @@
 // The user's chats as the left pane lists them: which one is open, how many Jet entries each one
 // holds that the user has not seen, and the calls that add, rename and remove a chat.
 
+import { KITES } from '../../dom.js';
+
+const MARKS = Object.keys(KITES);
+/**
+ * The name of the icon a chat wears: the main chat its speech bubble, every other chat one of the twenty marks.
+ * The id picks it, so it is the same on every draw; 7 shares no factor with 20, so chats made one after another all differ.
+ * @param {{ id: number, kind: string }} chat
+ */
+export const chatIcon = (chat) => (chat.kind === 'main' ? 'chat' : MARKS[(chat.id * 7) % MARKS.length]);
+
 /** The main chat first, then the others with the newest activity on top. @param {import('../../bridge/agent.js').ChatSummary[]} chats */
 function orderChats(chats) {
   const others = chats.filter((chat) => chat.kind !== 'main').toSorted((a, b) => b.activeAt - a.activeAt);
