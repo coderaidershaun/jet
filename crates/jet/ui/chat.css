@@ -1,3 +1,4 @@
+@import url('./plan/plan.css');
 /* System fonts keep the app usable offline. */
 :root {
   --ground: #0b141b;
@@ -28,7 +29,7 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --drawer-w: 260px;
-  /* The width of the pane on the right of the window. 0 until a later step fills #side-pane. */
+  /* The width of the plan pane on the right of the window; the open pane's shell sets it. */
   --pane-w: 0px;
   --lane: 60px;
   --lane-scale: .24;

@@ -108,25 +108,24 @@ pub(crate) enum Applied {
     NotOnCard,
 }
 
+/// Where a tap is kept: a share card, or a line from the plan pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TapId {
+    Share(ProposalId),
+    Pane(i64),
+}
+
 /// A tap that Jet has not been told of yet.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Tapped {
-    pub(crate) id: ProposalId,
-    title: String,
-    shared_with: Vec<String>,
+    pub(crate) id: TapId,
+    notice: String,
 }
 
 impl Tapped {
     /// The line that goes in front of the user's next message.
     pub(crate) fn notice(&self) -> String {
-        let who = match self.shared_with.as_slice() {
-            [] => "nobody".to_owned(),
-            names => names.join(" and "),
-        };
-        format!(
-            "[The user tapped Share on the card for \"{}\": it is now shared with {who}.]",
-            self.title
-        )
+        self.notice.clone()
     }
 }
 
@@ -365,7 +364,8 @@ impl Store {
                     Ok((ProposalId(row.get(0)?), UserId(row.get(1)?), row.get::<_, String>(2)?))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            taps.into_iter()
+            let mut told = taps
+                .into_iter()
                 .map(|(id, owner, title)| {
                     let card = card(db, owner, id)?.expect("a proposal of its own owner exists");
                     let people = card.people.into_iter().filter(|person| person.ticked).map(|person| person.name);
@@ -374,22 +374,45 @@ impl Store {
                         .into_iter()
                         .filter(|team| team.ticked)
                         .map(|team| format!("the {} team", team.name));
+                    let names: Vec<_> = people.chain(teams).collect();
+                    let who = match names.as_slice() {
+                        [] => "nobody".to_owned(),
+                        names => names.join(" and "),
+                    };
                     Ok(Tapped {
-                        id,
-                        title,
-                        shared_with: people.chain(teams).collect(),
+                        id: TapId::Share(id),
+                        notice: format!(
+                            "[The user tapped Share on the card for \"{title}\": it is now shared with {who}.]"
+                        ),
                     })
                 })
-                .collect()
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            let mut pane = db.prepare(
+                "SELECT id, line FROM pane_taps WHERE chat_id = ?1 AND announced = 0 ORDER BY at, id",
+            )?;
+            let lines = pane.query_map([chat.0], |row| {
+                Ok(Tapped {
+                    id: TapId::Pane(row.get(0)?),
+                    notice: row.get(1)?,
+                })
+            })?;
+            for line in lines {
+                told.push(line?);
+            }
+            Ok(told)
         })
     }
 
-    pub(crate) fn mark_taps_announced(&self, ids: &[ProposalId]) -> Result<(), StoreError> {
+    pub(crate) fn mark_taps_announced(&self, ids: &[TapId]) -> Result<(), StoreError> {
         self.with(|db| {
             for id in ids {
+                let (table, id) = match id {
+                    TapId::Share(id) => ("share_proposals", id.0),
+                    TapId::Pane(id) => ("pane_taps", *id),
+                };
                 db.execute(
-                    "UPDATE share_proposals SET announced = 1 WHERE id = ?1",
-                    [id.0],
+                    &format!("UPDATE {table} SET announced = 1 WHERE id = ?1"),
+                    [id],
                 )?;
             }
             Ok(())

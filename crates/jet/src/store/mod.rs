@@ -9,6 +9,7 @@ mod github_tokens;
 mod import;
 mod notes;
 mod objectives;
+mod pane;
 mod settings;
 mod shares;
 mod signins;
@@ -25,12 +26,12 @@ pub use import::ImportError;
 pub(crate) use objectives::{
     Edit, NewObjective, Objective, ObjectiveChat, ObjectiveId, ObjectiveStatus,
 };
-pub(crate) use shares::{Applied, ProposalId, ShareCard, Shared, Sharing, Tapped};
+pub(crate) use shares::{Applied, ProposalId, ShareCard, Shared, SharedNote, Sharing, Tapped};
 pub(crate) use signins::{Rotation, SigninId};
 pub(crate) use sources::{NewSource, Source, SourceKind};
 pub(crate) use steps::{NewStep, Step, StepId};
 pub(crate) use tasks::{
-    AgentTask, CancelOutcome, NewTask, Run, Scheduled, SetBy, TaskId, TaskKind, TaskState,
+    AgentTask, CancelOutcome, NewTask, Run, Scheduled, SetBy, Snoozed, TaskId, TaskKind, TaskState,
 };
 #[cfg(test)]
 pub(crate) use tasks::{Finished, RunOutcome};
@@ -77,6 +78,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0006_agy_path.sql"),
     include_str!("migrations/0007_many_chats.sql"),
     include_str!("migrations/0008_shares.sql"),
+    include_str!("migrations/0009_pane_taps.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]

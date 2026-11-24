@@ -1,0 +1,135 @@
+{
+  "objectives": [
+    {
+      "chatId": 1,
+      "createdAt": 1767225600,
+      "daysLeft": 31,
+      "deliverable": "Ship the kite delivered",
+      "due": "2026-02-01",
+      "durationDays": 31,
+      "id": 1,
+      "notes": [
+        {
+          "at": 1767225600,
+          "blockers": "wind",
+          "entryId": null,
+          "id": 1,
+          "isPrivate": false,
+          "moved": "Frame is half built",
+          "newDates": "",
+          "status": "at risk"
+        },
+        {
+          "at": 1767225600,
+          "blockers": "wind",
+          "entryId": null,
+          "id": 2,
+          "isPrivate": true,
+          "moved": "Doubt it will fly",
+          "newDates": "",
+          "status": "at risk"
+        }
+      ],
+      "private": false,
+      "sharedWith": {
+        "people": [
+          {
+            "id": 2,
+            "name": "bob@example.com"
+          }
+        ],
+        "teams": []
+      },
+      "sources": [],
+      "start": "2026-01-01",
+      "status": "active",
+      "steps": [
+        {
+          "doneAt": null,
+          "due": null,
+          "id": 1,
+          "position": 1,
+          "title": "First step"
+        }
+      ],
+      "tasks": [
+        {
+          "attempts": 1,
+          "chatId": 1,
+          "dueAt": 1767603600,
+          "id": 1,
+          "kind": "check",
+          "localTime": "2026-01-05T09:00",
+          "objectiveId": 1,
+          "setBy": "jet",
+          "state": "scheduled",
+          "timeZone": "Europe/London",
+          "version": 3,
+          "why": "see whether the first step is done"
+        }
+      ],
+      "title": "Ship the kite",
+      "updatedAt": 1767225600,
+      "version": 3
+    }
+  ],
+  "runs": [
+    {
+      "endedAt": 1777225700,
+      "found": "The frame is built",
+      "id": 1,
+      "outcome": "spoke",
+      "sourcesRead": [
+        "github octo/kite"
+      ],
+      "startedAt": 1777225600,
+      "taskId": 1,
+      "tokens": 1200
+    }
+  ],
+  "sharedWithMe": [
+    {
+      "daysLeft": 31,
+      "due": "2026-02-01",
+      "id": 2,
+      "latest": {
+        "at": 1767225600,
+        "blockers": "",
+        "moved": "Venue found",
+        "newDates": "",
+        "status": "on track"
+      },
+      "owner": "bob@example.com",
+      "status": "active",
+      "steps": [
+        {
+          "doneAt": null,
+          "due": null,
+          "id": 2,
+          "position": 1,
+          "title": "First step"
+        }
+      ],
+      "title": "Plan the launch"
+    }
+  ],
+  "tasks": [
+    {
+      "attempts": 1,
+      "chatId": 1,
+      "dueAt": 1767603600,
+      "id": 1,
+      "isDefault": false,
+      "kind": "check",
+      "localTime": "2026-01-05T09:00",
+      "objectiveId": 1,
+      "objectiveTitle": "Ship the kite",
+      "setBy": "jet",
+      "state": "scheduled",
+      "timeZone": "Europe/London",
+      "version": 3,
+      "why": "see whether the first step is done"
+    }
+  ],
+  "timeZone": "Europe/London"
+}

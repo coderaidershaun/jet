@@ -13,11 +13,11 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SharedView {
     #[serde(flatten)]
-    shared: Shared,
+    pub(super) shared: Shared,
     /// Days from the start date to the due date.
     duration_days: i64,
     /// Days from today, in the owner's zone, to the due date; negative once it has passed.
-    days_left: i64,
+    pub(super) days_left: i64,
 }
 
 /// One change to the organisation's directory, made by an admin.

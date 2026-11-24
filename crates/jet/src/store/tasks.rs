@@ -113,6 +113,14 @@ pub(crate) enum CancelOutcome {
     Missing,
 }
 
+/// What `snooze_task` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Snoozed {
+    Moved,
+    NotWaiting(TaskState),
+    Missing,
+}
+
 const COLUMNS: &str = "id, chat_id, objective_id, kind, why, due_at, local_time, time_zone, state, attempts, version, set_by";
 
 fn read(row: &rusqlite::Row) -> rusqlite::Result<AgentTask> {
@@ -381,6 +389,36 @@ impl Store {
             )?;
             tx.commit()?;
             Ok(true)
+        })
+    }
+
+    /// Moves a waiting task to a later time, as the user's own choice. A running or finished
+    /// task is left alone.
+    pub(crate) fn snooze_task(
+        &self,
+        owner: UserId,
+        id: TaskId,
+        (due_at, local_time, time_zone): (u64, &str, &str),
+        at: u64,
+    ) -> Result<Snoozed, StoreError> {
+        self.with(|db| {
+            let changed = db.execute(
+                "UPDATE agent_tasks SET due_at = ?3, local_time = ?4, time_zone = ?5, set_by = 'user',
+                 version = version + 1, updated_at = ?6
+                 WHERE id = ?1 AND user_id = ?2 AND state = 'scheduled'",
+                params![id.0, owner.0, seconds(due_at), local_time, time_zone, seconds(at)],
+            )?;
+            if changed == 1 {
+                return Ok(Snoozed::Moved);
+            }
+            let state: Option<TaskState> = db
+                .query_row(
+                    "SELECT state FROM agent_tasks WHERE id = ?1 AND user_id = ?2",
+                    params![id.0, owner.0],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            Ok(state.map_or(Snoozed::Missing, Snoozed::NotWaiting))
         })
     }
 }

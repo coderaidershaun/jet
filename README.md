@@ -125,8 +125,7 @@ snapshot, shows it, and moves its read mark; events of the one stream for the op
 snapshot already holds are skipped. An `unread` event for another chat raises its badge; one for the
 open chat (while the page is visible) calls `POST /api/chats/{id}/read` and raises none. A
 `chatsChanged` event reloads the list, and the main chat shows if the open chat is gone. The shell
-reserves a third grid column, `#side-pane` (`ui/workspace/workspace.css`), 0 px wide until a later
-step sets `--pane-w`.
+has a third grid column, `#side-pane` (`ui/workspace/workspace.css`), which holds the plan pane.
 
 ## This server's deployment
 
@@ -349,6 +348,46 @@ empty list, the same as for an owner with no objectives. Update notes reach the 
 shared with as soon as they are written. The pane of an objective changes who it is shared with
 through `POST /api/objectives/{id}/share-proposals` and the same tap, shows it with
 `GET /api/objectives/{id}/shares`, and flips a note with `PUT /api/objectives/{id}/notes/{note}`.
+
+### The plan pane (server)
+
+`GET /api/pane` gives the signed-in user everything the right-hand pane draws, in one answer:
+`objectives` (all of the user's own, active and closed, with duration, days left, steps, notes with
+the private ones, sources, who each is shared with, `private` while it is shared with nobody, and its
+chat id), `tasks` (Jet's open agent-tasks with the due instant, the user's zone, the one-line why, the
+objective's title, who set it and `isDefault` when the server set the time), `runs` (the newest
+twenty, each with a `cost` once the run has one) and `sharedWithMe` (what colleagues shared: owner
+name, title, due, days left, steps and the latest public note, never a private note, chat or
+source). The one-tap controls are `PUT /api/objectives/{id}/steps/{step}` with `{"done": true|false}`,
+`POST /api/tasks/{id}/snooze` (to the next 08:00 in the user's zone, strictly after now) and
+`POST /api/tasks/{id}/cancel`. Each acts only on the signed-in user's own things, answers another
+user's id as a missing one (404), carries the same `Origin` rule as every change, and raises the
+version of what it changed. Each tap, the note flip and a share tap are kept and Jet is told of each
+once, before the user's next message in the chat it concerns. `Chats::pane_changed(user)` puts
+`{"kind":"paneChanged"}` on the user's one event stream; a tool's `objectives_update` or
+`tasks_update` and every tap call it, and the people an objective is shared with hear of a change to it
+too. A finished check will call it once the scheduler is wired to it (the scheduler's job, not yet done);
+`pane_changed_publishes_pane_changed_to_that_users_stream_only` proves only that the call publishes.
+
+### The plan pane (page)
+
+`ui/plan/` draws the pane: `model.js` (pure words and counts, tested against `tests/fixtures/pane.json`),
+`view.js` (the cards), `pane.js` (reading, taps, open state) and `plan.css`. It reads `GET /api/pane`
+once on load and again on each `paneChanged` event of the one stream (also after the stream
+reconnects), so Jet's replies, finished checks and taps in another window show with no reload.
+Sections, in order: a glance strip, Objectives (active ones with dates, days left, steps you can
+tick, the latest note with its lock and a private/shared flip, who it is shared with, the chat; done
+and dropped ones fold below), Jet's plan (each open task in the user's zone with Snooze and Cancel,
+and a mark when the time is the server's default), Recent checks (how each ended in plain words, what
+it found, sources, tokens and cost) and Shared with you. An empty pane only invites the user to tell
+Jet what they are working on; nothing in it is a form. "Change who sees it" opens the share card
+inside the pane (a card needs someone to start from, so a private objective offers "Ask Jet to
+share", which opens its chat). At 1024 px and wider the pane takes a column and the choice to close
+it is kept in the browser (`jet.pane`); below that one button in the corner of the chat opens it over
+the chat, with a count of what is new since the user last opened it (`jet.pane.seen`). A later
+section, such as the messages the user sent to colleagues' Jets, is a new field of the read, a new
+function in `view.js` added to `planNodes`, and needs no new event.
+`tests/browser/plan.mjs` drives it against the real host.
 
 ## Quanty
 

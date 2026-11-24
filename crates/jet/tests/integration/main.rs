@@ -9,6 +9,7 @@ mod github;
 mod import;
 mod mcp_fixture;
 mod objectives;
+mod pane;
 mod proxy;
 mod reactions;
 mod sharing;

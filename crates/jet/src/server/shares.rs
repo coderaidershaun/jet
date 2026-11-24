@@ -31,6 +31,8 @@ impl IntoResponse for ObjectiveError {
     fn into_response(self) -> Response {
         let status = match self {
             Self::NoSuchObjective { .. }
+            | Self::NoSuchStep { .. }
+            | Self::NoSuchTask { .. }
             | Self::NoSuchNote { .. }
             | Self::NoSuchProposal { .. } => StatusCode::NOT_FOUND,
             Self::ProposalNotOpen { .. } => StatusCode::CONFLICT,
@@ -94,7 +96,10 @@ async fn tap(
     })
     .await
     .map_err(|failed| BridgeError::from(failed).into_response())?;
-    Ok(Json(applied.map_err(IntoResponse::into_response)?))
+    let card = applied.map_err(IntoResponse::into_response)?;
+    host.chats.pane_changed(user);
+    host.chats.viewers_pane_changed(card.objective_id);
+    Ok(Json(card))
 }
 
 async fn sharing(
@@ -138,12 +143,16 @@ async fn flip_note(
     Json(privacy): Json<Privacy>,
 ) -> Result<Json<Value>, Response> {
     let user = signed_in.user.id;
+    let chats = host.chats.clone();
     let flipped = on_worker(move || {
-        host.objectives
-            .set_note_private(user, ObjectiveId(id), note, privacy.private)
+        let objectives = &host.objectives;
+        objectives.set_note_private(user, ObjectiveId(id), note, privacy.private)?;
+        objectives.note_flipped(user, ObjectiveId(id), note, privacy.private)
     })
     .await
     .map_err(|failed| BridgeError::from(failed).into_response())?;
     flipped.map_err(IntoResponse::into_response)?;
+    chats.pane_changed(user);
+    chats.viewers_pane_changed(ObjectiveId(id));
     Ok(Json(json!({"id": note, "private": privacy.private})))
 }

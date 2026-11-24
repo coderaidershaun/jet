@@ -82,6 +82,8 @@ export function createChats({ agent, attending = () => true, onChange = () => {}
           break;
         case 'entryAdded':
           // The thread shows the entry; the `unread` event that follows it moves the mark.
+        case 'paneChanged':
+          // The plan pane reads this one itself.
           break;
         default:
           console.warn('an event the chat list does not know:', event.kind);

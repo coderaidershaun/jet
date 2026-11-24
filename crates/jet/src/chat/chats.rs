@@ -16,7 +16,7 @@ use super::memory::ChatMemory;
 use super::{BridgeError, ChatState, TurnTools};
 use crate::files::Files;
 use crate::lock;
-use crate::store::{Chat, ChatId, ChatKind, ChatSummary, Store, UserId};
+use crate::store::{Chat, ChatId, ChatKind, ChatSummary, ObjectiveId, Store, UserId};
 
 /// What every chat of the server shares.
 pub(crate) struct Chats {
@@ -201,6 +201,26 @@ impl Chats {
     pub(crate) fn chats_changed(&self, user: UserId, chat: Option<ChatId>) {
         let feed = self.feed(user);
         lock(&feed).publish(chat, None, json!({"kind":"chatsChanged"}));
+    }
+
+    /// Tells the user's pages that what the plan pane shows changed: an objective, a task or a run.
+    /// This is the one call for every writer of that data, a tap, a tool or a finished check.
+    pub(crate) fn pane_changed(&self, user: UserId) {
+        let feed = self.feed(user);
+        lock(&feed).publish(None, None, json!({"kind":"paneChanged"}));
+    }
+
+    /// Tells the people an objective is shared with that their "shared with you" list changed.
+    pub(crate) fn viewers_pane_changed(&self, objective: ObjectiveId) {
+        match self.store.viewers(objective) {
+            Ok(viewers) => viewers
+                .into_iter()
+                .for_each(|viewer| self.pane_changed(viewer)),
+            Err(error) => eprintln!(
+                "jet: could not find who sees objective {}: {error}",
+                objective.0
+            ),
+        }
     }
 
     /// The feed of the user's events, made the first time it is asked for.

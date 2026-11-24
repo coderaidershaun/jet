@@ -2,6 +2,7 @@
 use super::{Binding, Facade, HEADER, handoff, marks, tools};
 use crate::chat::RunningCall;
 use crate::files::{ExportRequest, Range, Reading};
+use crate::store::ObjectiveId;
 use crate::{lock, on_worker};
 use agent::{
     apps::{AppId, RegistryCommand},
@@ -340,11 +341,21 @@ impl Handler {
                 // The command may have made the objective a chat of its own.
                 if let (Ok(_), Some(chats)) = (&result, self.0.chats()) {
                     chats.chats_changed(user, None);
+                    chats.pane_changed(user);
+                    if let Some(id) = arguments["command"]["id"].as_i64() {
+                        chats.viewers_pane_changed(ObjectiveId(id));
+                    }
                 }
                 result
             }
             "tasks_list" => self.tasks_list(&binding).await,
-            "tasks_update" => self.tasks_update(&arguments, &binding).await,
+            "tasks_update" => {
+                let result = self.tasks_update(&arguments, &binding).await;
+                if let (Ok(_), Some(chats)) = (&result, self.0.chats()) {
+                    chats.pane_changed(user);
+                }
+                result
+            }
             "people_list" => self.people_list().await,
             "people_update" => self.people_update(&arguments, &binding).await,
             "chats_read" => self.chats_read(&arguments, &binding).await,

@@ -55,7 +55,7 @@ async function start() {
   const page = $('page');
   const announce = (message) => { $('announce').textContent = message; };
   let toolBrowser, commandMenu, hear;
-  const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId) });
+  const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId), openChat: id => { workspace.showChat(); showChat(id); } });
   const commandResult = h('pre', { class: 'command-result', role: 'status', 'aria-label': 'Command result' });
   $('rows').after(commandResult);
   function reportCommand(text) {

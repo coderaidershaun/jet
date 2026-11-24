@@ -2,6 +2,7 @@
 //! store. It turns the local dates and times Jet writes into stored ones, works out duration and
 //! days left when they are read, and acts for one user only.
 
+mod pane;
 mod sharing;
 mod time;
 
@@ -11,6 +12,7 @@ use crate::store::{
     NoteStatus, Objective, ObjectiveChat, ObjectiveId, ObjectiveStatus, Person, Run, Scheduled,
     SetBy, Source, Step, StepId, Store, StoreError, TaskId, TaskKind, TaskState, Team, UserId,
 };
+pub(crate) use pane::Pane;
 use serde::Serialize;
 pub(crate) use sharing::DirectoryChange;
 use std::sync::Arc;

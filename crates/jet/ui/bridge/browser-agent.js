@@ -5,7 +5,7 @@ import { uploadFile } from './uploads.js';
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped', 'noReply']);
 /** Events about the chat list rather than a turn: the page's chat list reads them for every chat, not only the open one. */
-const CHAT_LEVEL = new Set(['unread', 'entryAdded', 'chatsChanged']);
+const CHAT_LEVEL = new Set(['unread', 'entryAdded', 'chatsChanged', 'paneChanged']);
 
 export async function requestJson(path, body, method = body === undefined ? 'GET' : 'POST', fetcher = globalThis.fetch, signal) {
   let response;

@@ -1,8 +1,9 @@
 import { h } from '../dom.js';
 import { requestJson } from '../bridge/browser-agent.js';
 import { createFrameContainer } from './frames.js';
+import { createPlanPane } from '../plan/pane.js';
 
-export function createWorkspace({ agent, page, onTools = () => {} }) {
+export function createWorkspace({ agent, page, onTools = () => {}, openChat = () => {} }) {
   const narrow = matchMedia('(max-width: 759px)');
   let expanded = !narrow.matches;
   let mode = 'chat', apps = [], selected = null, refreshNumber = 0;
@@ -18,10 +19,10 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
   const notice = h('p', { class: 'workspace-notice', role: 'status' });
   const toolsContent = h('section', { id: 'tools-content', 'aria-label': 'App tools', tabindex: '-1' });
   const content = h('main', { class: 'workspace-content' }, page, frameHost, toolsContent, notice);
-  // Empty and hidden: the third column of the shell, kept free for a pane that a later step puts on the right.
-  const sidePane = h('aside', { class: 'side-pane', id: 'side-pane', 'aria-label': 'Side pane', hidden: true });
+  const sidePane = h('aside', { class: 'side-pane', id: 'side-pane', hidden: true });
   const root = h('div', { class: 'workspace-shell' }, drawer, content, sidePane);
   document.body.prepend(root);
+  content.append(createPlanPane({ shell: root, host: sidePane, agent, openChat }).button);
   const frames = createFrameContainer(frameHost);
 
   function paint() {

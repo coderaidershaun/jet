@@ -1,7 +1,8 @@
-/* Three columns: the drawer, the content, and a pane on the right that stays 0 px wide (and hidden) until a later step sets --pane-w and shows #side-pane. */
+/* Three columns: the drawer, the content, and the plan pane on the right, 0 px wide while it is closed. Below 1024 px the open pane lies over the chat instead of taking a column. */
 .workspace-shell { display: grid; grid-template-columns: 64px minmax(0, 1fr) var(--pane-w); height: 100vh; height: 100dvh; overflow: hidden; }
 .workspace-shell[data-expanded="true"] { grid-template-columns: var(--drawer-w) minmax(0, 1fr) var(--pane-w); }
 .workspace-content { position: relative; grid-column: 2; min-width: 0; min-height: 0; overflow: hidden; }
+.workspace-shell[data-pane="open"] { --pane-w: clamp(320px, 30vw, 400px); }
 .side-pane { grid-column: 3; min-width: 0; min-height: 0; overflow: auto; background: var(--surface); border-left: 1px solid var(--line); }
 .workspace-frames, #tools-content { height: 100%; min-width: 0; overflow: auto; }
 .workspace-notice:empty { display: none; }
@@ -18,6 +19,10 @@
 .workspace-shell[data-expanded="false"] .context-toggle,
 .workspace-shell[data-expanded="false"] .nav-label,
 .workspace-shell[data-expanded="false"] .settings-label { display: none; }
+@media (max-width: 1023px) {
+  .workspace-shell[data-pane="open"] { --pane-w: 0px; }
+  .side-pane { position: fixed; z-index: 20; inset: 0 0 0 auto; width: min(440px, 100vw); box-shadow: -12px 0 40px #0008; }
+}
 @media (max-width: 759px) {
   .workspace-shell[data-expanded="true"] { grid-template-columns: 64px minmax(0, 1fr) var(--pane-w); }
   .workspace-shell[data-expanded="true"] .drawer { position: absolute; z-index: 10; inset: 0 auto 0 0; width: min(var(--drawer-w), calc(100vw - 48px)); box-shadow: 12px 0 40px #0008; }

@@ -79,6 +79,31 @@ pub(super) fn days_between(from: civil::Date, to: civil::Date) -> i64 {
     i64::from(from.until(to).map_or(0, |span| span.get_days()))
 }
 
+/// The next 08:00 in the zone that is strictly after `now`, as Unix seconds and the local time
+/// `YYYY-MM-DDTHH:MM`. Where the clocks skip 08:00 the time moves forward with them.
+pub(super) fn next_morning(zone_name: &str, now: u64) -> Result<(u64, String), TimeError> {
+    let zone = zone(zone_name)?;
+    let mut day = today(&zone, now);
+    loop {
+        let morning = day.at(8, 0, 0, 0);
+        let instant = zone
+            .to_ambiguous_timestamp(morning)
+            .compatible()
+            .map_err(|_| TimeError::DoesNotExist {
+                local: morning.strftime("%Y-%m-%dT%H:%M").to_string(),
+                zone: zone_name.to_owned(),
+            })?;
+        let seconds = u64::try_from(instant.as_second()).unwrap_or(0);
+        if seconds > now {
+            return Ok((seconds, morning.strftime("%Y-%m-%dT%H:%M").to_string()));
+        }
+        day = day.tomorrow().map_err(|_| TimeError::Unreadable {
+            text: day.to_string(),
+            expected: DATE,
+        })?;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,6 +165,62 @@ mod tests {
         assert!(matches!(
             refused("2026-03-07T09:00", "Mars/Olympus"),
             TimeError::UnknownZone { .. }
+        ));
+    }
+
+    #[test]
+    fn the_next_morning_is_the_next_eight_strictly_after_now() {
+        let at = |text: &str| text.parse::<Timestamp>().unwrap().as_second() as u64;
+        // (now, zone, the next 08:00 as an instant and as local time)
+        for (now, zone, want, local) in [
+            (
+                "2026-06-10T03:00:00Z",
+                "Europe/London",
+                "2026-06-10T07:00:00Z",
+                "2026-06-10T08:00",
+            ),
+            (
+                "2026-06-10T07:00:00Z",
+                "Europe/London",
+                "2026-06-11T07:00:00Z",
+                "2026-06-11T08:00",
+            ),
+            (
+                "2026-06-10T15:00:00Z",
+                "Europe/London",
+                "2026-06-11T07:00:00Z",
+                "2026-06-11T08:00",
+            ),
+            // New York at 04:30 local, after midnight, is still before 08:00 of the same day.
+            (
+                "2026-06-10T08:30:00Z",
+                NEW_YORK,
+                "2026-06-10T12:00:00Z",
+                "2026-06-10T08:00",
+            ),
+            // The evening before clocks go forward and before they go back.
+            (
+                "2026-03-08T00:00:00Z",
+                NEW_YORK,
+                "2026-03-08T12:00:00Z",
+                "2026-03-08T08:00",
+            ),
+            (
+                "2026-10-31T23:00:00Z",
+                NEW_YORK,
+                "2026-11-01T13:00:00Z",
+                "2026-11-01T08:00",
+            ),
+        ] {
+            assert_eq!(
+                next_morning(zone, at(now)).unwrap(),
+                (at(want), local.to_owned()),
+                "{now} in {zone}"
+            );
+        }
+        assert!(matches!(
+            next_morning("Mars/Olympus", NOW),
+            Err(TimeError::UnknownZone { .. })
         ));
     }
 }
