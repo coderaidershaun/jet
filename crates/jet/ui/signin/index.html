@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Sign in · Jet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/chat.css">
+<link rel="stylesheet" href="./signin.css">
+<script type="module" src="./signin.js"></script>
+</head>
+<body>
+<main class="signin" id="signin" data-state="checking">
+  <div class="signin-kite" aria-hidden="true"><svg class="signin-jet" id="kite"></svg></div>
+  <h1 class="signin-title">Sign in to Jet</h1>
+  <p class="signin-sub">Jet picks up right where you left off.</p>
+  <form class="signin-card" id="form" novalidate>
+    <label class="signin-field">
+      <span class="signin-label">Email</span>
+      <input class="signin-input" id="email" name="email" type="email" autocomplete="username" autocapitalize="off" spellcheck="false" inputmode="email" enterkeyhint="next" required aria-describedby="error">
+    </label>
+    <label class="signin-field">
+      <span class="signin-label">Password</span>
+      <span class="signin-secret">
+        <input class="signin-input" id="password" name="password" type="password" autocomplete="current-password" enterkeyhint="go" required aria-describedby="error">
+        <button class="signin-reveal" id="reveal" type="button" aria-label="Show password" aria-pressed="false" title="Show password"></button>
+      </span>
+    </label>
+    <p class="signin-error" id="error" role="alert"></p>
+    <button class="signin-submit" id="submit" type="submit"><span class="signin-spinner" aria-hidden="true"></span><span id="submit-label">Sign in</span></button>
+  </form>
+  <p class="signin-foot">You stay signed in on this device for 30 days.</p>
+</main>
+</body>
+</html>

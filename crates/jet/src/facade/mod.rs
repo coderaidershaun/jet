@@ -4,6 +4,7 @@ mod handoff;
 mod marks;
 mod tools;
 
+use crate::account::Keys;
 use crate::chat::{ChatState, TurnContext, TurnTools};
 use crate::files::Files;
 use crate::lock;
@@ -41,6 +42,7 @@ pub(crate) struct Facade {
     pub(crate) chat: Mutex<Weak<ChatState>>,
     url: Mutex<String>,
     public_origin: Option<String>,
+    keys: Keys,
     bindings: Mutex<HashMap<String, Binding>>,
     sessions: Mutex<HashMap<String, String>>,
 }
@@ -51,6 +53,7 @@ impl Facade {
         files: Files,
         url: String,
         public_origin: Option<String>,
+        keys: Keys,
     ) -> Arc<Self> {
         Arc::new(Self {
             registry,
@@ -59,6 +62,7 @@ impl Facade {
             chat: Mutex::new(Weak::new()),
             url: Mutex::new(url),
             public_origin,
+            keys,
             bindings: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
         })

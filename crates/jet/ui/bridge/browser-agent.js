@@ -48,7 +48,7 @@ export function randomId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSource: Source = globalThis.EventSource, storage = globalThis.sessionStorage, uuid = randomId, delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
+export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSource: Source = globalThis.EventSource, storage = globalThis.sessionStorage, uuid = randomId, delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), beforeReconnect = async () => {} } = {}) {
   let clientId = storage?.getItem('jet.browserClient');
   if (!clientId) { clientId = uuid(); storage?.setItem('jet.browserClient', clientId); }
   const call = (path, body, method, signal) => requestJson(path, body, method, fetcher, signal);
@@ -124,7 +124,15 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     actionGeneration++;
     source?.close();
     clearTimeout(reconnectTimer);
-    if (!stopped) reconnectTimer = setTimeout(connect, 300);
+    if (!stopped) reconnectTimer = setTimeout(connectAgain, 300);
+  }
+  // A stream that failed because the access token ran out would fail again, so the sign-in is renewed first.
+  function connectAgain() {
+    beforeReconnect().then(connect, (error) => {
+      if (error?.kind === 'signedOut') return;
+      console.warn('the sign-in could not be checked before reconnecting:', error?.message ?? error);
+      connect();
+    });
   }
 
   return {

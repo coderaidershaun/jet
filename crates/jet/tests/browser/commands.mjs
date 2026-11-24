@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile, chmod, rm } from 'node:fs/promises
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { createProcesses, until } from './process.mjs';
+import { createProcesses, signIn, until } from './process.mjs';
 import { catalogueAndSafeDiscovery } from './discovery.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -49,7 +49,7 @@ fs.writeFileSync(${JSON.stringify(promptFile)},input);
   const errors = [], sends = [], feels = [];
   page.on('pageerror', error => errors.push(String(error)));
   page.on('request', request => { if (request.url().endsWith('/api/chat/send')) sends.push(request.postDataJSON()); if (request.url().endsWith('/api/feel')) feels.push(request.postDataJSON()); });
-  await page.goto(base); await page.locator('#loading').waitFor({ state: 'detached' });
+  await signIn(page, base); await page.locator('#loading').waitFor({ state: 'detached' });
   const apps = async () => (await context.request.get(base + '/api/apps')).json();
   const snapshot = async () => (await context.request.get(base + '/api/snapshot')).json();
   const nav = (tab, id) => tab.locator(`.app-list [data-app-id="${id}"]`);

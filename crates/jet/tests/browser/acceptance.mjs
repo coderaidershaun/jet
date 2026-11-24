@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile, chmod, rm } from 'node:fs/promises
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { createProcesses, until } from './process.mjs';
+import { createProcesses, signIn, until } from './process.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const scratch = await mkdtemp(path.join(os.tmpdir(), 'jet-acceptance-'));
@@ -67,7 +67,7 @@ process.on('SIGTERM', () => child.kill('SIGTERM'));
     return (await apps()).find(app => app.label === label);
   }
   const call = id => [{ tool: 'tools_search', arguments: { query: 'search' } }, { tool: 'tools_describe', arguments: { appId: id, tool: 'search' } }, { tool: 'tools_call', arguments: { appId: id, tool: 'search', arguments: { question: 'free citation' } } }];
-  await page.goto(origin); await page.locator('#loading').waitFor({ state: 'detached' });
+  await signIn(page, origin); await page.locator('#loading').waitFor({ state: 'detached' });
   const a = await add(new URL(quantyUrl).port, 'Research library');
   await nav(a.id).click();
   const mounted = `${origin}/apps/${a.id}/`;

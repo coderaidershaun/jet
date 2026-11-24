@@ -9,6 +9,7 @@ import https from 'node:https';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { signIn } from './process.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const scratch = await mkdtemp(path.join(os.tmpdir(), 'jet-proxy-browser-'));
@@ -97,7 +98,7 @@ try {
   page.on('console', message => { if (message.type() === 'error' && message.text().includes('Mixed Content')) failures.push(message.text()); });
   page.on('response', response => network.push({ url: response.url(), status: response.status() }));
   page.on('websocket', socket => sockets.push(socket.url()));
-  await page.goto(origin);
+  await signIn(page, origin);
   const apps = [await register(page, first.url), await register(page, second.url)];
   await page.evaluate(async apps => {
     document.body.replaceChildren();

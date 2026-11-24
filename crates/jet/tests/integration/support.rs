@@ -9,10 +9,17 @@ use std::{
 /// Longest a request to the host may take before the test fails instead of hanging.
 const REQUEST_LIMIT: Duration = Duration::from_secs(30);
 
+pub const OWNER: &str = "shaunsurfing@gmail.com";
+pub const PASSWORD: &str = "000111";
+
 pub struct Host {
     pub child: Child,
     pub url: String,
     pub dir: tempfile::TempDir,
+    /// The `Cookie` header of the owner's sign-in, made when the host starts.
+    pub cookie: String,
+    /// The origin Jet's page has: the public origin when one is given, else `url`.
+    pub origin: String,
 }
 impl Host {
     pub fn start() -> Self {
@@ -32,11 +39,16 @@ impl Host {
         Self::launch(dir)
     }
     fn launch(dir: tempfile::TempDir) -> Self {
+        Self::launch_with(dir, &[])
+    }
+    /// Starts the host with extra flags and signs the owner in.
+    pub fn launch_with(dir: tempfile::TempDir, flags: &[&str]) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_jet"))
             .args(["--listen", "127.0.0.1:0", "--data-dir"])
             .arg(dir.path())
             .arg("--disable-feelings")
             .arg("--disable-voice")
+            .args(flags)
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
@@ -49,15 +61,34 @@ impl Host {
             line.starts_with("Jet listening on "),
             "server did not start: {line}"
         );
+        let url: String = line
+            .trim()
+            .strip_prefix("Jet listening on ")
+            .unwrap()
+            .into();
+        let origin = flags
+            .iter()
+            .position(|flag| *flag == "--public-origin")
+            .map_or(url.clone(), |at| flags[at + 1].to_owned());
+        let response = sign_in(&url, &origin, OWNER, PASSWORD);
+        assert_eq!(response.status(), 200, "the owner could not sign in");
         Self {
             child,
-            url: line
-                .trim()
-                .strip_prefix("Jet listening on ")
-                .unwrap()
-                .into(),
+            cookie: cookie_header(&response),
+            origin,
+            url,
             dir,
         }
+    }
+    /// Adds the owner's sign-in to a request, with the `Origin` that a request from Jet's page has.
+    pub fn signed<B>(&self, request: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
+        request
+            .header("cookie", &self.cookie)
+            .header("origin", &self.origin)
+    }
+    /// The same headers as `signed`, for a request written straight to a socket.
+    pub fn signed_lines(&self) -> String {
+        format!("Cookie: {}\r\nOrigin: {}\r\n", self.cookie, self.origin)
     }
     pub fn restart(mut self) -> Self {
         self.child.kill().unwrap();
@@ -70,8 +101,8 @@ impl Host {
             .timeout_global(Some(REQUEST_LIMIT))
             .build()
             .into();
-        let text = agent
-            .get(format!("{}{path}", self.url))
+        let text = self
+            .signed(agent.get(format!("{}{path}", self.url)))
             .call()
             .unwrap()
             .body_mut()
@@ -85,8 +116,8 @@ impl Host {
             .timeout_global(Some(REQUEST_LIMIT))
             .build()
             .into();
-        let mut response = agent
-            .post(format!("{}{path}", self.url))
+        let mut response = self
+            .signed(agent.post(format!("{}{path}", self.url)))
             .header("content-type", "application/json")
             .send(value.to_string())
             .unwrap();
@@ -103,8 +134,8 @@ impl Host {
             .timeout_global(Some(REQUEST_LIMIT))
             .build()
             .into();
-        let mut response = agent
-            .post(format!("{}{path}", self.url))
+        let mut response = self
+            .signed(agent.post(format!("{}{path}", self.url)))
             .header("content-type", "audio/L16;rate=16000;channels=1")
             .send(bytes)
             .unwrap();
@@ -123,8 +154,8 @@ impl Host {
             .timeout_global(Some(REQUEST_LIMIT))
             .build()
             .into();
-        let mut response = agent
-            .post(format!("{}/api/files?name={name}", self.url))
+        let mut response = self
+            .signed(agent.post(format!("{}/api/files?name={name}", self.url)))
             .header("content-type", "application/octet-stream")
             .send(bytes)
             .unwrap();
@@ -140,8 +171,7 @@ impl Host {
             .timeout_global(Some(REQUEST_LIMIT))
             .build()
             .into();
-        agent
-            .delete(format!("{}{path}", self.url))
+        self.signed(agent.delete(format!("{}{path}", self.url)))
             .call()
             .unwrap()
             .status()
@@ -162,7 +192,7 @@ impl Host {
         let mut socket =
             std::net::TcpStream::connect(self.url.trim_start_matches("http://")).unwrap();
         let body = request.to_string();
-        write!(socket, "POST /api/chat/send HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        write!(socket, "POST /api/chat/send HTTP/1.1\r\nHost: {}\r\n{}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", self.url.trim_start_matches("http://"), self.signed_lines(), body.len()).unwrap();
         socket
     }
     /// Opens the event stream. A read that stalls fails the test instead of hanging it.
@@ -171,13 +201,12 @@ impl Host {
             .timeout_global(Some(REQUEST_LIMIT))
             .build()
             .into();
-        agent
-            .get(format!(
-                "{}/api/events?epoch={epoch}&cursor={cursor}",
-                self.url
-            ))
-            .call()
-            .unwrap()
+        self.signed(agent.get(format!(
+            "{}/api/events?epoch={epoch}&cursor={cursor}",
+            self.url
+        )))
+        .call()
+        .unwrap()
     }
     pub fn invocations(&self) -> usize {
         std::fs::read_to_string(self.dir.path().join("calls"))
@@ -191,6 +220,40 @@ impl Drop for Host {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// Posts a sign-in with the given `Origin` and returns the whole answer, cookies included.
+pub fn sign_in(
+    url: &str,
+    origin: &str,
+    email: &str,
+    password: &str,
+) -> ureq::http::Response<ureq::Body> {
+    agent()
+        .post(format!("{url}/api/auth/signin"))
+        .header("origin", origin)
+        .header("content-type", "application/json")
+        .send(json!({"email": email, "password": password}).to_string())
+        .unwrap()
+}
+/// A client that reports every status instead of failing, and follows no redirect.
+pub fn agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .max_redirects(0)
+        .timeout_global(Some(REQUEST_LIMIT))
+        .build()
+        .into()
+}
+/// The `Cookie` header a browser would send after this answer.
+pub fn cookie_header<B>(response: &ureq::http::Response<B>) -> String {
+    response
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|value| value.to_str().ok()?.split(';').next())
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 pub fn host() -> Host {

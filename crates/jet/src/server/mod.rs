@@ -1,9 +1,10 @@
-//! Open the host, serve its routes and shut it down. It joins the jobs of the crate: chat, apps,
-//! files, voice and the tool facade.
+//! Open the host, serve its routes and shut it down. It joins the jobs of the crate: accounts,
+//! chat, apps, files, voice and the tool facade.
 
 mod config;
 mod routes;
 
+use crate::account::{AccountError, Accounts};
 use crate::apps::{Apps, Proxy};
 use crate::chat::TurnTools;
 use crate::facade::Facade;
@@ -28,6 +29,8 @@ pub enum ServerError {
     Registry(#[from] agent::apps::RegistryError),
     #[error(transparent)]
     Chat(#[from] BridgeError),
+    #[error(transparent)]
+    Account(#[from] AccountError),
     #[error("server network operation failed: {0}")]
     Io(#[from] std::io::Error),
     #[error("server task failed: {0}")]
@@ -36,12 +39,19 @@ pub enum ServerError {
 
 #[derive(Clone)]
 pub struct Server {
+    accounts: Accounts,
     chat: Arc<ChatState>,
     apps: Apps,
     facade: Arc<Facade>,
     files: Files,
     voice: Voice,
     config: ServerConfig,
+}
+
+impl FromRef<Server> for Accounts {
+    fn from_ref(server: &Server) -> Self {
+        server.accounts.clone()
+    }
 }
 
 impl FromRef<Server> for Apps {
@@ -67,6 +77,7 @@ impl Server {
         let proxy = Proxy::new(config.public_origin.as_deref(), config.listen)
             .map_err(|error| ServerError::Config(error.to_string()))?;
         let registry = Arc::new(Mutex::new(Registry::open(&config.data_dir)?));
+        let accounts = Accounts::open(&config)?;
         let mcp = Arc::new(HttpMcpClient::new(registry.clone()));
         let files = Files::new(&config.data_dir);
         let facade = Facade::new(
@@ -75,6 +86,7 @@ impl Server {
             files.clone(),
             format!("http://{}/mcp", config.listen),
             config.public_origin.clone(),
+            accounts.keys().clone(),
         );
         let chat = ChatState::open(config.data_dir.clone(), facade.clone(), files.clone())?;
         *lock(&facade.chat) = Arc::downgrade(&chat);
@@ -94,6 +106,7 @@ impl Server {
             }
         });
         Ok(Self {
+            accounts,
             chat,
             apps: Apps::new(registry, mcp, proxy),
             facade,
@@ -131,11 +144,14 @@ impl Server {
         let router = self.router();
         let (finish, finished) = tokio::sync::oneshot::channel::<()>();
         let mut running = tokio::spawn(async move {
-            axum::serve(listener, router)
-                .with_graceful_shutdown(async {
-                    let _ = finished.await;
-                })
-                .await
+            axum::serve(
+                listener,
+                router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .with_graceful_shutdown(async {
+                let _ = finished.await;
+            })
+            .await
         });
         tokio::select! {
             result = &mut running => {

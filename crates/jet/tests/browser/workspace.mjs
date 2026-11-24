@@ -1,4 +1,4 @@
-import { createProcesses, until } from './process.mjs';
+import { createProcesses, signIn, until } from './process.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, chmod } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -56,7 +56,7 @@ if (input.includes('fail-before-init')) {
   const errors = [], sends = [], stops = [];
   page.on('pageerror', error => { errors.push(String(error)); console.error(error); });
   page.on('request', request => { if (request.url().endsWith('/api/chat/send')) sends.push(request.postDataJSON()); if (request.url().endsWith('/api/chat/stop')) stops.push(request.postDataJSON()); });
-  await page.goto(origin);
+  await signIn(page, origin);
   await page.locator('#loading').waitFor({ state: 'detached' });
   await delay(250);
   await page.screenshot({ path: path.join(output, 'workspace-empty.png') });

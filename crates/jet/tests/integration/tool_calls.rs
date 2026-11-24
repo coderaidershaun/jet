@@ -2,7 +2,7 @@
 //! the page can read the status of the job it started.
 use super::{
     mcp_fixture::Fixture,
-    support::{Host, host, replay, request, wait_file},
+    support::{Host, agent, host, replay, request, wait_file},
 };
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
@@ -55,10 +55,15 @@ fn job_progress_status_route_and_file_handoff() {
 
     // A `$file` becomes the address of the file before the arguments are checked, and a file
     // that is not in the conversation stops the call.
+    // The app fetches that address with no sign-in, so it carries a proof for that one file.
     let results = wait_file(&host, "facade-results.json");
-    let address = format!("{}/api/files/{file_id}", host.url);
-    assert_eq!(
-        results[1]["structuredContent"]["structuredContent"]["source"]["pdf_url"], address,
+    let plain = format!("{}/api/files/{file_id}", host.url);
+    let address = results[1]["structuredContent"]["structuredContent"]["source"]["pdf_url"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        address.starts_with(&format!("{plain}?proof=")),
         "{}",
         results[1]
     );
@@ -71,6 +76,7 @@ fn job_progress_status_route_and_file_handoff() {
             .unwrap(),
         b"the notes\n"
     );
+    assert_eq!(agent().get(&plain).call().unwrap().status(), 401);
     assert_eq!(results[2]["isError"], true, "{}", results[2]);
     let refusal = results[2]["structuredContent"]["error"]["message"]
         .as_str()

@@ -174,8 +174,8 @@ fn restart_recovers_request_identity_without_replaying_provider() {
         ),
     ];
     for (name, body) in saved {
-        let response = agent
-            .put(format!("{}/api/{name}", host.url))
+        let response = host
+            .signed(agent.put(format!("{}/api/{name}", host.url)))
             .header("content-type", "application/json")
             .send(body.to_string())
             .unwrap();

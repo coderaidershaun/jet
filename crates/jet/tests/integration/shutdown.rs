@@ -20,7 +20,7 @@ fn shutdown_bounds_provider_and_review_cleanup() {
     }
     let mut settings = host.get("/api/settings");
     settings["claudePath"] = sleeper.to_str().unwrap().into();
-    ureq::put(format!("{}/api/settings", host.url))
+    host.signed(ureq::put(format!("{}/api/settings", host.url)))
         .header("content-type", "application/json")
         .send(settings.to_string())
         .unwrap();
@@ -30,8 +30,8 @@ fn shutdown_bounds_provider_and_review_cleanup() {
         .timeout_global(Some(Duration::from_secs(3)))
         .build()
         .into();
-    let response = client
-        .post(format!("{}/api/chat/send", host.url))
+    let response = host
+        .signed(client.post(format!("{}/api/chat/send", host.url)))
         .header("content-type", "application/json")
         .send(blocked.to_string())
         .unwrap();

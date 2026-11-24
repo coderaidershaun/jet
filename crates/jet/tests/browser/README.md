@@ -148,3 +148,34 @@ No harness here drives the mic button yet. When one does, run Chrome with a fake
 ```
 
 The file plays once from the start when the microphone opens, so open it after the page has loaded and expect the words only if the server can hear (`GEMINI_API_KEY`), which spends a little quota. Without the key, `GET /api/voice` says hearing is unavailable and the mic shows why instead of listening.
+
+## App isolation over the debugging protocol
+
+This check needs no Playwright: it drives headless Chrome over its debugging port. It starts
+the built Jet and the fixture app, signs in, opens the app in a frame of Jet's page, and checks
+that the app's script runs and fetches its own paths, while it can neither call `/api/snapshot`
+with the sign-in nor read Jet's page.
+
+```sh
+cargo build -p jet
+node crates/jet/tests/browser/isolation.mjs
+```
+
+`JET_BINARY` and `CHROME_BINARY` choose other executables.
+
+## Sign-in and silent renewal over the debugging protocol
+
+Also without Playwright. It starts the built Jet with `--access-seconds 5` and the free provider
+stand-in, signs in through the form (a wrong password first, then the right one), waits past two
+expiries with no reload and checks that every renewal worked and no request was refused, then
+sends a message and checks that the reply arrives over the event stream opened before the
+renewals. It ends by signing out. On the way it takes screenshots of the sign-in page and the
+signed-in page at 1440 px and 390 px.
+
+```sh
+cargo build -p jet
+SCREENSHOT_DIR=/tmp/jet-signin node crates/jet/tests/browser/signin.mjs
+```
+
+Without `SCREENSHOT_DIR` the screenshots go to `target/signin-screens`. The Playwright scripts
+above sign in through the same form with `signIn` from `process.mjs`.

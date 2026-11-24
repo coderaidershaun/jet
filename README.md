@@ -45,7 +45,37 @@ Open `http://127.0.0.1:8787/`. Install and sign in to Claude Code or Codex on th
 
 For access from another computer, choose a reachable listen address. `--public-origin https://jet.example` records the externally visible origin for app forwarding. `--ui-dir PATH` selects the shipped static asset directory; the default is this checkout's `crates/jet/ui`. Keep the UI files with the executable when deploying a copied build. `--disable-feelings` disables optional JEV classification for offline development/testing.
 
-Jet targets a trusted single-user deployment. Authentication is deferred. App processes run independently; Jet does not install, launch or stop them.
+App processes run independently; Jet does not install, launch or stop them.
+
+## Accounts and sign-in
+
+Nobody reaches Jet without signing in with an email and a password. The accounts, teams and
+manager links live in one SQLite file, `jet.sqlite3` in the data directory; passwords are kept
+only as salted Argon2id hashes. When the database holds no user, Jet seeds a demo organisation
+at start; `jet seed --data-dir DIR` does the same and is safe to run again. Its accounts are
+`shaunsurfing@gmail.com` (Shaun, admin), `admin123@gmail.com` (Shaun's manager),
+`admin1@gmail.com` and `admin2@gmail.com` (the team Commercial) and `admin3@gmail.com`, all with
+the password `000111`. They are not real mailboxes and Jet sends no mail.
+
+A sign-in is two HttpOnly cookies: a signed JSON Web Token that lives 15 minutes
+(`--access-seconds` shortens it for tests) and a random refresh token that lives 30 days, is
+stored only as a hash and is replaced on each renewal; offering a replaced one ends the sign-in.
+They are marked `Secure` when `--public-origin` is HTTPS, so plain HTTP on 127.0.0.1 still works.
+The sign-in page is `/signin/`; a visit with a sign-in that can still be renewed goes straight
+back to Jet. An open page renews its access token shortly before it runs out, and once more when
+a request is refused, one tab at a time, so the person never sees the renewal and the event
+stream stays open. The drawer's foot shows who is signed in and the way to sign out.
+The signing secret is `signing-secret` in the data directory, made on first start with owner-only
+access, or `JET_SIGNING_SECRET` (at least 32 bytes). A request that changes state must carry
+Jet's own `Origin`. Five failed sign-ins for one email, or twenty from one address, wait 15
+minutes; behind the reverse proxy the address is the last `X-Forwarded-For` entry, believed
+only from loopback or from `--trusted-proxy ADDRESS`.
+
+Registered app pages are served in a sandbox with an opaque origin: they cannot read Jet's page
+or send its cookies, and reach their own app through an address that carries a proof for that
+app. Browser storage and cookies of an app do not work inside Jet. The `/mcp` endpoint takes the
+provider's per-turn token instead of a sign-in. Per-user data is not built yet: the transcript,
+notes, settings and apps are shared by whoever signs in.
 
 ## This server's deployment
 
@@ -63,8 +93,7 @@ Public DNS points this name to `5.175.217.125`. Nginx uses a trusted Let's Encry
 certificate under `/etc/letsencrypt/live/xchainanalytics.com/`; Certbot's enabled
 renewal timer maintains it automatically. The live Nginx site is
 `/etc/nginx/sites-available/jet`.
-Jet has no authentication, so use this public deployment only with the access
-policy appropriate to your trusted single-user setup.
+Every route of this public deployment needs a sign-in (see Accounts and sign-in).
 
 To update the executable and restart Jet:
 
@@ -140,7 +169,7 @@ The **+** at the left of the message box opens a picker for PDF, Markdown, HTML,
 
 Jet sees an upload only after the message that carries it is sent, and then only its details (name, size, and pages, sheets, rows or pixel size) with an instruction to leave the file alone until asked. When the user asks about a file's contents, Jet reads it with `files_read`: PDFs by page, workbooks and CSV by row, other text by line, and pictures as a picture. A file you remove before sending is deleted from the server. The thread keeps the files on the message, and Forget deletes them all.
 
-Jet is served publicly with no login, so every path is bounded: 32 MiB for a file, 10 files for a message and 2 GiB for the store of files. The extension and the first bytes must both match one of the kinds above, and a file Jet cannot read is refused. Every read of a stored file runs in a child process of the `jet` program (`jet --read-file`) with a 2 GiB memory cap (1 TiB on macOS, which refuses any cap below the roughly 400 GiB a process maps at start) and a 30 second limit, two at a time, so a file built to exhaust memory or to hang ends only that child. Uploads stay on disk until Forget, and an upload that was never sent counts toward the 2 GiB.
+Jet is served publicly, so every path is bounded: 32 MiB for a file, 10 files for a message and 2 GiB for the store of files. The extension and the first bytes must both match one of the kinds above, and a file Jet cannot read is refused. Every read of a stored file runs in a child process of the `jet` program (`jet --read-file`) with a 2 GiB memory cap (1 TiB on macOS, which refuses any cap below the roughly 400 GiB a process maps at start) and a 30 second limit, two at a time, so a file built to exhaust memory or to hang ends only that child. Uploads stay on disk until Forget, and an upload that was never sent counts toward the 2 GiB.
 
 ## App tools
 
@@ -235,7 +264,7 @@ For HTTPS Jet, set `--public-origin` to the actual public HTTPS origin (here,
 `https://xchainanalytics.com`). Only Jet's reverse proxy needs public ports 443
 and 80; Quanty remains on loopback HTTP and needs no separate public port or
 certificate. The proxy must support streaming and WebSockets. Trusted Quanty
-inherits Jet's access boundary; Jet currently has no authentication.
+inherits Jet's access boundary: its page and API are reached only through a sign-in.
 
 For a free, isolated trial, use a separate port and fresh home. This does not
 replace an already running Quanty:

@@ -1,6 +1,9 @@
 //! Make the listening address and data location explicit for server deployments.
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+};
 
 use super::ServerError;
 
@@ -12,6 +15,10 @@ pub struct ServerConfig {
     pub(crate) ui_dir: PathBuf,
     pub(crate) disable_feelings: bool,
     pub(crate) disable_voice: bool,
+    /// How long an access token lasts. Tests shorten it to watch the page renew one.
+    pub(crate) access_seconds: u64,
+    /// The reverse proxy whose `X-Forwarded-For` is believed; loopback when not set.
+    pub(crate) trusted_proxy: Option<IpAddr>,
 }
 
 impl ServerConfig {
@@ -26,6 +33,8 @@ impl ServerConfig {
             ui_dir: PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/ui")),
             disable_feelings: false,
             disable_voice: false,
+            access_seconds: crate::account::ACCESS_SECONDS,
+            trusted_proxy: None,
         };
         let mut args = args.into_iter().map(Into::into);
         while let Some(flag) = args.next() {
@@ -48,6 +57,20 @@ impl ServerConfig {
                 }
                 "--data-dir" => config.data_dir = PathBuf::from(value),
                 "--ui-dir" => config.ui_dir = PathBuf::from(value),
+                "--access-seconds" => {
+                    config.access_seconds = value
+                        .parse()
+                        .ok()
+                        .filter(|seconds| *seconds > 0)
+                        .ok_or_else(|| {
+                            ServerError::Config(format!("invalid access lifetime: {value}"))
+                        })?
+                }
+                "--trusted-proxy" => {
+                    config.trusted_proxy = Some(value.parse().map_err(|_| {
+                        ServerError::Config(format!("invalid trusted proxy address: {value}"))
+                    })?)
+                }
                 "--public-origin" => {
                     let origin = url::Url::parse(&value).map_err(|_| {
                         ServerError::Config(format!("invalid public origin: {value}"))

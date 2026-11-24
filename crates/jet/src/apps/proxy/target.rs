@@ -12,11 +12,18 @@ pub(super) struct Target {
 }
 impl Target {
     pub(super) fn new(app: &App, uri: &Uri) -> Result<Self, ProxyError> {
-        let mount = format!("/apps/{}", app.id);
-        let suffix = uri
+        let mut mount = format!("/apps/{}", app.id);
+        let mut suffix = uri
             .path()
             .strip_prefix(&format!("{mount}/"))
             .ok_or(ProxyError::Path)?;
+        // A page loaded with its proof (checked by the sign-in guard) keeps the proof in every
+        // relative address, so the proof is part of the mount the app is told and redirects keep.
+        if suffix.starts_with('~') {
+            let (proof, rest) = suffix.split_once('/').ok_or(ProxyError::Path)?;
+            mount = format!("{mount}/{proof}");
+            suffix = rest;
+        }
         validate_path(suffix)?;
         let base = Url::parse(app.base_url.as_str()).map_err(|_| ProxyError::Path)?;
         let mut url =

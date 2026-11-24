@@ -1,4 +1,5 @@
 //! Exercise the browser host through real HTTP and controlled provider processes.
+mod accounts;
 mod attachments;
 mod chat;
 mod facade;

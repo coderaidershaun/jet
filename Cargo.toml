@@ -7,15 +7,18 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
+argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "getrandom", "password-hash"] }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 calamine = { version = "0.37.0", default-features = false }
 dotenvy = { version = "0.15.7", default-features = false }
+getrandom = { version = "0.4.3", default-features = false, features = ["std"] }
 hyper = { version = "1.12.0", default-features = false, features = ["client", "http1"] }
 hyper-rustls = { version = "0.27.10", default-features = false, features = ["http1", "ring", "webpki-tokio", "tls12"] }
 hyper-util = { version = "0.1.21", default-features = false, features = ["client-legacy", "http1", "tokio"] }
 image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 jsonschema = { version = "0.60.0", default-features = false }
+jsonwebtoken = { version = "12.0.0", default-features = false, features = ["rust_crypto"] }
 krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
 lopdf = { version = "0.46.0", default-features = false }
 pdf-extract = { version = "0.12.1", default-features = false }
@@ -27,10 +30,12 @@ ratex-types = "=0.1.14"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 rlimit = { version = "0.11.0", default-features = false }
 rmcp = { version = "=3.5.1", default-features = false, features = ["client", "server", "transport-streamable-http-client-reqwest", "transport-streamable-http-server", "reqwest"] }
+rusqlite = { version = "0.43.0", default-features = false, features = ["bundled"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustybuzz = { version = "0.20.1", default-features = false, features = ["std"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+sha2 = { version = "0.11.1", default-features = false }
 tempfile = { version = "3.27.0", default-features = false, features = ["getrandom"] }
 thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
 tokio = { version = "1.54.1", default-features = false, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
@@ -40,3 +45,14 @@ tower-http = { version = "0.7.1", default-features = false, features = ["fs"] }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
 url = { version = "2.5.8", default-features = false, features = ["std", "serde"] }
 uuid = { version = "1.28.0", default-features = false, features = ["std", "v4", "serde"] }
+
+# Argon2id runs on every sign-in and at every seed, and each integration test starts a fresh host
+# that seeds five accounts, so the hashing crates are optimised even in debug builds.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3

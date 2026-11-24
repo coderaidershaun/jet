@@ -1,4 +1,5 @@
-//! Forward registered app traffic without buffering bodies or observing embedded page state.
+//! Forward registered app traffic without buffering bodies or observing embedded page state, and
+//! without letting an app page near Jet's sign-in.
 mod connect;
 mod headers;
 mod target;
@@ -132,6 +133,11 @@ async fn forward(
         .and_then(|path| path.split('/').next())
         .ok_or(ProxyError::Missing)?;
     let app = app(&apps, id)?;
+    if request.method() == axum::http::Method::OPTIONS
+        && let Some(answer) = headers::preflight(request.headers())
+    {
+        return Ok(answer);
+    }
     let target = Target::new(&app, &uri)?;
     reject_recursion(&target.url, &apps.proxy.public, apps.proxy.listen).await?;
     let upgrade = headers::websocket(request.headers());
@@ -172,6 +178,7 @@ async fn forward(
         }
     }
     headers::strip(response.headers_mut(), switched);
+    headers::isolate(response.headers_mut());
     if let Some(location) = response.headers().get(LOCATION) {
         let location = target.redirect(location.to_str().map_err(|_| ProxyError::Redirect)?)?;
         response.headers_mut().insert(

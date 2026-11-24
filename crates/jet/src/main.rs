@@ -11,9 +11,12 @@ fn main() -> ExitCode {
     }
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
-            "jet [--listen 127.0.0.1:8787] [--data-dir jet-data] [--public-origin https://jet.example] [--ui-dir PATH] [--disable-feelings] [--disable-voice]"
+            "jet [--listen 127.0.0.1:8787] [--data-dir jet-data] [--public-origin https://jet.example] [--ui-dir PATH] [--disable-feelings] [--disable-voice] [--access-seconds 900] [--trusted-proxy 127.0.0.1]\njet seed [--data-dir jet-data]"
         );
         return ExitCode::SUCCESS;
+    }
+    if args.first().map(String::as_str) == Some("seed") {
+        return seed(&args[1..]);
     }
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(runtime) => runtime,
@@ -24,6 +27,27 @@ fn main() -> ExitCode {
     };
     match runtime.block_on(run(args)) {
         Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("jet: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn seed(args: &[String]) -> ExitCode {
+    let data_dir = match args {
+        [] => "jet-data",
+        [flag, dir] if flag == "--data-dir" => dir.as_str(),
+        _ => {
+            eprintln!("jet: usage: jet seed [--data-dir jet-data]");
+            return ExitCode::FAILURE;
+        }
+    };
+    match jet::seed(std::path::Path::new(data_dir)) {
+        Ok(added) => {
+            println!("jet: seeded {added} new accounts in {data_dir}");
+            ExitCode::SUCCESS
+        }
         Err(error) => {
             eprintln!("jet: {error}");
             ExitCode::FAILURE

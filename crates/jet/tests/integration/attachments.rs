@@ -53,7 +53,10 @@ fn fetch(host: &Host, path: &str) -> (u16, String, String, Vec<u8>) {
         .http_status_as_error(false)
         .build()
         .into();
-    let mut response = agent.get(format!("{}{path}", host.url)).call().unwrap();
+    let mut response = host
+        .signed(agent.get(format!("{}{path}", host.url)))
+        .call()
+        .unwrap();
     let header = |name: &str| {
         response
             .headers()

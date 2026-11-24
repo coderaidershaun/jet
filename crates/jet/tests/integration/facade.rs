@@ -346,7 +346,10 @@ fn exported_file_downloads_and_forget_removes_it() {
         .build()
         .into();
     let fetch = |path: &str| {
-        let mut response = agent.get(format!("{}{path}", host.url)).call().unwrap();
+        let mut response = host
+            .signed(agent.get(format!("{}{path}", host.url)))
+            .call()
+            .unwrap();
         let status = response.status().as_u16();
         let header = |name: &str| {
             response

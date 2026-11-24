@@ -1,5 +1,6 @@
 //! The `{"$file": "<id>"}` hand-off: a model names a file of the conversation, and the tool is
 //! given the address that serves it.
+use crate::account::Keys;
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -28,22 +29,29 @@ pub(super) fn file_ids(value: &Value) -> Vec<&str> {
     }
 }
 
-/// Puts `{origin}/api/files/{file}` in place of each reference that `files` knows. The address
-/// uses the file's id in its usual form, whatever form the model wrote it in.
-pub(super) fn swap_for_addresses(value: &mut Value, origin: &str, files: &HashMap<String, Uuid>) {
+/// Puts `{origin}/api/files/{file}?proof=...` in place of each reference that `files` knows. The
+/// app fetches it with no sign-in, so the address carries a short-lived proof for that one file.
+/// It uses the file's id in its usual form, whatever form the model wrote it in.
+pub(super) fn swap_for_addresses(
+    value: &mut Value,
+    origin: &str,
+    files: &HashMap<String, Uuid>,
+    keys: &Keys,
+) {
     if let Some(id) = reference(value) {
         if let Some(file) = files.get(id) {
-            *value = Value::String(format!("{origin}/api/files/{file}"));
+            let proof = keys.file_proof(file);
+            *value = Value::String(format!("{origin}/api/files/{file}?proof={proof}"));
         }
         return;
     }
     match value {
         Value::Array(items) => items
             .iter_mut()
-            .for_each(|item| swap_for_addresses(item, origin, files)),
+            .for_each(|item| swap_for_addresses(item, origin, files, keys)),
         Value::Object(fields) => fields
             .values_mut()
-            .for_each(|field| swap_for_addresses(field, origin, files)),
+            .for_each(|field| swap_for_addresses(field, origin, files, keys)),
         _ => {}
     }
 }

@@ -1,5 +1,5 @@
-//! Adapt browser requests to the conversation, and join the routes of apps, files and voice with
-//! them into the one router the server runs.
+//! Adapt browser requests to the conversation, and join the routes of accounts, apps, files and
+//! voice with them into the one router the server runs, behind the sign-in guard.
 
 use agent::{Feeling, Notes};
 use axum::{
@@ -22,6 +22,7 @@ use tower_http::services::ServeDir;
 
 use super::Server;
 use crate::{
+    account::{self, SignedIn},
     apps,
     chat::{Accepted, AgentStatus, BridgeError, ReactRequest, SendRequest, Snapshot},
     files, on_worker, settings, voice,
@@ -37,7 +38,9 @@ pub(super) fn router(host: Server) -> Router {
             response
         },
     ));
+    let guard = middleware::from_fn_with_state(host.accounts.clone(), account::guard);
     Router::<Server>::new()
+        .merge(account::router())
         .merge(apps::router())
         .merge(files::router())
         .merge(voice::router())
@@ -53,6 +56,7 @@ pub(super) fn router(host: Server) -> Router {
         .route("/api/markdown", post(markdown))
         .route("/api/feel", post(feel))
         .fallback_service(ui)
+        .layer(guard)
         .with_state(host)
         .merge(facade)
 }
@@ -154,11 +158,16 @@ struct Resume {
     epoch: Option<String>,
     cursor: Option<u64>,
 }
+/// How often an open event stream checks that its sign-in has not ended.
+const SIGNIN_CHECK: std::time::Duration = std::time::Duration::from_secs(15);
+
 async fn events(
     State(host): State<Server>,
+    signed_in: SignedIn,
     Query(resume): Query<Resume>,
 ) -> Result<impl axum::response::IntoResponse, BridgeError> {
     let chat = host.chat.clone();
+    let accounts = host.accounts.clone();
     let (initial, mut receiver) =
         on_worker(move || chat.subscribe(resume.epoch.as_deref(), resume.cursor)).await??;
     let (sender, stream) = mpsc::channel(32);
@@ -168,8 +177,15 @@ async fn events(
                 return;
             }
         }
+        let mut checks = tokio::time::interval(SIGNIN_CHECK);
         loop {
-            match receiver.recv().await {
+            let received = tokio::select! {
+                received = receiver.recv() => received,
+                _ = checks.tick() => {
+                    if accounts.is_live(&signed_in) { continue } else { break }
+                }
+            };
+            match received {
                 Ok(envelope) => {
                     let shutdown = envelope.event["kind"] == "shutdown";
                     if send_event(&sender, &json!({"kind":"event","data":envelope}))

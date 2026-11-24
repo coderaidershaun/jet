@@ -177,7 +177,7 @@ impl Handler {
                 ))
             })?;
             let origin = self.0.origin().map_err(message)?;
-            handoff::swap_for_addresses(&mut addressed, &origin, &visible);
+            handoff::swap_for_addresses(&mut addressed, &origin, &visible, &self.0.keys);
         }
         match addressed {
             Value::Object(fields) => Ok(fields),

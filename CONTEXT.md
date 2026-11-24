@@ -87,3 +87,11 @@ The domain words of Jet, each with one meaning. [The character policy](crates/je
 - **Flight** — the live Jet's move from where it stood to the slot's lane on a send, during the fly clip's cruise. The path bows right, overshoots by 5 px and lands; the host translates and scales the node, while the player supplies lean and string drag.
 - **Math** — TeX in a reply, between `\(` and `\)`, or for display between `\[` and `\]` or `$$` and `$$`. A single `$` is money, never math.
 - **Typeset** — turning a math element's TeX into KaTeX's drawing on the page. _Avoid_: render (that is Markdown to HTML).
+
+- **Account** — one user of Jet: an email (one account per address, whatever its letter case), a display name, a password kept as an Argon2id hash and an admin flag. Accounts, **teams** and each account's one **manager** are the directory. _Avoid_: login, profile.
+- **Sign-in** — one browser signed in to one account, for up to 30 days: the access token and the refresh token that prove it. Sign-out, or a refresh token offered after it was replaced, ends it. _Avoid_: session (that is the provider's conversation), login.
+- **Access token** — the signed JSON Web Token in the `jet_access` cookie that lets requests in for 15 minutes. **Renewal** swaps the refresh token in `jet_refresh` for a new one and gives a new access token.
+- **Guard** — the check in front of every route but the sign-in page, its files and its endpoints; it puts the signed-in user on the request. `/mcp` is outside it and takes the per-turn token.
+- **Proof** — a signed token in an address that lets one thing in without the cookies: an **app proof** in `/apps/{id}/~{proof}/` lets that app's sandboxed page reach its app while the sign-in lasts, and a **file proof** in `?proof=` lets an app's server fetch one hand-off file for 15 minutes.
+- **Store** — `jet.sqlite3` in the data directory and the one module that holds every SQL statement; each table module adds its calls and each numbered migration its tables.
+- **Demo organisation** — the five accounts the seed makes, with the password `000111`; none is a real mailbox.

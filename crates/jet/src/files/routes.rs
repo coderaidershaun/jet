@@ -105,7 +105,7 @@ async fn serve_file(
         (CACHE_CONTROL, HeaderValue::from_static("private, no-cache")),
     ];
     // A PDF gets no policy because Chrome's PDF viewer stays blank under one. The risk is small:
-    // browsers keep a PDF's scripts inside the viewer, this address has no login or cookie, and
+    // browsers keep a PDF's scripts inside the viewer, away from the page and its sign-in, and
     // `nosniff` stops any other file being treated as a PDF.
     let policy = (file.kind != FileKind::Pdf).then(|| {
         [(

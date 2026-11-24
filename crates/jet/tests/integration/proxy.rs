@@ -1,5 +1,5 @@
 //! Exercise registered forwarding through the real host and independent app servers.
-use super::support::Host;
+use super::support::{Host, agent};
 use serde_json::{Value, json};
 use std::{
     io::{BufRead, BufReader},
@@ -80,7 +80,7 @@ fn registered_http_proxy_preserves_streams_and_redirects() {
         socket
             .set_read_timeout(Some(std::time::Duration::from_secs(2)))
             .unwrap();
-        write!(socket,"POST /apps/{id}/upload HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n5\r\nfirst\r\n").unwrap();
+        write!(socket,"POST /apps/{id}/upload HTTP/1.1\r\nHost: {}\r\n{}Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n5\r\nfirst\r\n", host.url.trim_start_matches("http://"), host.signed_lines()).unwrap();
         let mut received = Vec::new();
         while !received.windows(5).any(|bytes| bytes == b"first") {
             let mut bytes = [0; 1024];
@@ -98,6 +98,7 @@ fn registered_http_proxy_preserves_streams_and_redirects() {
         let id = fixture.register(&host);
         let observed = host.get(&format!("/apps/{id}/headers?q=a%20b&literal=%2520"));
         assert_eq!(observed["url"], "/notes/headers?q=a%20b&literal=%2520");
+        assert!(observed["headers"].get("cookie").is_none(), "{observed}");
         assert_eq!(
             observed["name"],
             if fixture.url == first.url {
@@ -111,18 +112,20 @@ fn registered_http_proxy_preserves_streams_and_redirects() {
         let status = host.get(&format!("/api/apps/{id}/ui-status"));
         assert_eq!(status["status"], "reachable");
         assert_eq!(status["httpStatus"], 405);
-        let mut response = ureq::get(format!("{}/apps/{id}/binary", host.url))
+        let mut response = host
+            .signed(ureq::get(format!("{}/apps/{id}/binary", host.url)))
             .call()
             .unwrap();
         assert_eq!(response.status(), 206);
-        assert_eq!(response.headers().get_all("set-cookie").iter().count(), 2);
+        assert_eq!(response.headers().get_all("set-cookie").iter().count(), 0);
         assert!(response.headers().get("x-private").is_none());
         assert_eq!(
             response.body_mut().read_to_vec().unwrap(),
             [0, 1, 127, 128, 255]
         );
         let bytes = vec![157_u8; 1024 * 1024];
-        let mut response = ureq::post(format!("{}/apps/{id}/upload", host.url))
+        let mut response = host
+            .signed(ureq::post(format!("{}/apps/{id}/upload", host.url)))
             .send(bytes.as_slice())
             .unwrap();
         assert_eq!(response.status(), 201);
@@ -132,8 +135,8 @@ fn registered_http_proxy_preserves_streams_and_redirects() {
             .http_status_as_error(false)
             .build()
             .into();
-        let response = client
-            .get(format!("{}/apps/{id}/redirect", host.url))
+        let response = host
+            .signed(client.get(format!("{}/apps/{id}/redirect", host.url)))
             .call()
             .unwrap();
         assert_eq!(response.status(), 302);
@@ -144,6 +147,23 @@ fn registered_http_proxy_preserves_streams_and_redirects() {
     }
 }
 
+/// The app's mount as a browser that opens the app is sent to: `{id}/~{proof}`. The proof lets
+/// the page's own requests in, which carry no cookie.
+fn proof_mount(host: &Host, id: &str) -> String {
+    let response = host
+        .signed(agent().get(format!("{}/apps/{id}/", host.url)))
+        .header("sec-fetch-mode", "navigate")
+        .call()
+        .unwrap();
+    assert_eq!(response.status(), 307);
+    let location = response.headers()["location"].to_str().unwrap();
+    location
+        .strip_prefix("/apps/")
+        .unwrap()
+        .trim_end_matches('/')
+        .to_owned()
+}
+
 fn raw(host: &Host, path: &str, headers: &str) -> String {
     use std::io::{Read, Write};
     let mut socket = std::net::TcpStream::connect(host.url.trim_start_matches("http://")).unwrap();
@@ -152,7 +172,8 @@ fn raw(host: &Host, path: &str, headers: &str) -> String {
         .unwrap();
     write!(
         socket,
-        "GET {path} HTTP/1.1\r\nHost: forged.invalid\r\nConnection: close\r\n{headers}\r\n"
+        "GET {path} HTTP/1.1\r\nHost: forged.invalid\r\nConnection: close\r\nCookie: {}\r\n{headers}\r\n",
+        host.cookie
     )
     .unwrap();
     let mut response = String::new();
@@ -178,7 +199,7 @@ fn registered_proxy_rejects_unsafe_routes_and_origins() {
         let response = raw(&host, &format!("/apps/{id}/{suffix}"), "");
         assert!(response.starts_with("HTTP/1.1 400"), "{suffix}: {response}");
     }
-    for origin in ["null", "http://evil.test", "http://localhost:1"] {
+    for origin in ["http://evil.test", "http://localhost:1"] {
         assert!(
             raw(
                 &host,
@@ -223,10 +244,10 @@ fn registered_proxy_rejects_unsafe_routes_and_origins() {
             host.url,
             url::form_urlencoded::byte_serialize(location.as_bytes()).collect::<String>()
         );
-        assert_eq!(client.get(url).call().unwrap().status(), 502);
+        assert_eq!(host.signed(client.get(url)).call().unwrap().status(), 502);
     }
-    let response = client
-        .get(format!("{}/apps/{id}/binary", host.url))
+    let response = host
+        .signed(client.get(format!("{}/apps/{id}/binary", host.url)))
         .call()
         .unwrap();
     assert_eq!(response.headers()["x-frame-options"], "SAMEORIGIN");
@@ -240,7 +261,7 @@ fn registered_proxy_rejects_unsafe_routes_and_origins() {
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/socket-check.mjs"
         ))
-        .args([&host.url, &id, &fixture.url])
+        .args([&host.url, &proof_mount(&host, &id), &fixture.url])
         .output()
         .unwrap();
     assert!(

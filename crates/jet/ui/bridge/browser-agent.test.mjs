@@ -181,3 +181,21 @@ test('hear_posts_exactly_the_clip_bytes_with_its_vocabulary_and_throws_refusals_
   const refusing = createBrowserAgent({ uuid: () => 'browser', fetch: async () => ({ ok: false, json: async () => ({ kind: 'rateLimited', message: 'Slow down.' }) }) });
   await assert.rejects(refusing.hear(clip, [], undefined), { kind: 'rateLimited', message: 'Slow down.' });
 });
+
+test('a failed event stream opens again only after the sign-in is checked, and not at all once it has ended', async () => {
+  const sources = [];
+  class Source { constructor(url) { this.url = url; sources.push(this); } close() {} }
+  const storage = { getItem: () => 'browser', setItem: () => {} };
+  let check = async () => {};
+  const order = [];
+  const agent = createBrowserAgent({ EventSource: Source, storage, beforeReconnect: () => { order.push('checked'); return check(); } });
+  const stop = agent.watch(() => {}, () => {});
+  sources[0].onerror();
+  await new Promise((resolve) => setTimeout(resolve, 340));
+  assert.deepEqual([order, sources.length], [['checked'], 2]);
+  check = async () => { throw { kind: 'signedOut' }; };
+  sources[1].onerror();
+  await new Promise((resolve) => setTimeout(resolve, 340));
+  assert.equal(sources.length, 2, 'a page that is leaving for the sign-in page opens no stream');
+  stop();
+});

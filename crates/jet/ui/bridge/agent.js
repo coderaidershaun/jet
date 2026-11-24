@@ -72,7 +72,10 @@ import { createBrowserAgent } from './browser-agent.js';
  * @property {(listener: (connected: boolean) => void) => () => void} onConnectionChanged   fires only when the server is lost or found again
  */
 
-/** @returns {Agent} */
-export function connectAgent() {
-  return createBrowserAgent();
+/**
+ * @param {{ beforeReconnect?: () => Promise<unknown> }} [options]   runs before the event stream opens again
+ * @returns {Agent}
+ */
+export function connectAgent(options) {
+  return createBrowserAgent(options);
 }

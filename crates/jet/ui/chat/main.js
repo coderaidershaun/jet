@@ -4,6 +4,7 @@ import { createCommands } from '../workspace/commands.js';
 import { createCommandMenu } from '../workspace/completion.js';
 import { createToolBrowser } from '../workspace/tools.js';
 import { createWorkspace } from '../workspace/shell.js';
+import { createSession } from '../signin/session.js';
 import { h, icon } from '../dom.js';
 import { failLoading, finishLoading } from '../loading.js';
 import { connectAgent } from '../bridge/agent.js';
@@ -13,6 +14,7 @@ import { createComposer } from './composer/state.js';
 import { createTray } from './composer/tray.js';
 import { createTrayView } from './composer/tray-view.js';
 import { createComposerView } from './composer/view.js';
+import { showAccount } from './drawer/account.js';
 import { createDrawerView } from './drawer/view.js';
 import { connectHearing } from './hear/connect.js';
 import { createSheet } from './settings/sheet.js';
@@ -32,8 +34,12 @@ const $ = (id) => document.getElementById(id);
 const warn = (what) => (error) => console.warn(what + ':', error);
 
 async function start() {
+  const session = createSession({ fetch: globalThis.fetch });
+  // Every request of the page goes through the renewal, also those of modules that call fetch themselves.
+  globalThis.fetch = session.fetch;
+  const user = await session.whoAmI();
   const settings = await loadSettings();
-  const agent = connectAgent();
+  const agent = connectAgent({ beforeReconnect: session.whoAmI });
   const [history, status, voiceStatus] = await Promise.all([
     agent.history(),
     agent.status(),
@@ -264,6 +270,7 @@ async function start() {
     reducedMotion,
   });
 
+  showAccount({ user, announce: (message) => { $('announce').textContent = message; } });
   function paintPersona() {
     const name = displayName(settings);
     const title = settings.persona.jobTitle.trim() || 'assistant';
@@ -338,6 +345,8 @@ async function start() {
 }
 
 start().catch((error) => {
+  // The page is already on its way to the sign-in page.
+  if (error?.kind === 'signedOut') return;
   console.error(error);
   failLoading({ cover: $('loading'), message: 'Jet could not start: ' + (error && error.message ? error.message : error) });
 });

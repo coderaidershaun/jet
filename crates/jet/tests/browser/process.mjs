@@ -47,3 +47,13 @@ async function stop(child) {
   try { await exited; } finally { clearTimeout(timeout); }
   assert.equal(timedOut, false, `Child ${child.pid} did not stop within 10 seconds: ${child.spawnargs.join(' ')}`);
 }
+
+/** Opens Jet in a Playwright page and signs the owner in through the sign-in form, as a person does. */
+export async function signIn(page, origin) {
+  await page.goto(origin);
+  await page.locator('#signin[data-state="ready"]').waitFor();
+  await page.fill('#email', 'shaunsurfing@gmail.com');
+  await page.fill('#password', '000111');
+  await page.press('#password', 'Enter');
+  await page.waitForURL(url => url.pathname === '/');
+}

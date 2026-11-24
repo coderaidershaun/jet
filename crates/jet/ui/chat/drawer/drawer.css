@@ -27,3 +27,15 @@
 .gear { display: grid; place-items: center; width: 48px; height: 44px; padding: 0; background: none; border: 0; border-radius: 12px; color: var(--muted); }
 .gear:hover { color: var(--fg); background: var(--surface-2); }
 .settings-label { color: var(--muted); font-size: 12px; }
+.account { display: flex; align-items: center; flex: none; gap: 8px; margin-top: auto; padding: 8px 2px 8px 12px; border-top: 1px solid var(--line); }
+.account:not([hidden]) + .drawer-foot { margin-top: 0; }
+.account-mark { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 50%; background: rgba(61, 139, 255, .18); color: var(--link-jet); font-size: 14px; font-weight: 650; }
+.account-who { display: flex; flex-direction: column; flex: 1; min-width: 0; margin: 0; }
+.account-name { font-size: 13px; line-height: 18px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-email { color: var(--muted); font-size: 11px; line-height: 15px; overflow-wrap: anywhere; }
+.signout { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; background: none; border: 0; border-radius: 12px; color: var(--muted); }
+.signout:hover { color: var(--fg); background: var(--surface-2); }
+.signout:disabled { opacity: .45; }
+.signout .icon { width: 20px; height: 20px; }
+.workspace-shell[data-expanded="false"] .account { flex-direction: column; gap: 4px; padding: 10px 0 4px; }
+.workspace-shell[data-expanded="false"] .account-who { display: none; }

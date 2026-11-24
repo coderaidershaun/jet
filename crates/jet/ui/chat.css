@@ -42,7 +42,8 @@
   :root { --lane: 48px; --lane-scale: .21; --empty-scale: .54; --text-size: 16px; --text-line: 22px; }
 }
 @media (max-width: 419.98px) {
-  :root { --empty-scale: .48; --gutter: 12px; }
+  /* Beside the 64 px rail a phone is too narrow for the line under the greeting, so the block makes room for it to wrap. */
+  :root { --empty-scale: .48; --gutter: 12px; --empty-block: calc(240px * var(--empty-scale) + 156px); }
 }
 
 * { box-sizing: border-box; }
@@ -62,7 +63,7 @@ button:disabled { cursor: default; }
 [hidden] { display: none !important; }
 
 .page { display: grid; grid-template-columns: minmax(0, 1fr); height: 100%; overflow: hidden; }
-.main { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
+.main { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
 .page[data-layout="centred"] .main { grid-template-rows: minmax(0, 1fr); }
 
 .stage {

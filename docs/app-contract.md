@@ -2,10 +2,12 @@
 
 An app runs independently and registers with Jet by HTTP(S) address. Jet does not
 install, launch or stop it. Removing an entry only forgets its configuration.
-This contract targets a trusted single-user deployment. Apps embedded through
-Jet run trusted code on Jet's origin; this is not isolation for untrusted apps.
-Authentication, UI-state observation and a manual business-tool runner are outside
-version 1. A full remote URL does not imply support for remote authentication.
+Every app response is served with `Content-Security-Policy: sandbox` without
+`allow-same-origin`, so an app page has an opaque origin: it cannot read Jet's page or
+use Jet's sign-in, its own browser storage and cookies do not work, and its relative
+requests are answered with `Access-Control-Allow-Origin: *` (Jet answers their CORS
+preflights itself). App authentication, UI-state observation and a manual business-tool
+runner are outside version 1. A full remote URL does not imply support for remote authentication.
 
 ## Descriptor
 
@@ -61,7 +63,9 @@ the entire app entry, which prevents new MCP dispatch but retains configuration.
 
 ## Mounted browser paths and forwarded origin
 
-Jet mounts a conforming app at `/apps/{stable-id}/`. The proxy strips that prefix
+Jet mounts a conforming app at `/apps/{stable-id}/`. A browser that opens the app is
+sent on to `/apps/{stable-id}/~{proof}/`; the proof lets the page's requests in without
+Jet's cookies, so it is part of the mount from then on. The proxy strips that prefix
 and appends the remainder to the registered upstream base, preserving query,
 binary/streaming bodies, status and required response headers. It rejects traversal,
 unregistered targets and recursive routes into Jet. It never rewrites HTML or JS.
@@ -80,12 +84,15 @@ For both HTTP and WebSocket upgrades, Jet:
 1. Takes the public Jet origin from trusted server configuration, never from a
    client-supplied forwarded header. If a browser supplies `Origin`, require an
    exact match to that origin, then send the registered upstream origin instead.
-   An absent Origin stays absent. Reject `null` and mismatching origins.
+   An absent Origin stays absent. `null`, the origin of a sandboxed app page, is
+   accepted; other mismatching origins are rejected. Jet's cookies are removed from
+   the request and any `Set-Cookie` from the response.
 2. Sets upstream `Host` to the registered URL authority (including its port).
 3. Removes incoming `Forwarded` and every `X-Forwarded-*` header. Sets
    `X-Forwarded-Proto` to the configured public Jet scheme,
    `X-Forwarded-Host` to its authority, and `X-Forwarded-Prefix` to
-   `/apps/{stable-id}` **without a trailing slash**. It does not synthesize trust
+   the mount (`/apps/{stable-id}`, or `/apps/{stable-id}/~{proof}`) **without a
+   trailing slash**. It does not synthesize trust
    from the incoming socket's scheme when public Jet is HTTPS behind a proxy.
 4. Rewrites redirects within the registered app base back under its mount.
    Unsupported absolute/external redirect targets produce an explicit error or
@@ -310,7 +317,8 @@ A model gives a tool a file of the conversation by writing an object with the si
 
 Before the arguments are checked against the tool's schema, Jet replaces every object
 that is exactly `{"$file": "<string>"}`, at any depth, with the string
-`{origin}/api/files/{id}`, with the id in its usual hyphenated form. An object with other
+`{origin}/api/files/{id}?proof={proof}`, with the id in its usual hyphenated form. The
+proof lets the app's server fetch that one file with no sign-in for 15 minutes. An object with other
 keys is left as it is. `{origin}` is `--public-origin` when it is set, else the origin Jet
 is listening on. The id must name a
 file Jet can see (an upload that was sent with a message, or a file Jet wrote). Otherwise
