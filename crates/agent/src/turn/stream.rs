@@ -49,6 +49,8 @@ pub(super) struct ResultLine {
     pub structured_output: Option<Value>,
     /// Input, cache read and cache creation tokens of the request.
     pub context_tokens: u64,
+    /// What the request cost, when the provider says.
+    pub cost_usd: Option<f64>,
 }
 
 impl ResultLine {
@@ -162,6 +164,7 @@ fn result(value: &Value) -> ResultLine {
             .get("structured_output")
             .filter(|v| !v.is_null())
             .cloned(),
+        cost_usd: value["total_cost_usd"].as_f64(),
         context_tokens: count(&usage["input_tokens"])
             + count(&usage["cache_read_input_tokens"])
             + count(&usage["cache_creation_input_tokens"]),

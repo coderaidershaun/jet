@@ -56,6 +56,13 @@ impl ServerHandler for Handler {
         let binding = self.0.binding(&token).ok_or_else(expired)?;
         let arguments = Value::Object(params.arguments.unwrap_or_default());
         tools::validate(&params.name, &arguments)?;
+        if let Some(check) = &binding.check
+            && let Some(refusal) = self
+                .refuse_on_check(&params.name, &arguments, check, &binding)
+                .await
+        {
+            return Ok(CallToolResult::structured_error(json!({"error": refusal})).into());
+        }
         if params.name == "files_read" {
             return Ok(match self.read_file(&arguments, &binding).await {
                 Ok(result) => result,
@@ -70,9 +77,13 @@ impl ServerHandler for Handler {
             let error = json!({"kind": refusal.kind(), "message": refusal.to_string()});
             return Ok(CallToolResult::structured_error(json!({"error": error})).into());
         }
+        let sent = binding.check.is_some().then(|| arguments.clone());
         let result = self
             .execute(&params.name, arguments, &token, binding, context)
             .await;
+        if let (Some(sent), Ok(value)) = (&sent, &result) {
+            self.note_read(&token, &params.name, sent, value);
+        }
         Ok(match result {
             Ok(value) if value["isError"] == true => CallToolResult::structured_error(value),
             Ok(value) => CallToolResult::structured(value),
@@ -87,7 +98,7 @@ impl ServerHandler for Handler {
 #[derive(Debug, thiserror::Error)]
 enum WriteRefused {
     #[error(
-        "this reply has read web text or a colleague's shared notes, so Jet refuses changes to apps, people and shares, and app tools that are not read-only, until the user's next message. Tell the user exactly what you wanted to do, so their next message can allow it"
+        "this reply has read web text or a colleague's shared notes, so Jet refuses changes to apps, people, shares and the sources of an objective, and app tools that are not read-only, until the user's next message. Tell the user exactly what you wanted to do, so their next message can allow it"
     )]
     WriteAfterWebText,
     #[error(
@@ -197,7 +208,8 @@ impl Handler {
         }
     }
 
-    /// Refuses `apps_update`, `people_update`, `objectives_update` with `propose_share`, and a
+    /// Refuses `apps_update`, `people_update`, `objectives_update` with `propose_share` or with
+    /// sources to add or change, and a
     /// `tools_call` whose tool is not marked read-only, once the turn has read web text,
     /// `github_activity` or a colleague's shared objectives (`objectives_list` with `owner`). It first waits until the turn's stream has passed
     /// this call's own tool-use line, so every web read before the call has been seen. When the
@@ -210,8 +222,16 @@ impl Handler {
         binding: &Binding,
         context: &RequestContext<RoleServer>,
     ) -> Option<WriteRefused> {
-        let changes_shares =
-            name == "objectives_update" && arguments["command"]["action"] == "propose_share";
+        let command = &arguments["command"];
+        let has_sources = |sources: &Value| sources.as_array().is_some_and(|list| !list.is_empty());
+        let changes_shares = name == "objectives_update"
+            && match command["action"].as_str() {
+                Some("propose_share") => true,
+                // Sources decide what later checks read, so web text may not add or change them.
+                Some("create") => has_sources(&command["sources"]),
+                Some("edit") => !command["sources"].is_null(),
+                _ => false,
+            };
         if !(matches!(name, "apps_update" | "tools_call" | "people_update") || changes_shares) {
             return None;
         }
@@ -350,7 +370,7 @@ impl Handler {
             }
             "tasks_list" => self.tasks_list(&binding).await,
             "tasks_update" => {
-                let result = self.tasks_update(&arguments, &binding).await;
+                let result = self.tasks_update(&arguments, token, &binding).await;
                 if let (Ok(_), Some(chats)) = (&result, self.0.chats()) {
                     chats.pane_changed(user);
                 }

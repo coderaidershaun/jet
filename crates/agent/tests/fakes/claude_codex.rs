@@ -48,7 +48,10 @@ impl Provider for BuiltIn {
         result_line(self.codex, id, result);
     }
     fn finish(&self) {
-        finish(self.codex);
+        finish(self.codex, "mood: neutral\nFixture app answered.");
+    }
+    fn finish_saying(&self, text: &str) {
+        finish(self.codex, text);
     }
     fn names_tool_use(&self) -> bool {
         !self.codex
@@ -85,8 +88,7 @@ fn result_line(codex: bool, id: &str, result: Value) {
         );
     }
 }
-fn finish(codex: bool) {
-    let text = "mood: neutral\nFixture app answered.";
+fn finish(codex: bool, text: &str) {
     if codex {
         emit(json!({"type":"item.completed","item":{"type":"agent_message","text":text}}));
         emit(

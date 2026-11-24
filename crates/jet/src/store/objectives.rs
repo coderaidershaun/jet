@@ -319,6 +319,7 @@ fn jet_text(text: &str) -> NewEntry {
         status: EntryStatus::Complete,
         error: None,
         tools: Vec::new(),
+        check: None,
     }
 }
 

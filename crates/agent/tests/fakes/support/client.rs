@@ -37,7 +37,13 @@ pub(super) async fn run(provider: &dyn Provider, args: &[String], script: Vec<Va
         names_tool_use: provider.names_tool_use(),
     };
     let mut results = Vec::new();
+    let mut saying = None;
     for (index, operation) in script.iter().enumerate() {
+        // The words the reply ends with.
+        if let Some(text) = operation["say"].as_str() {
+            saying = Some(text.to_owned());
+            continue;
+        }
         if operation["pause"] == true {
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             continue;
@@ -69,7 +75,10 @@ pub(super) async fn run(provider: &dyn Provider, args: &[String], script: Vec<Va
         }
         std::fs::write("facade-results.json", json!(results).to_string()).unwrap();
     }
-    provider.finish();
+    match saying {
+        Some(text) => provider.finish_saying(&text),
+        None => provider.finish(),
+    }
     client.cancel().await.unwrap();
 }
 /// Reads `https://<address>` the way Claude Code does: the hook in `--settings` is asked first,

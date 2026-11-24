@@ -292,6 +292,7 @@ impl Reply {
             status,
             error,
             tools: turn.map(|turn| turn.tools().to_vec()).unwrap_or_default(),
+            check: None,
         }
     }
 

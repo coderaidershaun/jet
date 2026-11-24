@@ -17,6 +17,7 @@ use super::memory::ChatMemory;
 use super::{BridgeError, ChatState, TurnTools};
 use crate::files::Files;
 use crate::lock;
+use crate::scheduler::Signals;
 use crate::store::{Chat, ChatId, ChatKind, ChatSummary, ObjectiveId, Store, UserId};
 
 /// What every chat of the server shares.
@@ -28,6 +29,8 @@ pub(crate) struct Chats {
     pub(super) data_dir: PathBuf,
     /// How long a chat must be quiet before its notes review runs.
     pub(super) review_quiet: Duration,
+    /// Tells the scheduler when a reply ends, and stops a check when the user writes.
+    pub(super) signals: Signals,
     /// How far apart two reviews of one user are, in milliseconds. Tests shorten it.
     review_gap_ms: AtomicU64,
     open: Mutex<Open>,
@@ -89,6 +92,7 @@ impl Chats {
         files: Files,
         data_dir: PathBuf,
         review_quiet: Duration,
+        signals: Signals,
     ) -> Arc<Self> {
         Arc::new(Self {
             store,
@@ -96,6 +100,7 @@ impl Chats {
             files,
             data_dir,
             review_quiet,
+            signals,
             review_gap_ms: AtomicU64::new(agent::REVIEW_GAP.as_millis() as u64),
             open: Mutex::new(Open::default()),
         })
@@ -421,6 +426,7 @@ mod tests {
             files,
             dir.path().into(),
             Duration::ZERO,
+            Signals::default(),
         );
         let topic = chats.add(ada, None).unwrap();
         assert_eq!(topic.title, "New chat");

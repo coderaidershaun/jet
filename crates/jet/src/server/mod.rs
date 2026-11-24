@@ -15,6 +15,7 @@ use crate::facade::Facade;
 use crate::files::Files;
 use crate::lock;
 use crate::objectives::{self, Objectives};
+use crate::scheduler::{Scheduler, Signals};
 use crate::store::{Email, ImportError, Store, StoreError};
 use crate::voice::Voice;
 use agent::{apps::Registry, mcp::HttpMcpClient};
@@ -55,6 +56,7 @@ pub struct Server {
     apps: Apps,
     facade: Arc<Facade>,
     objectives: Objectives,
+    scheduler: Arc<Scheduler>,
     files: Files,
     github_tokens: GithubTokens,
     voice: Voice,
@@ -105,7 +107,10 @@ impl Server {
         let mcp = Arc::new(HttpMcpClient::new(registry.clone()));
         let files = Files::new(store.clone());
         let apps = Apps::new(registry, mcp, proxy, store.clone());
-        let objectives = Objectives::new(store.clone(), objectives::system_clock());
+        let signals = Signals::default();
+        let test_clock = objectives::test_clock();
+        let clock = test_clock.clone().unwrap_or_else(objectives::system_clock);
+        let objectives = Objectives::new(store.clone(), clock).with_signals(signals.clone());
         let facade = Facade::new(
             apps.clone(),
             files.clone(),
@@ -121,9 +126,18 @@ impl Server {
             files.clone(),
             config.data_dir.clone(),
             config.review_quiet,
+            signals.clone(),
         );
         chats.set_review_gap(config.review_gap);
         *lock(&facade.chats) = Arc::downgrade(&chats);
+        let scheduler = Scheduler::new(
+            store.clone(),
+            objectives.clone(),
+            &chats,
+            facade.clone(),
+            signals,
+            test_clock.is_some(),
+        );
         apps.tell_chats(Arc::downgrade(&chats));
         Ok(Self {
             accounts,
@@ -132,6 +146,7 @@ impl Server {
             apps,
             facade,
             objectives,
+            scheduler,
             files,
             github_tokens,
             voice: Voice::new(config.disable_voice),
@@ -145,6 +160,7 @@ impl Server {
 
     /// Stops provider work and closes event streams within a fixed cleanup deadline.
     async fn shutdown(&self) {
+        self.scheduler.stop();
         self.facade.shutdown();
         self.apps.shutdown().await;
         let chats = self.chats.clone();
@@ -164,6 +180,7 @@ impl Server {
             "http://{}/mcp",
             std::net::SocketAddr::new(ip, address.port())
         ));
+        self.scheduler.start();
         let router = self.router();
         let (finish, finished) = tokio::sync::oneshot::channel::<()>();
         let mut running = tokio::spawn(async move {

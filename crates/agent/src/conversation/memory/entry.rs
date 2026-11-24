@@ -1,6 +1,8 @@
 //! An entry of the thread before the storage gives it its id.
 
-use crate::chat::{Attachment, Entry, EntryId, EntryStatus, Mood, Role, ToolCall, TurnIdentity};
+use crate::chat::{
+    Attachment, CheckIn, Entry, EntryId, EntryStatus, Mood, Role, ToolCall, TurnIdentity,
+};
 
 /// An entry before it has an id and a time.
 pub struct NewEntry {
@@ -12,6 +14,7 @@ pub struct NewEntry {
     pub status: EntryStatus,
     pub error: Option<String>,
     pub tools: Vec<ToolCall>,
+    pub check: Option<CheckIn>,
 }
 
 impl NewEntry {
@@ -26,6 +29,7 @@ impl NewEntry {
             status: EntryStatus::Complete,
             error: None,
             tools: Vec::new(),
+            check: None,
         }
     }
 
@@ -42,6 +46,7 @@ impl NewEntry {
             error: self.error,
             tools: self.tools,
             reactions: Vec::new(),
+            check: self.check,
             at,
         }
     }

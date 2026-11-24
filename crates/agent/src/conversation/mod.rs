@@ -8,6 +8,7 @@ mod persona;
 mod reply;
 mod review;
 mod session_policy;
+mod wake;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -20,6 +21,10 @@ pub use review::{
     review_chats,
 };
 use session_policy::decide;
+pub use wake::{
+    CHECK_BUDGET_USD, CHECK_TIME_LIMIT, CheckDone, CheckFacts, CheckInState, CheckStart, CheckTurn,
+    ObjectiveFacts, SILENT, StepFacts, WakeError, brief, start_check,
+};
 
 use crate::chat::{
     Attachment, Effort, Entry, EntryId, McpConnection, Model, Notes, Persona, Role, ShownEntry,

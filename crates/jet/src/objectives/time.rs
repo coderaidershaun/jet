@@ -67,6 +67,29 @@ pub(super) fn to_utc(text: &str, zone_name: &str, now: u64) -> Result<(u64, Stri
     Ok((utc, shown))
 }
 
+/// The local time at `at`, as the user reads it: `Tue 24 Nov 2026, 09:00 (Europe/London)`.
+pub(super) fn describe(zone_name: &str, at: u64) -> Result<String, TimeError> {
+    let local = instant(zone_name, at)?;
+    Ok(format!(
+        "{} ({zone_name})",
+        local.strftime("%a %-d %b %Y, %H:%M")
+    ))
+}
+
+/// The local time at `at` in the form a task keeps it, `YYYY-MM-DDTHH:MM`.
+pub(super) fn local(zone_name: &str, at: u64) -> Result<String, TimeError> {
+    Ok(instant(zone_name, at)?
+        .strftime("%Y-%m-%dT%H:%M")
+        .to_string())
+}
+
+fn instant(zone_name: &str, at: u64) -> Result<civil::DateTime, TimeError> {
+    let zone = zone(zone_name)?;
+    let at =
+        Timestamp::from_second(i64::try_from(at).unwrap_or(i64::MAX)).unwrap_or(Timestamp::MAX);
+    Ok(zone.to_datetime(at))
+}
+
 /// The date in the zone at `now`.
 pub(super) fn today(zone: &TimeZone, now: u64) -> civil::Date {
     let instant =

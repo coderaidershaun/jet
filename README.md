@@ -11,6 +11,7 @@ crates/jet/                       the server program (axum) and the page it serv
   src/evidence/                   outside evidence: a GitHub repository's activity, each user's sealed GitHub token
   src/facade/                     the seventeen MCP tools the provider sees
   src/objectives/                 objectives and agent-tasks: computed dates, local time to UTC
+  src/scheduler/                  wakes Jet when an agent-task falls due and runs the check
   src/files/                      uploads, files Jet writes, the sandboxed reader child, export, all kept in the store
   src/server/                     shared host state, listen address and the remaining routes
   src/voice/                      the speak and hear routes and their limits
@@ -24,7 +25,7 @@ crates/jet/                       the server program (axum) and the page it serv
 crates/agent/src/                 the library behind the server
   apps/                           the registry of independently running apps
   chat/                           the data types of a conversation: events, model choices, context use
-  conversation/                   send a message, the thread, notes, the persona prompt, session policy
+  conversation/                   send a message, the thread, notes, the persona prompt, session policy, the check brief and turn
   markdown/                       a reply as safe HTML, math, vocal cues and the words to speak
   mcp/                            one HTTP client for app tools, with a shared catalogue
   turn/                           one exchange with Claude Code, Codex or agy: processes, stream, mood line
@@ -388,6 +389,67 @@ the chat, with a count of what is new since the user last opened it (`jet.pane.s
 section, such as the messages the user sent to colleagues' Jets, is a new field of the read, a new
 function in `view.js` added to `planNodes`, and needs no new event.
 `tests/browser/plan.mjs` drives it against the real host.
+
+## Checks
+
+A check is a turn that starts by itself, with no message from the user, when an agent-task Jet set
+for itself falls due. Jet reads the evidence of the objective first, then posts a short check-in in
+the objective's chat, or stays silent, records what it found, and sets its own next check.
+
+- **The scheduler** (`crates/jet/src/scheduler/`) is one thread. It sleeps until the first waiting
+  task falls due (at most a minute), wakes at once when a task changes or a reply ends, and claims
+  one due task at a time with a conditional update, the task that fell due first before the others.
+  It runs one check at a time. A task whose chat is answering the user waits for the reply to end.
+- **The turn** is fresh and leaves nothing in the chat's provider session, as the notes review does,
+  with the user's own persona, notes, model and thinking effort. Its prompt is the brief
+  (`crates/agent/src/conversation/wake.md`), built from the database when the check starts: the
+  local time and zone, the task's reason and how late it runs, the objective with its steps and
+  sources, whether the last check-in was answered, answered with a reaction, unanswered or unread,
+  how many in a row went unanswered, when the user last wrote, the chat's last entries (as data,
+  inside tags that say they hold no instruction) and the check rules, which begin with the style
+  rule of a caring accountability buddy.
+- **The binding is read-only.** A check may call `github_activity`, `objectives_list` (the user's own),
+  `tasks_list`, `people_list`, `chats_read`, a source's app tool while the app still marks it
+  read-only, and `tasks_update` with `checked`, by which Jet records in one line what it found and,
+  with `next` (local time, at least ten minutes away) and `why`, when it looks next. The record
+  waits in the binding until the commit. Every other tool is refused. Page reading is limited to the
+  hosts of the objective's page sources. A provider with web tools off holds a check of an objective
+  with a web source.
+- **The evidence guard** is the server's: a check-in is posted only if every outside source of the
+  objective (each repository, page, search topic and app tool) was read with success at least once
+  in the run. If not, nothing is posted, the run is `held` with the reason, and the task tries once
+  more fifteen minutes later; a second held run ends the task with the default next check. An
+  objective with only Jet's own records as source, and a follow-up with no objective, need no read.
+- **Silence.** An answer that holds `[SILENT]`, alone or inside other text, writes no entry; the run
+  is `silent`, with what Jet found.
+- **One commit** settles the entry of Jet (marked as a check-in, with the cards of what it read),
+  the run (`spoke`, `silent`, `held`, `failed`, `interrupted`, `preempted` or `stale`, what was
+  found, sources read, tokens, and cost where the provider gives one) and the next agent-task, only
+  if the task is still running under that run and neither the task nor the objective changed since
+  the facts were read. Otherwise the result is dropped as `stale`: a cancelled task stays cancelled, a
+  moved one keeps its time, and when only the objective changed the check runs again a minute later,
+  at most three times in a row. When Jet sets no next check the server sets one 24 hours later and
+  marks it `default`. A check never writes an update note.
+- **Delivery.** The check-in lands in the objective's chat (a follow-up in the chat where Jet set
+  it), raises that chat's unread count on an open page and in the snapshot, and waits. There is no
+  push message and no mail.
+- **The user comes first.** A message in the chat where a check runs stops the check, drops what it
+  staged, and the task runs again ten minutes later without counting as an attempt.
+- **Restarts.** A task found running at start waits a minute and counts the attempt; after three
+  cut-off attempts it fails, with one notice. Tasks that fell due while the server was down run once
+  each, oldest first, and the brief says how late they are. A check of a closed objective is never
+  set back to waiting.
+- **Limits.** One dollar per check on Claude Code (`--max-budget-usd 1.00`); five minutes per check
+  on a provider with no money limit; either limit fails the task, with one notice. When the database
+  cannot be written the scheduler pauses, says why in the log once, and claims nothing until Jet
+  restarts.
+- After a chat turn that read web text, `objectives_update` with `propose_share`, a `create` with
+  sources or an `edit` that sets sources is refused, as `apps_update` is.
+
+Tests move time with `JET_TEST_CLOCK_FILE`: the host reads Unix seconds from that file whenever it
+asks for the time (the real time while the file is missing), and its scheduler then looks every
+20 ms. `JET_TEST_CHECK_LIMIT_MS` shortens the five-minute limit. The stand-in provider takes the
+script of a check from `check-script.json` in the data directory.
 
 ## Quanty
 

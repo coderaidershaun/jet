@@ -108,6 +108,7 @@ mod tests {
             error: None,
             tools: Vec::new(),
             reactions: Vec::new(),
+            check: None,
             at: 1_760_433_360_000,
         };
         let html = "<p>Friday looks fine</p>".into();

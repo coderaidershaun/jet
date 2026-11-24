@@ -75,6 +75,7 @@ impl Chats {
             }
         }
         if added {
+            self.signals.changed();
             self.pane_changed(user);
         }
     }

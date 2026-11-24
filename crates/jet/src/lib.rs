@@ -12,6 +12,7 @@ mod evidence;
 mod facade;
 mod files;
 mod objectives;
+mod scheduler;
 mod server;
 mod settings;
 mod store;

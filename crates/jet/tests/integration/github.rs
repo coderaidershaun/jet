@@ -51,6 +51,8 @@ pub(super) fn start(github: &Paths) -> Host {
         .arg(dir.path())
         .args(["--disable-feelings", "--disable-voice"])
         .env("JET_GITHUB_API", &github.url)
+        .env("JET_TEST_CLOCK_FILE", dir.path().join("clock"))
+        .env("JET_TEST_CHECK_LIMIT_MS", "1500")
         .env_remove("JET_GITHUB_TOKEN_KEY")
         .stdout(Stdio::piped())
         .stderr(log)

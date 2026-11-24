@@ -172,7 +172,17 @@ pub struct Entry {
     /// At most one for each side. Older lines have none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reactions: Vec<Reaction>,
+    /// Set on an entry that Jet wrote on a check, with no message from the user before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<CheckIn>,
     pub at: u64,
+}
+
+/// Which agent-task and which run of it wrote a check-in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckIn {
+    pub task: u64,
+    pub run: u64,
 }
 
 impl Entry {

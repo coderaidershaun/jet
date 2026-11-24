@@ -13,6 +13,10 @@ pub trait Provider {
     fn call(&self, id: &str, tool: &str, arguments: &Value) -> Option<String>;
     fn result(&self, id: &str, result: Value);
     fn finish(&self);
+    /// Ends the reply with these words, for a stand-in that can.
+    fn finish_saying(&self, _text: &str) {
+        self.finish();
+    }
     /// Whether each request names the tool use it belongs to.
     fn names_tool_use(&self) -> bool;
 }
@@ -20,7 +24,17 @@ pub trait Provider {
 pub fn run_as(provider: &dyn Provider, args: &[String], input: &str) -> bool {
     // Tests read this to see exactly what the model was sent, even when no script follows.
     std::fs::write("facade-prompt.txt", input).unwrap();
-    let Some(script) = input.lines().find_map(|line| line.strip_prefix("facade:")) else {
+    // A check starts with a brief that holds no `facade:` line, so a test leaves the script of the
+    // next check in a file.
+    let from_file = input
+        .starts_with("[Check.")
+        .then(|| std::fs::read_to_string("check-script.json").ok())
+        .flatten();
+    let Some(script) = input
+        .lines()
+        .find_map(|line| line.strip_prefix("facade:"))
+        .or(from_file.as_deref())
+    else {
         return false;
     };
     let runtime = tokio::runtime::Runtime::new().unwrap();

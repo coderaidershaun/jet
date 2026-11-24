@@ -56,6 +56,7 @@
         {
           "attempts": 1,
           "chatId": 1,
+          "createdAt": 1767225600,
           "dueAt": 1767603600,
           "id": 1,
           "kind": "check",
@@ -75,7 +76,9 @@
   ],
   "runs": [
     {
+      "cost": null,
       "endedAt": 1777225700,
+      "entryId": null,
       "found": "The frame is built",
       "id": 1,
       "outcome": "spoke",
@@ -117,6 +120,7 @@
     {
       "attempts": 1,
       "chatId": 1,
+      "createdAt": 1767225600,
       "dueAt": 1767603600,
       "id": 1,
       "isDefault": false,

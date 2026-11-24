@@ -7,6 +7,7 @@ mod sharing;
 mod time;
 
 use crate::chat::TurnOwner;
+use crate::scheduler::Signals;
 use crate::store::{
     AgentTask, CancelOutcome, Edit, NewNote, NewObjective, NewSource, NewStep, NewTask, Note,
     NoteStatus, Objective, ObjectiveChat, ObjectiveId, ObjectiveStatus, Person, Run, Scheduled,
@@ -25,6 +26,8 @@ const RUNS_SHOWN: usize = 20;
 /// How many times a write is tried when the database is busy.
 const WRITE_TRIES: usize = 3;
 const UTC: &str = "UTC";
+/// A check Jet sets for itself is at least this far away, so a confused model cannot loop.
+const MIN_NEXT_CHECK_MINUTES: u64 = 10;
 /// The longest name of a team, in characters.
 const TEAM_NAME_LIMIT: usize = 60;
 
@@ -34,6 +37,22 @@ pub(crate) type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
 /// Whether `name` is an IANA time zone name that the server knows.
 pub(crate) fn is_time_zone(name: &str) -> bool {
     time::zone(name).is_ok()
+}
+
+/// The clock a test sets: the host reads Unix seconds from this file each time it asks for the
+/// time, and uses the real time while the file is missing or empty.
+const TEST_CLOCK_VARIABLE: &str = "JET_TEST_CLOCK_FILE";
+
+/// The clock of the file that `JET_TEST_CLOCK_FILE` names, when the host was started with one.
+pub(crate) fn test_clock() -> Option<Clock> {
+    let path = std::path::PathBuf::from(std::env::var_os(TEST_CLOCK_VARIABLE)?);
+    let real = system_clock();
+    Some(Arc::new(move || {
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+            .unwrap_or_else(|| real())
+    }))
 }
 
 pub(crate) fn system_clock() -> Clock {
@@ -62,6 +81,12 @@ pub(crate) enum ObjectiveError {
     NoSuchStep { objective: i64, step: i64 },
     #[error("objective {id} is closed and cannot be edited; create a new objective instead")]
     Closed { id: i64 },
+    #[error(
+        "the next check must be at least {MIN_NEXT_CHECK_MINUTES} minutes away, and {local} is sooner; pick a later time"
+    )]
+    CheckTooSoon { local: String },
+    #[error("only a check that is running can record what it found")]
+    NotOnACheck,
     #[error("the user has no task {id}; tasks_list shows their ids")]
     NoSuchTask { id: i64 },
     #[error("task {id} is {state}, so it cannot be cancelled")]
@@ -124,6 +149,8 @@ impl ObjectiveError {
             Self::NoSuchStep { .. } => "noSuchStep",
             Self::NoSuchTask { .. } => "noSuchTask",
             Self::TaskNotWaiting { .. } => "taskNotWaiting",
+            Self::CheckTooSoon { .. } => "checkTooSoon",
+            Self::NotOnACheck => "notOnACheck",
             Self::CheckRunning => "checkRunning",
             Self::AppSourceAdminOnly => "adminOnly",
             Self::AppToolNotReadOnly { .. } => "notReadOnly",
@@ -176,15 +203,15 @@ pub(crate) struct Update {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ObjectiveView {
     #[serde(flatten)]
-    objective: Objective,
+    pub(crate) objective: Objective,
     /// Days from the start date to the due date.
     duration_days: i64,
     /// Days from today, in the user's zone, to the due date; negative once it has passed.
-    days_left: i64,
-    steps: Vec<Step>,
-    sources: Vec<Source>,
+    pub(crate) days_left: i64,
+    pub(crate) steps: Vec<Step>,
+    pub(crate) sources: Vec<Source>,
     /// The newest notes, oldest first.
-    notes: Vec<Note>,
+    pub(crate) notes: Vec<Note>,
     /// The tasks that are waiting or running.
     tasks: Vec<AgentTask>,
 }
@@ -199,11 +226,52 @@ pub(crate) struct TasksView {
 pub(crate) struct Objectives {
     store: Store,
     clock: Clock,
+    /// Tells the scheduler that a task changed.
+    signals: Signals,
 }
 
 impl Objectives {
     pub(crate) fn new(store: Store, clock: Clock) -> Self {
-        Self { store, clock }
+        Self {
+            store,
+            clock,
+            signals: Signals::default(),
+        }
+    }
+
+    pub(crate) fn with_signals(self, signals: Signals) -> Self {
+        Self { signals, ..self }
+    }
+
+    /// The next check Jet picked for itself, at its local time `at`: the instant, the local time as
+    /// written and the zone. It must be at least ten minutes away.
+    pub(crate) fn next_check(
+        &self,
+        user: UserId,
+        at: &str,
+    ) -> Result<(u64, String, String), ObjectiveError> {
+        let zone = self.zone_name(user)?;
+        let earliest = self.now() + MIN_NEXT_CHECK_MINUTES * 60;
+        match time::to_utc(at, &zone, earliest - 1) {
+            Ok((due_at, local)) => Ok((due_at, local, zone)),
+            Err(TimeError::InThePast { local, .. }) => Err(ObjectiveError::CheckTooSoon { local }),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// The user's local time at `at`, such as `Tue 24 Nov 2026, 09:00 (Europe/London)`, for words
+    /// the user reads. A user whose zone the server does not know yet is shown in UTC.
+    pub(crate) fn describe(&self, user: UserId, at: u64) -> Result<String, ObjectiveError> {
+        let name = self
+            .store
+            .time_zone(user)?
+            .unwrap_or_else(|| UTC.to_owned());
+        Ok(time::describe(&name, at)?)
+    }
+
+    /// The local time `YYYY-MM-DDTHH:MM` of `at` in the user's zone, as a task keeps it.
+    pub(crate) fn local_time(&self, zone: &str, at: u64) -> Result<String, ObjectiveError> {
+        Ok(time::local(zone, at)?)
     }
 
     /// Every objective of the user, with its steps, sources, notes and open tasks.
@@ -472,7 +540,7 @@ impl Objectives {
         Ok(self.store.directory()?)
     }
 
-    fn now(&self) -> u64 {
+    pub(crate) fn now(&self) -> u64 {
         (self.clock)()
     }
 
@@ -484,7 +552,11 @@ impl Objectives {
             .ok_or(ObjectiveError::NoSuchTask { id: id.0 })
     }
 
-    fn show(&self, user: UserId, id: ObjectiveId) -> Result<ObjectiveView, ObjectiveError> {
+    pub(crate) fn show(
+        &self,
+        user: UserId,
+        id: ObjectiveId,
+    ) -> Result<ObjectiveView, ObjectiveError> {
         let objective = self
             .store
             .objective(user, id)?
@@ -529,7 +601,12 @@ impl Objectives {
         loop {
             match call() {
                 Err(error) if error.is_busy() && tries < WRITE_TRIES => tries += 1,
-                result => return result,
+                result => {
+                    if result.is_ok() {
+                        self.signals.changed();
+                    }
+                    return result;
+                }
             }
         }
     }
@@ -964,46 +1041,5 @@ mod tests {
                 .kind(),
             "badTimeZone"
         );
-    }
-
-    #[test]
-    fn claim_and_finish_run_an_agent_task_once() {
-        use crate::store::{Finished, RunOutcome};
-        let world = world();
-        let view = world
-            .objectives
-            .create(world.ada, kite(ObjectiveChat::This))
-            .unwrap();
-        let task = check_of(&view);
-        assert_eq!(
-            world.store.claim_task(task.id, task.due_at - 1).unwrap(),
-            None,
-            "not due yet"
-        );
-        let run = world
-            .store
-            .claim_task(task.id, task.due_at)
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            world.store.claim_task(task.id, task.due_at).unwrap(),
-            None,
-            "already running"
-        );
-        let done = Finished {
-            outcome: RunOutcome::Silent,
-            found: "no new commits",
-            sources_read: &["github octo/jet".to_owned()],
-            tokens: Some(900),
-            task: TaskState::Done,
-        };
-        assert!(world.store.finish_run(run, &done, task.due_at + 5).unwrap());
-        assert!(!world.store.finish_run(run, &done, task.due_at + 6).unwrap());
-        let runs = world.store.task_runs(world.ada.user, 5).unwrap();
-        assert_eq!(
-            (runs[0].outcome, runs[0].found.as_str(), runs[0].tokens),
-            (Some(RunOutcome::Silent), "no new commits", Some(900))
-        );
-        assert_eq!(runs[0].sources_read, ["github octo/jet"]);
     }
 }

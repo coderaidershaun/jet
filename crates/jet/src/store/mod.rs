@@ -31,10 +31,9 @@ pub(crate) use signins::{Rotation, SigninId};
 pub(crate) use sources::{NewSource, Source, SourceKind};
 pub(crate) use steps::{NewStep, Step, StepId};
 pub(crate) use tasks::{
-    AgentTask, CancelOutcome, NewTask, Run, Scheduled, SetBy, Snoozed, TaskId, TaskKind, TaskState,
+    AgentTask, CancelOutcome, NewTask, Run, RunId, RunOutcome, Scheduled, SetBy, Settled,
+    Settlement, Snoozed, Stale, TaskEnd, TaskId, TaskKind, TaskState, Versions,
 };
-#[cfg(test)]
-pub(crate) use tasks::{Finished, RunOutcome};
 pub(crate) use update_notes::{NewNote, Note, NoteStatus};
 
 use crate::lock;
@@ -79,6 +78,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0007_many_chats.sql"),
     include_str!("migrations/0008_shares.sql"),
     include_str!("migrations/0009_pane_taps.sql"),
+    include_str!("migrations/0010_check_runs.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]

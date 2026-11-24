@@ -216,8 +216,10 @@ mod tests {
     use crate::chat::{Chats, TurnOwner, TurnTools};
     use crate::files::Files;
     use crate::objectives::{Check, Create, Update};
+    use crate::scheduler::Signals;
     use crate::store::{
-        Finished, NewStep, NoteStatus, ObjectiveChat, RunOutcome, Store, test_store,
+        NewStep, NewTask, NoteStatus, ObjectiveChat, RunId, RunOutcome, Settled, Store, TaskEnd,
+        test_store,
     };
     use agent::{McpConnection, TurnIdentity};
     use serde_json::Value;
@@ -304,14 +306,13 @@ mod tests {
         card(bob, &theirs, ada);
         let task = store.agent_tasks(ada).unwrap()[0].id;
         let run = store.claim_task(task, NOW + 10_000_000).unwrap().unwrap();
-        let finished = Finished {
-            outcome: RunOutcome::Spoke,
-            found: "The frame is built",
-            sources_read: &["github octo/kite".to_owned()],
-            tokens: Some(1200),
-            task: TaskState::Scheduled,
-        };
-        store.finish_run(run, &finished, NOW + 10_000_100).unwrap();
+        end_run(
+            &store,
+            ada,
+            run,
+            (RunOutcome::Spoke, "The frame is built", Some(1200)),
+            true,
+        );
 
         let read = serde_json::to_value(objectives.pane(ada).unwrap()).unwrap();
         if std::env::var_os("WRITE_FIXTURE").is_some() {
@@ -321,6 +322,52 @@ mod tests {
         let fixture: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/pane.json")).unwrap();
         assert_eq!(read, fixture, "{read:#}");
+    }
+
+    /// Ends the run of the user's first task: the task waits again at its own time, or is done.
+    fn end_run(
+        store: &Store,
+        user: UserId,
+        run: RunId,
+        (outcome, found, tokens): (RunOutcome, &str, Option<u64>),
+        waits: bool,
+    ) {
+        let task = store.agent_tasks(user).unwrap().remove(0);
+        let again = NewTask {
+            kind: task.kind,
+            why: &task.why,
+            due_at: task.due_at,
+            local_time: &task.local_time,
+            time_zone: &task.time_zone,
+            set_by: task.set_by,
+        };
+        let sources = if tokens.is_some() {
+            vec!["github octo/kite".to_owned()]
+        } else {
+            Vec::new()
+        };
+        let end = if waits {
+            TaskEnd::Wait {
+                with: again,
+                counted: true,
+            }
+        } else {
+            TaskEnd::Done(None)
+        };
+        store
+            .settle(Settled {
+                run,
+                seen: None,
+                outcome,
+                found,
+                sources_read: &sources,
+                tokens,
+                cost_usd: None,
+                entry: None,
+                end,
+                at: NOW + 10_000_100,
+            })
+            .unwrap();
     }
 
     struct NoTools;
@@ -344,6 +391,7 @@ mod tests {
             Files::new(store.clone()),
             dir.path().into(),
             Duration::ZERO,
+            Signals::default(),
         );
         let (_, mut events) = chats
             .chat(ada, None)
@@ -356,14 +404,7 @@ mod tests {
             .subscribe(None, None)
             .unwrap();
         let run = store.claim_task(task, NOW + 10_000_000).unwrap().unwrap();
-        let finished = Finished {
-            outcome: RunOutcome::Silent,
-            found: "",
-            sources_read: &[],
-            tokens: None,
-            task: TaskState::Done,
-        };
-        store.finish_run(run, &finished, NOW + 10_000_100).unwrap();
+        end_run(&store, ada, run, (RunOutcome::Silent, "", None), false);
         chats.pane_changed(ada);
         assert_eq!(events.try_recv().unwrap().event["kind"], "paneChanged");
         assert!(others.try_recv().is_err(), "another user hears nothing");

@@ -4,6 +4,7 @@ mod agy;
 mod attachments;
 mod chat;
 mod chats;
+mod checks;
 mod facade;
 mod github;
 mod import;

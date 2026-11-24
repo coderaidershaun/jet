@@ -229,7 +229,7 @@ impl ChatState {
     /// The provider that runs `model`, from the server's program paths. Finding the program can
     /// take seconds, so callers do it before they take the runtime's lock.
     /// Only an admin's failed replies may name where the program is on the server.
-    fn transport_for(&self, model: Model) -> Result<Arc<dyn Transport>, BridgeError> {
+    pub(crate) fn transport_for(&self, model: Model) -> Result<Arc<dyn Transport>, BridgeError> {
         let paths = self.store.program_paths()?;
         let transport = provider::transport_for(model, &paths, &self.data_dir, self.chat.id)?;
         let is_admin = self
@@ -271,11 +271,26 @@ impl ChatState {
         let taps = self.store.unannounced_taps(self.chat.id)?;
         let (identity, mut message) = self.bind_new_turn(request, payload, attachments);
         message.notices = taps.iter().map(Tapped::notice).collect();
+        // The user's message stops a running check and holds the chat's checks back before the
+        // check-ins are read, so a check-in is either read here or never posted.
+        let hub = self.hub.upgrade();
+        let stop_holding = || {
+            if let Some(hub) = &hub {
+                hub.signals.reply_ended(self.chat.id);
+            }
+        };
+        if let Some(hub) = &hub {
+            hub.signals.user_wrote(self.chat.id);
+        }
+        message
+            .notices
+            .extend(self.unseen_check_ins().inspect_err(|_| stop_holding())?);
         let (user, reply) = self
             .conversation
             .send(transport, message, Some(identity.clone()))
             .inspect_err(|_| {
                 self.tools.revoke(self.owner(), &identity.request_id);
+                stop_holding();
             })?;
         let told: Vec<_> = taps.iter().map(|tap| tap.id).collect();
         self.store.mark_taps_announced(&told)?;
@@ -289,6 +304,27 @@ impl ChatState {
         self.begin(&mut runtime, active, reply, history, target);
         self.title_from(&text);
         Ok(accepted)
+    }
+
+    /// One line for each check-in that the provider session has not seen: a check runs in its own
+    /// throwaway session, so Jet would not otherwise know what it asked.
+    fn unseen_check_ins(&self) -> Result<Vec<String>, BridgeError> {
+        let seen_until = self
+            .store
+            .session(self.chat.id)?
+            .map_or(0, |session| session.last_request_at);
+        Ok(self
+            .store
+            .entries(self.chat.id, None)?
+            .into_iter()
+            .filter(|entry| entry.check.is_some() && entry.at > seen_until)
+            .map(|entry| {
+                format!(
+                    "[You wrote this on your own, with no message from the user; they may be answering it: {}]",
+                    entry.text
+                )
+            })
+            .collect())
     }
 
     /// Saves the user's reaction and tells every browser at once, even while a turn runs. A new
@@ -501,6 +537,9 @@ impl ChatState {
             self.review.schedule(self.clone(), target);
         }
         self.start_pending(&mut runtime);
+        if let Some(hub) = self.hub.upgrade() {
+            hub.signals.reply_ended(self.chat.id);
+        }
     }
 
     /// Makes the uploads visible to Jet and gives their details for the message. A bad id leaves
@@ -697,19 +736,24 @@ impl ChatState {
 
     /// Saves a Jet entry that answers no message, and tells every page: the entry itself, and the
     /// chat's unread count after it.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "a later check-in saves its message through it")
-    )]
+    #[cfg(test)]
     pub fn add_jet_entry(&self, entry: agent::NewEntry) -> Result<ShownEntry, BridgeError> {
-        let mut runtime = lock(&self.runtime);
-        if runtime.closing {
-            return Err(BridgeError::ShuttingDown);
-        }
         let shown = self.conversation.add_jet_entry(entry)?;
+        self.announce(&shown);
+        Ok(shown)
+    }
+
+    /// Tells every page about a Jet entry that is saved already, such as a check-in, and the
+    /// chat's unread count after it.
+    pub fn announce(&self, shown: &ShownEntry) {
+        let mut runtime = lock(&self.runtime);
         runtime.publish(None, json!({"kind":"entryAdded", "entry":shown}));
         self.publish_unread(&mut runtime);
-        Ok(shown)
+    }
+
+    /// Whether a reply to the user runs in this chat.
+    pub fn is_replying(&self) -> bool {
+        self.conversation.is_busy()
     }
 
     /// Gives a topic chat that still has its first title a short one from the user's first words.

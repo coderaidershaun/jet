@@ -57,6 +57,8 @@ pub enum Step {
 pub struct Summary {
     /// Input, cache read and cache creation tokens of the request.
     pub context_tokens: u64,
+    /// What the request cost, for the providers that say.
+    pub cost_usd: Option<f64>,
     pub context: crate::chat::ContextStatus,
     /// The model's final answer as plain text.
     pub result: String,
@@ -230,6 +232,7 @@ impl Turn {
         }
         self.end(Step::Finished(Summary {
             context_tokens: result.context_tokens,
+            cost_usd: result.cost_usd,
             context: self.context.finish(),
             result: result.result.unwrap_or_default(),
             structured_output: result.structured_output,

@@ -1,6 +1,7 @@
 //! Bind the stable provider tool surface to one initiating browser turn, acting for the user who
 //! sent its message: their apps, their files and their credentials only.
 mod chats;
+mod check;
 mod handler;
 mod handoff;
 mod marks;
@@ -24,6 +25,8 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
+use check::CheckState;
+pub(crate) use check::{CheckSpec, Checked, NextCheck, read_label};
 use rmcp::transport::streamable_http_server::{
     StreamableHttpService, session::local::LocalSessionManager,
 };
@@ -46,6 +49,8 @@ struct Binding {
     /// `github_activity` ran in this turn, or a colleague's shared objectives were read, so it
     /// has read text written by others.
     has_read_strangers: bool,
+    /// Set on the turn of a check, which may only read.
+    check: Option<CheckState>,
 }
 pub(crate) struct Facade {
     apps: Apps,
@@ -131,6 +136,7 @@ impl TurnTools for Facade {
                 reads_web,
                 owner,
                 has_read_strangers: false,
+                check: None,
             },
         );
         McpConnection {

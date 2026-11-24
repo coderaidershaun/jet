@@ -52,6 +52,8 @@ impl Host {
             .arg("--disable-feelings")
             .arg("--disable-voice")
             .args(flags)
+            .env("JET_TEST_CLOCK_FILE", dir.path().join("clock"))
+            .env("JET_TEST_CHECK_LIMIT_MS", "1500")
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
@@ -174,6 +176,16 @@ impl Host {
             bytes.extend(std::fs::read(self.dir.path().join(name)).unwrap_or_default());
         }
         bytes
+    }
+    /// Moves the host's clock to `seconds` since 1970. The scheduler and the objectives read it
+    /// each time they ask for the time, so no test has to wait for a real moment.
+    pub fn set_clock(&self, seconds: u64) {
+        let (file, moving) = (
+            self.dir.path().join("clock"),
+            self.dir.path().join("clock.next"),
+        );
+        std::fs::write(&moving, seconds.to_string()).unwrap();
+        std::fs::rename(moving, file).unwrap();
     }
     pub fn invocations(&self) -> usize {
         std::fs::read_to_string(self.dir.path().join("calls"))
