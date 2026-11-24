@@ -43,8 +43,9 @@ struct Binding {
     /// The signed-in user who sent the message, and the chat the turn runs in. Every tool acts
     /// for that user only.
     owner: TurnOwner,
-    /// `github_activity` ran in this turn, so it has read text written by strangers.
-    has_read_github: bool,
+    /// `github_activity` ran in this turn, or a colleague's shared objectives were read, so it
+    /// has read text written by others.
+    has_read_strangers: bool,
 }
 pub(crate) struct Facade {
     apps: Apps,
@@ -129,7 +130,7 @@ impl TurnTools for Facade {
                 calls: HashSet::new(),
                 reads_web,
                 owner,
-                has_read_github: false,
+                has_read_strangers: false,
             },
         );
         McpConnection {

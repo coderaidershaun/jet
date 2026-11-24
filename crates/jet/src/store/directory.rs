@@ -150,6 +150,59 @@ impl Store {
         })
     }
 
+    /// Makes a team. `None` when a team of that name exists.
+    pub(crate) fn add_team(&self, name: &str) -> Result<Option<i64>, StoreError> {
+        self.with(|db| {
+            let added = db.execute("INSERT OR IGNORE INTO teams (name) VALUES (?1)", [name])?;
+            Ok((added == 1).then(|| db.last_insert_rowid()))
+        })
+    }
+
+    /// Renames the team. `false` when it does not exist, or another team has the name.
+    pub(crate) fn rename_team(&self, team: i64, name: &str) -> Result<bool, StoreError> {
+        self.with(|db| {
+            Ok(db.execute(
+                "UPDATE OR IGNORE teams SET name = ?2 WHERE id = ?1",
+                params![team, name],
+            )? == 1)
+        })
+    }
+
+    pub(crate) fn add_member(&self, team: i64, user: UserId) -> Result<(), StoreError> {
+        self.with(|db| {
+            db.execute(
+                "INSERT OR IGNORE INTO team_members (team_id, user_id) VALUES (?1, ?2)",
+                params![team, user.0],
+            )
+            .map(drop)
+        })
+    }
+
+    pub(crate) fn remove_member(&self, team: i64, user: UserId) -> Result<(), StoreError> {
+        self.with(|db| {
+            db.execute(
+                "DELETE FROM team_members WHERE team_id = ?1 AND user_id = ?2",
+                params![team, user.0],
+            )
+            .map(drop)
+        })
+    }
+
+    /// Sets the user's manager, or clears it with `None`.
+    pub(crate) fn change_manager(
+        &self,
+        user: UserId,
+        manager: Option<UserId>,
+    ) -> Result<(), StoreError> {
+        self.with(|db| {
+            db.execute(
+                "UPDATE users SET manager_id = ?2 WHERE id = ?1",
+                params![user.0, manager.map(|manager| manager.0)],
+            )
+            .map(drop)
+        })
+    }
+
     /// Every user and every team of the organisation.
     pub(crate) fn directory(&self) -> Result<(Vec<Person>, Vec<Team>), StoreError> {
         self.with(|db| {
@@ -202,7 +255,7 @@ impl Store {
         })
     }
 
-    /// The time zone of the user's page, `None` until a message carried one.
+    /// The time zone of the user's page, `None` until a message carried one, or for no such user.
     pub(crate) fn time_zone(&self, user: UserId) -> Result<Option<String>, StoreError> {
         self.with(|db| {
             db.query_row(
@@ -210,6 +263,8 @@ impl Store {
                 [user.0],
                 |row| row.get(0),
             )
+            .optional()
+            .map(Option::flatten)
         })
     }
 }

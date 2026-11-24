@@ -86,7 +86,7 @@ impl ServerHandler for Handler {
 #[derive(Debug, thiserror::Error)]
 enum WriteRefused {
     #[error(
-        "this reply has read web text, so Jet refuses changes and app tools that are not read-only until the user's next message. Tell the user exactly what you wanted to do, so their next message can allow it"
+        "this reply has read web text or a colleague's shared notes, so Jet refuses changes to apps, people and shares, and app tools that are not read-only, until the user's next message. Tell the user exactly what you wanted to do, so their next message can allow it"
     )]
     WriteAfterWebText,
     #[error(
@@ -196,11 +196,12 @@ impl Handler {
         }
     }
 
-    /// Refuses `apps_update`, and a `tools_call` whose tool is not marked read-only, once the turn
-    /// has read web text or `github_activity`. It first waits until the turn's stream has passed
+    /// Refuses `apps_update`, `people_update`, `objectives_update` with `propose_share`, and a
+    /// `tools_call` whose tool is not marked read-only, once the turn has read web text,
+    /// `github_activity` or a colleague's shared objectives (`objectives_list` with `owner`). It first waits until the turn's stream has passed
     /// this call's own tool-use line, so every web read before the call has been seen. When the
     /// order cannot be known, the call is refused too. A Codex or agy turn has no web tools, so
-    /// there only a `github_activity` call that reached Jet earlier counts.
+    /// there only such a read that reached Jet earlier counts.
     async fn refuse_after_web_text(
         &self,
         name: &str,
@@ -208,11 +209,13 @@ impl Handler {
         binding: &Binding,
         context: &RequestContext<RoleServer>,
     ) -> Option<WriteRefused> {
-        if !matches!(name, "apps_update" | "tools_call") {
+        let changes_shares =
+            name == "objectives_update" && arguments["command"]["action"] == "propose_share";
+        if !(matches!(name, "apps_update" | "tools_call" | "people_update") || changes_shares) {
             return None;
         }
         if !binding.reads_web {
-            let is_allowed = !binding.has_read_github
+            let is_allowed = !binding.has_read_strangers
                 || (name == "tools_call" && self.read_only(arguments, binding).await);
             return (!is_allowed).then_some(WriteRefused::WriteAfterWebText);
         }
@@ -331,7 +334,7 @@ impl Handler {
             "tools_call" => self.tools_call(arguments, token, binding, context).await,
             "files_export" => self.files_export(arguments, &binding).await,
             "github_activity" => self.github_activity(&arguments, token, &binding).await,
-            "objectives_list" => self.objectives_list(&binding).await,
+            "objectives_list" => self.objectives_list(&arguments, token, &binding).await,
             "objectives_update" => {
                 let result = self.objectives_update(&arguments, &binding).await;
                 // The command may have made the objective a chat of its own.
@@ -343,6 +346,7 @@ impl Handler {
             "tasks_list" => self.tasks_list(&binding).await,
             "tasks_update" => self.tasks_update(&arguments, &binding).await,
             "people_list" => self.people_list().await,
+            "people_update" => self.people_update(&arguments, &binding).await,
             "chats_read" => self.chats_read(&arguments, &binding).await,
             "files_list" => {
                 let files = self.0.files.clone();
@@ -472,7 +476,7 @@ impl Handler {
         binding: &Binding,
     ) -> Result<Value, Value> {
         if let Some(bound) = lock(&self.0.bindings).get_mut(token) {
-            bound.has_read_github = true;
+            bound.has_read_strangers = true;
         }
         let evidence = self.0.evidence.clone();
         let user = binding.owner.user;

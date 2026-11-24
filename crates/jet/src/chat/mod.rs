@@ -25,7 +25,7 @@ use tokio::sync::broadcast;
 use crate::files::{About, FileError, Files};
 use crate::lock;
 use crate::objectives::is_time_zone;
-use crate::store::{Chat, Store, UserId};
+use crate::store::{Chat, Store, Tapped, UserId};
 pub(crate) use chats::Chats;
 pub use error::BridgeError;
 use events::{ActiveTurn, Feed, Reacted, Runtime};
@@ -267,13 +267,17 @@ impl ChatState {
             transport: transport.clone(),
             name: request.persona.name.clone(),
         };
-        let (identity, message) = self.bind_new_turn(request, payload, attachments);
+        let taps = self.store.unannounced_taps(self.chat.id)?;
+        let (identity, mut message) = self.bind_new_turn(request, payload, attachments);
+        message.notices = taps.iter().map(Tapped::notice).collect();
         let (user, reply) = self
             .conversation
             .send(transport, message, Some(identity.clone()))
             .inspect_err(|_| {
                 self.tools.revoke(self.owner(), &identity.request_id);
             })?;
+        let told: Vec<_> = taps.iter().map(|tap| tap.id).collect();
+        self.store.mark_taps_announced(&told)?;
         let identity = TurnContext::from(&identity);
         let accepted = Accepted {
             turn_id: identity.turn_id.clone(),
@@ -454,6 +458,7 @@ impl ChatState {
             active_app_id: request.active_app_id,
             feeling: request.feeling,
             spoken: request.spoken,
+            notices: Vec::new(),
         };
         (identity, message)
     }

@@ -11,6 +11,7 @@ mod mcp_fixture;
 mod objectives;
 mod proxy;
 mod reactions;
+mod sharing;
 mod shutdown;
 mod support;
 mod tool_calls;

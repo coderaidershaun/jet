@@ -2,6 +2,7 @@
 //! store. It turns the local dates and times Jet writes into stored ones, works out duration and
 //! days left when they are read, and acts for one user only.
 
+mod sharing;
 mod time;
 
 use crate::chat::TurnOwner;
@@ -11,6 +12,7 @@ use crate::store::{
     SetBy, Source, Step, StepId, Store, StoreError, TaskId, TaskKind, TaskState, Team, UserId,
 };
 use serde::Serialize;
+pub(crate) use sharing::DirectoryChange;
 use std::sync::Arc;
 pub(crate) use time::TimeError;
 
@@ -21,6 +23,8 @@ const RUNS_SHOWN: usize = 20;
 /// How many times a write is tried when the database is busy.
 const WRITE_TRIES: usize = 3;
 const UTC: &str = "UTC";
+/// The longest name of a team, in characters.
+const TEAM_NAME_LIMIT: usize = 60;
 
 /// The current time in Unix seconds. Tests set their own.
 pub(crate) type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
@@ -74,6 +78,32 @@ pub(crate) enum ObjectiveError {
         "{tool} is not marked read-only by its app, and a source may only be read. Pick a tool that only reads, or leave this source out"
     )]
     AppToolNotReadOnly { tool: String },
+    #[error("the user has no note {id} on that objective; objectives_list shows the note ids")]
+    NoSuchNote { id: i64 },
+    #[error("there is no user {id}; people_list shows the ids")]
+    NoSuchUser { id: i64 },
+    #[error("there is no team {id}; people_list shows the ids")]
+    NoSuchTeam { id: i64 },
+    #[error("only an admin may change the people and teams of the organisation")]
+    NotAdmin,
+    #[error("a team called `{name}` exists already")]
+    TeamNameTaken { name: String },
+    #[error("a team's name is between 1 and {TEAM_NAME_LIMIT} characters")]
+    BadTeamName,
+    #[error("a user cannot be their own manager")]
+    ManagesSelf,
+    #[error("an objective is not shared with its owner; leave the owner out")]
+    ShareWithOwner,
+    #[error(
+        "the card would be empty: name someone to share with, or the objective is shared with nobody"
+    )]
+    NothingToShare,
+    #[error("the user has no share card {id}")]
+    NoSuchProposal { id: i64 },
+    #[error("share card {id} is {state} and cannot be tapped")]
+    ProposalNotOpen { id: i64, state: &'static str },
+    #[error("a ticked person or team is not on the card")]
+    NotOnCard,
     #[error("the database failed")]
     Store(#[from] StoreError),
 }
@@ -96,6 +126,18 @@ impl ObjectiveError {
             Self::AppSourceAdminOnly => "adminOnly",
             Self::AppToolNotReadOnly { .. } => "notReadOnly",
             Self::NoNewDate => "noNewDate",
+            Self::NoSuchNote { .. } => "noSuchNote",
+            Self::NoSuchUser { .. } => "noSuchUser",
+            Self::NoSuchTeam { .. } => "noSuchTeam",
+            Self::NotAdmin => "adminOnly",
+            Self::TeamNameTaken { .. } => "teamNameTaken",
+            Self::BadTeamName => "badTeamName",
+            Self::ManagesSelf => "managesSelf",
+            Self::ShareWithOwner => "shareWithOwner",
+            Self::NothingToShare => "nothingToShare",
+            Self::NoSuchProposal { .. } => "noSuchProposal",
+            Self::ProposalNotOpen { .. } => "proposalNotOpen",
+            Self::NotOnCard => "notOnCard",
             Self::Store(StoreError::DuplicateCheck) => "duplicateCheck",
             Self::Store(StoreError::ChatTaken) => "chatTaken",
             Self::Store(_) => "store",

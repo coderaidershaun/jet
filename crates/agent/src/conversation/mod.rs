@@ -44,6 +44,8 @@ pub struct Message {
     pub feeling: Option<String>,
     /// True when the user hears this reply spoken aloud.
     pub spoken: bool,
+    /// Lines for Jet about what the user did since their last message, such as a tap on a card.
+    pub notices: Vec<String>,
 }
 
 /// How many of the newest entries a prompt lists the reactions of.
@@ -342,6 +344,7 @@ mod test_support {
             active_app_id: None,
             feeling: None,
             spoken: false,
+            notices: Vec::new(),
         }
     }
 

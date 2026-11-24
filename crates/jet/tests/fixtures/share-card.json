@@ -1,0 +1,29 @@
+{
+  "proposed": {
+    "id": 3,
+    "objectiveId": 1,
+    "title": "Ship the kite",
+    "state": "proposed",
+    "people": [{"id": 2, "name": "bob@example.com", "ticked": false}],
+    "teams": [{"id": 1, "name": "Commercial", "members": ["Cat"], "ticked": true}],
+    "appliedAt": null
+  },
+  "applied": {
+    "id": 1,
+    "objectiveId": 1,
+    "title": "Ship the kite",
+    "state": "applied",
+    "people": [{"id": 2, "name": "bob@example.com", "ticked": true}],
+    "teams": [{"id": 1, "name": "Commercial", "members": ["Cat"], "ticked": false}],
+    "appliedAt": 1767225607
+  },
+  "refused": {
+    "id": 2,
+    "objectiveId": 1,
+    "title": "Ship the kite",
+    "state": "refused",
+    "people": [{"id": 2, "name": "bob@example.com", "ticked": true}],
+    "teams": [],
+    "appliedAt": null
+  }
+}

@@ -149,7 +149,7 @@ impl Store {
         (renamed == 1).then_some(()).ok_or(StoreError::NoSuchChat)
     }
 
-    /// Deletes the chat with its thread. Its objectives and agent-tasks move to the user's main
+    /// Deletes the chat with its thread. Its objectives, agent-tasks and share cards move to the user's main
     /// chat in the same transaction, so the objectives stay and their checks still run.
     pub(crate) fn delete_chat(&self, user: UserId, chat: ChatId) -> Result<(), StoreError> {
         self.try_with(|db| {
@@ -171,7 +171,7 @@ impl Store {
                 [user.0],
                 |row| row.get(0),
             )?;
-            for table in ["objectives", "agent_tasks"] {
+            for table in ["objectives", "agent_tasks", "share_proposals"] {
                 transaction.execute(
                     &format!("UPDATE {table} SET chat_id = ?2 WHERE chat_id = ?1"),
                     params![chat.0, main],

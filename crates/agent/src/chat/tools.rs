@@ -16,7 +16,7 @@ pub const TURN_HEADER: &str = "x-jet-turn";
 /// the id of the call's card.
 pub const TOOL_USE_META: &str = "claudecode/toolUseId";
 
-pub const FACADE_TOOLS: [&str; 16] = [
+pub const FACADE_TOOLS: [&str; 17] = [
     "apps_list",
     "apps_update",
     "apps_open",
@@ -32,6 +32,7 @@ pub const FACADE_TOOLS: [&str; 16] = [
     "tasks_list",
     "tasks_update",
     "people_list",
+    "people_update",
     "chats_read",
 ];
 
@@ -93,10 +94,14 @@ pub struct ToolCall {
 }
 
 impl ToolCall {
-    /// True for a web search or page read, refused or not, and for Jet's `github_activity`, since
-    /// each result can hold a stranger's text: a page, a commit message, an issue title.
+    /// True for a web search or page read, refused or not, for Jet's `github_activity`, and for a
+    /// read of a colleague's shared objectives, since each result can hold another person's text:
+    /// a page, a commit message, an issue title, a note.
     pub fn read_web(&self) -> bool {
-        self.server == WEB_SERVER || (self.server == JET_SERVER && self.tool == "github_activity")
+        self.server == WEB_SERVER
+            || (self.server == JET_SERVER
+                && (self.tool == "github_activity"
+                    || (self.tool == "objectives_list" && !self.input["owner"].is_null())))
     }
 }
 

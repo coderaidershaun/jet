@@ -9,12 +9,18 @@ use agent::test_server::{Answer, Paths};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
-const MANAGER: &str = "admin123@gmail.com";
+pub(super) const MANAGER: &str = "admin123@gmail.com";
 const ZONE: &str = "America/New_York";
 
 /// Sends one message that carries the user's time zone and the script as the provider's
 /// instruction, waits for the reply to end, and gives the result of each call of the script.
-fn run_turn(host: &Host, user: &User, id: &str, words: &str, script: Value) -> Vec<Value> {
+pub(super) fn run_turn(
+    host: &Host,
+    user: &User,
+    id: &str,
+    words: &str,
+    script: Value,
+) -> Vec<Value> {
     let _ = std::fs::remove_file(host.dir.path().join("facade-results.json"));
     let mut message = request(id);
     message["text"] = json!(format!("{words}\nfacade:{script}"));
@@ -44,7 +50,7 @@ fn run_turn(host: &Host, user: &User, id: &str, words: &str, script: Value) -> V
     }
 }
 
-fn objectives(command: Value) -> Value {
+pub(super) fn objectives(command: Value) -> Value {
     json!({"tool":"objectives_update","arguments":{"command":command}})
 }
 
@@ -52,11 +58,11 @@ fn tasks(command: Value) -> Value {
     json!({"tool":"tasks_update","arguments":{"command":command}})
 }
 
-fn tool(name: &str) -> Value {
+pub(super) fn tool(name: &str) -> Value {
     json!({"tool":name,"arguments":{}})
 }
 
-fn create(chat: &str, sources: Value) -> Value {
+pub(super) fn create(chat: &str, sources: Value) -> Value {
     objectives(json!({
         "action":"create","title":"Ship the kite","deliverable":"A kite that flies",
         "start":"2099-06-01","due":"2099-07-01",
@@ -67,12 +73,12 @@ fn create(chat: &str, sources: Value) -> Value {
     }))
 }
 
-fn data(result: &Value) -> &Value {
+pub(super) fn data(result: &Value) -> &Value {
     assert_eq!(result["isError"], false, "{result}");
     &result["structuredContent"]
 }
 
-fn error_kind(result: &Value) -> &Value {
+pub(super) fn error_kind(result: &Value) -> &Value {
     assert_eq!(result["isError"], true, "{result}");
     &result["structuredContent"]["error"]["kind"]
 }
@@ -81,7 +87,7 @@ fn utc(text: &str) -> i64 {
     text.parse::<jiff::Timestamp>().unwrap().as_second()
 }
 
-fn database(host: &Host) -> rusqlite::Connection {
+pub(super) fn database(host: &Host) -> rusqlite::Connection {
     rusqlite::Connection::open_with_flags(
         host.dir.path().join("jet.sqlite3"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,

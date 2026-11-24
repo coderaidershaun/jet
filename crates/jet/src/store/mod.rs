@@ -10,6 +10,7 @@ mod import;
 mod notes;
 mod objectives;
 mod settings;
+mod shares;
 mod signins;
 mod sources;
 mod steps;
@@ -24,6 +25,7 @@ pub use import::ImportError;
 pub(crate) use objectives::{
     Edit, NewObjective, Objective, ObjectiveChat, ObjectiveId, ObjectiveStatus,
 };
+pub(crate) use shares::{Applied, ProposalId, ShareCard, Shared, Sharing, Tapped};
 pub(crate) use signins::{Rotation, SigninId};
 pub(crate) use sources::{NewSource, Source, SourceKind};
 pub(crate) use steps::{NewStep, Step, StepId};
@@ -74,6 +76,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0005_objectives.sql"),
     include_str!("migrations/0006_agy_path.sql"),
     include_str!("migrations/0007_many_chats.sql"),
+    include_str!("migrations/0008_shares.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]

@@ -4,6 +4,7 @@
 mod chats;
 mod config;
 mod routes;
+mod shares;
 
 use crate::account::{self, AccountError, Accounts};
 use crate::apps::{Apps, Proxy};
@@ -52,6 +53,7 @@ pub struct Server {
     chats: Arc<Chats>,
     apps: Apps,
     facade: Arc<Facade>,
+    objectives: Objectives,
     files: Files,
     github_tokens: GithubTokens,
     voice: Voice,
@@ -102,6 +104,7 @@ impl Server {
         let mcp = Arc::new(HttpMcpClient::new(registry.clone()));
         let files = Files::new(store.clone());
         let apps = Apps::new(registry, mcp, proxy, store.clone());
+        let objectives = Objectives::new(store.clone(), objectives::system_clock());
         let facade = Facade::new(
             apps.clone(),
             files.clone(),
@@ -109,7 +112,7 @@ impl Server {
             config.public_origin.clone(),
             accounts.keys().clone(),
             Evidence::new(github_tokens.clone()),
-            Objectives::new(store.clone(), objectives::system_clock()),
+            objectives.clone(),
         );
         let chats = Chats::new(
             store.clone(),
@@ -126,6 +129,7 @@ impl Server {
             chats,
             apps,
             facade,
+            objectives,
             files,
             github_tokens,
             voice: Voice::new(config.disable_voice),

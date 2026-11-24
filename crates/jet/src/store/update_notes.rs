@@ -28,6 +28,7 @@ pub(crate) struct NewNote {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Note {
+    pub(crate) id: i64,
     pub(crate) at: u64,
     pub(crate) status: Option<NoteStatus>,
     pub(crate) moved: String,
@@ -69,7 +70,7 @@ impl Store {
     ) -> Result<Vec<Note>, StoreError> {
         self.with(|db| {
             let mut query = db.prepare(
-                "SELECT n.at, n.status, n.moved, n.blockers, n.new_dates, n.is_private, n.entry_id
+                "SELECT n.at, n.status, n.moved, n.blockers, n.new_dates, n.is_private, n.entry_id, n.id
                  FROM objective_notes n JOIN objectives o ON o.id = n.objective_id
                  WHERE o.id = ?1 AND o.user_id = ?2 ORDER BY n.id",
             )?;
@@ -83,6 +84,7 @@ impl Store {
                         new_dates: row.get(4)?,
                         is_private: row.get(5)?,
                         entry_id: row.get::<_, Option<i64>>(6)?.map(i64::unsigned_abs),
+                        id: row.get(7)?,
                     })
                 })?
                 .collect()
@@ -103,6 +105,29 @@ impl Store {
                 return Ok(None);
             }
             insert(&tx, objective, note, at)?;
+            tx.commit()?;
+            Ok(Some(()))
+        })
+    }
+
+    /// Marks the note private or shared. `None` when the user has no such note.
+    pub(crate) fn set_note_private(
+        &self,
+        owner: UserId,
+        objective: ObjectiveId,
+        note: i64,
+        is_private: bool,
+        at: u64,
+    ) -> Result<Option<()>, StoreError> {
+        self.try_with(|db| {
+            let tx = db.transaction()?;
+            let changed = tx.execute(
+                "UPDATE objective_notes SET is_private = ?3 WHERE id = ?1 AND objective_id = ?2",
+                params![note, objective.0, is_private],
+            )?;
+            if changed != 1 || !touch(&tx, owner, objective, at)? {
+                return Ok(None);
+            }
             tx.commit()?;
             Ok(Some(()))
         })

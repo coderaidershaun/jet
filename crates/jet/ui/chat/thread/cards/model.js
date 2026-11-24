@@ -8,7 +8,9 @@ import { CONCEPT_READERS } from './concepts.js';
 import { count, isRecord, joined, listOf, numberOrNull, orNull, recordOf, stringOf, stringsOf } from './guard.js';
 import { isJob, jobOf, readIngest } from './job.js';
 import { LIBRARY_READERS } from './library.js';
+import { peopleLine } from './people.js';
 import { pageLabel, pageTitle, piecesOf, showOf } from './pieces.js';
+import { shareOf } from './share.js';
 
 /**
  * One tool call as the thread keeps it. No `ok` yet: still running. `unfinished`: the reply ended first.
@@ -39,6 +41,7 @@ import { pageLabel, pageTitle, piecesOf, showOf } from './pieces.js';
  *   | { kind: 'health', lines: { text: string, ok: boolean }[] }
  *   | { kind: 'fields', fields: Field[] }
  *   | { kind: 'blocks', blocks: import('./block.js').Block[] }
+ *   | { kind: 'share', view: import('./share.js').ShareView }
  *   | { kind: 'file', name: string, title: string, tag: string, meta: string, download: string, view: string }} Body
  */
 /**
@@ -309,6 +312,18 @@ export function citationSources(call) {
   return Array.isArray(sources) ? sources.filter((source) => isRecord(source) && Number.isInteger(source.number) && typeof source.document === 'string') : [];
 }
 
+/** Jet's `objectives_update` call is a share card when it proposed a share, else its plain fields. */
+function readShare(result) {
+  const view = shareOf(result.proposal);
+  return view ? { outcome: view.state, tone: 'quiet', body: { kind: 'share', view } } : null;
+}
+
+/** A people_update call is one line, worded from its typed command. */
+function readPeople(result, input) {
+  const line = peopleLine(input, result);
+  return line ? { outcome: line, tone: 'quiet', body: null } : null;
+}
+
 function readerFor(call) {
   const key = call.server + '/' + call.tool;
   if (key === FILE_TOOL) return readFile;
@@ -330,6 +345,8 @@ const READERS = {
   'quanty/read_page': readPage,
   'quanty/list_documents': readDocuments,
   'quanty/health': readHealth,
+  'jet/objectives_update': readShare,
+  'jet/people_update': readPeople,
 };
 
 // These tools are read the same way on any server, because through the facade a server is an app ID.

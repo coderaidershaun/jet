@@ -9,7 +9,7 @@ crates/jet/                       the server program (axum) and the page it serv
   src/apps/                       app routes: registry (/api/apps), tool browser, proxy to running apps
   src/chat/                       one runtime per chat: commands, the streamed reply, reconnect snapshots, the notes review timer
   src/evidence/                   outside evidence: a GitHub repository's activity, each user's sealed GitHub token
-  src/facade/                     the sixteen MCP tools the provider sees
+  src/facade/                     the seventeen MCP tools the provider sees
   src/objectives/                 objectives and agent-tasks: computed dates, local time to UTC
   src/files/                      uploads, files Jet writes, the sandboxed reader child, export, all kept in the store
   src/server/                     shared host state, listen address and the remaining routes
@@ -225,7 +225,7 @@ Jet is served publicly, so every path is bounded: 32 MiB for a file, 10 files fo
 
 ## App tools
 
-Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees sixteen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `github_activity`, the five that record objectives and agent-tasks (see Objectives and agent-tasks), and `chats_read` (see Many chats). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link. After a web read or a `github_activity` call, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex and agy have no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
+Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees seventeen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `github_activity`, the six that record objectives and agent-tasks and change the directory (see Objectives and agent-tasks), and `chats_read` (see Many chats). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link. After a web read, a `github_activity` call or a read of a colleague's shared objectives, the rest of that reply cannot call `apps_update`, `people_update`, `objectives_update` with `propose_share`, or an app tool that is not read-only. Codex and agy have no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
 
 Tools shows searchable summaries, actual input/output schemas, annotations, server identity, capabilities and instructions. Refresh retries failed metadata; stale results remain visibly marked. Only explicitly marked free discovery operations can expand into a hierarchy. Inspect a leaf or use Ask Jet to draft a request; browsing never executes ordinary business tools. In particular, normal Quanty search can cost money.
 
@@ -293,8 +293,8 @@ unreachable GitHub come back as errors that tell Jet what to say to the user.
 ## Objectives and agent-tasks
 
 Jet records what the user is working towards, and what it sets itself to do, by itself, from the
-conversation; the user fills in no form. Five facade tools do it, each acting for the user of the
-turn only, and every row is private to its owner:
+conversation; the user fills in no form. Six facade tools do it, each acting for the user of the
+turn only, and every row is private to its owner until the owner shares it (see Sharing an objective):
 
 - `objectives_list` reads the user's objectives with their steps, sources, update notes and waiting
   agent-tasks. Duration (start to due date) and days left are worked out on every read, never stored.
@@ -309,6 +309,10 @@ turn only, and every row is private to its owner:
   it; without one it adds a follow-up in this chat) or `cancel`. There is at most one open check for
   an objective.
 - `people_list` reads the directory: users with their teams and manager, and the teams.
+- `people_update` is for admins only and takes one typed `command`: `team_add`, `team_rename`,
+  `member_add`, `member_remove`, `manager_set` or `manager_clear`. A refusal for anyone else is
+  `adminOnly`. It shows as a card, and it is refused for the rest of a reply that read web text or a
+  colleague's shared objectives, because a membership decides who sees what is shared with a team.
 
 A source is `jet`, `github` (a repository and the user's GitHub login, which the server reads from the
 user's saved GitHub token when Jet leaves it out), `web` (a page address or a search topic) or `app`
@@ -322,6 +326,29 @@ cannot be read. When the clocks go back and a time happens twice, the earlier in
 create with a new chat adds a chat of kind objective titled after the objective, opens it with a short
 summary, and leaves a line in the chat where it was agreed. A create on the main chat only links it.
 A turn in a chat may read pages on the hosts of the page sources of that chat's open objectives.
+
+### Sharing an objective
+
+An objective is shared with nobody until its owner says so. After the objective is agreed, Jet asks
+once who should see it, finds "my manager", a team or named people with `people_list`, says who it
+found, and when the user agrees calls `objectives_update` with `propose_share`: the objective and the
+whole set of people and teams it should be shared with. That changes nothing. It makes a share card
+in the thread, which lists each proposed person and team (with its members' names) with a tick, and
+the people and teams the objective is shared with now, unticked, so a smaller set shows who would be
+removed. The owner's tap on **Share** applies exactly the ticked entries, through
+`POST /api/shares/proposals/{id}/apply` as the signed-in user; nobody else's tap, and nothing written
+in a chat, applies a card, and a share is never added in any other way. The card then shows who the
+objective is shared with, also after a reload (`GET /api/shares/proposals?ids=`), and Jet is told of
+the tap on the user's next message in that chat.
+
+A colleague's Jet reads what is shared with `objectives_list` and `owner`: the objectives of that
+owner shared with the user directly or through a team, with title, deliverable, dates, status,
+duration, days left, steps and the update notes that are not private. A private note, the objective's
+chat, its sources and its agent-tasks are never returned, and when nothing is shared the answer is an
+empty list, the same as for an owner with no objectives. Update notes reach the people an objective is
+shared with as soon as they are written. The pane of an objective changes who it is shared with
+through `POST /api/objectives/{id}/share-proposals` and the same tap, shows it with
+`GET /api/objectives/{id}/shares`, and flips a note with `PUT /api/objectives/{id}/notes/{note}`.
 
 ## Quanty
 

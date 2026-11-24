@@ -50,6 +50,7 @@ pub(super) fn router(host: Server) -> Router {
         .merge(files::router())
         .merge(voice::router())
         .merge(evidence::router())
+        .merge(super::shares::router())
         .merge(chats::router())
         .route("/api/status", get(status))
         .route("/api/snapshot", get(snapshot))
