@@ -3,6 +3,7 @@
 
 mod chats;
 mod config;
+mod inbox;
 mod pane;
 mod routes;
 mod shares;

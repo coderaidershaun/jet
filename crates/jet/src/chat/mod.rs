@@ -282,9 +282,12 @@ impl ChatState {
         if let Some(hub) = &hub {
             hub.signals.user_wrote(self.chat.id);
         }
-        message
-            .notices
-            .extend(self.unseen_check_ins().inspect_err(|_| stop_holding())?);
+        let (unseen, heard_colleague) = self.unseen_check_ins().inspect_err(|_| stop_holding())?;
+        message.notices.extend(unseen);
+        if let Some(item) = heard_colleague {
+            self.tools
+                .colleague_text_read(self.owner(), &identity.request_id, item);
+        }
         let (user, reply) = self
             .conversation
             .send(transport, message, Some(identity.clone()))
@@ -306,25 +309,49 @@ impl ChatState {
         Ok(accepted)
     }
 
-    /// One line for each check-in that the provider session has not seen: a check runs in its own
-    /// throwaway session, so Jet would not otherwise know what it asked.
-    fn unseen_check_ins(&self) -> Result<Vec<String>, BridgeError> {
+    /// One line for each check-in, and each entry of a colleague's words, that the provider
+    /// session has not seen: a check runs in its own throwaway session, so Jet would not otherwise
+    /// know what it asked. A colleague's words come inside their labelled block, and the turn is
+    /// told so, because it is then the one that first carries them.
+    fn unseen_check_ins(&self) -> Result<(Vec<String>, Option<bool>), BridgeError> {
         let seen_until = self
             .store
             .session(self.chat.id)?
             .map_or(0, |session| session.last_request_at);
-        Ok(self
+        let unseen: Vec<_> = self
             .store
             .entries(self.chat.id, None)?
             .into_iter()
-            .filter(|entry| entry.check.is_some() && entry.at > seen_until)
-            .map(|entry| {
-                format!(
+            .filter(|entry| {
+                (entry.check.is_some() || entry.colleague.is_some()) && entry.at > seen_until
+            })
+            .collect();
+        let heard_colleague = unseen
+            .iter()
+            .any(|entry| entry.colleague.is_some())
+            .then(|| {
+                unseen.iter().any(|entry| {
+                    entry
+                        .colleague
+                        .as_ref()
+                        .is_some_and(|c| c.outcome.is_none())
+                })
+            });
+        let lines = unseen
+            .into_iter()
+            .map(|entry| match &entry.colleague {
+                Some(colleague) => {
+                    let sent = jiff::Timestamp::from_second(colleague.at.cast_signed())
+                        .map_or_else(|_| String::new(), |at| at.to_string());
+                    agent::colleague_notice(&entry.text, colleague, &sent)
+                }
+                None => format!(
                     "[You wrote this on your own, with no message from the user; they may be answering it: {}]",
                     entry.text
-                )
+                ),
             })
-            .collect())
+            .collect();
+        Ok((lines, heard_colleague))
     }
 
     /// Saves the user's reaction and tells every browser at once, even while a turn runs. A new

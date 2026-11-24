@@ -10,6 +10,7 @@ import { isJob, jobOf, readIngest } from './job.js';
 import { LIBRARY_READERS } from './library.js';
 import { peopleLine } from './people.js';
 import { pageLabel, pageTitle, piecesOf, showOf } from './pieces.js';
+import { lineWords, sendOf } from './send.js';
 import { shareOf } from './share.js';
 
 /**
@@ -42,6 +43,7 @@ import { shareOf } from './share.js';
  *   | { kind: 'fields', fields: Field[] }
  *   | { kind: 'blocks', blocks: import('./block.js').Block[] }
  *   | { kind: 'share', view: import('./share.js').ShareView }
+ *   | { kind: 'send', view: import('./send.js').SendView }
  *   | { kind: 'file', name: string, title: string, tag: string, meta: string, download: string, view: string }} Body
  */
 /**
@@ -318,6 +320,12 @@ function readShare(result) {
   return view ? { outcome: view.state, tone: 'quiet', body: { kind: 'share', view } } : null;
 }
 
+/** Jet's `tasks_update` call is a send card when it made one, else its plain fields. */
+function readSend(result) {
+  const view = sendOf(result.send);
+  return view ? { outcome: lineWords(view), tone: 'quiet', body: { kind: 'send', view } } : null;
+}
+
 /** A people_update call is one line, worded from its typed command. */
 function readPeople(result, input) {
   const line = peopleLine(input, result);
@@ -347,6 +355,7 @@ const READERS = {
   'quanty/health': readHealth,
   'jet/objectives_update': readShare,
   'jet/people_update': readPeople,
+  'jet/tasks_update': readSend,
 };
 
 // These tools are read the same way on any server, because through the facade a server is an app ID.

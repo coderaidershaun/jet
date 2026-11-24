@@ -122,3 +122,16 @@ button.step:disabled { opacity: .6; }
 .invite p { margin: 0; font-size: 14px; line-height: 21px; }
 .invite-title { margin: 0; color: var(--fg); font-size: 17px; font-weight: 650; }
 .invite-example { color: var(--link-jet); font-style: italic; }
+
+/* The sent list: what the user sent to colleagues' Jets and where each item stands. */
+.sent-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.sent-heading { font-size: 14px; font-weight: 600; }
+.sent-when, .sent-about { color: var(--muted); font-size: 12px; line-height: 17px; }
+.sent-text { margin-top: 6px !important; white-space: pre-wrap; font-size: 13px; line-height: 19px; }
+.sent-state { margin-top: 6px !important; color: var(--muted); font-size: 12px; line-height: 17px; }
+.sent-item[data-tone="good"] .sent-state { color: var(--ok); }
+.sent-item[data-tone="warn"] .sent-state { color: var(--warning); }
+.sent-reply { margin: 8px 0 0; padding: 4px 0 4px 10px; border-left: 3px solid var(--link-jet); font-size: 13px; line-height: 19px; }
+.sent-reply p { margin: 2px 0 0 !important; white-space: pre-wrap; }
+.sent-from { color: var(--muted); font-size: 12px; }
+.sent-chat { margin-top: 10px; }

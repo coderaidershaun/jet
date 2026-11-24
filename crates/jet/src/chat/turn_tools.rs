@@ -18,6 +18,10 @@ pub(crate) trait TurnTools: Send + Sync {
     /// Gives the provider a connection that is tied to this turn. `reads_web` says whether the
     /// provider may search and read the web in it.
     fn bind(&self, identity: &TurnIdentity, reads_web: bool, owner: TurnOwner) -> McpConnection;
+    /// The prompt of this turn carries a colleague's words, so the turn is refused what is
+    /// refused after web text from its first call, and sending to colleagues too when the words
+    /// are a message (`item`) and not only an answer.
+    fn colleague_text_read(&self, owner: TurnOwner, request_id: &str, item: bool);
     /// Cancels the running calls of the request and refuses its later ones.
     /// Only the turns of `owner` are touched, so another user's request with the same id is not.
     fn revoke(&self, owner: TurnOwner, request_id: &str);

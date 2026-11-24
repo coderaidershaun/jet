@@ -540,6 +540,12 @@ impl Store {
                     insert_entry(&tx, ChatId(chat), entry, agent::now_ms())
                 })
                 .transpose()?;
+            if entry.as_ref().is_some_and(|entry| entry.colleague.is_some()) {
+                tx.execute(
+                    "UPDATE inbox_items SET state = 'seen' WHERE task_id = ?1 AND state = 'sent'",
+                    [task],
+                )?;
+            }
             tx.execute(
                 "UPDATE task_runs SET ended_at = ?2, outcome = ?3, found = ?4, sources_read = ?5, tokens = ?6,
                  cost_usd = ?7, entry_id = ?8 WHERE id = ?1",

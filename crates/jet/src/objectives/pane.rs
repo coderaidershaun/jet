@@ -6,7 +6,10 @@ use super::{
     ObjectiveError, ObjectiveId, ObjectiveStatus, ObjectiveView, Objectives, Run, Step, StepId,
     TaskId, TaskState, UserId, time,
 };
-use crate::store::{AgentTask, ChatId, SetBy, SharedNote, Sharing, Snoozed};
+use crate::store::{AgentTask, ChatId, Sent, SetBy, SharedNote, Sharing, Snoozed};
+
+/// How many of the user's newest sent items the pane lists.
+const SENT_SHOWN: usize = 50;
 use serde::Serialize;
 
 /// An objective as its owner sees it in the pane.
@@ -54,6 +57,8 @@ pub(crate) struct Pane {
     tasks: Vec<PaneTask>,
     runs: Vec<Run>,
     shared_with_me: Vec<ColleagueObjective>,
+    /// What the user sent to colleagues' Jets, newest first.
+    sent: Vec<Sent>,
 }
 
 impl Objectives {
@@ -93,6 +98,7 @@ impl Objectives {
             tasks,
             runs: all.runs,
             shared_with_me: self.shared_with_me(user)?,
+            sent: self.store.sent_items(user, SENT_SHOWN)?,
             objectives,
         })
     }
@@ -218,8 +224,8 @@ mod tests {
     use crate::objectives::{Check, Create, Update};
     use crate::scheduler::Signals;
     use crate::store::{
-        NewStep, NewTask, NoteStatus, ObjectiveChat, RunId, RunOutcome, Settled, Store, TaskEnd,
-        test_store,
+        ItemKind, NewStep, NewTask, NoteStatus, ObjectiveChat, RunId, RunOutcome, Settled, Store,
+        TaskEnd, test_store,
     };
     use agent::{McpConnection, TurnIdentity};
     use serde_json::Value;
@@ -314,6 +320,19 @@ mod tests {
             true,
         );
 
+        let chat = store.main_chat(ada).unwrap().id;
+        let asked = TurnOwner { user: ada, chat };
+        let card = objectives
+            .propose_send(
+                asked,
+                bob,
+                ItemKind::Question,
+                "When is the venue booked?",
+                None,
+            )
+            .unwrap();
+        objectives.tap_send(ada, card.id).unwrap();
+
         let read = serde_json::to_value(objectives.pane(ada).unwrap()).unwrap();
         if std::env::var_os("WRITE_FIXTURE").is_some() {
             let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/pane.json");
@@ -375,6 +394,7 @@ mod tests {
         fn bind(&self, _: &TurnIdentity, _: bool, _: TurnOwner) -> McpConnection {
             unreachable!("no turn runs in this test")
         }
+        fn colleague_text_read(&self, _: TurnOwner, _: &str, _: bool) {}
         fn revoke(&self, _: TurnOwner, _: &str) {}
         fn shutdown(&self) {}
     }

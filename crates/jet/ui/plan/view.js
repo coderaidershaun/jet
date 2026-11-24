@@ -4,6 +4,7 @@
 import { h } from '../dom.js';
 import { listOf, orNull, recordOf, stringOf, stringsOf } from '../chat/thread/cards/guard.js';
 import { svgIcon } from './icons.js';
+import { sentSection } from './sent.js';
 import {
   clockWords, costWords, dateWords, daysLeftWords, groupObjectives, heldReason, isEmpty, kindWords, latestNote, dueWords,
   noteTone, outcomeOf, rangeWords, relativeWords, setByWords, sharedWithWords, stepProgress, tokensWords,
@@ -138,6 +139,7 @@ export function planNodes(pane, ctx) {
     section('Recent checks', null,
       pane.runs.length ? h('ul', { class: 'stack' }, ...runs.map((run) => runRow(run, ctx))) : h('p', { class: 'pane-hint', text: 'Jet has not run a check yet.' }),
       pane.runs.length > RUNS_SHOWN ? button(ctx.showAllRuns ? 'Show fewer' : `Show all ${pane.runs.length}`, () => ctx.set.allRuns(!ctx.showAllRuns), { class: 'pane-button more', 'data-key': 'runs-more' }) : null),
+    sentSection(pane.sent, ctx),
     pane.sharedWithMe.length ? section('Shared with you', null, h('div', { class: 'stack' }, ...pane.sharedWithMe.map((item) => sharedCard(item, ctx)))) : null,
   ].filter(Boolean);
 }

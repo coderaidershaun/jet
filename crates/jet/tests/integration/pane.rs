@@ -19,7 +19,7 @@ const PUBLIC_NOTE: &str = "The frame is built";
 const SECRET_TITLE: &str = "Secret plan";
 const CHECK_WHY: &str = "see whether the frame is built";
 
-fn user_id(host: &Host, email: &str) -> i64 {
+pub(super) fn user_id(host: &Host, email: &str) -> i64 {
     database(host)
         .query_row("SELECT id FROM users WHERE email = ?1", [email], |row| {
             row.get(0)
@@ -444,7 +444,7 @@ fn tap_is_told_to_jet_on_next_turn() {
 }
 
 /// Reads the user's event stream on a thread of its own.
-fn listen(user: &User) -> mpsc::Receiver<Value> {
+pub(super) fn listen(user: &User) -> mpsc::Receiver<Value> {
     let mut response = agent()
         .get(format!("{}/api/events", user.url))
         .header("cookie", &user.cookie)
@@ -465,7 +465,7 @@ fn listen(user: &User) -> mpsc::Receiver<Value> {
     receiver
 }
 
-fn pane_changed(events: &mpsc::Receiver<Value>) -> bool {
+pub(super) fn pane_changed(events: &mpsc::Receiver<Value>) -> bool {
     while let Ok(event) = events.recv_timeout(Duration::from_secs(10)) {
         if event["kind"] == "event" && event["data"]["event"]["kind"] == "paneChanged" {
             return true;

@@ -17,6 +17,8 @@ pub(crate) struct CheckSpec {
     /// The sources of the task's objective; a follow-up has none.
     pub sources: Vec<Source>,
     pub reads_web: bool,
+    /// The check brings a colleague's message to the user.
+    pub colleague_text: bool,
 }
 
 /// What a check read and recorded, staged in its binding.
@@ -77,6 +79,8 @@ impl Facade {
                 reads_web: spec.reads_web,
                 owner: spec.owner,
                 has_read_strangers: false,
+                colleague_text: spec.colleague_text,
+                colleague_item: spec.colleague_text,
                 check: Some(CheckState {
                     sources: spec.sources,
                     ..CheckState::default()

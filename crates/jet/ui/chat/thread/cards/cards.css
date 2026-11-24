@@ -198,3 +198,28 @@ details[open] > summary::after { margin-top: -2px; transform: rotate(-135deg); }
 .card-share[data-state="refused"] { opacity: .55; }
 .card-share[data-state="refused"] .share-done { color: var(--muted); }
 @media (min-width: 640px) { .share-go { width: auto; padding: 0 28px; } }
+
+/* The send card: the one place the user lets a message go to a colleague's Jet. The words are drawn as the user will send them. */
+.card-send { max-width: 560px; padding: 14px; }
+.send-title { margin: 0; font-size: 14px; font-weight: 600; line-height: 20px; }
+.send-about { margin: 0; color: var(--muted); font-size: 12px; line-height: 17px; }
+.send-text { margin: 8px 0 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: rgba(255, 255, 255, .04); border-radius: 0 10px 10px 0; font-size: 14px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.send-hint { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 17px; }
+.send-status { margin: 4px 0 0; font-size: 12px; line-height: 17px; }
+.send-status[data-tone="invalid"] { color: var(--danger); }
+.send-go { width: 100%; height: 44px; margin-top: 10px; background: var(--accent); border: 0; border-radius: 22px; color: #06101f; font: 600 14px/20px var(--font); cursor: pointer; }
+.send-go:hover { background: #5a9dff; }
+.send-go:disabled { opacity: .6; cursor: default; }
+.send-go:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.send-done { margin: 8px 0 0; color: var(--ok); font-size: 14px; line-height: 20px; }
+.send-done[data-tone="quiet"] { color: var(--muted); }
+.send-done[data-tone="warn"] { color: var(--warning); }
+@media (min-width: 640px) { .send-go { width: auto; padding: 0 28px; } }
+
+/* A colleague's words in the thread: a quote under their name, apart from Jet's own line. */
+.colleague { margin: 8px 0 0; padding: 6px 0 6px 12px; border-left: 3px solid var(--link-jet); }
+.body > .colleague:first-child { margin-top: 0; }
+.colleague-head { margin: 0; display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; font-size: 12px; line-height: 17px; }
+.colleague-name { font-weight: 600; color: var(--fg); }
+.colleague-label { color: var(--muted); }
+.colleague-text { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }

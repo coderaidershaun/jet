@@ -8,6 +8,7 @@ mod checks;
 mod facade;
 mod github;
 mod import;
+mod inbox;
 mod mcp_fixture;
 mod objectives;
 mod pane;

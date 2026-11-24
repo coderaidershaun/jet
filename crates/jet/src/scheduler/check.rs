@@ -1,7 +1,7 @@
 //! Runs one check from claim to commit: reads the facts, starts the turn, holds the answer to the
 //! evidence rule, and settles the run, the entry and the next task in one transaction.
 
-use super::{Scheduler, brief::Gathered};
+use super::{Scheduler, brief::Gathered, inbox::Before};
 use crate::facade::{CheckSpec, Checked, read_label};
 use crate::lock;
 use crate::objectives::ObjectiveError;
@@ -25,6 +25,8 @@ const AFTER_USER_WROTE_SECONDS: u64 = 10 * 60;
 /// this many times in a row.
 const AFTER_STALE_SECONDS: u64 = 60;
 const STALE_RERUNS: usize = 3;
+/// A quiet check of a colleague's message that names no time looks again this long after.
+const ITEM_AGAIN_SECONDS: u64 = 4 * 60 * 60;
 /// When Jet sets no next check, the server sets one this long after.
 const DEFAULT_NEXT_SECONDS: u64 = 24 * 60 * 60;
 
@@ -113,8 +115,45 @@ impl Scheduler {
                 return self.settle(task, run, None, verdict);
             }
         };
-        let verdict = self.decide(task, &gathered, &settings, now)?;
+        if let Some((item, _)) = &gathered.item {
+            let verdict = match self.before_item(task, item, &settings)? {
+                Before::BringUp => None,
+                Before::Answered => Some(without_entry(
+                    RunOutcome::Spoke,
+                    "answered from the objectives shared with the sender",
+                )),
+                Before::Closed => Some(without_entry(
+                    RunOutcome::Silent,
+                    "the item ended before the check",
+                )),
+                Before::Interrupted => Some(self.give_up_or_wait(
+                    task,
+                    self.now(),
+                    AFTER_INTERRUPTION_SECONDS,
+                    (
+                        RunOutcome::Interrupted,
+                        "the server stopped during the check",
+                    ),
+                    &gathered.title,
+                )),
+            };
+            if let Some(verdict) = verdict {
+                return self.settle(task, run, None, verdict);
+            }
+        }
+        let mut verdict = self.decide(task, &gathered, &settings, now)?;
+        // A colleague's message is never given up: a failed check says nothing and tries again.
+        if gathered.item.is_some() && matches!(verdict.ending, Ending::Failed) {
+            verdict.entry = None;
+            verdict.ending = Ending::Wait {
+                later: self.keep(task, self.now() + ITEM_AGAIN_SECONDS),
+                counted: false,
+            };
+        }
         let settled = self.settle_with(task, run, Some(gathered.versions), verdict)?;
+        if let (Some((item, _)), Some(chats)) = (&gathered.item, self.chats.upgrade()) {
+            chats.pane_changed(item.from);
+        }
         if matches!(settled, Settlement::Stale(Stale::Objective)) {
             self.rerun_on_fresh_facts(task, run)?;
         }
@@ -175,6 +214,7 @@ impl Scheduler {
             task: task.id,
             sources: gathered.sources.clone(),
             reads_web: settings.model.reads_web(),
+            colleague_text: gathered.item.is_some(),
         });
         let start = agent::CheckStart {
             persona: &settings.persona,
@@ -260,8 +300,18 @@ impl Scheduler {
             role: Role::Jet,
             mood: done.mood,
             tools: done.tools,
+            colleague: gathered.item.as_ref().map(|(_, quote)| quote.clone()),
             ..NewEntry::user_text(text)
         });
+        // A colleague's message is never dropped by a quiet check: it comes back, at the time Jet
+        // gave or a few hours later, until the user has seen it or it expires.
+        let ending = match (gathered.item.is_some() && silent, later) {
+            (true, later) => Ending::Wait {
+                later: later.unwrap_or_else(|| self.keep(task, now + ITEM_AGAIN_SECONDS)),
+                counted: false,
+            },
+            (false, later) => Ending::Next(later),
+        };
         Ok(Verdict {
             outcome: if silent {
                 RunOutcome::Silent
@@ -273,7 +323,7 @@ impl Scheduler {
             tokens: Some(done.tokens),
             cost_usd: done.cost_usd,
             entry,
-            ending: Ending::Next(later),
+            ending,
         })
     }
 
@@ -511,6 +561,19 @@ impl Scheduler {
             ending,
         };
         self.settle(task, run, None, verdict)
+    }
+}
+
+/// A run that ends with no check-in and no next task.
+fn without_entry(outcome: RunOutcome, found: &str) -> Verdict {
+    Verdict {
+        outcome,
+        found: found.to_owned(),
+        read: Vec::new(),
+        tokens: None,
+        cost_usd: None,
+        entry: None,
+        ending: Ending::Next(None),
     }
 }
 

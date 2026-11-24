@@ -49,6 +49,11 @@ struct Binding {
     /// `github_activity` ran in this turn, or a colleague's shared objectives were read, so it
     /// has read text written by others.
     has_read_strangers: bool,
+    /// A colleague's message is in this turn's prompt, or was read by the turn: the turn is
+    /// refused what is refused after web text, and `send`, from its first call.
+    colleague_text: bool,
+    /// The colleague's words are a message to the user, so `send` is refused too.
+    colleague_item: bool,
     /// Set on the turn of a check, which may only read.
     check: Option<CheckState>,
 }
@@ -136,12 +141,22 @@ impl TurnTools for Facade {
                 reads_web,
                 owner,
                 has_read_strangers: false,
+                colleague_text: false,
+                colleague_item: false,
                 check: None,
             },
         );
         McpConnection {
             url: lock(&self.url).clone(),
             token,
+        }
+    }
+    fn colleague_text_read(&self, owner: TurnOwner, request_id: &str, item: bool) {
+        for binding in lock(&self.bindings).values_mut() {
+            if binding.owner == owner && binding.turn.request_id == request_id {
+                binding.colleague_text = true;
+                binding.colleague_item |= item;
+            }
         }
     }
     fn revoke(&self, owner: TurnOwner, request_id: &str) {

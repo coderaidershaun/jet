@@ -9,6 +9,7 @@ import { blocksBody, fieldNodes } from './block-view.js';
 import { findSource, splitCitations } from './cite.js';
 import { RUNNING } from './job.js';
 import { callState, cardOf } from './model.js';
+import { sendCard } from './send-view.js';
 import { shareCard } from './share-view.js';
 import { fillShow } from './show.js';
 
@@ -242,6 +243,7 @@ function defaultCard(card, parts) {
 function renderResultCard(card, parts) {
   if (card.state === 'done' && card.body?.kind === 'file') return fileCard(card);
   if (card.state === 'done' && card.body?.kind === 'share') return shareCard(card);
+  if (card.state === 'done' && card.body?.kind === 'send') return sendCard(card);
   return defaultCard(card, { ...parts, readImage: (path) => parts.readImage(card.call.server, path) });
 }
 

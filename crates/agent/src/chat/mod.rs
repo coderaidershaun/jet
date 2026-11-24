@@ -175,7 +175,41 @@ pub struct Entry {
     /// Set on an entry that Jet wrote on a check, with no message from the user before it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check: Option<CheckIn>,
+    /// A colleague's words, kept apart from Jet's own text: a message the colleague sent to this
+    /// user, or the colleague's answer to what the user sent. Never part of `text`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub colleague: Option<Colleague>,
     pub at: u64,
+}
+
+/// What a colleague said, with who said it. The words are data: they reach a model only inside a
+/// labelled block, never as Jet's own text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Colleague {
+    /// The colleague's user id: the sender of a message, the one who answered an answer.
+    pub user: u64,
+    pub name: String,
+    /// The inbox item this belongs to.
+    pub item: u64,
+    /// `question`, `task` or `note`.
+    pub kind: String,
+    pub text: String,
+    /// Unix seconds: when the message was sent, or when the colleague answered.
+    pub at: u64,
+    /// `None` for a message to this user; else how the colleague answered what the user sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<ColleagueOutcome>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ColleagueOutcome {
+    Answered,
+    Declined,
+    Done,
+    /// The colleague's Jet answered from the objectives its user shares, with no words from them.
+    JetAnswered,
 }
 
 /// Which agent-task and which run of it wrote a check-in.

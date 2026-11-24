@@ -9,6 +9,7 @@
 import { h } from '../../dom.js';
 import { clockTime } from '../clock.js';
 import { typeset } from './math.js';
+import { colleagueNode } from './cards/colleague.js';
 import { callState } from './cards/model.js';
 import { createCardList, linkCitations, openSource } from './cards/view.js';
 import { fillAttachments } from './attachments.js';
@@ -95,8 +96,13 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
       bubble.setAttribute('aria-busy', 'true');
       body.append(dots(), h('span', { class: 'still', text: 'still thinking…' }));
       return;
+    } else if (entry.colleague?.outcome) {
+      // The words are the other person's own, so only their name and words are shown, never the server's line about them.
+      body.append(colleagueNode(entry.colleague) ?? '');
     } else {
       body.innerHTML = entry.html;
+      const quote = entry.colleague ? colleagueNode(entry.colleague) : null;
+      if (quote) body.append(quote);
       linkCitations(body, known);
       sealCode(body);
       typeset(body);
@@ -156,7 +162,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     const calls = entry ? (entry.tools ?? []).map((call) => call.id + ':' + callState(call) + (call.progress ? JSON.stringify(call.progress) : '')).join(' ') : '';
     const files = row.type === 'user' ? (entry.attachments ?? []).map((file) => file.id) : '';
     const reactions = (row.reactions ?? []).map((reaction) => reaction.by + reaction.emoji);
-    const shown = entry && [entry.id, entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at, calls, files, reactions];
+    const shown = entry && [entry.id, entry.status, row.type === 'user' ? entry.text : '', entry.html, entry.error, entry.at, calls, files, reactions, entry.colleague];
     return JSON.stringify([row.type, row.label, row.message, row.first, row.last, isFinal, shown, failure && failure.kind]);
   };
 

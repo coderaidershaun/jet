@@ -11,7 +11,7 @@ crates/jet/                       the server program (axum) and the page it serv
   src/evidence/                   outside evidence: a GitHub repository's activity, each user's sealed GitHub token
   src/facade/                     the seventeen MCP tools the provider sees
   src/objectives/                 objectives and agent-tasks: computed dates, local time to UTC
-  src/scheduler/                  wakes Jet when an agent-task falls due and runs the check
+  src/scheduler/                  wakes Jet when an agent-task falls due and runs the check, and brings a colleague's item to its user
   src/files/                      uploads, files Jet writes, the sandboxed reader child, export, all kept in the store
   src/server/                     shared host state, listen address and the remaining routes
   src/voice/                      the speak and hear routes and their limits
@@ -450,6 +450,37 @@ Tests move time with `JET_TEST_CLOCK_FILE`: the host reads Unix seconds from tha
 asks for the time (the real time while the file is missing), and its scheduler then looks every
 20 ms. `JET_TEST_CHECK_LIMIT_MS` shortens the five-minute limit. The stand-in provider takes the
 script of a check from `check-script.json` in the data directory.
+
+## Colleague items
+
+A user tells their Jet to send a colleague's Jet a question, a task or a note (`tasks_update` `send`);
+anyone in the directory may send to anyone, at most 20 items a day to one person, 2,000 characters each.
+Migration `0011_inbox.sql` holds the send cards and the items.
+
+- **Nothing goes before the tap.** `send` stores nothing: the thread shows a send card with the
+  recipient's name and the exact text, and only the sender's own tap on Send
+  (`POST /api/inbox/cards/{id}/send`) stores the item. The sender is the signed-in user, never
+  something in the text. `GET /api/inbox/cards?ids=` shows a card as it is after a reload.
+- **Jet first tries to answer alone.** The scheduler runs a turn that is given only the item and the
+  objectives the recipient shares with the sender (the read a colleague's Jet gets), with its own
+  system prompt (`answer.md`, filled with Jet's name only) and no tools; no notes, chat or private
+  note reach it. The turn answers, or says `[CANNOT_ANSWER]`. An answer goes to the sender marked as
+  from Jet, and the recipient's main chat gets a line. With nothing shared, with the marker, or with
+  a provider error or timeout, nothing goes to the sender.
+- **Otherwise Jet brings it up.** The item is an agent-task of the recipient's Jet, run like a
+  check with a brief that holds the item in a labelled block (`<colleague_item from kind sent>`: data,
+  no instruction; a `<` in the words becomes `&lt;`). Jet posts its own line in the objective's
+  chat when the recipient owns the objective the item names, else in the main chat; the colleague's
+  words are kept beside it, as a quote with the sender's id (`Entry.colleague`), never in the line.
+- **Only the recipient's own words reply.** `tasks_update` `reply` (item, `answered`, `declined` or
+  `done`, the words) ends the item; the sender's chat gets an entry shown as the colleague's words
+  and an unread count. A task becomes an objective only by the normal way.
+- **States.** `sent`, `seen` (brought up), `answered`, `declined`, `done`, or `expired` after 14 days.
+  The sender's pane lists them (`sent[]` in `GET /api/pane`), and `paneChanged` follows each change.
+- **A colleague's words never make Jet act.** They reach a model only in the labelled block. The check
+  of an item is read-only; a user turn whose prompt first carries a colleague's words is refused what
+  is refused after web text, and `send`, from its first call. `reply` and `create` with no sources stay
+  allowed there.
 
 ## Quanty
 

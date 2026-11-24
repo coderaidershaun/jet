@@ -52,6 +52,7 @@ pub(super) fn router(host: Server) -> Router {
         .merge(evidence::router())
         .merge(super::shares::router())
         .merge(super::pane::router())
+        .merge(super::inbox::router())
         .merge(chats::router())
         .route("/api/status", get(status))
         .route("/api/snapshot", get(snapshot))

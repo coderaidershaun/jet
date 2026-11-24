@@ -18,7 +18,7 @@ use super::{BridgeError, ChatState, TurnTools};
 use crate::files::Files;
 use crate::lock;
 use crate::scheduler::Signals;
-use crate::store::{Chat, ChatId, ChatKind, ChatSummary, ObjectiveId, Store, UserId};
+use crate::store::{Chat, ChatId, ChatKind, ChatSummary, ObjectiveId, Posted, Store, UserId};
 
 /// What every chat of the server shares.
 pub(crate) struct Chats {
@@ -220,6 +220,21 @@ impl Chats {
         lock(&feed).publish(None, None, json!({"kind":"paneChanged"}));
     }
 
+    /// Tells each page that the entries an item's ending posted are there, with the chats' unread
+    /// counts, and each person's pane that an item changed.
+    pub(crate) fn announce_posted(self: &Arc<Self>, posted: &[Posted]) {
+        for Posted { user, chat, entry } in posted {
+            let shown = agent::ShownEntry {
+                html: agent::render_markdown(&entry.text),
+                entry: entry.clone(),
+            };
+            if let Ok(runtime) = self.chat(*user, Some(*chat)) {
+                runtime.announce(&shown);
+            }
+            self.pane_changed(*user);
+        }
+    }
+
     /// Tells the people an objective is shared with that their "shared with you" list changed.
     pub(crate) fn viewers_pane_changed(&self, objective: ObjectiveId) {
         match self.store.viewers(objective) {
@@ -412,6 +427,7 @@ mod tests {
         fn bind(&self, _: &TurnIdentity, _: bool, _: TurnOwner) -> McpConnection {
             unreachable!("no turn runs in this test")
         }
+        fn colleague_text_read(&self, _: TurnOwner, _: &str, _: bool) {}
         fn revoke(&self, _: TurnOwner, _: &str) {}
         fn shutdown(&self) {}
     }

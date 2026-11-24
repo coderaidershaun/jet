@@ -7,6 +7,7 @@ mod directory;
 mod files;
 mod github_tokens;
 mod import;
+mod inbox;
 mod notes;
 mod objectives;
 mod pane;
@@ -23,6 +24,10 @@ pub(crate) use chats::{Chat, ChatId, ChatKind, ChatSummary};
 pub(crate) use directory::{Email, NewUser, Person, Team, User, UserId};
 pub(crate) use files::Added;
 pub use import::ImportError;
+pub(crate) use inbox::{
+    CardId, Close, Closed, Item, ItemId, ItemKind, ItemState, Posted, ReplyOutcome, SendCard,
+    SendTap, Sent,
+};
 pub(crate) use objectives::{
     Edit, NewObjective, Objective, ObjectiveChat, ObjectiveId, ObjectiveStatus,
 };
@@ -79,6 +84,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0008_shares.sql"),
     include_str!("migrations/0009_pane_taps.sql"),
     include_str!("migrations/0010_check_runs.sql"),
+    include_str!("migrations/0011_inbox.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]

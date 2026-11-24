@@ -90,6 +90,25 @@
       "tokens": 1200
     }
   ],
+  "sent": [
+    {
+      "answeredByJet": false,
+      "chatId": 1,
+      "closedAt": null,
+      "id": 1,
+      "kind": "question",
+      "objectiveId": null,
+      "objectiveTitle": null,
+      "reply": null,
+      "sentAt": 1767225600,
+      "state": "sent",
+      "text": "When is the venue booked?",
+      "to": {
+        "id": 2,
+        "name": "bob@example.com"
+      }
+    }
+  ],
   "sharedWithMe": [
     {
       "daysLeft": 31,

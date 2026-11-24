@@ -4,6 +4,7 @@
 
 mod brief;
 mod check;
+mod inbox;
 
 use crate::chat::Chats;
 use crate::facade::Facade;
@@ -17,6 +18,9 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
+
+/// How long a colleague's item waits for an answer before it expires.
+const ITEM_LIFETIME: Duration = Duration::from_secs(14 * 24 * 60 * 60);
 
 /// The longest the scheduler sleeps when no task is due sooner.
 const LONGEST_SLEEP: Duration = Duration::from_secs(60);
@@ -208,10 +212,22 @@ impl Scheduler {
         self.recover().map_err(Paused)?;
         while !self.stopping.load(Ordering::SeqCst) {
             let now = (self.clock)();
+            self.expire_items(now).map_err(Paused)?;
             let ran = self.run_oldest_due(now).map_err(Paused)?;
             if !ran {
                 self.signals.wait(self.sleep(now).map_err(Paused)?);
             }
+        }
+        Ok(())
+    }
+
+    /// Ends the colleague items nobody answered in two weeks, and tells their senders' panes.
+    fn expire_items(&self, now: u64) -> Result<(), StoreError> {
+        let senders = self.store.expire_items(now, ITEM_LIFETIME.as_secs())?;
+        if let Some(chats) = self.chats.upgrade() {
+            senders
+                .into_iter()
+                .for_each(|user| chats.pane_changed(user));
         }
         Ok(())
     }

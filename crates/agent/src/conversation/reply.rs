@@ -293,6 +293,7 @@ impl Reply {
             error,
             tools: turn.map(|turn| turn.tools().to_vec()).unwrap_or_default(),
             check: None,
+            colleague: None,
         }
     }
 

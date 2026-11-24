@@ -36,10 +36,11 @@ export function readPane(raw) {
     tasks: records(pane.tasks),
     runs: records(pane.runs),
     sharedWithMe: records(pane.sharedWithMe),
+    sent: records(pane.sent),
   };
 }
 
-export const isEmpty = (pane) => !pane.objectives.length && !pane.tasks.length && !pane.runs.length && !pane.sharedWithMe.length;
+export const isEmpty = (pane) => !pane.objectives.length && !pane.tasks.length && !pane.runs.length && !pane.sharedWithMe.length && !pane.sent.length;
 
 /** Objectives still being worked on, then those that are finished or dropped. */
 export function groupObjectives(objectives) {
@@ -133,6 +134,7 @@ export function keysOf(pane) {
     ...pane.tasks.map((t) => `t${t.id}:${t.version}`),
     ...pane.runs.map((r) => `r${r.id}`),
     ...pane.sharedWithMe.map((s) => `s${s.id}:${recordOf(s.latest).at ?? ''}`),
+    ...pane.sent.map((i) => `i${i.id}:${i.state}`),
   ];
 }
 

@@ -320,6 +320,7 @@ fn jet_text(text: &str) -> NewEntry {
         error: None,
         tools: Vec::new(),
         check: None,
+        colleague: None,
     }
 }
 

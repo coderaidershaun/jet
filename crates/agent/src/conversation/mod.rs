@@ -2,6 +2,8 @@
 //! forget the thread, edit the notes, and let the review keep them current.
 
 mod accepted;
+mod answer;
+mod colleague;
 mod hosts;
 mod memory;
 mod persona;
@@ -13,6 +15,8 @@ mod wake;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+pub use answer::{AnswerAsk, AnswerError, CANNOT_ANSWER, answer_from_shared};
+pub use colleague::colleague_notice;
 use memory::Saved;
 pub use memory::{InMemory, MemoryError, NewEntry, Session, Storage, now_ms};
 pub use reply::Reply;
@@ -23,7 +27,7 @@ pub use review::{
 use session_policy::decide;
 pub use wake::{
     CHECK_BUDGET_USD, CHECK_TIME_LIMIT, CheckDone, CheckFacts, CheckInState, CheckStart, CheckTurn,
-    ObjectiveFacts, SILENT, StepFacts, WakeError, brief, start_check,
+    ColleagueFacts, ObjectiveFacts, SILENT, StepFacts, WakeError, brief, start_check,
 };
 
 use crate::chat::{

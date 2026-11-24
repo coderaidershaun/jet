@@ -85,8 +85,16 @@ async fn cancel(
     Path(id): Path<i64>,
 ) -> Result<Json<impl Serialize + use<>>, Response> {
     let user = signed_in.user.id;
-    run(host, true, user, move |objectives| {
+    let (chats, objectives) = (host.chats.clone(), host.objectives.clone());
+    let cancelled = run(host, true, user, move |objectives| {
         objectives.tap_cancel(user, TaskId(id))
     })
-    .await
+    .await?;
+    // A task that would have brought a colleague's item up ends the item as declined.
+    let posted = on_worker(move || objectives.decline_item_of(user, TaskId(id)))
+        .await
+        .map_err(|failed| BridgeError::from(failed).into_response())?
+        .map_err(IntoResponse::into_response)?;
+    chats.announce_posted(&posted);
+    Ok(cancelled)
 }

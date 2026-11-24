@@ -14,17 +14,18 @@ mod turn;
 pub mod voice;
 
 pub use chat::{
-    Attachment, CheckIn, ContextStatus, Effort, Entry, EntryId, EntryStatus, Event, FACADE_TOOLS,
-    Failure, MEMORY_LIMIT, McpConnection, Model, Mood, Notes, Persona, RECENT_LIMIT, Reaction,
-    Role, SessionId, ShownEntry, TOOL_USE_META, TURN_HEADER, ToolCall, ToolStart, TurnIdentity,
-    USER_LIMIT,
+    Attachment, CheckIn, Colleague, ColleagueOutcome, ContextStatus, Effort, Entry, EntryId,
+    EntryStatus, Event, FACADE_TOOLS, Failure, MEMORY_LIMIT, McpConnection, Model, Mood, Notes,
+    Persona, RECENT_LIMIT, Reaction, Role, SessionId, ShownEntry, TOOL_USE_META, TURN_HEADER,
+    ToolCall, ToolStart, TurnIdentity, USER_LIMIT,
 };
 pub use conversation::{
-    CHECK_BUDGET_USD, CHECK_TIME_LIMIT, CheckDone, CheckFacts, CheckInState, CheckStart, CheckTurn,
-    Conversation, ConversationError, InMemory, MemoryError, Message, NewEntry, ObjectiveFacts,
-    Promise, REVIEW_GAP, REVIEW_QUIET, Reply, Review, ReviewError, ReviewOutcome, ReviewedChat,
-    SILENT, Session, StepFacts, Storage, WakeError, brief as check_brief, now_ms, review_chats,
-    start_check,
+    AnswerAsk, AnswerError, CANNOT_ANSWER, CHECK_BUDGET_USD, CHECK_TIME_LIMIT, CheckDone,
+    CheckFacts, CheckInState, CheckStart, CheckTurn, ColleagueFacts, Conversation,
+    ConversationError, InMemory, MemoryError, Message, NewEntry, ObjectiveFacts, Promise,
+    REVIEW_GAP, REVIEW_QUIET, Reply, Review, ReviewError, ReviewOutcome, ReviewedChat, SILENT,
+    Session, StepFacts, Storage, WakeError, answer_from_shared, brief as check_brief,
+    colleague_notice, now_ms, review_chats, start_check,
 };
 pub use feeling::{Feeling, JevError, feel_message};
 pub use markdown::{CUES, Cue, dollar_math, render_markdown};

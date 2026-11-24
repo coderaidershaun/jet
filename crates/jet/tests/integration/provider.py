@@ -6,8 +6,19 @@ review = '--json-schema' in sys.argv
 hang = re.search(r'\bhang\b', prompt) is not None
 with open('calls', 'a') as calls:
     calls.write('review\n' if review else 'reply\n')
+# Every call leaves its arguments and its standard input, for a test that scans what the model was sent.
+with open('args.jsonl', 'a') as record:
+    record.write(json.dumps({'args': sys.argv[1:], 'input': prompt}) + '\n')
 def emit(value):
     print(json.dumps(value), flush=True)
+# The turn that answers a colleague from shared objectives: a message to answer in a labelled block
+# and the shared objectives. A message that says "unanswerable" cannot be answered from them.
+if '<shared_objectives>' in prompt:
+    shared = json.loads(prompt.split('<shared_objectives>')[1].split('</shared_objectives>')[0])
+    answer = '[CANNOT_ANSWER]' if 'unanswerable' in prompt or not shared else shared[0]['title'] + ' is due ' + shared[0]['due'] + '.'
+    emit({'type':'system','subtype':'init','session_id':'fixture-session','model':'fixture-model'})
+    emit({'type':'result','subtype':'success','is_error':False,'result':answer,'duration_ms':1,'total_cost_usd':0,'usage':{}})
+    sys.exit(0)
 if review and not hang:
     # The notes review: what the user said, each line followed by the chat it came from, becomes
     # their RECENT note.

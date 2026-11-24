@@ -3,8 +3,8 @@
 
 use super::Scheduler;
 use crate::objectives::ObjectiveError;
-use crate::store::{AgentTask, Source, SourceKind, Versions};
-use agent::{CheckFacts, CheckInState, ObjectiveFacts, Role, StepFacts};
+use crate::store::{AgentTask, Item, Source, SourceKind, Versions};
+use agent::{CheckFacts, CheckInState, Colleague, ColleagueFacts, ObjectiveFacts, Role, StepFacts};
 
 /// The most entries of the chat that are read to answer the questions of the brief.
 const ENTRIES_READ: usize = 200;
@@ -15,6 +15,8 @@ pub(super) struct Gathered {
     pub sources: Vec<Source>,
     /// What the check's notices call the task: the objective's title, or the task's reason.
     pub title: String,
+    /// The colleague's message the task brings to the user, and the quote that goes with it.
+    pub item: Option<(Item, Colleague)>,
 }
 
 impl Scheduler {
@@ -92,6 +94,11 @@ impl Scheduler {
             ),
             None => (None, None, Vec::new(), task.why.clone()),
         };
+        let item = self
+            .store
+            .item_of_task(task.id)?
+            .map(|item| self.objectives.quote(&item).map(|quote| (item, quote)))
+            .transpose()?;
         let facts = CheckFacts {
             local_time: self.objectives.describe(user, now)?,
             why: task.why.clone(),
@@ -107,6 +114,13 @@ impl Scheduler {
                 .map(|entry| (entry.role, entry.text))
                 .collect(),
             jet_name: name.to_owned(),
+            colleague: item.as_ref().map(|(_, quote)| ColleagueFacts {
+                item: quote.item,
+                from: quote.name.clone(),
+                kind: quote.kind.clone(),
+                sent: self.objectives.describe(user, quote.at).unwrap_or_default(),
+                text: quote.text.clone(),
+            }),
         };
         Ok(Gathered {
             facts,
@@ -116,6 +130,7 @@ impl Scheduler {
             },
             sources,
             title,
+            item,
         })
     }
 }
