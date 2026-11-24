@@ -14,6 +14,7 @@ fn request(prompt: &str) -> Request {
         session: SessionMode::New,
         schema: None,
         mcp: None,
+        hosts: Vec::new(),
     }
 }
 fn fake(dir: &std::path::Path) -> CodexCli {
@@ -28,6 +29,7 @@ fn codex_stream_resume_schema_usage_tool_results_and_terminal_errors() {
         url: "http://127.0.0.1:4321/mcp".into(),
         token: "turn-token".into(),
     });
+    req.hosts = vec!["github.com".into()];
     let mut turn = Turn::start(&cli, &req).unwrap();
     let steps: Vec<_> = turn.by_ref().collect();
     assert_eq!(turn.text(), "Hello from Codex.");
@@ -43,20 +45,67 @@ fn codex_stream_resume_schema_usage_tool_results_and_terminal_errors() {
     let args: Vec<String> =
         serde_json::from_slice(&std::fs::read(dir.path().join("fake-codex-args.json")).unwrap())
             .unwrap();
-    assert!(args.contains(&"model_reasoning_effort=\"high\"".into()));
-    for flag in [
-        "--ignore-user-config",
-        "--ignore-rules",
-        "features.shell_tool=false",
+    // Codex keeps its web tools off: it cannot limit page reading to the user's links, and it
+    // names no tool use, so Jet could not order its writes after a web read.
+    let mut expected: Vec<String> = [
+        "exec",
+        "-c",
+        "sandbox_mode=\"read-only\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-c",
+        "forced_login_method=\"chatgpt\"",
+        "-c",
+        "developer_instructions=\"Answer briefly.\"",
+        "-c",
+        "model_reasoning_effort=\"high\"",
+        "-c",
+        "project_doc_max_bytes=0",
+        "-c",
+        "web_search=\"disabled\"",
+    ]
+    .map(String::from)
+    .into();
+    for feature in [
+        "shell_tool",
+        "plugins",
+        "apps",
+        "hooks",
+        "memories",
+        "multi_agent",
+        "browser_use",
+        "computer_use",
+        "image_generation",
+        "view_image",
+        "skill_search",
     ] {
-        assert!(args.contains(&flag.into()), "{flag}");
+        expected.extend(["-c".into(), format!("features.{feature}=false")]);
     }
-    assert!(args.contains(&"mcp_servers.jet.http_headers.x-jet-turn=\"turn-token\"".into()));
-    assert!(args.contains(&format!(
-        "mcp_servers.jet.enabled_tools={}",
-        json!(agent::FACADE_TOOLS)
-    )));
-    assert!(args.contains(&"mcp_servers.jet.default_tools_approval_mode=\"approve\"".into()));
+    for setting in [
+        "mcp_servers.jet.url=\"http://127.0.0.1:4321/mcp\"".to_owned(),
+        "mcp_servers.jet.http_headers.x-jet-turn=\"turn-token\"".to_owned(),
+        format!(
+            "mcp_servers.jet.enabled_tools={}",
+            json!(agent::FACADE_TOOLS)
+        ),
+        "mcp_servers.jet.default_tools_approval_mode=\"approve\"".to_owned(),
+        "mcp_servers.jet.tool_timeout_sec=300".to_owned(),
+    ] {
+        expected.extend(["-c".into(), setting]);
+    }
+    expected.extend(
+        [
+            "--ignore-user-config",
+            "--ignore-rules",
+            "--skip-git-repo-check",
+            "--json",
+            "--model",
+            "gpt-6.1-sol",
+            "-",
+        ]
+        .map(String::from),
+    );
+    assert_eq!(args, expected);
     for (prompt, expected) in [("context-usage", 42), ("context-overflow", u64::MAX)] {
         let Step::Finished(summary) = Turn::start(&cli, &request(prompt)).unwrap().last().unwrap()
         else {

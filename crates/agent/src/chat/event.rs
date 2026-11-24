@@ -50,8 +50,9 @@ pub enum Event {
     Text {
         delta: String,
     },
-    /// The model called a library tool; it is running now. A call still running when the reply
-    /// ends gets no `ToolFinished`, and the saved entry keeps only finished calls.
+    /// The model called a library tool, or searched or read the web (`server` is `web`, `tool` is
+    /// `search` or `fetch`); it is running now. A call still running when the reply ends gets no
+    /// `ToolFinished`, and the saved entry keeps only finished calls.
     ToolStarted(ToolStart),
     /// The call with the same `id` came back.
     ToolFinished(ToolCall),

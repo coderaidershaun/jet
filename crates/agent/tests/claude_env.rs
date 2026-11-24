@@ -46,42 +46,56 @@ fn claude_runs_with_only_jets_tools_and_a_scrubbed_environment() {
             url: "http://localhost/mcp".into(),
             token: "fixture".into(),
         }),
+        hosts: vec!["docs.rs".into(), "github.com".into()],
         ..chat_request(prompt, SessionMode::Resume(SessionId("abc-123".into())))
     };
     let steps: Vec<Step> = Turn::start(&claude, &request).unwrap().collect();
     assert!(matches!(steps.last(), Some(Step::Finished(_))), "{steps:?}");
 
-    // Claude Code must run with nothing but Jet's own tools and no settings of the user's.
-    let args = recorded_args(cwd.path());
-    let value_of = |flag: &str| &args[args.iter().position(|arg| arg == flag).unwrap() + 1];
-    assert_eq!(args[0], "-p");
-    assert_eq!(value_of("--system-prompt"), "You are Jet.");
-    for (flag, value) in [
-        ("--tools", ""),
-        ("--setting-sources", ""),
-        ("--permission-prompts", "none"),
-    ] {
-        assert_eq!(value_of(flag), value, "{flag}");
-    }
-    for flag in [
+    // Claude Code must run with nothing but Jet's tools, its own web search, page reading that
+    // asks Jet first, and no settings of the user's. Safe mode is left out, because it would drop
+    // the MCP servers.
+    let hook = r#"{"hooks":{"PreToolUse":[{"hooks":[{"headers":{"x-jet-turn":"fixture"},"onFailure":"block","timeout":10,"type":"http","url":"http://localhost/web-hook?hosts=docs.rs%2Cgithub.com"}],"matcher":"WebFetch"}]}}"#;
+    let mcp = r#"{"mcpServers":{"jet":{"headers":{"x-jet-turn":"fixture"},"type":"http","url":"http://localhost/mcp"}}}"#;
+    let allowed = FACADE_TOOLS
+        .map(|tool| format!("mcp__jet__{tool}"))
+        .join(",")
+        + ",WebSearch,WebFetch(domain:docs.rs),WebFetch(domain:github.com)";
+    let expected = [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--model",
+        "sonnet",
+        "--effort",
+        "medium",
+        "--system-prompt",
+        "You are Jet.",
+        "--tools",
+        "WebSearch,WebFetch",
+        "--setting-sources",
+        "",
+        "--settings",
+        hook,
         "--disable-slash-commands",
         "--strict-mcp-config",
+        "--mcp-config",
+        mcp,
+        "--allowedTools",
+        &allowed,
         "--no-chrome",
-    ] {
-        assert!(args.iter().any(|arg| arg == flag), "{flag}");
-    }
-    assert!(
-        !args.iter().any(|arg| arg == "--safe-mode"),
-        "safe mode would drop the MCP servers"
-    );
-    assert!(value_of("--mcp-config").contains("http://localhost/mcp"));
-    assert_eq!(
-        value_of("--allowedTools"),
-        &FACADE_TOOLS
-            .map(|tool| format!("mcp__jet__{tool}"))
-            .join(",")
-    );
-    assert_eq!(args[args.len() - 2..], ["--resume", "abc-123"]);
+        "--permission-prompts",
+        "none",
+        "--autocompact",
+        "100k",
+        "--max-budget-usd",
+        "1.00",
+        "--resume",
+        "abc-123",
+    ];
+    assert_eq!(recorded_args(cwd.path()), expected);
 
     let env = std::fs::read_to_string(cwd.path().join("fake-claude-env.json")).unwrap();
     assert_eq!(

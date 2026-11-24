@@ -9,15 +9,18 @@ use crate::files::Files;
 use crate::lock;
 use agent::{McpConnection, TurnIdentity, apps::Registry, mcp::HttpMcpClient};
 use axum::{
-    Router,
-    extract::{Request, State},
+    Json, Router,
+    body::Bytes,
+    extract::{Query, Request, State},
     http::StatusCode,
     middleware::{self, Next},
     response::{IntoResponse, Response},
+    routing::post,
 };
 use rmcp::transport::streamable_http_server::{
     StreamableHttpService, session::local::LocalSessionManager,
 };
+use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex, Weak},
@@ -28,6 +31,8 @@ pub(crate) const HEADER: &str = agent::TURN_HEADER;
 struct Binding {
     turn: TurnContext,
     calls: HashSet<String>,
+    /// The provider may search and read the web in this turn.
+    reads_web: bool,
 }
 pub(crate) struct Facade {
     registry: Arc<Mutex<Registry>>,
@@ -82,18 +87,20 @@ impl Facade {
             Default::default(),
         );
         Router::new()
+            .route("/web-hook", post(web_hook))
             .nest_service("/mcp", service)
             .layer(middleware::from_fn_with_state(self.clone(), authorize))
     }
 }
 impl TurnTools for Facade {
-    fn bind(&self, identity: &TurnIdentity) -> McpConnection {
+    fn bind(&self, identity: &TurnIdentity, reads_web: bool) -> McpConnection {
         let token = uuid::Uuid::new_v4().to_string();
         lock(&self.bindings).insert(
             token.clone(),
             Binding {
                 turn: TurnContext::from(identity),
                 calls: HashSet::new(),
+                reads_web,
             },
         );
         McpConnection {
@@ -159,4 +166,24 @@ async fn authorize(State(facade): State<Arc<Facade>>, request: Request, next: Ne
         }
     }
     response
+}
+
+/// Claude Code asks here before each page read, with the hosts of the turn in the `hosts` query.
+/// Any other address, and any request that cannot be read, is refused, and the reason tells Jet to
+/// ask for the link.
+async fn web_hook(Query(query): Query<HashMap<String, String>>, body: Bytes) -> Json<Value> {
+    let hosts = query.get("hosts").map_or("", String::as_str);
+    let host = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|input| url::Url::parse(input["tool_input"]["url"].as_str()?).ok())
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase));
+    if host.is_some_and(|host| hosts.split(',').any(|allowed| allowed == host)) {
+        // No decision: Claude Code's own allow rule for the host still has to pass.
+        return Json(json!({}));
+    }
+    Json(json!({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": "Jet reads pages only on sites whose link the user wrote in this chat. Ask the user to paste the link to this page.",
+    }}))
 }

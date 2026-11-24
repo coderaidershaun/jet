@@ -36,6 +36,17 @@ pub fn result(codex: bool, id: &str, result: Value) {
         );
     }
 }
+/// One of Claude Code's own web tools, written as Claude Code writes it.
+pub fn web_call(id: &str, tool: &str, input: Value) {
+    emit(
+        json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":id,"name":tool,"input":input}]}}),
+    );
+}
+pub fn web_result(id: &str, text: &str, is_error: bool) {
+    emit(
+        json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":id,"is_error":is_error,"content":text}]}}),
+    );
+}
 pub fn finish(codex: bool) {
     let text = "mood: neutral\nFixture app answered.";
     if codex {

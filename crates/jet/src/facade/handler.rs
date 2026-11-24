@@ -61,6 +61,13 @@ impl ServerHandler for Handler {
             }
             .into());
         }
+        if let Some(refusal) = self
+            .refuse_after_web_text(&params.name, &arguments, &binding, &context)
+            .await
+        {
+            let error = json!({"kind": refusal.kind(), "message": refusal.to_string()});
+            return Ok(CallToolResult::structured_error(json!({"error": error})).into());
+        }
         let result = self
             .execute(&params.name, arguments, &token, binding, context)
             .await;
@@ -72,6 +79,35 @@ impl ServerHandler for Handler {
         .into())
     }
 }
+/// Why a call that could change something, or send the user's data out, was refused after the
+/// turn read web text. A web page can hold instructions from a stranger, so only the user's next
+/// message can allow such a call.
+#[derive(Debug, thiserror::Error)]
+enum WriteRefused {
+    #[error(
+        "this reply has read web text, so Jet refuses changes and app tools that are not read-only until the user's next message. Tell the user exactly what you wanted to do, so their next message can allow it"
+    )]
+    WriteAfterWebText,
+    #[error(
+        "this call names no tool use, so Jet cannot tell whether web text came before it. Tell the user exactly what you wanted to do, so their next message can allow it"
+    )]
+    NoToolUseId,
+    #[error(
+        "the reply ended before Jet could check what it had read. Tell the user exactly what you wanted to do, so their next message can allow it"
+    )]
+    TurnEnded,
+}
+
+impl WriteRefused {
+    fn kind(&self) -> &'static str {
+        match self {
+            WriteRefused::WriteAfterWebText => "writeAfterWebText",
+            WriteRefused::NoToolUseId => "noToolUseId",
+            WriteRefused::TurnEnded => "turnEnded",
+        }
+    }
+}
+
 fn expired() -> rmcp::ErrorData {
     rmcp::ErrorData::invalid_request("initiating turn has expired", None)
 }
@@ -147,6 +183,56 @@ impl Handler {
             Value::Object(fields) => Ok(fields),
             _ => Ok(Map::new()),
         }
+    }
+
+    /// Refuses `apps_update`, and a `tools_call` whose tool is not marked read-only, once the turn
+    /// has read web text. It first waits until the turn's stream has passed this call's own
+    /// tool-use line, so every web read before the call has been seen. When the order cannot be
+    /// known, the call is refused too.
+    async fn refuse_after_web_text(
+        &self,
+        name: &str,
+        arguments: &Value,
+        binding: &Binding,
+        context: &RequestContext<RoleServer>,
+    ) -> Option<WriteRefused> {
+        if !binding.reads_web || !matches!(name, "apps_update" | "tools_call") {
+            return None;
+        }
+        let card = context
+            .meta
+            .get(agent::TOOL_USE_META)
+            .and_then(Value::as_str);
+        let chat = lock(&self.0.chat).upgrade();
+        let read_web = match (card, chat) {
+            (Some(card), Some(chat)) => chat.read_web_before(&binding.turn, card).await,
+            _ => None,
+        };
+        if read_web == Some(false) || (name == "tools_call" && self.read_only(arguments).await) {
+            return None;
+        }
+        Some(match (card, read_web) {
+            (None, _) => WriteRefused::NoToolUseId,
+            (_, None) => WriteRefused::TurnEnded,
+            _ => WriteRefused::WriteAfterWebText,
+        })
+    }
+
+    /// Whether the app marks the tool `readOnlyHint`. A tool that cannot be found is not.
+    async fn read_only(&self, arguments: &Value) -> bool {
+        let Ok(target) = serde_json::from_value::<ToolTarget>(arguments.clone()) else {
+            return false;
+        };
+        let Ok(catalogue) = self.0.mcp.catalogue(&target.app_id).await else {
+            return false;
+        };
+        catalogue.tools.iter().any(|tool| {
+            tool.name == target.tool
+                && tool
+                    .annotations
+                    .as_ref()
+                    .is_some_and(|annotations| annotations["readOnlyHint"] == true)
+        })
     }
 
     async fn tools_call(

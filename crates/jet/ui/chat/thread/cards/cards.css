@@ -11,7 +11,7 @@
 .card.is-cited { border-color: var(--accent); }
 
 .card-head { margin: 0; }
-.card-name { font-weight: 600; }
+.card-name { font-weight: 600; overflow-wrap: anywhere; }
 .card-meta { color: var(--muted); }
 
 /* Summaries are plain blocks: the grid of a row lives on an inner span, because the app's engine has ignored a grid on summary. */

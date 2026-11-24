@@ -2,6 +2,7 @@
 //! forget the thread, edit the notes, and let the review keep them current.
 
 mod accepted;
+mod hosts;
 mod memory;
 mod persona;
 mod reply;
@@ -217,15 +218,17 @@ impl Conversation {
             SessionMode::New => reply::first_message(&message.local_time, &words),
             _ => words.clone(),
         };
+        let entries = Transcript::open(&self.dir).entries()?;
         let request = Request {
             prompt,
-            system_prompt: persona::compose(&message.persona, &notes),
+            system_prompt: persona::compose(&message.persona, &notes, message.model),
             model: message.model,
             effort: message.effort,
             budget_usd: message.budget_usd,
             session: decision.mode,
             schema: None,
             mcp: message.mcp,
+            hosts: hosts::linked_hosts(&entries),
         };
         if request.session == SessionMode::New
             && let Some(session) = &saved

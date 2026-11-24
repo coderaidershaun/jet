@@ -384,6 +384,8 @@ impl ChatState {
             turn_id: uuid::Uuid::new_v4().to_string(),
             request: payload,
         };
+        // Only Claude Code turns get web tools.
+        let reads_web = !request.model.is_codex();
         let message = Message {
             text: request.text,
             attachments,
@@ -392,7 +394,7 @@ impl ChatState {
             effort: request.effort,
             budget_usd: request.budget_usd,
             local_time: request.local_time,
-            mcp: Some(self.tools.bind(&identity)),
+            mcp: Some(self.tools.bind(&identity, reads_web)),
             active_app_id: request.active_app_id,
             feeling: request.feeling,
             spoken: request.spoken,
@@ -582,6 +584,28 @@ impl ChatState {
         };
         active.apply(&event);
         runtime.publish(Some(identity), json!(event));
+    }
+
+    /// Waits until the turn's stream has passed the tool-use line `card_id`, then says whether the
+    /// turn had read web text by then. Every earlier web read is on an earlier line, so the answer
+    /// is exact. `None` when the turn ends first.
+    pub async fn read_web_before(&self, turn: &TurnContext, card_id: &str) -> Option<bool> {
+        let mut events = lock(&self.runtime).sender.subscribe();
+        loop {
+            {
+                let runtime = lock(&self.runtime);
+                let active = runtime.active.as_ref()?;
+                if active.identity.turn_id != turn.turn_id {
+                    return None;
+                }
+                if let Some(read) = active.read_web_before(card_id) {
+                    return Some(read);
+                }
+            }
+            if let Err(broadcast::error::RecvError::Closed) = events.recv().await {
+                return None;
+            }
+        }
     }
 
     pub fn memory_updated(&self, notes: agent::Notes) {

@@ -1,6 +1,6 @@
-//! Follows the MCP tool calls of one turn: names each call's server and tool, pairs it with
-//! its result, times it and sums the result up in one line. Claude Code's own tools, such
-//! as ToolSearch, are ignored.
+//! Follows the tool calls of one turn: names each call's server and tool, pairs it with its
+//! result, times it and sums the result up in one line. Of Claude Code's own tools only web
+//! search and page reading count, as the server `web`; the rest, such as ToolSearch, are ignored.
 
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -38,31 +38,16 @@ pub(super) struct ToolCalls {
 }
 
 impl ToolCalls {
-    /// The steps for calls just written. Repeats and tools of Claude Code give none.
+    /// The steps for calls just written. Repeats and other tools of Claude Code give none.
     pub(super) fn start(&mut self, uses: Vec<ToolUse>) -> Vec<Step> {
         let mut steps = Vec::new();
         for ToolUse { id, name, input } in uses {
-            let Some((server, tool)) = split_name(&name) else {
+            let Some(call) = card(id.clone(), &name, input) else {
                 continue;
             };
             if !self.seen.insert(id.clone()) {
                 continue;
             }
-            let (server, tool, input) = if server == "jet" && tool == "tools_call" {
-                (
-                    input["appId"].as_str().unwrap_or("unknown app").to_owned(),
-                    input["tool"].as_str().unwrap_or("unknown tool").to_owned(),
-                    input["arguments"].clone(),
-                )
-            } else {
-                (server.to_owned(), tool.to_owned(), input)
-            };
-            let call = ToolStart {
-                id: id.clone(),
-                server,
-                tool,
-                input,
-            };
             steps.push(Step::ToolStarted(call.clone()));
             let started = Instant::now();
             self.open.insert(id, Open { call, started });
@@ -123,6 +108,31 @@ impl ToolCalls {
     pub(super) fn running(&self) -> bool {
         !self.open.is_empty()
     }
+}
+
+/// The card of a call, or `None` for a tool of Claude Code that shows none.
+fn card(id: String, name: &str, input: Value) -> Option<ToolStart> {
+    match name {
+        "WebFetch" => return Some(ToolStart::web(id, "fetch", input)),
+        "WebSearch" => return Some(ToolStart::web(id, "search", input)),
+        _ => {}
+    }
+    let (server, tool) = split_name(name)?;
+    let (server, tool, input) = if server == "jet" && tool == "tools_call" {
+        (
+            input["appId"].as_str().unwrap_or("unknown app").to_owned(),
+            input["tool"].as_str().unwrap_or("unknown tool").to_owned(),
+            input["arguments"].clone(),
+        )
+    } else {
+        (server.to_owned(), tool.to_owned(), input)
+    };
+    Some(ToolStart {
+        id,
+        server,
+        tool,
+        input,
+    })
 }
 
 /// `mcp__quanty__search` is the tool `search` of the server `quanty`.

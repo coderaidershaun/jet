@@ -22,5 +22,6 @@ pub fn chat_request(prompt: &str, session: SessionMode) -> Request {
         session,
         schema: None,
         mcp: None,
+        hosts: Vec::new(),
     }
 }

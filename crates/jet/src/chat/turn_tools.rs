@@ -6,8 +6,9 @@ use agent::{McpConnection, TurnIdentity};
 /// The tool server a turn's provider calls. Each turn is bound to it when it starts and let go of
 /// it when it ends.
 pub(crate) trait TurnTools: Send + Sync {
-    /// Gives the provider a connection that is tied to this turn.
-    fn bind(&self, identity: &TurnIdentity) -> McpConnection;
+    /// Gives the provider a connection that is tied to this turn. `reads_web` says whether the
+    /// provider may search and read the web in it.
+    fn bind(&self, identity: &TurnIdentity, reads_web: bool) -> McpConnection;
     /// Cancels the running calls of the request and refuses its later ones.
     fn revoke(&self, request_id: &str);
     /// Lets go of every turn.

@@ -18,8 +18,9 @@ export function buildModel({ settings, changed }) {
 
   const appliesNote = note('Changes apply to the next reply. Codex memory review uses GPT-6 Luna; Claude uses Haiku. Codex reports tokens, but does not provide a dollar budget limit.');
   budgetField.hidden = isCodex(settings.model);
+  const webNote = note('Codex cannot search or read the web in Jet. Choose a Claude model when you want Jet to look things up.');
   return {
-    el: section('model', 'Model and thinking', picker.el, budgetField, appliesNote),
+    el: section('model', 'Model and thinking', picker.el, webNote, budgetField, appliesNote),
     refresh() { picker.refresh(); budgetField.hidden = isCodex(settings.model); },
   };
 }

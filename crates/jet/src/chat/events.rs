@@ -58,6 +58,9 @@ pub(crate) struct ActiveTurn {
     pub text: String,
     pub mood: Option<agent::Mood>,
     pub tools: Vec<Value>,
+    /// A web search or page read came back in this turn.
+    #[serde(skip)]
+    read_web: bool,
 }
 
 impl ActiveTurn {
@@ -73,6 +76,7 @@ impl ActiveTurn {
             text: String::new(),
             mood: None,
             tools: Vec::new(),
+            read_web: false,
         }
     }
 
@@ -90,6 +94,7 @@ impl ActiveTurn {
             }
             Event::ToolStarted(_) => self.tools.push(json!(event)),
             Event::ToolFinished(call) => {
+                self.read_web |= call.read_web();
                 let started = self.tools.iter_mut().find(|tool| tool["id"] == call.id);
                 match (started, json!(event)) {
                     (Some(Value::Object(tool)), Value::Object(finished)) => {
@@ -118,6 +123,13 @@ impl ActiveTurn {
             }
             _ => {}
         }
+    }
+
+    /// Whether a web read came back before the card `card_id` started, or `None` while the card
+    /// has not been seen.
+    pub(super) fn read_web_before(&self, card_id: &str) -> Option<bool> {
+        let seen = self.tools.iter().any(|tool| tool["id"] == card_id);
+        seen.then_some(self.read_web)
     }
 
     /// The id of the still-running card the call belongs to. A call that names its card gets that

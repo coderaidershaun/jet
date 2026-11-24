@@ -62,7 +62,14 @@ pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             continue;
         }
-        if let Some(together) = operation["together"].as_array() {
+        if let Some(address) = operation["fetch"].as_str() {
+            results.push(web_fetch(args, &format!("web-{index}"), address).await);
+        } else if let Some(query) = operation["search"].as_str() {
+            let id = format!("web-{index}");
+            events::web_call(&id, "WebSearch", json!({"query": query}));
+            events::web_result(&id, &format!("Search results for {query}"), false);
+            results.push(json!({"search": query}));
+        } else if let Some(together) = operation["together"].as_array() {
             results.extend(caller.call_together(index, together).await);
         } else {
             let id = format!("facade-{index}");
@@ -75,6 +82,60 @@ pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
     }
     events::finish(codex);
     client.cancel().await.unwrap();
+}
+/// Reads `https://<address>` the way Claude Code does: the hook in `--settings` is asked first,
+/// and a refusal, or a hook that cannot be reached, stops the read; then the host needs its allow
+/// rule. The address is written without `https://`, so that the script in a message names no
+/// link the host list would pick up.
+async fn web_fetch(args: &[String], id: &str, address: &str) -> Value {
+    let url = format!("https://{address}");
+    let input = json!({"url": url, "prompt": "What does the page say?"});
+    events::web_call(id, "WebFetch", input.clone());
+    let value = |key: &str| {
+        args.iter()
+            .position(|arg| arg == key)
+            .map(|at| args[at + 1].clone())
+    };
+    let settings: Value =
+        serde_json::from_str(&value("--settings").unwrap_or_default()).unwrap_or_default();
+    let hook = &settings["hooks"]["PreToolUse"][0]["hooks"][0];
+    let mut request = reqwest::Client::new()
+        .post(hook["url"].as_str().unwrap_or("http://127.0.0.1:1/"))
+        .json(&json!({"hook_event_name": "PreToolUse", "tool_name": "WebFetch", "tool_input": input, "tool_use_id": id}));
+    for (name, header) in hook["headers"].as_object().into_iter().flatten() {
+        request = request.header(name, header.as_str().unwrap_or_default());
+    }
+    let answer: Result<Value, String> = match request.send().await {
+        Ok(response) if response.status().is_success() => {
+            response.json().await.map_err(|e| e.to_string())
+        }
+        Ok(response) => Err(format!("status {}", response.status())),
+        Err(error) => Err(error.to_string()),
+    };
+    let host = address.split('/').next().unwrap_or_default();
+    let rule = format!("WebFetch(domain:{host})");
+    let ruled =
+        value("--allowedTools").is_some_and(|allowed| allowed.split(',').any(|tool| tool == rule));
+    let refusal = match answer {
+        Err(error) => Some(format!(
+            "PreToolUse:WebFetch hook error: failed; blocking because onFailure is \"block\"\n{error}"
+        )),
+        Ok(answer) if answer["hookSpecificOutput"]["permissionDecision"] == "deny" => {
+            Some(format!(
+                "PreToolUse:WebFetch hook error: {}",
+                answer["hookSpecificOutput"]["permissionDecisionReason"]
+                    .as_str()
+                    .unwrap_or_default()
+            ))
+        }
+        Ok(_) if !ruled => Some("Permission for this tool use was denied.".to_owned()),
+        Ok(_) => None,
+    };
+    match &refusal {
+        Some(refusal) => events::web_result(id, refusal, true),
+        None => events::web_result(id, &format!("The text of {url}."), false),
+    }
+    json!({"fetch": url, "refused": refusal})
 }
 fn name_of(operation: &Value) -> &str {
     operation["tool"].as_str().unwrap()

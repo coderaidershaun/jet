@@ -61,6 +61,11 @@ const HEALTH_HINT = 'Ask for a health check to see which service is down.';
 const FILE_TOOL = 'jet/files_export';
 const READ_TOOL = 'jet/files_read';
 const LIST_TOOL = 'jet/files_list';
+const WEB_FETCH = 'web/fetch';
+const WEB_SEARCH = 'web/search';
+// Jet's own refusal of a page whose link the user did not write in the chat ends with this sentence.
+const WEB_REFUSAL = 'Ask the user to paste the link to this page.';
+const WEB_REFUSED_ADVICE = 'Jet reads pages only on sites whose link you wrote in this chat. Paste the link to let Jet read it.';
 
 const quoted = (text) => OPEN_QUOTE + text + CLOSE_QUOTE;
 const seconds = (ms) => (ms < 10000 ? (ms / 1000).toFixed(1) : Math.round(ms / 1000).toString()) + ' s';
@@ -168,6 +173,10 @@ function lineOf(call, earlier) {
       return 'Listing the library';
     case 'quanty/health':
       return 'Checking the library';
+    case WEB_FETCH:
+      return 'Reading ' + stringOf(input.url);
+    case WEB_SEARCH:
+      return 'Searching the web · ' + quoted(stringOf(input.query));
     case READ_TOOL:
       return 'Reading a file';
     case LIST_TOOL:
@@ -342,6 +351,19 @@ function barOf(report) {
   return { value: isCounted ? Math.min(total, Math.max(0, progress)) : null, max: isCounted ? total : null, words: orNull(report.message) };
 }
 
+/** The name on an ended card. A web card names the page or the words it looked up, so the user sees what Jet read. */
+function nameOf(call) {
+  const input = recordOf(call.input);
+  switch (call.server + '/' + call.tool) {
+    case WEB_FETCH:
+      return 'Page · ' + stringOf(input.url);
+    case WEB_SEARCH:
+      return 'Web search · ' + quoted(stringOf(input.query));
+    default:
+      return call.server + ' · ' + call.tool;
+  }
+}
+
 /**
  * The card of a call. `earlier` holds the finished calls above it, oldest first, so a page can name its document.
  * It never throws: it runs while the thread paints, and a throw there would stop every later paint.
@@ -351,7 +373,7 @@ function barOf(report) {
  */
 export function cardOf(call, earlier = []) {
   const state = callState(call);
-  const name = call.server + ' · ' + call.tool;
+  const name = nameOf(call);
   const line = lineOf(call, earlier);
   const time = typeof call.durationMs === 'number' ? seconds(call.durationMs) : '';
   const card = {
@@ -366,6 +388,9 @@ export function cardOf(call, earlier = []) {
     const failedName = card.key === READ_TOOL ? "Couldn't read the file" : "Couldn't write the " + (fileFormatOf(call)?.label ?? 'file');
     const meta = joined('failed', time);
     return { ...card, name: failedName, meta, head: failedName + ' · ' + meta, tone: 'invalid', advice: messageOf(call.result) };
+  }
+  if (state === 'failed' && card.key === WEB_FETCH && textOf(call.result).includes(WEB_REFUSAL)) {
+    return { ...ended(joined('refused', time)), tone: 'invalid', advice: WEB_REFUSED_ADVICE };
   }
   if (state === 'failed') {
     const advice = textOf(call.result);

@@ -41,6 +41,9 @@ pub struct Request {
     /// The tool server the run may call; `None` for a run with no tools, such as the notes
     /// review.
     pub mcp: Option<McpConnection>,
+    /// The only hosts whose pages a run with tools may read, because an address can carry the
+    /// user's data to any site. Web search stays open.
+    pub hosts: Vec<String>,
 }
 
 /// How a request relates to the agent's saved conversations.

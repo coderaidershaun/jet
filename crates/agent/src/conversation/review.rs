@@ -110,6 +110,7 @@ impl Conversation {
             session: SessionMode::Ephemeral,
             schema: Some(schema()),
             mcp: None,
+            hosts: Vec::new(),
         };
         let turn = {
             let mut current = crate::lock(&self.review_stop);

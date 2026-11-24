@@ -8,3 +8,4 @@ mod reactions;
 mod shutdown;
 mod support;
 mod tool_calls;
+mod web;

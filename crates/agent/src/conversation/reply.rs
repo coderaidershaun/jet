@@ -339,7 +339,11 @@ mod tests {
     use super::super::test_support::{Chat, message};
     use super::*;
     use crate::chat::Event;
-    use crate::turn::scripted::{Script, Scripted, reply_lines};
+    use crate::turn::scripted::{
+        Script, Scripted, delta_line, init_line, reply_lines, result_line, tool_result_line,
+        tool_use_line,
+    };
+    use serde_json::json;
 
     #[test]
     fn vanished_session_retries_once_fresh_with_a_notice() {
@@ -438,5 +442,50 @@ mod tests {
             2,
             "the user entry and the failed Jet entry are saved"
         );
+    }
+
+    #[test]
+    fn a_web_read_line_becomes_a_tool_card_kept_on_the_turn() {
+        let fetch = json!({"url": "https://github.com/anthropics", "prompt": "What is it?"});
+        let search = json!({"query": "jet kite"});
+        let lines = vec![
+            init_line("s1"),
+            tool_use_line(&[
+                ("w1", "WebFetch", fetch.clone()),
+                ("w2", "WebSearch", search.clone()),
+            ]),
+            tool_result_line("w1", "A page about Claude Code."),
+            tool_result_line("w2", "Three results."),
+            delta_line("mood: neutral\nRead it."),
+            result_line("Read it."),
+        ];
+        let chat = Chat::with_transport("reply-web", Scripted::new().then(Script::lines(lines)));
+        let events = chat.send(message("read https://github.com/anthropics"));
+
+        let cards: Vec<(&str, &str, &serde_json::Value)> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::ToolStarted(start) => {
+                    Some((start.server.as_str(), start.tool.as_str(), &start.input))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            cards,
+            [("web", "fetch", &fetch), ("web", "search", &search)]
+        );
+        let Some(Event::Finished { entry }) = events.last() else {
+            panic!("the reply finishes: {events:?}");
+        };
+        let saved = &chat.conversation.history(1).unwrap()[0].entry;
+        for tools in [&entry.entry.tools, &saved.tools] {
+            let read: Vec<(&str, bool, bool)> = tools
+                .iter()
+                .map(|call| (call.tool.as_str(), call.ok, call.read_web()))
+                .collect();
+            assert_eq!(read, [("fetch", true, true), ("search", true, true)]);
+            assert_eq!(tools[0].result, json!("A page about Claude Code."));
+        }
     }
 }

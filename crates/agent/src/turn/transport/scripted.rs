@@ -130,6 +130,7 @@ pub(crate) fn request() -> Request {
         session: SessionMode::New,
         schema: None,
         mcp: None,
+        hosts: Vec::new(),
     }
 }
 
