@@ -3,6 +3,7 @@
 //! that precedes a first message is ignored. A turn that answers a reaction gets no instruction
 //! from the user, so it decides that nothing is needed, or hangs without words for ⏳.
 
+mod claude_codex;
 mod support;
 
 use std::collections::BTreeMap;
@@ -55,7 +56,7 @@ fn run() -> io::Result<ExitCode> {
         .append(true)
         .open(CALLS_FILE)?
         .write_all(call.as_bytes())?;
-    if support::run(&args, &input, false) {
+    if claude_codex::run(&args, &input, false) {
         return Ok(ExitCode::SUCCESS);
     }
     let Some(instruction) = input.lines().find(|line| is_instruction(line)) else {

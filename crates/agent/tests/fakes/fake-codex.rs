@@ -1,4 +1,5 @@
 //! A stand-in for the Codex program, built only so tests can run it.
+mod claude_codex;
 mod support;
 use serde_json::{Value, json};
 use std::io::{Read, Write};
@@ -7,7 +8,7 @@ fn main() {
     std::fs::write("fake-codex-args.json", json!(args).to_string()).unwrap();
     let mut prompt = String::new();
     std::io::stdin().read_to_string(&mut prompt).unwrap();
-    if support::run(&args, &prompt, true) {
+    if claude_codex::run(&args, &prompt, true) {
         return;
     }
     if prompt == "exit" {

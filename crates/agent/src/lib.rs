@@ -26,7 +26,7 @@ pub use conversation::{
 pub use feeling::{Feeling, JevError, feel_message};
 pub use markdown::{CUES, Cue, dollar_math, render_markdown};
 pub use turn::{
-    ClaudeCli, CodexCli, Lines, Request, SessionMode, Step, Stopper, Summary, Transport,
+    AgyCli, ClaudeCli, CodexCli, Lines, Request, SessionMode, Step, Stopper, Summary, Transport,
     TransportError, Turn, TurnError,
 };
 

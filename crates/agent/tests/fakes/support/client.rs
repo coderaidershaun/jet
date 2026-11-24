@@ -1,5 +1,5 @@
 //! Connect using the exact HTTP configuration the adapter passed to the process.
-use super::events;
+use super::{Provider, events};
 use agent::{TOOL_USE_META, TURN_HEADER};
 use rmcp::{
     Peer, RoleClient, ServiceExt,
@@ -9,28 +9,8 @@ use rmcp::{
     },
 };
 use serde_json::{Value, json};
-pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
-    let (url, token) = if codex {
-        let value = |key: &str| -> String {
-            serde_json::from_str(args.iter().find_map(|arg| arg.strip_prefix(key)).unwrap())
-                .unwrap()
-        };
-        (
-            value("mcp_servers.jet.url="),
-            value(&format!("mcp_servers.jet.http_headers.{TURN_HEADER}=")),
-        )
-    } else {
-        let value =
-            |key: &str| -> &str { &args[args.iter().position(|arg| arg == key).unwrap() + 1] };
-        let config: Value = serde_json::from_str(value("--mcp-config")).unwrap();
-        (
-            config["mcpServers"]["jet"]["url"].as_str().unwrap().into(),
-            config["mcpServers"]["jet"]["headers"][TURN_HEADER]
-                .as_str()
-                .unwrap()
-                .into(),
-        )
-    };
+pub(super) async fn run(provider: &dyn Provider, args: &[String], script: Vec<Value>) {
+    let (url, token) = provider.connection(args);
     std::fs::write(
         "facade-connection.json",
         json!({"url":url,"token":token}).to_string(),
@@ -51,15 +31,27 @@ pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
             .collect::<Vec<_>>(),
         agent::FACADE_TOOLS
     );
-    events::start(codex);
+    provider.start();
     let caller = Caller {
         peer: client.peer().clone(),
-        codex,
+        names_tool_use: provider.names_tool_use(),
     };
     let mut results = Vec::new();
     for (index, operation) in script.iter().enumerate() {
         if operation["pause"] == true {
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            continue;
+        }
+        // A test makes the file when the script may go on, so no step depends on a sleep.
+        if let Some(file) = operation["wait"].as_str() {
+            while !std::path::Path::new(file).exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+            continue;
+        }
+        // Writes the line of a call that the test sends to the facade itself.
+        if let Some(id) = operation["announce"].as_str() {
+            provider.call(id, name_of(operation), &arguments_of(operation));
             continue;
         }
         if let Some(address) = operation["fetch"].as_str() {
@@ -70,17 +62,14 @@ pub(super) async fn run(args: &[String], script: Vec<Value>, codex: bool) {
             events::web_result(&id, &format!("Search results for {query}"), false);
             results.push(json!({"search": query}));
         } else if let Some(together) = operation["together"].as_array() {
-            results.extend(caller.call_together(index, together).await);
+            results.extend(caller.call_together(provider, index, together).await);
         } else {
             let id = format!("facade-{index}");
-            events::call(codex, &id, name_of(operation), &arguments_of(operation));
-            let result = caller.clone().call(id.clone(), operation.clone()).await;
-            events::result(codex, &id, result.clone());
-            results.push(result);
+            results.extend(caller.call_together_as(provider, &[(id, operation)]).await);
         }
         std::fs::write("facade-results.json", json!(results).to_string()).unwrap();
     }
-    events::finish(codex);
+    provider.finish();
     client.cancel().await.unwrap();
 }
 /// Reads `https://<address>` the way Claude Code does: the hook in `--settings` is asked first,
@@ -147,40 +136,55 @@ fn arguments_of(operation: &Value) -> Value {
 #[derive(Clone)]
 struct Caller {
     peer: Peer<RoleClient>,
-    codex: bool,
+    names_tool_use: bool,
 }
 impl Caller {
+    async fn call_together(
+        &self,
+        provider: &dyn Provider,
+        index: usize,
+        together: &[Value],
+    ) -> Vec<Value> {
+        let calls: Vec<(String, &Value)> = together
+            .iter()
+            .enumerate()
+            .map(|(part, operation)| (format!("facade-{index}-{part}"), operation))
+            .collect();
+        self.call_together_as(provider, &calls).await
+    }
     /// Shows every call as started, sends them all at once, and gives their results in script
-    /// order.
-    async fn call_together(&self, index: usize, together: &[Value]) -> Vec<Value> {
+    /// order. A call the provider refuses is not sent, and its result is the refusal.
+    async fn call_together_as(
+        &self,
+        provider: &dyn Provider,
+        calls: &[(String, &Value)],
+    ) -> Vec<Value> {
         let mut pending = Vec::new();
-        for (part, operation) in together.iter().enumerate() {
-            let id = format!("facade-{index}-{part}");
-            events::call(
-                self.codex,
-                &id,
-                name_of(operation),
-                &arguments_of(operation),
-            );
-            pending.push((
-                id.clone(),
-                tokio::spawn(self.clone().call(id, operation.clone())),
-            ));
+        for (id, operation) in calls {
+            let refusal = provider.call(id, name_of(operation), &arguments_of(operation));
+            let sent = refusal
+                .is_none()
+                .then(|| tokio::spawn(self.clone().call(id.clone(), (*operation).clone())));
+            pending.push((id, refusal, sent));
         }
         let mut results = Vec::new();
-        for (id, call) in pending {
+        for (id, refusal, sent) in pending {
+            let Some(call) = sent else {
+                results.push(json!({"refused": refusal}));
+                continue;
+            };
             let result = call.await.unwrap();
-            events::result(self.codex, &id, result.clone());
+            provider.result(id, result.clone());
             results.push(result);
         }
         results
     }
     /// Sends one call. Claude Code names the tool use a call belongs to in the request metadata,
-    /// and Codex names nothing.
+    /// and the other providers name nothing.
     async fn call(self, id: String, operation: Value) -> Value {
         let mut params = CallToolRequestParams::new(name_of(&operation).to_owned())
             .with_arguments(arguments_of(&operation).as_object().unwrap().clone());
-        if !self.codex {
+        if self.names_tool_use {
             let mut meta = RequestMetaObject::new();
             meta.insert(TOOL_USE_META.into(), json!(id));
             params.meta = Some(meta);

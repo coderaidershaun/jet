@@ -2,7 +2,7 @@
 name = "agent"
 version.workspace = true
 edition.workspace = true
-description = "Runs Jet's chat turns through Claude Code or Codex and keeps the thread, notes, and app connections"
+description = "Runs Jet's chat turns through Claude Code, Codex or agy and keeps the thread, notes, and app connections"
 
 # Stand-ins for the provider programs, built so the tests can run them. They are not product code.
 [[bin]]
@@ -13,6 +13,11 @@ test = false
 [[bin]]
 name = "fake-codex"
 path = "tests/fakes/fake-codex.rs"
+test = false
+
+[[bin]]
+name = "fake-agy"
+path = "tests/fakes/fake-agy.rs"
 test = false
 
 [features]

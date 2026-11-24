@@ -74,6 +74,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0003_github_tokens.sql"),
     include_str!("migrations/0004_personal_jet.sql"),
     include_str!("migrations/0005_objectives.sql"),
+    include_str!("migrations/0006_agy_path.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]

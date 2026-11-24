@@ -38,12 +38,13 @@ impl Store {
     pub(crate) fn program_paths(&self) -> Result<ProgramPaths, StoreError> {
         let saved = self.with(|db| {
             db.query_row(
-                "SELECT claude_path, codex_path FROM server_settings WHERE id = 1",
+                "SELECT claude_path, codex_path, agy_path FROM server_settings WHERE id = 1",
                 [],
                 |row| {
                     Ok(ProgramPaths {
                         claude_path: row.get::<_, Option<String>>(0)?.map(PathBuf::from),
                         codex_path: row.get::<_, Option<String>>(1)?.map(PathBuf::from),
+                        agy_path: row.get::<_, Option<String>>(2)?.map(PathBuf::from),
                     })
                 },
             )
@@ -59,10 +60,16 @@ impl Store {
         };
         self.with(|db| {
             db.execute(
-                "INSERT INTO server_settings (id, claude_path, codex_path) VALUES (1, ?1, ?2)
+                "INSERT INTO server_settings (id, claude_path, codex_path, agy_path)
+                 VALUES (1, ?1, ?2, ?3)
                  ON CONFLICT (id) DO UPDATE SET
-                     claude_path = excluded.claude_path, codex_path = excluded.codex_path",
-                params![text(&paths.claude_path), text(&paths.codex_path)],
+                     claude_path = excluded.claude_path, codex_path = excluded.codex_path,
+                     agy_path = excluded.agy_path",
+                params![
+                    text(&paths.claude_path),
+                    text(&paths.codex_path),
+                    text(&paths.agy_path)
+                ],
             )
             .map(drop)
         })

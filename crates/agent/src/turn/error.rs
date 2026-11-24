@@ -30,6 +30,9 @@ impl From<&TurnError> for Failure {
                     searched.join(", ")
                 ),
             },
+            TurnError::Transport(TransportError::AgyMissing { searched }) => Failure::Io {
+                message: format!("I couldn't find agy. I looked in: {}", searched.join(", ")),
+            },
             TurnError::Transport(TransportError::ClaudeMissing { searched }) => {
                 Failure::ClaudeMissing {
                     message: format!(

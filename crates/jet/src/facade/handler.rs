@@ -199,8 +199,8 @@ impl Handler {
     /// Refuses `apps_update`, and a `tools_call` whose tool is not marked read-only, once the turn
     /// has read web text or `github_activity`. It first waits until the turn's stream has passed
     /// this call's own tool-use line, so every web read before the call has been seen. When the
-    /// order cannot be known, the call is refused too. A Codex turn has no web tools, and its
-    /// calls reach the facade one after another, so only an earlier `github_activity` counts.
+    /// order cannot be known, the call is refused too. A Codex or agy turn has no web tools, so
+    /// there only a `github_activity` call that reached Jet earlier counts.
     async fn refuse_after_web_text(
         &self,
         name: &str,

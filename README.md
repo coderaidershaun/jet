@@ -1,6 +1,6 @@
 # Jet
 
-Jet is a browser home for independently running apps, with an assistant of each user's own. Its Rust server runs the installed Claude Code or Codex CLI, keeps each user's chat, notes, settings, apps and files in one SQLite database, and serves the existing HTML/JavaScript interface.
+Jet is a browser home for independently running apps, with an assistant of each user's own. Its Rust server runs the installed Claude Code, Codex or agy CLI, keeps each user's chat, notes, settings, apps and files in one SQLite database, and serves the existing HTML/JavaScript interface.
 
 ## Layout
 
@@ -27,11 +27,11 @@ crates/agent/src/                 the library behind the server
   conversation/                   send a message, the thread, notes, the persona prompt, session policy
   markdown/                       a reply as safe HTML, math, vocal cues and the words to speak
   mcp/                            one HTTP client for app tools, with a shared catalogue
-  turn/                           one exchange with Claude Code or Codex: processes, stream, mood line
+  turn/                           one exchange with Claude Code, Codex or agy: processes, stream, mood line
   voice/                          Gemini speaking and hearing
   feeling.rs                      the optional JEV feeling classifier
   env_file.rs                     a setting from the environment or the nearest .env
-crates/agent/tests/fakes/         stand-ins for Claude Code and Codex used by tests
+crates/agent/tests/fakes/         stand-ins for Claude Code, Codex and agy used by tests
 crates/export/                    writes a document as one PDF, Markdown or HTML file
 deploy/                           the systemd unit and the Nginx site
 docs/                             the app contract and the voice guide
@@ -44,7 +44,7 @@ CONTEXT.md                        the glossary: one meaning for each word
 cargo run -p jet -- --listen 127.0.0.1:8787 --data-dir ./jet-data
 ```
 
-Open `http://127.0.0.1:8787/`. Install and sign in to Claude Code or Codex on the server, then select it in Settings. The browser never silently selects a pretend agent. A missing provider is shown as an actionable status/error.
+Open `http://127.0.0.1:8787/`. Install and sign in to Claude Code, Codex or agy on the server, then select one of its models in Settings. The browser never silently selects a pretend agent. A missing provider is shown as an actionable status/error.
 
 For access from another computer, choose a reachable listen address. `--public-origin https://jet.example` records the externally visible origin for app forwarding. `--ui-dir PATH` selects the shipped static asset directory; the default is this checkout's `crates/jet/ui`. Keep the UI files with the executable when deploying a copied build. `--disable-feelings` disables optional JEV classification for offline development/testing.
 
@@ -174,7 +174,7 @@ busy response.
 | `/thinking [level]` | Show valid levels or save thinking for the next reply. |
 | `/tools [id-or-label]` | Browse the global tool catalogue or one app. |
 
-Context shows the last measured tokens and the selected model’s available capacity. Provider limits are used when reported; Codex can also read its installed model metadata. Missing counts or limits stay unknown, and aggregate usage fallbacks are labelled estimates. Reload preserves measurements; a fresh conversation or Forget clears them.
+Context shows the last measured tokens and the selected model’s available capacity. Provider limits are used when reported; Codex can also read its installed model metadata, and agy reports none. Missing counts or limits stay unknown, and aggregate usage fallbacks are labelled estimates. Reload preserves measurements; a fresh conversation or Forget clears them.
 
 Quoted labels work. Missing or ambiguous targets offer a choice. Slash commands
 run directly without a model request; unknown commands show help.
@@ -191,7 +191,7 @@ Jet is served publicly, so every path is bounded: 32 MiB for a file, 10 files fo
 
 ## App tools
 
-Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees fifteen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `github_activity`, and the five that record objectives and agent-tasks (see Objectives and agent-tasks). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link. After a web read or a `github_activity` call, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex has no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
+Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees fifteen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `github_activity`, and the five that record objectives and agent-tasks (see Objectives and agent-tasks). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link. After a web read or a `github_activity` call, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex and agy have no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
 
 Tools shows searchable summaries, actual input/output schemas, annotations, server identity, capabilities and instructions. Refresh retries failed metadata; stale results remain visibly marked. Only explicitly marked free discovery operations can expand into a hierarchy. Inspect a leaf or use Ask Jet to draft a request; browsing never executes ordinary business tools. In particular, normal Quanty search can cost money.
 
@@ -202,6 +202,40 @@ The stable `/mcp` endpoint requires a random per-turn header supplied by the hos
 Read-only browser APIs are `GET /api/apps/{id}/tools`, `POST` to the same URL for refresh, and `POST /api/apps/{id}/discovery` with `{requestId, tool, arguments}`. Discovery requires the explicit `jet/discovery` version 1 marker; generic read-only annotations grant no execution permission. The response contains `{result, catalogue}`. `POST /api/tools/cancel` accepts `{requestId}`. There is no browser business-tool runner.
 
 Connections and catalogue refreshes have 15-second deadlines; calls have a 120-second deadline. Catalogues are capped at 64 pages, 4,096 tools and 2 MiB; results and SSE events are capped at 2 MiB. Search reports truncation after 128 apps or 200 matches. The installed MCP SDK is pinned to 3.5.1 for Quanty compatibility.
+
+## Gemini 4 Neon through agy
+
+Jet's third provider is Google's `agy` program (the Antigravity command line), which runs Gemini 4 Neon. Choose the model in Settings; Sonnet stays the default. Jet finds `agy` on the `PATH`, in `~/.local/bin`, `/opt/homebrew/bin` or `/usr/local/bin`, or at the path an admin saved in Settings (`agyPath`). Like the paths of the other two programs, it is one setting for the whole server.
+
+- **Thinking:** `agy` runs Neon at low, medium, high and extra-high. Jet refuses a higher level before the turn starts.
+- **Web:** an `agy` turn has no web tools, like a Codex turn, and its prompt says so.
+- **Cost:** `agy` reports no cost and has no cost limit, so the turn budget does nothing for this model. The tokens of a turn are the sum of its model calls.
+- **Notes review:** runs on Gemini 4 Neon at low thinking.
+- **Sessions:** `agy` keeps the system prompt a conversation began with. When Jet's prompt changes in a continued conversation (the notes, after a review), Jet puts the new prompt at the start of the next message.
+
+### The tool limit
+
+Jet starts every `agy` turn with `--dangerously-skip-permissions`, because nobody is there to answer a permission question. `agy` then approves every tool request, so the turn must have no tool that can harm the server. Jet makes the limit again for each turn, from the command line and from files it writes into the folder the turn runs in. Nothing saved in the user's `agy` configuration is part of it, and Jet saves nothing there.
+
+| Part | What it does |
+| --- | --- |
+| Agent file `.agents/agents/jet.md` with `tools: []`, `excludeDefaultComponents: true` and `inheritCustomizations: false` | The turn runs as an agent that has none of `agy`'s own tools (shell, files, web search, subagents) and takes no rules, skills, plugins or hooks from the user or from a folder above. The body of the file is Jet's system prompt. |
+| `.agents/mcp_config.json` | Names Jet's tool server with the token of the turn, and lists Jet's ten tools. Jet writes it before each turn and removes it after. |
+| Hook: `.agents/hooks.json` and `.agents/allow.awk` | `agy` asks this program before every tool call. It allows Jet's tools by name and refuses every other call. That includes the three tools `agy` adds to every agent (`manage_task`, `list_resources`, `read_resource`) and any tool server the user saved. When the program fails, `agy` refuses the call. |
+| `--settings` with deny rules | A second layer: `agy`'s shell, file read and file write stay refused. |
+| `--disable-slash-commands`, and the message on standard input | A message cannot run an `agy` command, and cannot be taken for a flag. |
+| The stream | Jet stops the reply, fails it and writes a line to the server's error output when the stream shows that a tool other than Jet's has run, or holds a line that `agy` 1.5.16 does not write. |
+
+The notes review runs as a second agent, `jet-review`, with `agy`'s `finish` tool only, which an answer in a schema needs, and without Jet's tool server.
+
+Each chat has a folder of its own for its turns, below the system's temporary folder (`jet-agy-…-chat-<id>`), never the data folder. The turns of two users run at the same time, and the folder holds the token of the running turn, so no two chats share one. Jet makes the folder open to the service user only. It does not run `agy` in a folder that belongs to another user, that other users can open, or that is a link, or below a folder that holds `.git` or one of the folders `agy` reads its files from (`.agents`, `.agent`, `_agents`, `_agent`).
+
+### What the server needs
+
+- **The `agy` program, version 1.5.16.** The limit was proven on that version, on macOS. No part of it was run on Linux. Jet asks the program for its version and runs it only at 1.5.16; at any other version every `agy` reply fails and says so. `agy` replaces itself with a newer version in the background, and that would stop this provider. To keep the proven version, install it in a folder that the service user cannot write, for example `/usr/local/bin` owned by root, and let an admin save that path as `agyPath`.
+- **A sign-in for the service user.** Run `agy` once as that user. It prints an address to open on another machine, and takes the code that the page gives. The `agy` process keeps the service user's `HOME`, and Jet removes every `*_API_KEY` and every `JET_*` variable from its environment.
+- **`sh` and `awk`** for the hook.
+- **A `~/.gemini` folder that the service user can write.** `agy` has no session that is not kept. Each chat session and each notes review of every user leaves a conversation with the text of its turns in the service user's `~/.gemini/antigravity-cli/`, and each run leaves a log file there.
 
 ## GitHub activity
 

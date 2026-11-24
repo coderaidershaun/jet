@@ -1,14 +1,17 @@
-//! Which provider answers the chat, Claude Code or Codex: where its program is, the stand-in that
-//! fails each reply when it is missing, and the status the page checks.
+//! Which provider answers the chat, Claude Code, Codex or agy: where its program is, the stand-in
+//! that fails each reply when it is missing, and the status the page checks.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use agent::{ClaudeCli, CodexCli, ContextStatus, Lines, Model, Request, Transport, TransportError};
+use agent::{
+    AgyCli, ClaudeCli, CodexCli, ContextStatus, Lines, Model, Request, Transport, TransportError,
+};
 use serde::Serialize;
 
 use super::error::BridgeError;
 use crate::settings::{ProgramPaths, Settings};
+use crate::store::ChatId;
 
 /// A missing provider reaches the page through the same failure path as a failed run.
 struct MissingAgent {
@@ -22,23 +25,59 @@ impl Transport for MissingAgent {
     }
 }
 
+/// agy at a version the limit to Jet's tools was not proven on. Every reply fails with the reason,
+/// so an agy that replaced itself with a newer version stops instead of running untested.
+struct UnprovenAgy {
+    program: PathBuf,
+    found: String,
+}
+
+impl UnprovenAgy {
+    fn error(&self) -> TransportError {
+        TransportError::AgyVersion {
+            program: self.program.clone(),
+            found: self.found.clone(),
+        }
+    }
+}
+
+impl Transport for UnprovenAgy {
+    fn start(&self, _request: &Request) -> Result<Lines, TransportError> {
+        Err(self.error())
+    }
+}
+
 /// The provider a model runs on.
 struct Selected {
     name: &'static str,
-    /// Where the program is, or the places that were searched.
+    /// Where the program is, or the places that were searched. For a program that must not run,
+    /// the one entry says why.
     program: Result<PathBuf, Vec<String>>,
     /// Runs the provider, or fails each reply when the program is missing.
     transport: Arc<dyn Transport>,
 }
 
-/// This is the one place that maps a model to a provider.
-fn select(model: Model, paths: &ProgramPaths, data_dir: &Path) -> Result<Selected, BridgeError> {
+/// This is the one place that maps a model to a provider. Only agy needs the chat: its turns run
+/// in a folder of the chat's own.
+fn select(
+    model: Model,
+    paths: &ProgramPaths,
+    data_dir: &Path,
+    chat: ChatId,
+) -> Result<Selected, BridgeError> {
     let (name, located, missing): (_, _, fn(_) -> _) = if model.is_codex() {
         (
             "Codex",
             CodexCli::locate(paths.codex_path.as_deref(), data_dir)
                 .map(|cli| (cli.program().to_path_buf(), Arc::new(cli) as _)),
             |searched| TransportError::CodexMissing { searched },
+        )
+    } else if model.is_agy() {
+        (
+            "agy",
+            AgyCli::locate(paths.agy_path.as_deref(), data_dir, chat.0)
+                .map(|cli| (cli.program().to_path_buf(), Arc::new(cli) as _)),
+            |searched| TransportError::AgyMissing { searched },
         )
     } else {
         (
@@ -55,7 +94,9 @@ fn select(model: Model, paths: &ProgramPaths, data_dir: &Path) -> Result<Selecte
             transport,
         }),
         Err(
-            TransportError::ClaudeMissing { searched } | TransportError::CodexMissing { searched },
+            TransportError::ClaudeMissing { searched }
+            | TransportError::CodexMissing { searched }
+            | TransportError::AgyMissing { searched },
         ) => Ok(Selected {
             name,
             program: Err(searched.clone()),
@@ -64,6 +105,14 @@ fn select(model: Model, paths: &ProgramPaths, data_dir: &Path) -> Result<Selecte
                 error: missing,
             }),
         }),
+        Err(TransportError::AgyVersion { program, found }) => {
+            let unproven = UnprovenAgy { program, found };
+            Ok(Selected {
+                name,
+                program: Err(vec![unproven.error().to_string()]),
+                transport: Arc::new(unproven),
+            })
+        }
         Err(other) => Err(other.into()),
     }
 }
@@ -72,8 +121,9 @@ pub(super) fn transport_for(
     model: Model,
     paths: &ProgramPaths,
     data_dir: &Path,
+    chat: ChatId,
 ) -> Result<Arc<dyn Transport>, BridgeError> {
-    Ok(select(model, paths, data_dir)?.transport)
+    Ok(select(model, paths, data_dir, chat)?.transport)
 }
 
 /// What a reply that could not start says instead of the places of the program on the server.
@@ -96,6 +146,16 @@ impl Transport for PlacesHidden {
             TransportError::CodexMissing { .. } => {
                 TransportError::CodexMissing { searched: hidden() }
             }
+            TransportError::AgyMissing { .. } => TransportError::AgyMissing { searched: hidden() },
+            TransportError::AgyVersion { found, .. } => TransportError::AgyVersion {
+                program: PathBuf::from(PLACES_HIDDEN),
+                found,
+            },
+            // The folder of an agy turn is named after the data folder.
+            TransportError::AgyFolder(_) => TransportError::Spawn {
+                program: PathBuf::from(PLACES_HIDDEN),
+                source: std::io::Error::other("the folder for its turns cannot be used"),
+            },
             TransportError::Spawn { source, .. } => TransportError::Spawn {
                 program: PathBuf::from(PLACES_HIDDEN),
                 source,
@@ -136,9 +196,10 @@ pub(super) fn agent_status(
     settings: &Settings,
     paths: &ProgramPaths,
     data_dir: &Path,
+    chat: ChatId,
     conversation: &agent::Conversation,
 ) -> Result<AgentStatus, BridgeError> {
-    let selected = select(settings.model, paths, data_dir)?;
+    let selected = select(settings.model, paths, data_dir, chat)?;
     let program = match selected.program {
         Ok(path) => ProgramStatus {
             provider: selected.name,

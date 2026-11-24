@@ -5,7 +5,8 @@ use super::{
     support::{Host, host, replay, request, wait_file},
 };
 use serde_json::{Value, json};
-use std::sync::atomic::Ordering;
+use std::sync::{atomic::Ordering, mpsc};
+use std::time::Duration;
 
 /// Sends one message with the provider script in it, waits for the reply to end, and gives the
 /// result of each step of the script.
@@ -133,4 +134,147 @@ fn a_site_on_claude_codes_own_list_is_refused_when_the_user_did_not_link_it() {
         allowed.ends_with(",WebSearch,WebFetch(domain:github.com)"),
         "{allowed}"
     );
+}
+
+/// Sends `apps_update` to the facade as the provider would, with the turn's token, and gives the
+/// kind of the refusal, or null when the call ran. `tool_use` is the id the request names.
+fn refusal_of_a_write(connection: &Value, tool_use: Option<&str>, app: &Value) -> Value {
+    let url = connection["url"].as_str().unwrap();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(15)))
+        .build()
+        .into();
+    let post = |session: Option<&str>, body: Value| {
+        let mut request = agent
+            .post(url)
+            .header("x-jet-turn", connection["token"].as_str().unwrap())
+            .header("content-type", "application/json")
+            .header("accept", "application/json, text/event-stream");
+        if let Some(session) = session {
+            request = request.header("mcp-session-id", session);
+        }
+        request.send(body.to_string()).unwrap()
+    };
+    let mut opened = post(
+        None,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"guard-test","version":"1"}}}),
+    );
+    let session = opened.headers()["mcp-session-id"]
+        .to_str()
+        .unwrap()
+        .to_owned();
+    opened.body_mut().read_to_string().unwrap();
+    post(
+        Some(&session),
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+    );
+    let mut params = disable(app);
+    params["name"] = params["tool"].take();
+    if let Some(id) = tool_use {
+        params["_meta"] = json!({"claudecode/toolUseId": id});
+    }
+    let answer = post(
+        Some(&session),
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":params}),
+    )
+    .body_mut()
+    .read_to_string()
+    .unwrap();
+    let result = answer
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line.strip_prefix("data: ")?).ok())
+        .find(|message| message["id"] == 2)
+        .unwrap_or_else(|| panic!("the facade gave no result: {answer}"));
+    refusal_kind(&result["result"]).clone()
+}
+
+/// What the test does while its write is at the facade.
+enum Then {
+    /// Lets the stand-in write a web result and then the write's own tool-use line.
+    WriteTheLines,
+    Stop,
+    Nothing,
+}
+
+#[test]
+fn a_write_waits_for_its_own_line_and_is_refused_when_the_order_cannot_be_known() {
+    let fixture = Fixture::start();
+    let host = host();
+    let app = host
+        .post("/api/apps", json!({"action":"add","address":fixture.url}))
+        .1["app"]["id"]
+        .clone();
+    let announce =
+        json!({"announce":"own-line","tool":"apps_update","arguments":disable(&app)["arguments"]});
+    // Each stand-in waits for a file this test makes, so the order of the lines is the test's.
+    let rows = [
+        (
+            "the write's own line comes after a web read",
+            json!([{"wait":"lines"}, {"search":"kites"}, announce, {"wait":"end"}]),
+            Some("own-line"),
+            Then::WriteTheLines,
+            "writeAfterWebText",
+        ),
+        (
+            "the write names no tool use",
+            json!([{"search":"kites"}, {"wait":"end"}]),
+            None,
+            Then::Nothing,
+            "noToolUseId",
+        ),
+        (
+            "the reply is stopped while the write waits",
+            json!([{"wait":"end"}]),
+            Some("never-written"),
+            Then::Stop,
+            "turnEnded",
+        ),
+    ];
+    for (number, (name, script, tool_use, then, expected)) in rows.into_iter().enumerate() {
+        let id = format!("guard-{number}");
+        let file = |name: &str| host.dir.path().join(name);
+        for stale in ["lines", "end", "facade-connection.json"] {
+            let _ = std::fs::remove_file(file(stale));
+        }
+        let mut message = request(&id);
+        message["text"] = json!(format!("facade:{script}"));
+        assert_eq!(host.post("/api/chat/send", message).0, 200, "{name}");
+        let connection = wait_file(&host, "facade-connection.json");
+        if tool_use.is_none() {
+            host.until(|value| {
+                let tools = value["active"]["tools"].as_array();
+                tools.is_some_and(|tools| tools.iter().any(|tool| tool["kind"] == "toolFinished"))
+            });
+        }
+
+        let (sender, answers) = mpsc::channel();
+        let sent_app = app.clone();
+        std::thread::spawn(move || {
+            sender.send(refusal_of_a_write(&connection, tool_use, &sent_app))
+        });
+        let early = answers.recv_timeout(Duration::from_millis(300)).ok();
+        match then {
+            Then::WriteTheLines => std::fs::write(file("lines"), "").unwrap(),
+            Then::Stop => {
+                let stopped = host.post("/api/chat/stop", json!({"requestId": id}));
+                assert_eq!(stopped.0, 200, "{name}");
+            }
+            Then::Nothing => {}
+        }
+        if tool_use.is_some() {
+            assert_eq!(
+                early, None,
+                "{name}: the write was answered before its own line"
+            );
+        }
+        let kind = early.unwrap_or_else(|| {
+            let waited = answers.recv_timeout(Duration::from_secs(10));
+            waited.unwrap_or_else(|_| panic!("{name}: the facade did not answer"))
+        });
+        assert_eq!(kind, expected, "{name}");
+
+        std::fs::write(file("end"), "").unwrap();
+        host.until(|value| value["active"].is_null());
+    }
+    assert_eq!(host.get("/api/apps")[0]["enabled"], true, "a write ran");
 }

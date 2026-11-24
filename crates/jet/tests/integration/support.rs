@@ -335,15 +335,16 @@ pub fn host() -> Host {
     let bins = std::path::Path::new(env!("CARGO_BIN_EXE_jet"))
         .parent()
         .unwrap();
-    let (claude, codex) = (bins.join("fake-claude"), bins.join("fake-codex"));
-    for fake in [&claude, &codex] {
+    let [claude, codex, agy] =
+        ["fake-claude", "fake-codex", "fake-agy"].map(|fake| bins.join(fake));
+    for fake in [&claude, &codex, &agy] {
         assert!(
             fake.exists(),
             "{} is missing; run `cargo build --workspace` before these tests",
             fake.display()
         );
     }
-    host.set_programs(json!({"claudePath":claude,"codexPath":codex}));
+    host.set_programs(json!({"claudePath":claude,"codexPath":codex,"agyPath":agy}));
     host
 }
 pub fn send(host: &Host, id: &str, model: &str, script: Value, active: Value) -> Value {

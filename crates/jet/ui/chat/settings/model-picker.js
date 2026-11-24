@@ -1,11 +1,11 @@
 import { h } from '../../dom.js';
-import { MODELS, isCodex, effortsFor } from '../../bridge/models.js';
+import { MODELS, providerOf, effortsFor } from '../../bridge/models.js';
 
 export function modelPicker(settings, changed) {
   const model = h('select', { 'aria-label': 'Model' });
-  for (const [provider, isCodexProvider] of [['Codex', true], ['Claude', false]]) {
+  for (const provider of ['Codex', 'agy', 'Claude']) {
     const options = MODELS
-      .filter(([id]) => isCodex(id) === isCodexProvider)
+      .filter(([id]) => providerOf(id) === provider)
       .map(([id, label]) => h('option', { value: id, text: label }));
     model.append(h('optgroup', { label: provider }, ...options));
   }

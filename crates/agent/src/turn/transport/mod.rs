@@ -1,5 +1,6 @@
 //! Providers expose the same request and line stream so turns can share cancellation and errors.
 
+mod agy;
 mod claude;
 mod codex;
 mod process;
@@ -12,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
 use crate::chat::{Effort, McpConnection, Model, SessionId};
+pub use agy::AgyCli;
 pub use claude::ClaudeCli;
 pub use codex::CodexCli;
 
@@ -51,7 +53,7 @@ pub struct Request {
 pub enum SessionMode {
     New,
     Resume(SessionId),
-    /// Leaves no conversation behind.
+    /// Leaves no conversation behind, except with agy, which keeps every conversation.
     Ephemeral,
 }
 
@@ -99,6 +101,22 @@ impl Stopper {
 pub enum TransportError {
     #[error("unsupported Codex model {} with thinking level {}", model.alias(), effort.alias())]
     CodexModel { model: Model, effort: Effort },
+    #[error("unsupported agy model {} with thinking level {}", model.alias(), effort.alias())]
+    AgyModel { model: Model, effort: Effort },
+    #[error("agy was not found; looked in {}", searched.join(", "))]
+    AgyMissing { searched: Vec<String> },
+    #[error("agy ran {tool}, which is not one of Jet's tools, so the reply was stopped")]
+    AgyTool { tool: String },
+    #[error("agy wrote a line that Jet does not know, so the reply was stopped: {line}")]
+    AgyLine { line: String },
+    #[error(
+        "{} is agy version {found}, and Jet runs agy only at version {}, on which its limit to Jet's tools was proven",
+        program.display(),
+        agy::PROVEN_VERSIONS.join(" or ")
+    )]
+    AgyVersion { program: PathBuf, found: String },
+    #[error(transparent)]
+    AgyFolder(#[from] agy::FolderError),
     #[error("Claude Code was not found; looked in {}", searched.join(", "))]
     ClaudeMissing { searched: Vec<String> },
     #[error("Codex was not found; looked in {}", searched.join(", "))]

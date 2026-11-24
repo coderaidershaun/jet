@@ -9,6 +9,8 @@ test('saved model and thinking choices load as a supported pair', async () => {
       [{ model: 'gpt-6-luna', effort: 'ultra' }, ['gpt-6-luna', 'high']],
       [{ model: 'sonnet', effort: 'ultra' }, ['sonnet', 'high']],
       [{ model: 'gpt-6.1-sol', effort: 'ultra' }, ['gpt-6.1-sol', 'ultra']],
+      [{ model: 'gemini-4-neon', effort: 'xhigh' }, ['gemini-4-neon', 'xhigh']],
+      [{ model: 'gemini-4-neon', effort: 'max' }, ['gemini-4-neon', 'high']],
       [{ model: null, effort: 'unknown' }, ['sonnet', 'high']],
     ]) {
       globalThis.fetch = async () => ({ ok: true, json: async () => saved });

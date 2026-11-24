@@ -147,8 +147,13 @@ fn write(transaction: &Transaction, owner: UserId, legacy: Legacy) -> Result<(),
                 .map(|path| path.to_string_lossy().into_owned())
         };
         transaction.execute(
-            "INSERT INTO server_settings (id, claude_path, codex_path) VALUES (1, ?1, ?2)",
-            params![text(&paths.claude_path), text(&paths.codex_path)],
+            "INSERT INTO server_settings (id, claude_path, codex_path, agy_path)
+             VALUES (1, ?1, ?2, ?3)",
+            params![
+                text(&paths.claude_path),
+                text(&paths.codex_path),
+                text(&paths.agy_path)
+            ],
         )?;
     }
     for app in legacy.apps.unwrap_or_default() {

@@ -10,6 +10,7 @@ import { requestJson } from './browser-agent.js';
  * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'} effort
  * @property {number} turnBudgetUsd
  * @property {string | null} [codexPath]   admin only; null = find Codex automatically
+ * @property {string | null} [agyPath]   admin only; null = find agy automatically
  * @property {string | null} [claudePath]   admin only; null = find Claude Code on its own
  */
 
@@ -25,7 +26,7 @@ function defaultSettings(isAdmin) {
     model: 'sonnet',
     effort: 'medium',
     turnBudgetUsd: 10,
-    ...(isAdmin ? { claudePath: null, codexPath: null } : {}),
+    ...(isAdmin ? { claudePath: null, codexPath: null, agyPath: null } : {}),
   };
 }
 

@@ -22,6 +22,8 @@ pub enum Model {
     Gpt56Luna,
     #[serde(rename = "gpt-reserve")]
     GptReserve,
+    #[serde(rename = "gemini-4-neon")]
+    Gemini4Neon,
     Fable,
     Opus,
     #[default]
@@ -44,6 +46,16 @@ impl Model {
         )
     }
 
+    /// Whether Google's `agy` program runs the model.
+    pub fn is_agy(self) -> bool {
+        self == Self::Gemini4Neon
+    }
+
+    /// Only Claude Code searches and reads the web; the other providers run with web tools off.
+    pub fn reads_web(self) -> bool {
+        !self.is_codex() && !self.is_agy()
+    }
+
     pub fn supports_ultra(self) -> bool {
         self.is_codex() && !matches!(self, Self::Gpt6Luna | Self::Gpt56Luna | Self::GptReserve)
     }
@@ -59,6 +71,7 @@ impl Model {
             Model::Gpt56Terra => "gpt-5.6-terra",
             Model::Gpt56Luna => "gpt-5.6-luna",
             Model::GptReserve => "gpt-reserve",
+            Model::Gemini4Neon => "gemini-4-neon",
             Model::Fable => "fable",
             Model::Opus => "opus",
             Model::Sonnet => "sonnet",

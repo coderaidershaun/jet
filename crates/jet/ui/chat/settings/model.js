@@ -1,11 +1,11 @@
 import { h } from '../../dom.js';
 import { note, section } from './controls.js';
 
-import { isCodex } from '../../bridge/models.js';
+import { providerOf } from '../../bridge/models.js';
 import { modelPicker } from './model-picker.js';
 
 export function buildModel({ settings, changed }) {
-  const picker = modelPicker(settings, (kind) => { budgetField.hidden = isCodex(settings.model); changed(kind); });
+  const picker = modelPicker(settings, (kind) => { budgetField.hidden = providerOf(settings.model) !== 'Claude'; showNotes(); changed(kind); });
   const budget = h('input', { type: 'number', min: '0.1', step: '0.25', inputmode: 'decimal' });
   budget.value = settings.turnBudgetUsd.toFixed(2);
   budget.addEventListener('change', () => {
@@ -16,11 +16,14 @@ export function buildModel({ settings, changed }) {
   });
   const budgetField = h('label', { class: 'field' }, h('span', { class: 'field-label', text: 'Budget per turn (USD)' }), budget);
 
-  const appliesNote = note('Changes apply to the next reply. Codex memory review uses GPT-6 Luna; Claude uses Haiku. Codex reports tokens, but does not provide a dollar budget limit.');
-  budgetField.hidden = isCodex(settings.model);
+  const appliesNote = note('Changes apply to the next reply. Codex memory review uses GPT-6 Luna, agy uses Gemini 4 Neon, Claude uses Haiku. Codex and agy do not provide a dollar budget limit.');
+  budgetField.hidden = providerOf(settings.model) !== 'Claude';
   const webNote = note('Codex cannot search or read the web in Jet. Choose a Claude model when you want Jet to look things up.');
+  const agyWebNote = note('agy cannot search or read the web in Jet. Choose a Claude model when you want Jet to look things up.');
+  const showNotes = () => { webNote.hidden = providerOf(settings.model) !== 'Codex'; agyWebNote.hidden = providerOf(settings.model) !== 'agy'; };
+  showNotes();
   return {
-    el: section('model', 'Model and thinking', picker.el, webNote, budgetField, appliesNote),
-    refresh() { picker.refresh(); budgetField.hidden = isCodex(settings.model); },
+    el: section('model', 'Model and thinking', picker.el, webNote, agyWebNote, budgetField, appliesNote),
+    refresh() { picker.refresh(); budgetField.hidden = providerOf(settings.model) !== 'Claude'; showNotes(); },
   };
 }

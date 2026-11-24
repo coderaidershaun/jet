@@ -125,8 +125,8 @@ impl ActiveTurn {
         }
     }
 
-    /// Whether a web read came back before the card `card_id` started, or `None` while the card
-    /// has not been seen.
+    /// Whether a web read has come back in this turn, or `None` while the card `card_id` has not
+    /// been seen. A web read that came back after the card started also counts.
     pub(super) fn read_web_before(&self, card_id: &str) -> Option<bool> {
         let seen = self.tools.iter().any(|tool| tool["id"] == card_id);
         seen.then_some(self.read_web)
@@ -141,7 +141,7 @@ impl ActiveTurn {
                 .iter()
                 .any(|tool| tool["id"] == card_id && tool["kind"] == TOOL_STARTED)
                 .then(|| card_id.to_owned()),
-            // SMELL: Codex names no card for a call, so two identical Codex calls at once still share the first card.
+            // SMELL: Codex and agy name no card for a call, so two identical calls at once still share the first card.
             None => self.running_call_id(call.target, call.arguments),
         }
     }

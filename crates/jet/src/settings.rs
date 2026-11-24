@@ -36,11 +36,12 @@ impl Default for Settings {
 pub(crate) struct ProgramPaths {
     pub claude_path: Option<PathBuf>,
     pub codex_path: Option<PathBuf>,
+    pub agy_path: Option<PathBuf>,
 }
 
 impl ProgramPaths {
     /// The names the page sends them under.
-    pub(crate) const FIELDS: [&str; 2] = ["claudePath", "codexPath"];
+    pub(crate) const FIELDS: [&str; 3] = ["claudePath", "codexPath", "agyPath"];
 
     /// Whether a settings body names any program path.
     pub(crate) fn named_in(body: &Value) -> bool {

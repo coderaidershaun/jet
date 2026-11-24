@@ -1,4 +1,4 @@
-//! Both providers need the same prompt delivery, output readers and process cleanup.
+//! Every provider needs the same prompt delivery, output readers and process cleanup.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::{Child, ExitStatus};

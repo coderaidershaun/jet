@@ -211,7 +211,13 @@ impl ChatState {
     pub fn status(&self) -> Result<AgentStatus, BridgeError> {
         let settings = self.store.settings(self.user())?;
         let paths = self.store.program_paths()?;
-        provider::agent_status(&settings, &paths, &self.data_dir, &self.conversation)
+        provider::agent_status(
+            &settings,
+            &paths,
+            &self.data_dir,
+            self.chat.id,
+            &self.conversation,
+        )
     }
 
     /// The provider that runs `model`, from the server's program paths. Finding the program can
@@ -219,7 +225,7 @@ impl ChatState {
     /// Only an admin's failed replies may name where the program is on the server.
     fn transport_for(&self, model: Model) -> Result<Arc<dyn Transport>, BridgeError> {
         let paths = self.store.program_paths()?;
-        let transport = provider::transport_for(model, &paths, &self.data_dir)?;
+        let transport = provider::transport_for(model, &paths, &self.data_dir, self.chat.id)?;
         let is_admin = self
             .store
             .user(self.user())?
@@ -421,8 +427,7 @@ impl ChatState {
             turn_id: uuid::Uuid::new_v4().to_string(),
             request: payload,
         };
-        // Only Claude Code turns get web tools.
-        let reads_web = !request.model.is_codex();
+        let reads_web = request.model.reads_web();
         let message = Message {
             text: request.text,
             attachments,
@@ -621,8 +626,9 @@ impl ChatState {
     }
 
     /// Waits until the turn's stream has passed the tool-use line `card_id`, then says whether the
-    /// turn had read web text by then. Every earlier web read is on an earlier line, so the answer
-    /// is exact. `None` when the turn ends first.
+    /// turn has read web text. Every earlier web read is on an earlier line, so none is missed; a
+    /// web read that came back after that line and before this check also counts. `None` when the
+    /// turn ends first.
     pub async fn read_web_before(&self, turn: &TurnContext, card_id: &str) -> Option<bool> {
         let mut events = lock(&self.runtime).sender.subscribe();
         loop {

@@ -20,6 +20,10 @@ export function buildClaude({ settings, agent, isAdmin, changed, onClaudeChecked
     label: 'Path to codex', value: settings.codexPath ?? '', placeholder: 'Found automatically',
     onInput: (text) => { settings.codexPath = text.trim() || null; changed('claude'); },
   });
+  const agyPath = textField({
+    label: 'Path to agy', value: settings.agyPath ?? '', placeholder: 'Found automatically',
+    onInput: (text) => { settings.agyPath = text.trim() || null; changed('claude'); },
+  });
   const failure = h('p', { class: 'problem', role: 'alert' });
   const showAsk = () => {
     confirmBox.hidden = true;
@@ -51,7 +55,7 @@ export function buildClaude({ settings, agent, isAdmin, changed, onClaudeChecked
   return {
     el: [
       // Whoever sets a path chooses the program the server runs, so only an admin gets the fields.
-      section('claude', 'Agent programs', ...(isAdmin ? [codexPath.el, path.el] : []), status),
+      section('claude', 'Agent programs', ...(isAdmin ? [codexPath.el, agyPath.el, path.el] : []), status),
       section('forget', 'Forget this conversation', note('Start again with an empty thread.'), ask, confirmBox, failure),
     ],
 

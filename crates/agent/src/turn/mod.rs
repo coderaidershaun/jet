@@ -22,7 +22,7 @@ use tools::ToolCalls;
 #[cfg(test)]
 pub(crate) use transport::scripted;
 pub use transport::{
-    ClaudeCli, CodexCli, Lines, Request, SessionMode, Stopper, Transport, TransportError,
+    AgyCli, ClaudeCli, CodexCli, Lines, Request, SessionMode, Stopper, Transport, TransportError,
 };
 
 /// How long the agent may stay silent before the turn gives up.
