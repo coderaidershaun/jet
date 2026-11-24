@@ -5,6 +5,7 @@ mod chats;
 mod error;
 mod events;
 mod memory;
+mod promises;
 mod provider;
 mod review_timer;
 mod turn_tools;

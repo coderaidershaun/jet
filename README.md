@@ -7,7 +7,7 @@ Jet is a browser home for independently running apps, with an assistant of each 
 ```text
 crates/jet/                       the server program (axum) and the page it serves
   src/apps/                       app routes: registry (/api/apps), tool browser, proxy to running apps
-  src/chat/                       one runtime per chat: commands, the streamed reply, reconnect snapshots, the notes review timer
+  src/chat/                       one runtime per chat: commands, the streamed reply, reconnect snapshots, the notes review timer (it also sets a follow-up for each promise Jet made in its own lines, and rearms when it falls due too soon)
   src/evidence/                   outside evidence: a GitHub repository's activity, each user's sealed GitHub token
   src/facade/                     the seventeen MCP tools the provider sees
   src/objectives/                 objectives and agent-tasks: computed dates, local time to UTC

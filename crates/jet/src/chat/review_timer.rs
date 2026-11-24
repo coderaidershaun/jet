@@ -34,12 +34,20 @@ impl ReviewTimer {
         let waiting = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let generation = self.generation.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(host.review_quiet + MARGIN);
-            if generation.load(Ordering::SeqCst) != waiting {
-                return;
-            }
-            if let Some(hub) = host.hub.upgrade() {
-                hub.review(&host, &*target.transport, &target.name);
+            let mut wait = host.review_quiet;
+            loop {
+                std::thread::sleep(wait + MARGIN);
+                if generation.load(Ordering::SeqCst) != waiting {
+                    return;
+                }
+                let Some(hub) = host.hub.upgrade() else {
+                    return;
+                };
+                // A review that falls due too soon after the last one is tried again later.
+                match hub.review(&host, &*target.transport, &target.name) {
+                    Some(rest) => wait = rest,
+                    None => return,
+                }
             }
         });
     }

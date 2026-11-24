@@ -15,7 +15,10 @@ use std::sync::{Arc, Mutex};
 use memory::Saved;
 pub use memory::{InMemory, MemoryError, NewEntry, Session, Storage, now_ms};
 pub use reply::Reply;
-pub use review::{REVIEW_QUIET, ReviewError, ReviewOutcome, ReviewedChat, review_chats};
+pub use review::{
+    Promise, REVIEW_GAP, REVIEW_QUIET, Review, ReviewError, ReviewOutcome, ReviewedChat,
+    review_chats,
+};
 use session_policy::decide;
 
 use crate::chat::{

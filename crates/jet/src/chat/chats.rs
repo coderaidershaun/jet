@@ -5,10 +5,11 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use agent::{Conversation, Entry, Notes, ReviewOutcome, ReviewedChat, Transport};
+use agent::{Conversation, Entry, Notes, Review, ReviewOutcome, ReviewedChat, Transport};
 use serde_json::json;
 
 use super::events::Feed;
@@ -27,6 +28,8 @@ pub(crate) struct Chats {
     pub(super) data_dir: PathBuf,
     /// How long a chat must be quiet before its notes review runs.
     pub(super) review_quiet: Duration,
+    /// How far apart two reviews of one user are, in milliseconds. Tests shorten it.
+    review_gap_ms: AtomicU64,
     open: Mutex<Open>,
 }
 
@@ -36,7 +39,8 @@ struct Open {
     /// One feed of events for each user, for all of the user's chats.
     feeds: HashMap<UserId, Arc<Mutex<Feed>>>,
     /// Held while a user's notes review runs, so that only one review of the notes runs at a time.
-    reviews: HashMap<UserId, Arc<Mutex<()>>>,
+    /// It holds the time, in milliseconds, of the user's last review.
+    reviews: HashMap<UserId, Arc<Mutex<u64>>>,
     closing: bool,
 }
 
@@ -92,6 +96,7 @@ impl Chats {
             files,
             data_dir,
             review_quiet,
+            review_gap_ms: AtomicU64::new(agent::REVIEW_GAP.as_millis() as u64),
             open: Mutex::new(Open::default()),
         })
     }
@@ -229,24 +234,37 @@ impl Chats {
         open.feeds.entry(user).or_default().clone()
     }
 
+    /// Sets how far apart two reviews of one user are.
+    pub(crate) fn set_review_gap(&self, gap: Duration) {
+        self.review_gap_ms
+            .store(gap.as_millis() as u64, Ordering::SeqCst);
+    }
+
     /// Reads the new entries of every chat of the user into their one set of notes, once the chat
-    /// `quiet` has been quiet. One review of a user's notes runs at a time: a second one waits,
-    /// and then finds nothing left to read.
+    /// `quiet` has been quiet and the user's last review is a gap behind. One review of a user's
+    /// notes runs at a time: a second one waits, and then finds nothing left to read. Gives how
+    /// long the caller should wait before asking again when the review is not due yet.
     pub(super) fn review(
         self: &Arc<Self>,
         quiet: &Arc<ChatState>,
         transport: &dyn Transport,
         name: &str,
-    ) {
+    ) -> Option<Duration> {
         let user = quiet.chat.user;
         let gate = lock(&self.open).reviews.entry(user).or_default().clone();
-        let _one_at_a_time = lock(&gate);
-        if !quiet
+        let mut last_review = lock(&gate);
+        let now = agent::now_ms();
+        let gap = Duration::from_millis(self.review_gap_ms.load(Ordering::SeqCst));
+        let wait = quiet
             .conversation
-            .review_due(agent::now_ms(), self.review_quiet)
-        {
-            return;
+            .review_wait(now, self.review_quiet, gap)?;
+        let since_last = Duration::from_millis(now.saturating_sub(*last_review));
+        let wait = wait.max(gap.saturating_sub(since_last));
+        if !wait.is_zero() {
+            return Some(wait);
         }
+        *last_review = now;
+        let when = self.local_now(user, now);
         let outcome = self.reviewed_chats(user, quiet).and_then(|chats| {
             let list: Vec<_> = chats
                 .iter()
@@ -255,13 +273,20 @@ impl Chats {
                     conversation: &chat.conversation,
                 })
                 .collect();
-            agent::review_chats(transport, name, &list).map_err(|error| error.to_string())
+            let review = agent::review_chats(transport, name, &when, &list)
+                .map_err(|error| error.to_string())?;
+            Ok((review, chats))
         });
         match outcome {
-            Ok(ReviewOutcome::Updated(notes)) => self.notes_changed(user, &notes),
-            Ok(_) => {}
+            Ok((Review { outcome, promises }, chats)) => {
+                self.schedule_promises(user, &chats, &promises, now);
+                if let ReviewOutcome::Updated(notes) = outcome {
+                    self.notes_changed(user, &notes);
+                }
+            }
             Err(error) => eprintln!("jet: notes review failed: {error}"),
         }
+        None
     }
 
     /// Every chat of the user with its title, `quiet` first.

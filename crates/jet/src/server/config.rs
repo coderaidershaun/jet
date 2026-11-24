@@ -22,6 +22,8 @@ pub struct ServerConfig {
     pub(crate) trusted_proxy: Option<IpAddr>,
     /// How long a chat must be quiet before its notes review runs. Tests shorten it.
     pub(crate) review_quiet: Duration,
+    /// How far apart two notes reviews of one user are. Tests shorten it.
+    pub(crate) review_gap: Duration,
 }
 
 impl ServerConfig {
@@ -39,6 +41,7 @@ impl ServerConfig {
             access_seconds: crate::account::ACCESS_SECONDS,
             trusted_proxy: None,
             review_quiet: agent::REVIEW_QUIET,
+            review_gap: agent::REVIEW_GAP,
         };
         let mut args = args.into_iter().map(Into::into);
         while let Some(flag) = args.next() {
@@ -78,6 +81,12 @@ impl ServerConfig {
                         .map(Duration::from_secs)
                         .ok_or_else(|| {
                             ServerError::Config(format!("invalid review wait: {value}"))
+                        })?
+                }
+                "--review-gap-seconds" => {
+                    config.review_gap =
+                        value.parse().ok().map(Duration::from_secs).ok_or_else(|| {
+                            ServerError::Config(format!("invalid review gap: {value}"))
                         })?
                 }
                 "--trusted-proxy" => {

@@ -122,6 +122,7 @@ impl Server {
             config.data_dir.clone(),
             config.review_quiet,
         );
+        chats.set_review_gap(config.review_gap);
         *lock(&facade.chats) = Arc::downgrade(&chats);
         apps.tell_chats(Arc::downgrade(&chats));
         Ok(Self {

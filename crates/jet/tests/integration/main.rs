@@ -10,6 +10,7 @@ mod import;
 mod mcp_fixture;
 mod objectives;
 mod pane;
+mod promises;
 mod proxy;
 mod reactions;
 mod sharing;
