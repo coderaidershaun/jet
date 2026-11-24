@@ -1,4 +1,4 @@
-//! Keeps each user's files in the database until the user forgets the chat: the files Jet writes
+//! Keeps each user's files in the database until the user forgets or deletes the chat they were sent or written in: the files Jet writes
 //! for the user to download, and the files the user attaches to a message. The routes that move
 //! them to and from the page are here too.
 
@@ -13,7 +13,7 @@ mod upload;
 use uuid::Uuid;
 
 use crate::WorkerFailed;
-use crate::store::{Store, StoreError, UserId};
+use crate::store::{ChatId, Store, StoreError, UserId};
 
 pub(crate) use about::{About, Origin};
 pub(crate) use export::ExportRequest;
@@ -109,8 +109,13 @@ impl Files {
     /// # Errors
     /// - [`FileError::NotFound`] naming the first id that is not an upload of this user.
     /// - [`FileError::Store`] when the database cannot be used.
-    pub fn attach(&self, user: UserId, ids: &[&str]) -> Result<Vec<About>, FileError> {
-        if let Some(missing) = self.store.attach_files(user, ids)? {
+    pub fn attach(
+        &self,
+        user: UserId,
+        chat: ChatId,
+        ids: &[&str],
+    ) -> Result<Vec<About>, FileError> {
+        if let Some(missing) = self.store.attach_files(user, chat, ids)? {
             return Err(FileError::NotFound(missing));
         }
         ids.iter()
@@ -172,11 +177,11 @@ impl Files {
         Ok((about, reading))
     }
 
-    /// Removes every file of the user.
+    /// Removes every file sent or written in the chat.
     ///
     /// SMELL: an export still running after its turn was stopped can finish after this, and its
     /// file then stays, linked from nowhere, until the next clear.
-    pub fn clear(&self, user: UserId) -> Result<(), FileError> {
-        Ok(self.store.remove_files(user)?)
+    pub fn clear(&self, chat: ChatId) -> Result<(), FileError> {
+        Ok(self.store.remove_files(chat)?)
     }
 }

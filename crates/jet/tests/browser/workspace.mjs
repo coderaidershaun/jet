@@ -53,12 +53,12 @@ if (input.includes('fail-before-init')) {
   page = await context.newPage();
   const errors = [], sends = [], stops = [];
   page.on('pageerror', error => { errors.push(String(error)); console.error(error); });
-  page.on('request', request => { if (request.url().endsWith('/api/chat/send')) sends.push(request.postDataJSON()); if (request.url().endsWith('/api/chat/stop')) stops.push(request.postDataJSON()); });
+  page.on('request', request => { if (new URL(request.url()).pathname === '/api/chat/send') sends.push(request.postDataJSON()); if (new URL(request.url()).pathname === '/api/chat/stop') stops.push(request.postDataJSON()); });
   await signIn(page, origin);
   await page.locator('#loading').waitFor({ state: 'detached' });
   await delay(250);
   await page.screenshot({ path: path.join(output, 'workspace-empty.png') });
-  const api = async body => { const response = await context.request.post(origin + '/api/apps', { data: body }); assert.ok(response.ok(), await response.text()); return response.json(); };
+  const api = async body => { const response = await context.request.post(origin + '/api/apps', { headers: { origin }, data: body }); assert.ok(response.ok(), await response.text()); return response.json(); };
   const apps = async () => (await context.request.get(origin + '/api/apps')).json();
   const nav = id => page.locator(`.app-list [data-app-id="${id}"]`);
   const frame = id => page.frameLocator(`.app-frame[data-app-id="${id}"] iframe`);
@@ -104,7 +104,8 @@ if (input.includes('fail-before-init')) {
   const appButtons = await page.locator('.app-list button').evaluateAll(elements => elements.map(el => ({ text: el.querySelector('.nav-label').textContent, title: el.title, label: el.getAttribute('aria-label'), box: el.getBoundingClientRect().toJSON(), icon: el.querySelector('.nav-icon').getBoundingClientRect().toJSON() })));
   const settingsTop = (await page.locator('#gear').boundingBox()).y;
   for (const item of appButtons) { assert.equal(item.text, item.label); assert.equal(item.title, item.label); assert.equal(item.icon.x + item.icon.width / 2, kiteBox.x + kiteBox.width / 2, 'App icons line up with the kite'); assert.ok(item.box.height >= 44 && item.box.y > kiteBox.y && item.box.y + item.box.height <= settingsTop); }
-  assert.ok(appButtons[0].box.y < kiteBox.y + kiteBox.height + 40, 'Apps sit directly under the kite');
+  const lastChat = await page.locator('.chat-row').last().boundingBox();
+  assert.ok(appButtons[0].box.y >= lastChat.y + lastChat.height, 'Apps sit under the chat list');
   await page.locator('#field').fill('Unsent chat draft');
   await nav(a.id).click();
   await frame(a.id).getByLabel('Unsaved note').fill('Unsent note A');

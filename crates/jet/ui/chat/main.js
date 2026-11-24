@@ -15,6 +15,8 @@ import { createTray } from './composer/tray.js';
 import { createTrayView } from './composer/tray-view.js';
 import { createComposerView } from './composer/view.js';
 import { showAccount } from './drawer/account.js';
+import { createChats } from './drawer/chats.js';
+import { createChatsView } from './drawer/chats-view.js';
 import { createDrawerView } from './drawer/view.js';
 import { connectHearing } from './hear/connect.js';
 import { createSheet } from './settings/sheet.js';
@@ -40,8 +42,8 @@ async function start() {
   const user = await session.whoAmI();
   const settings = await loadSettings(user);
   const agent = connectAgent({ beforeReconnect: session.whoAmI });
-  const [history, status, voiceStatus] = await Promise.all([
-    agent.history(),
+  const [opening, status, voiceStatus] = await Promise.all([
+    agent.snapshot(),
     agent.status(),
     agent.voiceStatus().catch((error) => {
       console.warn('the voice status could not be read:', error);
@@ -49,7 +51,9 @@ async function start() {
     }),
   ]);
 
+  const { history } = opening;
   const page = $('page');
+  const announce = (message) => { $('announce').textContent = message; };
   let toolBrowser, commandMenu, hear;
   const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId) });
   const commandResult = h('pre', { class: 'command-result', role: 'status', 'aria-label': 'Command result' });
@@ -166,6 +170,45 @@ async function start() {
   });
   agent.onConnectionChanged?.(drawer.setConnection);
 
+  const chats = createChats({
+    agent,
+    attending: () => !document.hidden,
+    onChange: () => chatsView.paint(),
+    onGone: () => showChat(chats.mainId),
+  });
+  const chatsView = createChatsView({
+    list: $('chat-list'),
+    titleEl: $('chat-title'),
+    newButton: $('new-chat'),
+    chats,
+    open: (id) => { workspace.showChat(); showChat(id); },
+    announce,
+  });
+  agent.onChatEvent((envelope) => {
+    chats.handle(envelope);
+    if (envelope.event.kind === 'entryAdded' && envelope.chatId === chats.openId) turn.addEntry(envelope.event.entry);
+  });
+  document.addEventListener('visibilitychange', () => chats.attend());
+
+  /** Opens another chat: its history and running reply replace the thread, and every later call carries its id. */
+  async function showChat(id) {
+    if (id === null || id === chats.openId) return;
+    try {
+      await agent.openChat(id, (snapshot) => {
+        chats.opened(id);
+        composer.reset();
+        composerView.setHeld(null);
+        turn.restore(snapshot, { fresh: true });
+        if (snapshot.history.length === 0) live.showHero();
+        view.scrollToBottom();
+        refreshStatus();
+      });
+    } catch (error) {
+      console.warn('the chat could not be opened:', error);
+      announce('Jet could not open that chat. Check the connection and try again.');
+    }
+  }
+
   const live = createLive({
     reducedMotion: reducedMotion(),
     heroSlot: $('hero'),
@@ -246,7 +289,7 @@ async function start() {
     composerView,
     live,
     page: { announce: $('announce') },
-    afterReply: () => { refreshStatus(); hear?.replyEnded(); },
+    afterReply: () => { refreshStatus(); hear?.replyEnded(); chats.refresh().catch(warn('the chat list could not be read')); },
     activeAppId: workspace.activeAppId,
     voice,
   });
@@ -342,7 +385,14 @@ async function start() {
     live.showInLane(view.liveLane());
   }
   live.start();
-  agent.watch?.((snapshot) => { turn.restore(snapshot); workspace.refresh(); resolveFirstSnapshot(); refreshStatus(); }, (event) => turn.observe(event));
+  chats.refresh().then(() => chats.opened(opening.chatId), warn('the chat list could not be read'));
+  agent.watch?.((snapshot) => {
+    turn.restore(snapshot);
+    workspace.refresh();
+    chats.refresh().catch(warn('the chat list could not be read'));
+    resolveFirstSnapshot();
+    refreshStatus();
+  }, (event) => turn.observe(event));
   finishLoading({ cover: $('loading'), settled: Promise.all([workspace.ready, firstSnapshot]), reducedMotion });
 }
 

@@ -1,5 +1,5 @@
 //! Define the fixed facade contract without copying registered tool schemas.
-use super::objectives;
+use super::{chats, objectives};
 use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Value, json};
 use std::sync::LazyLock;
@@ -42,7 +42,7 @@ static TOOLS: LazyLock<Vec<Tool>> = LazyLock::new(|| {
             "repo":{"type":"string","pattern":"^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$","description":"owner/name"},
             "since":{"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$","description":"ISO 8601 time, such as 2026-11-20T00:00:00Z"}
         }),json!(["repo","since"]))),
-    ].into_iter().chain(objectives::definitions()).map(|(name, read_only, description, schema)| {
+    ].into_iter().chain(objectives::definitions()).chain(chats::definitions()).map(|(name, read_only, description, schema)| {
         Tool::new(name, description, schema.as_object().cloned().unwrap_or_default())
             .with_annotations(ToolAnnotations::new().read_only(read_only))
     }).collect()

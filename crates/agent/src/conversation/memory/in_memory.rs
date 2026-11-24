@@ -16,9 +16,15 @@ struct State {
     last_id: u64,
     session: Option<Session>,
     notes: Notes,
+    objective_summary: Option<String>,
 }
 
 impl InMemory {
+    /// Makes this chat the chat of an objective whose summary is `summary`.
+    pub fn set_objective_summary(&self, summary: &str) {
+        self.state().objective_summary = Some(summary.to_owned());
+    }
+
     fn state(&self) -> std::sync::MutexGuard<'_, State> {
         crate::lock(&self.state)
     }
@@ -70,5 +76,9 @@ impl Storage for InMemory {
     fn save_notes(&self, notes: &Notes) -> Result<(), MemoryError> {
         self.state().notes = notes.clone();
         Ok(())
+    }
+
+    fn objective_summary(&self) -> Result<Option<String>, MemoryError> {
+        Ok(self.state().objective_summary.clone())
     }
 }

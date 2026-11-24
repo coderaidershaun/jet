@@ -1,6 +1,7 @@
 //! Open the host, serve its routes and shut it down. It joins the jobs of the crate: accounts,
 //! chat, apps, files, voice and the tool facade.
 
+mod chats;
 mod config;
 mod routes;
 

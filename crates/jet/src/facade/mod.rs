@@ -1,5 +1,6 @@
 //! Bind the stable provider tool surface to one initiating browser turn, acting for the user who
 //! sent its message: their apps, their files and their credentials only.
+mod chats;
 mod handler;
 mod handoff;
 mod marks;
@@ -97,6 +98,9 @@ impl Facade {
     }
     fn binding(&self, token: &str) -> Option<Binding> {
         lock(&self.bindings).get(token).cloned()
+    }
+    fn chats(&self) -> Option<Arc<Chats>> {
+        lock(&self.chats).upgrade()
     }
     /// The runtime of the chat the turn runs in, while the server is open.
     fn chat_of(&self, binding: &Binding) -> Option<Arc<ChatState>> {

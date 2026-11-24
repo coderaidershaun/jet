@@ -1,10 +1,13 @@
 //! Reconnect browsers from an authoritative snapshot and a bounded tail of events.
 
 use super::BridgeError;
+use crate::lock;
+use crate::store::ChatId;
 use agent::{EntryId, Event, ShownEntry, TurnIdentity, mcp::ToolTarget};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 
 const REPLAY_LIMIT: usize = 512;
@@ -41,6 +44,8 @@ pub(crate) struct RunningCall<'a> {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Envelope {
+    /// The chat the event is about; `None` for an event that is about the user's whole Jet.
+    pub chat_id: Option<ChatId>,
     pub cursor: u64,
     pub turn: Option<TurnContext>,
     pub event: Value,
@@ -180,19 +185,80 @@ pub(crate) struct Reacted {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Snapshot {
+    pub chat_id: ChatId,
     pub epoch: String,
     pub cursor: u64,
     pub history: Vec<ShownEntry>,
     pub active: Option<ActiveTurn>,
+    /// The Jet entries of the chat after the user's read mark.
+    pub unread: u64,
+}
+
+/// The events of every chat of one user, in one order with one epoch and cursor, so that one
+/// stream carries them all and a reconnecting page resumes them all.
+pub(super) struct Feed {
+    pub epoch: String,
+    pub cursor: u64,
+    events: VecDeque<Envelope>,
+    pub sender: broadcast::Sender<Envelope>,
+}
+
+impl Default for Feed {
+    fn default() -> Self {
+        let (sender, _) = broadcast::channel(REPLAY_LIMIT);
+        Self {
+            epoch: uuid::Uuid::new_v4().to_string(),
+            cursor: 0,
+            events: VecDeque::new(),
+            sender,
+        }
+    }
+}
+
+impl Feed {
+    pub fn publish(&mut self, chat_id: Option<ChatId>, turn: Option<TurnContext>, event: Value) {
+        self.cursor += 1;
+        let envelope = Envelope {
+            chat_id,
+            cursor: self.cursor,
+            turn,
+            event,
+        };
+        self.events.push_back(envelope.clone());
+        while self.events.len() > REPLAY_LIMIT {
+            self.events.pop_front();
+        }
+        // No browser needs to be connected for a turn to finish.
+        self.sender.send(envelope).ok();
+    }
+
+    /// The events after `cursor`, or `None` when the page's epoch is not this one or the tail no
+    /// longer reaches back to its cursor.
+    pub fn replay(&self, epoch: Option<&str>, cursor: Option<u64>) -> Option<Vec<Envelope>> {
+        let cursor = cursor?;
+        let earliest = self
+            .events
+            .front()
+            .map_or(self.cursor, |event| event.cursor.saturating_sub(1));
+        if epoch != Some(&self.epoch) || cursor < earliest || cursor > self.cursor {
+            return None;
+        }
+        Some(
+            self.events
+                .iter()
+                .filter(|event| event.cursor > cursor)
+                .cloned()
+                .collect(),
+        )
+    }
 }
 
 pub(super) struct Runtime {
-    pub epoch: String,
-    pub cursor: u64,
+    pub chat: ChatId,
+    /// The feed of the chat's user, shared by all of the user's chats.
+    pub feed: Arc<Mutex<Feed>>,
     pub active: Option<ActiveTurn>,
     pub stopper: Option<agent::Stopper>,
-    pub events: VecDeque<Envelope>,
-    pub sender: broadcast::Sender<Envelope>,
     pub closing: bool,
     pub cancelled_requests: VecDeque<String>,
     /// The one reaction turn waiting for the running turn to end. A newer reaction replaces it.
@@ -200,15 +266,12 @@ pub(super) struct Runtime {
 }
 
 impl Runtime {
-    pub fn new() -> Self {
-        let (sender, _) = broadcast::channel(REPLAY_LIMIT);
+    pub fn new(chat: ChatId, feed: Arc<Mutex<Feed>>) -> Self {
         Self {
-            epoch: uuid::Uuid::new_v4().to_string(),
-            cursor: 0,
+            chat,
+            feed,
             active: None,
             stopper: None,
-            events: VecDeque::new(),
-            sender,
             closing: false,
             cancelled_requests: VecDeque::new(),
             pending: None,
@@ -236,18 +299,23 @@ impl Runtime {
         active: ActiveTurn,
         stopper: agent::Stopper,
         mut history: Vec<ShownEntry>,
+        unread: u64,
     ) {
         let identity = active.identity.clone();
         history.extend(active.user.clone());
         self.active = Some(active);
         self.stopper = Some(stopper);
+        let mut feed = lock(&self.feed);
         let snapshot = Snapshot {
-            epoch: self.epoch.clone(),
-            cursor: self.cursor + 1,
+            chat_id: self.chat,
+            epoch: feed.epoch.clone(),
+            cursor: feed.cursor + 1,
             history,
             active: self.active.clone(),
+            unread,
         };
-        self.publish(
+        feed.publish(
+            Some(self.chat),
             Some(identity),
             json!({"kind":"accepted", "snapshot":snapshot}),
         );
@@ -263,35 +331,6 @@ impl Runtime {
     }
 
     pub fn publish(&mut self, turn: Option<TurnContext>, event: Value) {
-        self.cursor += 1;
-        let envelope = Envelope {
-            cursor: self.cursor,
-            turn,
-            event,
-        };
-        self.events.push_back(envelope.clone());
-        while self.events.len() > REPLAY_LIMIT {
-            self.events.pop_front();
-        }
-        // No browser needs to be connected for a turn to finish.
-        self.sender.send(envelope).ok();
-    }
-
-    pub fn replay(&self, epoch: Option<&str>, cursor: Option<u64>) -> Option<Vec<Envelope>> {
-        let cursor = cursor?;
-        let earliest = self
-            .events
-            .front()
-            .map_or(self.cursor, |event| event.cursor.saturating_sub(1));
-        if epoch != Some(&self.epoch) || cursor < earliest || cursor > self.cursor {
-            return None;
-        }
-        Some(
-            self.events
-                .iter()
-                .filter(|event| event.cursor > cursor)
-                .cloned()
-                .collect(),
-        )
+        lock(&self.feed).publish(Some(self.chat), turn, event);
     }
 }

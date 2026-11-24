@@ -59,6 +59,10 @@ impl Storage for ChatMemory {
         self.store.set_notes(self.chat.user, notes).map_err(failed)
     }
 
+    fn objective_summary(&self) -> Result<Option<String>, MemoryError> {
+        self.store.objective_summary(self.chat.id).map_err(failed)
+    }
+
     fn page_hosts(&self) -> Result<Vec<String>, MemoryError> {
         self.store.page_hosts(self.chat.id).map_err(failed)
     }

@@ -9,7 +9,7 @@ crates/jet/                       the server program (axum) and the page it serv
   src/apps/                       app routes: registry (/api/apps), tool browser, proxy to running apps
   src/chat/                       one runtime per chat: commands, the streamed reply, reconnect snapshots, the notes review timer
   src/evidence/                   outside evidence: a GitHub repository's activity, each user's sealed GitHub token
-  src/facade/                     the fifteen MCP tools the provider sees
+  src/facade/                     the sixteen MCP tools the provider sees
   src/objectives/                 objectives and agent-tasks: computed dates, local time to UTC
   src/files/                      uploads, files Jet writes, the sandboxed reader child, export, all kept in the store
   src/server/                     shared host state, listen address and the remaining routes
@@ -95,6 +95,39 @@ else's are ignored). Only an admin may register an app at a port, a loopback add
 address, from the page or by telling Jet; anyone may register an app at a public address. A
 refusal is `403` with `{"kind":"adminOnly","message":...}`.
 
+## Many chats
+
+A user has one main chat and any number of other chats. `GET /api/chats` lists them (main first,
+then by latest entry) with each unread count; `POST /api/chats` opens one, `PATCH /api/chats/{id}`
+renames it, `DELETE /api/chats/{id}` deletes it (the main chat refuses; the chat's objectives and
+agent-tasks move to the main chat). Every chat route (`status`, `snapshot`, `events`, `send`,
+`react`, `stop`, `forget`) takes `?chat={id}` and acts on the main chat without it; a chat that is
+not the user's gets the answer of one that does not exist. One `/api/events` stream carries the
+events of all the user's chats, each with its `chatId`. A Jet entry after a chat's read mark is
+unread; `POST /api/chats/{id}/read` moves the mark. The notes review reads the new entries of all
+a user's chats and RECENT names the chat each topic came from. `chats_read` is Jet's read-only tool
+for looking up another chat of the same user. An objective's chat opens each provider session with
+the objective's summary.
+
+### The left pane
+
+The pane lists the user's chats above the apps: the main chat first (it can be renamed, never
+deleted), then the others by latest activity, each with its unread badge. **New chat** opens an
+empty chat at once with no form; the server titles it from the first message. On each row a pencil
+renames the title in place (Enter saves, Escape cancels) and a bin deletes the chat on a second tap
+of the same row (it asks again after four seconds). The open chat's title is also shown above the
+thread, because a phone shows the drawer as a rail. In the rail a chat is its glyph with a badge on
+the corner.
+
+The page keeps the open chat's id in its bridge (`ui/bridge/browser-agent.js`), so `status`,
+`snapshot`, `send`, `react`, `stop` and `forget` all carry `?chat={id}`. Opening a chat reads its
+snapshot, shows it, and moves its read mark; events of the one stream for the open chat that the
+snapshot already holds are skipped. An `unread` event for another chat raises its badge; one for the
+open chat (while the page is visible) calls `POST /api/chats/{id}/read` and raises none. A
+`chatsChanged` event reloads the list, and the main chat shows if the open chat is gone. The shell
+reserves a third grid column, `#side-pane` (`ui/workspace/workspace.css`), 0 px wide until a later
+step sets `--pane-w`.
+
 ## This server's deployment
 
 Jet's system service is `jet.service`; it starts at boot and restarts on failure.
@@ -150,8 +183,9 @@ Labels are editable and need not be unique; stable IDs identify registrations.
 Ask Jet to change explicit UI/MCP endpoint overrides when an app has no descriptor.
 An unreachable app is saved with a discovery error so you can retry later.
 
-Jet chat fills the main content initially. One left drawer lists Jet, then each registered
-app with its icon and label, then settings at the foot. Context capacity stays folded
+Jet chat fills the main content initially. One left drawer lists Jet, then the chats (see
+[The left pane](#the-left-pane)), then each registered app with its icon and label, then
+the account and settings at the foot. Context capacity stays folded
 behind a chevron beside Jet's name. Selecting an app fills the content and collapses the
 drawer to an icon rail. Jet returns to the preserved chat and desktop drawer;
 last selected app context remains available to Jet. Narrow screens default to the
@@ -191,7 +225,7 @@ Jet is served publicly, so every path is bounded: 32 MiB for a file, 10 files fo
 
 ## App tools
 
-Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees fifteen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `github_activity`, and the five that record objectives and agent-tasks (see Objectives and agent-tasks). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link. After a web read or a `github_activity` call, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex and agy have no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
+Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees sixteen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `github_activity`, the five that record objectives and agent-tasks (see Objectives and agent-tasks), and `chats_read` (see Many chats). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link. After a web read or a `github_activity` call, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex and agy have no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
 
 Tools shows searchable summaries, actual input/output schemas, annotations, server identity, capabilities and instructions. Refresh retries failed metadata; stale results remain visibly marked. Only explicitly marked free discovery operations can expand into a hierarchy. Inspect a leaf or use Ask Jet to draft a request; browsing never executes ordinary business tools. In particular, normal Quanty search can cost money.
 

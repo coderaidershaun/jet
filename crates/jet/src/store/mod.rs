@@ -17,9 +17,7 @@ mod tasks;
 mod text_enum;
 mod update_notes;
 
-#[cfg(test)]
-pub(crate) use chats::ChatKind;
-pub(crate) use chats::{Chat, ChatId};
+pub(crate) use chats::{Chat, ChatId, ChatKind, ChatSummary};
 pub(crate) use directory::{Email, NewUser, Person, Team, User, UserId};
 pub(crate) use files::Added;
 pub use import::ImportError;
@@ -75,6 +73,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0004_personal_jet.sql"),
     include_str!("migrations/0005_objectives.sql"),
     include_str!("migrations/0006_agy_path.sql"),
+    include_str!("migrations/0007_many_chats.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -105,6 +104,10 @@ pub enum StoreError {
     DuplicateCheck,
     #[error("this chat already belongs to an objective")]
     ChatTaken,
+    #[error("the main chat cannot be deleted")]
+    MainChat,
+    #[error("no such chat")]
+    NoSuchChat,
     #[error("{what} in the database is not valid JSON of its kind")]
     Json {
         what: &'static str,

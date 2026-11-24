@@ -4,6 +4,8 @@ import { uploadFile } from './uploads.js';
 // Browser connections observe server-owned turns; reconnecting never starts another reply.
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped', 'noReply']);
+/** Events about the chat list rather than a turn: the page's chat list reads them for every chat, not only the open one. */
+const CHAT_LEVEL = new Set(['unread', 'entryAdded', 'chatsChanged']);
 
 export async function requestJson(path, body, method = body === undefined ? 'GET' : 'POST', fetcher = globalThis.fetch, signal) {
   let response;
@@ -56,6 +58,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
   const registryListeners = new Set();
   const appListeners = new Set();
   const connectionListeners = new Set();
+  const chatListeners = new Set();
   let connected = true;
   function setConnected(value) {
     if (connected === value) return;
@@ -69,11 +72,20 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
   let source = null;
   let epoch = null;
   let cursor = null;
+  /** The chat on screen. Null means the main chat until a snapshot names it. Every call of a chat carries it. */
+  let chat = null;
+  /** Per chat, the feed position its snapshot already holds, so a later event at or before it is not shown twice. */
+  const floors = new Map();
+  /** While a chat is being opened, the events of that chat wait here until its snapshot is on screen. */
+  let loading = null;
+  let openToken = 0;
   let stopped = false;
   let reconnectTimer = null;
   const callbacks = new Map();
   let pending = null;
 
+  const inChat = (path) => (chat === null ? path : path + '?chat=' + chat);
+  const seenBefore = (chatId, at) => at <= (floors.get(chatId) ?? -1);
   function sameTurn(left, right) {
     return left && right && ['clientId', 'requestId', 'turnId'].every(key => typeof left[key] === 'string' && left[key] && left[key] === right[key]);
   }
@@ -83,39 +95,57 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     const generation = actionGeneration, eventEpoch = epoch;
     const current = () => generation === actionGeneration && eventEpoch === epoch && sameTurn(action, activeIdentity) && !cancelledActions.has(action.requestId);
     try {
-      const snapshot = await call('/api/snapshot');
+      const snapshot = await call(inChat('/api/snapshot'));
       if (!current() || snapshot.epoch !== eventEpoch || snapshot.cursor < envelope.cursor || !sameTurn(action, snapshot.active?.identity)) return;
       for (const listener of appListeners) listener(action, current);
     } catch (error) { console.warn('App opening could not be verified:', error.message ?? error); }
   }
+  function route(envelope) {
+    const chatId = envelope.chatId ?? null;
+    const { kind } = envelope.event;
+    if (kind === 'shutdown') { reconnect(); return; }
+    if (kind === 'memoryUpdated') for (const listener of memoryListeners) listener(envelope.event.notes);
+    if (kind === 'registryChanged') for (const listener of registryListeners) listener(envelope.event);
+    if (CHAT_LEVEL.has(kind)) {
+      if (chatId === null || !seenBefore(chatId, envelope.cursor)) for (const listener of chatListeners) listener(envelope);
+      return;
+    }
+    // A turn of another chat shows nowhere on this page; its unread event is what reaches the list.
+    if (chatId !== null && chatId !== chat) return;
+    if (seenBefore(chatId, envelope.cursor)) return;
+    if (kind === 'accepted') { actionGeneration++; activeIdentity = envelope.turn; }
+    if (TERMINAL.has(kind) && sameTurn(envelope.turn, activeIdentity)) { actionGeneration++; activeIdentity = null; }
+    if (kind === 'appOpened') void openApp(envelope);
+    if (kind === 'historyChanged') { epoch = null; cursor = null; reconnect(); return; }
+    if (observer) observer.event(envelope);
+    else callbacks.get(envelope.turn?.requestId)?.(envelope.event);
+    if (TERMINAL.has(kind)) callbacks.delete(envelope.turn?.requestId);
+  }
   function connect() {
     if (stopped) return;
-    const query = epoch === null ? '' : '?epoch=' + encodeURIComponent(epoch) + '&cursor=' + cursor;
-    source = new Source('/api/events' + query);
+    const query = [];
+    if (chat !== null) query.push('chat=' + chat);
+    if (epoch !== null) query.push('epoch=' + encodeURIComponent(epoch), 'cursor=' + cursor);
+    source = new Source('/api/events' + (query.length ? '?' + query.join('&') : ''));
     source.onmessage = ({ data }) => {
       const message = JSON.parse(data);
       if (message.kind === 'resync') { epoch = null; cursor = null; reconnect(); return; }
       if (message.kind === 'snapshot') {
-        actionGeneration++;
-        activeIdentity = message.data.active?.identity ?? null;
         epoch = message.data.epoch;
         cursor = message.data.cursor;
+        const shown = message.data.chatId ?? null;
+        chat ??= shown;
+        if (shown !== chat) return;
+        floors.set(shown, cursor);
+        actionGeneration++;
+        activeIdentity = message.data.active?.identity ?? null;
         observer?.snapshot(message.data);
         return;
       }
       if (message.kind !== 'event' || message.data.cursor <= cursor) return;
       cursor = message.data.cursor;
-      const envelope = message.data;
-      if (envelope.event.kind === 'accepted') { actionGeneration++; activeIdentity = envelope.turn; }
-      if (TERMINAL.has(envelope.event.kind) && sameTurn(envelope.turn, activeIdentity)) { actionGeneration++; activeIdentity = null; }
-      if (envelope.event.kind === 'appOpened') void openApp(envelope);
-      if (envelope.event.kind === 'memoryUpdated') for (const listener of memoryListeners) listener(envelope.event.notes);
-      if (envelope.event.kind === 'registryChanged') for (const listener of registryListeners) listener(envelope.event);
-      if (envelope.event.kind === 'shutdown') { reconnect(); return; }
-      if (envelope.event.kind === 'historyChanged') { epoch = null; cursor = null; reconnect(); return; }
-      if (observer) observer.event(envelope);
-      else callbacks.get(envelope.turn?.requestId)?.(envelope.event);
-      if (TERMINAL.has(envelope.event.kind)) callbacks.delete(envelope.turn?.requestId);
+      if (loading && message.data.chatId === chat) loading.push(message.data);
+      else route(message.data);
     };
     source.onopen = () => setConnected(true);
     source.onerror = () => { setConnected(false); reconnect(); };
@@ -128,21 +158,68 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
   }
   // A stream that failed because the access token ran out would fail again, so the sign-in is renewed first.
   function connectAgain() {
-    beforeReconnect().then(connect, (error) => {
+    beforeReconnect().then(dropDeadChat).then(connect, (error) => {
       if (error?.kind === 'signedOut') return;
       console.warn('the sign-in could not be checked before reconnecting:', error?.message ?? error);
       connect();
     });
   }
+  // A chat deleted while the stream was down would answer 404 to every new stream, so the page starts again from the main chat.
+  async function dropDeadChat() {
+    if (chat === null) return;
+    try { await call(inChat('/api/status')); }
+    catch (error) {
+      if (error.kind !== 'notFound') return;
+      chat = null; epoch = null; cursor = null;
+    }
+  }
 
   return {
     serverEvents: true,
     clientId,
-    status: () => call('/api/status'),
-    history: async () => (await call('/api/snapshot')).history,
+    status: () => call(inChat('/api/status')),
+    /** The open chat's snapshot. The first one names the main chat, so its events can be told from the others. */
+    async snapshot() {
+      const snapshot = await call(inChat('/api/snapshot'));
+      chat ??= snapshot.chatId ?? null;
+      return snapshot;
+    },
+    /**
+     * Opens another chat: reads its snapshot, hands it to `show`, and only then lets that chat's events through,
+     * those the snapshot does not already hold.
+     */
+    async openChat(id, show) {
+      const token = ++openToken, before = chat;
+      chat = id;
+      loading = [];
+      try {
+        const snapshot = await call(inChat('/api/snapshot'));
+        if (token !== openToken) return;
+        floors.set(id, snapshot.cursor);
+        actionGeneration++;
+        activeIdentity = snapshot.active?.identity ?? null;
+        const late = loading;
+        loading = null;
+        show(snapshot);
+        for (const envelope of late) route(envelope);
+      } catch (error) {
+        if (token === openToken) { chat = before; loading = null; }
+        throw error;
+      }
+    },
+    /** The id of the chat on screen, or null for the main chat before the first snapshot. */
+    chatId: () => chat,
+    chats: () => call('/api/chats'),
+    addChat: () => call('/api/chats', {}),
+    renameChat: (id, title) => call('/api/chats/' + id, { title }, 'PATCH'),
+    removeChat: (id) => call('/api/chats/' + id, undefined, 'DELETE'),
+    /** Moves the chat's read mark to the newest entry, or to `through` when given. */
+    markRead: (id, through) => call('/api/chats/' + id + '/read', through === undefined ? {} : { through }),
+    onChatEvent(listener) { chatListeners.add(listener); return () => chatListeners.delete(listener); },
     feel: (text) => call('/api/feel', { text }),
     async stop(requestId = pending?.requestId) {
       if (!requestId) return;
+      const target = inChat('/api/chat/stop');
       actionGeneration++;
       cancelledActions.add(requestId);
       if (cancelledActions.size > 512) cancelledActions.delete(cancelledActions.values().next().value);
@@ -151,15 +228,15 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
         pending.controller.abort();
       }
       for (;;) {
-        try { return await call('/api/chat/stop', { requestId }); }
+        try { return await call(target, { requestId }); }
         catch (error) {
           if (error.kind !== 'network') throw error;
           await delay(300);
         }
       }
     },
-    react: (request) => call('/api/chat/react', { ...request, requestId: uuid(), clientId }),
-    forget: () => call('/api/chat/forget', {}),
+    react: (request) => call(inChat('/api/chat/react'), { ...request, requestId: uuid(), clientId }),
+    forget: () => call(inChat('/api/chat/forget'), {}),
     loadMemory: () => call('/api/memory'),
     saveMemory: (notes) => call('/api/memory', notes, 'PUT'),
     renderMarkdown: (text) => call('/api/markdown', { text }),
@@ -178,7 +255,10 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       globalThis.open(url, '_blank', 'noopener,noreferrer');
     },
     async send(request, onEvent) {
-      const payload = { ...request, requestId: request.requestId ?? uuid(), clientId };
+      const { chatId = chat, ...rest } = request;
+      const payload = { ...rest, requestId: request.requestId ?? uuid(), clientId };
+      // A message belongs to the chat it was typed in, even when the page opened another before it went out.
+      const target = chatId === null ? '/api/chat/send' : '/api/chat/send?chat=' + chatId;
       callbacks.set(payload.requestId, onEvent);
       const sending = { requestId: payload.requestId, cancelled: false, controller: new AbortController() };
       pending = sending;
@@ -186,7 +266,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       try {
         for (;;) {
           if (sending.cancelled) throw { kind: 'cancelled', message: 'The request was stopped.' };
-          try { return (await call('/api/chat/send', payload, 'POST', sending.controller.signal)).user; }
+          try { return (await call(target, payload, 'POST', sending.controller.signal)).user; }
           catch (error) {
             if (sending.cancelled) throw { kind: 'cancelled', message: 'The request was stopped.' };
             if (error.kind !== 'network') throw error;

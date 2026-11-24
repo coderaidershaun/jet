@@ -329,7 +329,7 @@ fn a_notes_review_changes_only_its_own_users_notes() {
 
     say(&owner, "owner-kites", "I like kites");
     settled(&owner, 2);
-    recent(&owner, "- I like kites");
+    recent(&owner, "- I like kites [Main chat]");
     assert_eq!(second.get("/api/memory")["recent"], "");
     std::thread::sleep(Duration::from_secs(2));
     assert_eq!(
@@ -340,8 +340,11 @@ fn a_notes_review_changes_only_its_own_users_notes() {
 
     say(&second, "second-boats", "I like boats");
     settled(&second, 2);
-    recent(&second, "- I like boats");
-    assert_eq!(owner.get("/api/memory")["recent"], "- I like kites");
+    recent(&second, "- I like boats [Main chat]");
+    assert_eq!(
+        owner.get("/api/memory")["recent"],
+        "- I like kites [Main chat]"
+    );
     assert_eq!(reviews(), 2);
 }
 

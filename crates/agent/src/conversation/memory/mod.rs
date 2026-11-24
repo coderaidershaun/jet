@@ -41,6 +41,11 @@ pub trait Storage: Send + Sync {
     fn page_hosts(&self) -> Result<Vec<String>, MemoryError> {
         Ok(Vec::new())
     }
+    /// What the open objectives of this chat are, when the chat was made for them: the text that
+    /// tells Jet at the start of a provider session what the chat is for.
+    fn objective_summary(&self) -> Result<Option<String>, MemoryError> {
+        Ok(None)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -120,6 +125,10 @@ impl Saved {
 
     pub(crate) fn save_session(&self, session: &Session) -> Result<(), MemoryError> {
         self.storage.save_session(Some(session))
+    }
+
+    pub(crate) fn objective_summary(&self) -> Result<Option<String>, MemoryError> {
+        self.storage.objective_summary()
     }
 
     pub(crate) fn page_hosts(&self) -> Result<Vec<String>, MemoryError> {

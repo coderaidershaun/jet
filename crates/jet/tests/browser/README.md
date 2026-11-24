@@ -179,3 +179,23 @@ SCREENSHOT_DIR=/tmp/jet-signin node crates/jet/tests/browser/signin.mjs
 
 Without `SCREENSHOT_DIR` the screenshots go to `target/signin-screens`. The Playwright scripts
 above sign in through the same form with `signIn` from `process.mjs`.
+
+## Chats, the left pane and the phone
+
+`chats.mjs` drives the real host with a provider stand-in, a signed-in owner and Playwright: a reply
+in another chat raises its badge with no reload and opening the chat clears it, a new chat needs no
+form, rename and the two-tap delete, an objective's chat shows its summary first, every call carries
+the open chat, and at 390 px a 300-letter message and an 80-letter title overflow nothing. It writes
+the ten screenshots to `SCREENSHOT_DIR`.
+
+```sh
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
+CHROME_BINARY='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
+SCREENSHOT_DIR=/tmp/jet-screens node crates/jet/tests/browser/chats.mjs
+```
+
+`workspace.mjs` and `commands.mjs` need the same two variables. `acceptance.mjs` also needs
+`QUANTY_BINARY`. Every request these scripts make that changes state carries Jet's own `Origin`
+header, as the server now requires. Quanty's own page fetches `api/facts` in `same-origin` mode, which
+a frame with no origin refuses, so the five assertions about the Quanty frame in `acceptance.mjs`
+fail with the current Quanty; the rest of the script passes without them.

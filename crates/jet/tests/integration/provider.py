@@ -9,9 +9,17 @@ with open('calls', 'a') as calls:
 def emit(value):
     print(json.dumps(value), flush=True)
 if review and not hang:
-    # The notes review: what the user last said becomes their RECENT note.
-    said = re.findall(r'^user: (.*)$', prompt, re.MULTILINE)
-    notes = {'changed': True, 'memory': '', 'user': '', 'recent': '- ' + said[-1] if said else ''}
+    # The notes review: what the user said, each line followed by the chat it came from, becomes
+    # their RECENT note.
+    title, recent = '', []
+    for line in prompt.split('\n'):
+        chat = re.match(r'\[chat: (.*)\]$', line)
+        said = re.match(r'user: (.*)$', line)
+        if chat:
+            title = chat.group(1)
+        elif said:
+            recent.append('- ' + said.group(1) + (' [' + title + ']' if title else ''))
+    notes = {'changed': True, 'memory': '', 'user': '', 'recent': '\n'.join(recent)}
     emit({'type':'result','subtype':'success','is_error':False,'result':'','structured_output':notes,'duration_ms':1,'total_cost_usd':0,'usage':{}})
     sys.exit(0)
 emit({'type':'system','subtype':'init','session_id':'fixture-session','model':'fixture-model'})

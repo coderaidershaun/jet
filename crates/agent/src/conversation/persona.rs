@@ -49,6 +49,11 @@ pub(super) fn compose(persona: &Persona, notes: &Notes, model: Model) -> String 
     prompt
 }
 
+/// The line that tells Jet, at the start of a provider session, what an objective's chat is for.
+pub(super) fn objective_words(summary: &str) -> String {
+    format!("[This chat was made for the objective below; keep to it.]\n{summary}\n\n")
+}
+
 pub(super) fn message_words(message: &super::Message) -> String {
     let mut words = String::new();
     if let Some(mood) = message.feeling.as_deref().and_then(Mood::from_word) {
@@ -218,6 +223,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_objective_chat_opens_each_provider_session_with_the_objective() {
+        use super::super::test_support::{Chat, message};
+        let chat = Chat::new(["one", "two", "three"]);
+        chat.storage
+            .set_objective_summary("Kite\n\nDeliverable: A kite");
+        chat.send(message("first"));
+        chat.send(message("second"));
+        chat.edit_session(|session| session.prompt_hash.clear());
+        chat.send(message("third"));
+        let prompts: Vec<_> = chat
+            .requests()
+            .into_iter()
+            .map(|request| request.prompt)
+            .collect();
+        assert!(prompts[0].contains("Deliverable: A kite") && prompts[0].ends_with("first"));
+        assert_eq!(prompts[1], "second", "a resumed session is not told again");
+        assert!(prompts[2].contains("Deliverable: A kite") && prompts[2].ends_with("third"));
+    }
+
+    #[test]
     fn feeling_context_precedes_words_and_rejects_unknown_injection() {
         use super::super::test_support::{Chat, message};
         let chat = Chat::new(["one", "one", "one"]);
@@ -269,7 +294,10 @@ mod tests {
         let prompt = compose(&Persona::default(), &Notes::default(), Model::Sonnet);
         for rule in [
             "ask exactly one question in each reply, and wait for the answer",
-            "objectives_update with `create` and `chat: \"this\"`",
+            "objectives_update with `create` in that reply",
+            "offer the objective a chat of its own",
+            "call it with `chat: \"new\"`; if they want to keep it in the current chat, use `chat: \"this\"`",
+            "chats_read lists the user's other chats",
             "Do not record before the user says yes",
             "first check",
             "the watched places as `sources`",

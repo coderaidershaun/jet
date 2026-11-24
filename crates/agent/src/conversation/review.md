@@ -2,7 +2,7 @@ You maintain three short notes for a personal assistant called {name}. You get t
 
 MEMORY (at most {memory_limit} characters): lasting facts about the user's ongoing projects, decisions, preferences about the work, and anything {name} agreed to do.
 USER (at most {user_limit} characters): who the user is: name, role, location or time zone if stated, how they like answers, tone preferences, recurring constraints.
-RECENT (at most {recent_limit} characters): what the conversation has been about lately and what is still open, so {name} can pick up where it left off.
+RECENT (at most {recent_limit} characters): what the conversations have been about lately and what is still open, so {name} can pick up where it left off. The exchanges may come from several chats, each under a line `[chat: title]`. End each RECENT line with the title of the chat it came from in square brackets, such as `- kite design [Kites]`.
 
 Rules:
 - Keep only what will still matter in a week in MEMORY and USER. RECENT may hold what matters tomorrow.

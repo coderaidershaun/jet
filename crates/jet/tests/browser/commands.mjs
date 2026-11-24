@@ -46,7 +46,7 @@ fs.writeFileSync(${JSON.stringify(promptFile)},input);
   page = await context.newPage();
   const errors = [], sends = [], feels = [];
   page.on('pageerror', error => errors.push(String(error)));
-  page.on('request', request => { if (request.url().endsWith('/api/chat/send')) sends.push(request.postDataJSON()); if (request.url().endsWith('/api/feel')) feels.push(request.postDataJSON()); });
+  page.on('request', request => { if (new URL(request.url()).pathname === '/api/chat/send') sends.push(request.postDataJSON()); if (new URL(request.url()).pathname === '/api/feel') feels.push(request.postDataJSON()); });
   await signIn(page, base); await page.locator('#loading').waitFor({ state: 'detached' });
   const apps = async () => (await context.request.get(base + '/api/apps')).json();
   const snapshot = async () => (await context.request.get(base + '/api/snapshot')).json();
@@ -136,7 +136,7 @@ fs.writeFileSync(${JSON.stringify(promptFile)},input);
   await page.locator('#field').fill('facade:' + JSON.stringify([{ pause: true }])); await page.locator('#send').click();
   await until(async () => Boolean((await snapshot()).active), 'Later turn starts');
   const laterIdentity = (await snapshot()).active.identity;
-  const actionCheck = page.waitForResponse(response => response.url() === base + '/api/snapshot');
+  const actionCheck = page.waitForResponse(response => new URL(response.url()).pathname === '/api/snapshot');
   await page.evaluate(old => {
     let cursor = Math.max(...actionEvents.filter(item => item.kind === 'event').map(item => item.data.cursor));
     for (const value of [old.accepted, old.action]) { const replay = structuredClone(value); replay.data.cursor = ++cursor; actionSource.onmessage({ data: JSON.stringify(replay) }); }
@@ -144,7 +144,7 @@ fs.writeFileSync(${JSON.stringify(promptFile)},input);
   await actionCheck;
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.equal(await page.locator('#page').isVisible(), true, 'Old replay cannot open an app in a later turn');
-  await context.request.post(base + '/api/chat/stop', { data: { requestId: laterIdentity.requestId } });
+  await context.request.post(base + '/api/chat/stop', { headers: { origin: base }, data: { requestId: laterIdentity.requestId } });
   await until(async () => !(await snapshot()).active, 'Stop ends later turn');
   await page.reload(); await page.locator('#loading').waitFor({ state: 'detached' });
   await tab.close();

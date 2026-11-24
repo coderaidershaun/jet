@@ -1,8 +1,8 @@
-//! Review a chat's notes after it has been quiet, without tying provider work to a browser
-//! connection. Each chat has its own timer, so one chat's quiet never starts another's review.
+//! Start the notes review after a chat has been quiet, without tying provider work to a browser
+//! connection. Each chat has its own timer; the review it starts reads all of its user's chats.
 
 use super::ChatState;
-use agent::{ReviewOutcome, Transport};
+use agent::Transport;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
@@ -35,20 +35,11 @@ impl ReviewTimer {
         let generation = self.generation.clone();
         std::thread::spawn(move || {
             std::thread::sleep(host.review_quiet + MARGIN);
-            if generation.load(Ordering::SeqCst) != waiting
-                || !host
-                    .conversation
-                    .review_due(agent::now_ms(), host.review_quiet)
-            {
+            if generation.load(Ordering::SeqCst) != waiting {
                 return;
             }
-            match host
-                .conversation
-                .review_notes(&*target.transport, &target.name)
-            {
-                Ok(ReviewOutcome::Updated(notes)) => host.notes_changed(&notes),
-                Ok(_) => {}
-                Err(error) => eprintln!("jet: notes review failed: {error}"),
+            if let Some(hub) = host.hub.upgrade() {
+                hub.review(&host, &*target.transport, &target.name);
             }
         });
     }

@@ -199,3 +199,63 @@ test('a failed event stream opens again only after the sign-in is checked, and n
   assert.equal(sources.length, 2, 'a page that is leaving for the sign-in page opens no stream');
   stop();
 });
+
+test('every call of a chat carries the open chat, and the one stream gives each chat only what is its own', async () => {
+  const sources = [], calls = [];
+  class Source {
+    constructor(url) { this.url = url; sources.push(this); }
+    close() {}
+    emit(value) { this.onmessage({ data: JSON.stringify(value) }); }
+  }
+  const storage = { getItem: () => 'client', setItem() {} };
+  const fetch = async (path, options) => {
+    calls.push({ path, method: options.method });
+    return { ok: true, json: async () => (path.startsWith('/api/snapshot') ? { chatId: 7, cursor: 20, history: [], active: null, unread: 0 } : { user: {} }) };
+  };
+  const agent = createBrowserAgent({ EventSource: Source, storage, fetch, uuid: () => 'id', delay: async () => {} });
+  const snapshots = [], turnEvents = [], chatEvents = [];
+  agent.onChatEvent((envelope) => chatEvents.push(envelope));
+  agent.watch((snapshot) => snapshots.push(snapshot), (envelope) => turnEvents.push(envelope));
+  const stream = sources[0];
+  stream.emit({ kind: 'snapshot', data: { chatId: 1, epoch: 'e', cursor: 5, history: [], active: null } });
+  await agent.status();
+  assert.equal(calls.at(-1).path, '/api/status?chat=1', 'the first snapshot names the main chat');
+
+  await agent.openChat(7, (snapshot) => snapshots.push(snapshot));
+  const paths = [];
+  const record = async (call) => { calls.length = 0; await call(); paths.push(...calls.map((entry) => entry.path)); };
+  await record(() => agent.status());
+  await record(() => agent.snapshot());
+  await record(() => agent.send({ text: 'hi' }, () => {}));
+  await record(() => agent.send({ text: 'typed elsewhere', chatId: 1 }, () => {}));
+  await record(() => agent.react({ entryId: 3, emoji: 'x' }));
+  await record(() => agent.stop('req'));
+  await record(() => agent.forget());
+  assert.deepEqual(paths, ['/api/status?chat=7', '/api/snapshot?chat=7', '/api/chat/send?chat=7', '/api/chat/send?chat=1', '/api/chat/react?chat=7', '/api/chat/stop?chat=7', '/api/chat/forget?chat=7']);
+
+  const event = (cursor, chatId, kind, extra = {}) => ({ kind: 'event', data: { cursor, chatId, turn: { requestId: 'r' }, event: { kind, ...extra } } });
+  stream.emit(event(10, 7, 'unread', { unread: 9 }));
+  stream.emit(event(11, 1, 'unread', { unread: 4 }));
+  stream.emit(event(21, 1, 'text', { delta: 'elsewhere' }));
+  stream.emit(event(23, 7, 'text', { delta: 'here' }));
+  assert.deepEqual(turnEvents.map((envelope) => envelope.event.delta), ['here'], 'a turn of another chat stays off this page');
+  assert.deepEqual(chatEvents.map((envelope) => [envelope.chatId, envelope.event.unread]), [[1, 4]], 'an event of the open chat that its snapshot already holds is skipped, one of another chat is not');
+});
+
+test('a chat deleted while the stream was down is dropped, and the stream starts again from the main chat', async () => {
+  const sources = [];
+  class Source {
+    constructor(url) { this.url = url; sources.push(this); }
+    close() {}
+    emit(value) { this.onmessage({ data: JSON.stringify(value) }); }
+  }
+  const storage = { getItem: () => 'client', setItem() {} };
+  const fetch = async (path) => ({ ok: false, json: async () => ({ kind: 'notFound', message: 'no such chat' }), path });
+  const agent = createBrowserAgent({ EventSource: Source, storage, fetch });
+  agent.watch(() => {}, () => {});
+  sources[0].emit({ kind: 'snapshot', data: { chatId: 7, epoch: 'e', cursor: 3, history: [], active: null } });
+  sources[0].onerror();
+  await new Promise((resolve) => setTimeout(resolve, 340));
+  assert.equal(sources[1].url, '/api/events', 'no chat and no epoch: the server answers with the main chat');
+  assert.equal(agent.chatId(), null);
+});

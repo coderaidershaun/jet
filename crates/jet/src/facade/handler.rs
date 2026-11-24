@@ -332,10 +332,18 @@ impl Handler {
             "files_export" => self.files_export(arguments, &binding).await,
             "github_activity" => self.github_activity(&arguments, token, &binding).await,
             "objectives_list" => self.objectives_list(&binding).await,
-            "objectives_update" => self.objectives_update(&arguments, &binding).await,
+            "objectives_update" => {
+                let result = self.objectives_update(&arguments, &binding).await;
+                // The command may have made the objective a chat of its own.
+                if let (Ok(_), Some(chats)) = (&result, self.0.chats()) {
+                    chats.chats_changed(user, None);
+                }
+                result
+            }
             "tasks_list" => self.tasks_list(&binding).await,
             "tasks_update" => self.tasks_update(&arguments, &binding).await,
             "people_list" => self.people_list().await,
+            "chats_read" => self.chats_read(&arguments, &binding).await,
             "files_list" => {
                 let files = self.0.files.clone();
                 let listed = on_worker(move || files.list(user))
@@ -478,8 +486,8 @@ impl Handler {
 
     async fn files_export(&self, arguments: Value, binding: &Binding) -> Result<Value, Value> {
         let request: ExportRequest = serde_json::from_value(arguments).map_err(message)?;
-        let (files, user) = (self.0.files.clone(), binding.owner.user);
-        let saved = on_worker(move || files.export(user, request))
+        let (files, user, chat) = (self.0.files.clone(), binding.owner.user, binding.owner.chat);
+        let saved = on_worker(move || files.export(user, chat, request))
             .await
             .map_err(message)?
             .map_err(message)?;

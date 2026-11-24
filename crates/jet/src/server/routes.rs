@@ -1,5 +1,7 @@
-//! Adapt browser requests to the conversation, and join the routes of accounts, apps, files and
-//! voice with them into the one router the server runs, behind the sign-in guard.
+//! Adapt browser requests to the conversation, and join the routes of accounts, apps, files,
+//! voice and chats with them into the one router the server runs, behind the sign-in guard. A route
+//! that acts on a chat takes its id from the `chat` query field, and acts on the main chat without
+//! one.
 
 use agent::{Feeling, Notes};
 use axum::{
@@ -15,18 +17,19 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::convert::Infallible;
+use std::{convert::Infallible, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::services::ServeDir;
 
-use super::Server;
+use super::{Server, chats};
 use crate::{
     account::{self, SignedIn},
     apps,
-    chat::{Accepted, AgentStatus, BridgeError, ReactRequest, SendRequest, Snapshot},
+    chat::{Accepted, AgentStatus, BridgeError, ChatState, ReactRequest, SendRequest, Snapshot},
     evidence, files, on_worker,
     settings::{AdminSettings, ProgramPaths, Settings},
+    store::{ChatId, UserId},
     voice,
 };
 
@@ -47,6 +50,7 @@ pub(super) fn router(host: Server) -> Router {
         .merge(files::router())
         .merge(voice::router())
         .merge(evidence::router())
+        .merge(chats::router())
         .route("/api/status", get(status))
         .route("/api/snapshot", get(snapshot))
         .route("/api/events", get(events))
@@ -64,14 +68,33 @@ pub(super) fn router(host: Server) -> Router {
         .merge(facade)
 }
 
-/// What the chat page reads: the signed-in user's main chat. The places of the provider programs
+/// The chat a request is about: the `chat` query field, or the main chat when it is left out.
+#[derive(Deserialize)]
+pub(super) struct ChatQuery {
+    chat: Option<i64>,
+}
+
+/// Runs `call` on the signed-in user's chat away from the server's own threads. A chat that is not
+/// theirs gets the answer of a chat that does not exist.
+async fn in_chat<T: Send + 'static>(
+    host: &Server,
+    user: UserId,
+    query: ChatQuery,
+    call: impl FnOnce(Arc<ChatState>) -> Result<T, BridgeError> + Send + 'static,
+) -> Result<T, BridgeError> {
+    let chats = host.chats.clone();
+    on_worker(move || call(chats.chat(user, query.chat.map(ChatId))?)).await?
+}
+
+/// What the chat page reads: the status of a chat of the signed-in user. The places of the provider programs
 /// are left out for anyone who is not an admin.
 async fn status(
     State(host): State<Server>,
     signed_in: SignedIn,
+    Query(query): Query<ChatQuery>,
 ) -> Result<Json<AgentStatus>, BridgeError> {
     let user = signed_in.user;
-    let status = on_worker(move || host.chats.main(user.id)?.status()).await??;
+    let status = in_chat(&host, user.id, query, |chat| chat.status()).await?;
     Ok(Json(match user.is_admin {
         true => status,
         false => status.without_program_paths(),
@@ -80,29 +103,27 @@ async fn status(
 async fn snapshot(
     State(host): State<Server>,
     signed_in: SignedIn,
+    Query(query): Query<ChatQuery>,
 ) -> Result<Json<Snapshot>, BridgeError> {
-    let user = signed_in.user.id;
-    Ok(Json(
-        on_worker(move || host.chats.main(user)?.snapshot()).await??,
-    ))
+    let snapshot = in_chat(&host, signed_in.user.id, query, |chat| chat.snapshot()).await?;
+    Ok(Json(snapshot))
 }
 async fn send(
     State(host): State<Server>,
     signed_in: SignedIn,
+    Query(query): Query<ChatQuery>,
     Json(request): Json<SendRequest>,
 ) -> Result<Json<Accepted>, BridgeError> {
-    let user = signed_in.user.id;
-    Ok(Json(
-        on_worker(move || host.chats.main(user)?.send(request)).await??,
-    ))
+    let accepted = in_chat(&host, signed_in.user.id, query, |chat| chat.send(request)).await?;
+    Ok(Json(accepted))
 }
 async fn react(
     State(host): State<Server>,
     signed_in: SignedIn,
+    Query(query): Query<ChatQuery>,
     Json(request): Json<ReactRequest>,
 ) -> Result<Json<Value>, BridgeError> {
-    let user = signed_in.user.id;
-    let entry = on_worker(move || host.chats.main(user)?.react(request)).await??;
+    let entry = in_chat(&host, signed_in.user.id, query, |chat| chat.react(request)).await?;
     Ok(Json(json!({"entry": entry})))
 }
 #[derive(Deserialize)]
@@ -113,18 +134,21 @@ struct StopRequest {
 async fn stop(
     State(host): State<Server>,
     signed_in: SignedIn,
+    Query(query): Query<ChatQuery>,
     Json(request): Json<StopRequest>,
 ) -> Result<Json<Value>, BridgeError> {
-    let user = signed_in.user.id;
-    on_worker(move || host.chats.main(user)?.stop(&request.request_id)).await??;
+    in_chat(&host, signed_in.user.id, query, move |chat| {
+        chat.stop(&request.request_id)
+    })
+    .await?;
     Ok(Json(json!({})))
 }
 async fn forget(
     State(host): State<Server>,
     signed_in: SignedIn,
+    Query(query): Query<ChatQuery>,
 ) -> Result<Json<Value>, BridgeError> {
-    let user = signed_in.user.id;
-    on_worker(move || host.chats.main(user)?.forget()).await??;
+    in_chat(&host, signed_in.user.id, query, |chat| chat.forget()).await?;
     Ok(Json(json!({})))
 }
 /// The user's settings; an admin's carry the server's program paths beside them.
@@ -213,10 +237,13 @@ async fn feel(
     })
     .await?
 }
+/// Where a page that reconnects left off, and the chat it shows, whose snapshot it gets when
+/// it cannot resume.
 #[derive(Deserialize)]
 struct Resume {
     epoch: Option<String>,
     cursor: Option<u64>,
+    chat: Option<i64>,
 }
 /// How often an open event stream checks that its sign-in has not ended.
 const SIGNIN_CHECK: std::time::Duration = std::time::Duration::from_secs(15);
@@ -230,7 +257,7 @@ async fn events(
     let accounts = host.accounts.clone();
     let (initial, mut receiver) = on_worker(move || {
         chats
-            .main(user)?
+            .chat(user, resume.chat.map(ChatId))?
             .subscribe(resume.epoch.as_deref(), resume.cursor)
     })
     .await??;

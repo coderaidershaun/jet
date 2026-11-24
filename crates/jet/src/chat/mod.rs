@@ -28,7 +28,7 @@ use crate::objectives::is_time_zone;
 use crate::store::{Chat, Store, UserId};
 pub(crate) use chats::Chats;
 pub use error::BridgeError;
-use events::{ActiveTurn, Reacted, Runtime};
+use events::{ActiveTurn, Feed, Reacted, Runtime};
 pub(crate) use events::{Envelope, RunningCall, Snapshot, TurnContext};
 pub(crate) use provider::AgentStatus;
 use review_timer::{ReviewTarget, ReviewTimer};
@@ -189,8 +189,14 @@ pub(crate) struct Accepted {
 }
 
 impl ChatState {
-    fn new(hub: &Arc<Chats>, chat: Chat, conversation: Conversation) -> Arc<Self> {
+    fn new(
+        hub: &Arc<Chats>,
+        chat: Chat,
+        conversation: Conversation,
+        feed: Arc<Mutex<Feed>>,
+    ) -> Arc<Self> {
         Arc::new(Self {
+            runtime: Mutex::new(Runtime::new(chat.id, feed)),
             chat,
             conversation,
             hub: Arc::downgrade(hub),
@@ -199,7 +205,6 @@ impl ChatState {
             files: hub.files.clone(),
             data_dir: hub.data_dir.clone(),
             review_quiet: hub.review_quiet,
-            runtime: Mutex::new(Runtime::new()),
             review: ReviewTimer::new(),
         })
     }
@@ -246,6 +251,7 @@ impl ChatState {
             self.store.set_time_zone(self.user(), zone)?;
         }
         let payload = json!(&request);
+        let text = request.text.clone();
         // Its error waits until the other checks have passed.
         let transport = self.transport_for(request.model);
         let mut runtime = lock(&self.runtime);
@@ -276,6 +282,7 @@ impl ChatState {
         };
         let active = ActiveTurn::new(identity, Some(user), None);
         self.begin(&mut runtime, active, reply, history, target);
+        self.title_from(&text);
         Ok(accepted)
     }
 
@@ -383,7 +390,14 @@ impl ChatState {
     ) {
         let identity = active.identity.clone();
         self.review.note_activity();
-        runtime.start(active, reply.stopper(), history);
+        let unread = self.store.unread(self.chat.id).unwrap_or_else(|error| {
+            eprintln!(
+                "jet: could not count unread entries of chat {}: {error}",
+                self.chat.id.0
+            );
+            0
+        });
+        runtime.start(active, reply.stopper(), history, unread);
         let host = self.clone();
         std::thread::spawn(move || host.follow_reply(reply, &identity, target));
     }
@@ -469,6 +483,9 @@ impl ChatState {
                 self.tools.revoke(self.owner(), &identity.request_id);
                 runtime.active = None;
                 runtime.stopper = None;
+                if !matches!(event, Event::NoReply) {
+                    self.publish_unread(&mut runtime);
+                }
             }
         }
         self.tools.revoke(self.owner(), &identity.request_id);
@@ -489,7 +506,7 @@ impl ChatState {
                 unique.push(id);
             }
         }
-        match self.files.attach(self.user(), &unique) {
+        match self.files.attach(self.user(), self.chat.id, &unique) {
             Ok(uploads) => Ok(uploads.iter().map(About::attachment).collect()),
             Err(FileError::NotFound(id)) => Err(BridgeError::InvalidRequest(format!(
                 "{id} is not an uploaded file"
@@ -515,14 +532,20 @@ impl ChatState {
                         .is_some_and(|turn| turn.turn_id == active.identity.turn_id))
             });
         }
+        let feed = lock(&runtime.feed);
         Ok(Snapshot {
-            epoch: runtime.epoch.clone(),
-            cursor: runtime.cursor,
+            chat_id: self.chat.id,
+            epoch: feed.epoch.clone(),
+            cursor: feed.cursor,
             history,
             active: runtime.active.clone(),
+            unread: self.store.unread(self.chat.id)?,
         })
     }
 
+    /// What a page that opens the event stream gets first: the events it missed when its epoch
+    /// and cursor still reach back, else this chat's snapshot. The receiver carries the events of
+    /// all of the user's chats.
     pub fn subscribe(
         &self,
         epoch: Option<&str>,
@@ -532,8 +555,11 @@ impl ChatState {
         if runtime.closing {
             return Err(BridgeError::ShuttingDown);
         }
-        let receiver = runtime.sender.subscribe();
-        let initial = match runtime.replay(epoch, cursor) {
+        let (receiver, missed) = {
+            let feed = lock(&runtime.feed);
+            (feed.sender.subscribe(), feed.replay(epoch, cursor))
+        };
+        let initial = match missed {
             Some(events) => events
                 .into_iter()
                 .map(|event| json!({"kind":"event", "data":event}))
@@ -563,7 +589,7 @@ impl ChatState {
         Ok(())
     }
 
-    /// Clears the thread and deletes every file of the user, the ones Jet wrote and the ones the
+    /// Clears the thread and deletes the files of this chat, the ones Jet wrote and the ones the
     /// user attached. The runtime stays locked throughout, so no turn can start and write a file in
     /// between.
     pub fn forget(&self) -> Result<(), BridgeError> {
@@ -571,16 +597,11 @@ impl ChatState {
         self.conversation.forget()?;
         runtime.pending = None;
         runtime.publish(None, json!({"kind":"historyChanged"}));
-        self.files.clear(self.user())?;
+        self.publish_unread(&mut runtime);
+        self.files.clear(self.chat.id)?;
         Ok(())
     }
 
-    fn registry_changed(&self, event: &agent::apps::RegistryEvent) {
-        lock(&self.runtime).publish(
-            None,
-            json!({"kind":"registryChanged", "appId":event.app_id, "change":event.change}),
-        );
-    }
     pub fn open_app(
         &self,
         turn: &TurnContext,
@@ -630,7 +651,7 @@ impl ChatState {
     /// web read that came back after that line and before this check also counts. `None` when the
     /// turn ends first.
     pub async fn read_web_before(&self, turn: &TurnContext, card_id: &str) -> Option<bool> {
-        let mut events = lock(&self.runtime).sender.subscribe();
+        let mut events = lock(&lock(&self.runtime).feed).sender.subscribe();
         loop {
             {
                 let runtime = lock(&self.runtime);
@@ -648,15 +669,83 @@ impl ChatState {
         }
     }
 
-    fn memory_updated(&self, notes: agent::Notes) {
-        lock(&self.runtime).publish(None, json!({"kind":"memoryUpdated", "notes":notes}));
+    /// Tells every page that the chat now has this many unread Jet entries.
+    fn publish_unread(&self, runtime: &mut Runtime) {
+        match self.store.unread(self.chat.id) {
+            Ok(unread) => runtime.publish(None, json!({"kind":"unread", "unread":unread})),
+            Err(error) => eprintln!(
+                "jet: could not count unread entries of chat {}: {error}",
+                self.chat.id.0
+            ),
+        }
     }
 
-    /// Tells every open chat of this chat's user that the notes changed.
-    fn notes_changed(&self, notes: &agent::Notes) {
-        if let Some(hub) = self.hub.upgrade() {
-            hub.notes_changed(self.user(), notes);
+    /// Moves the user's read mark of this chat to entry `through`, or to the newest entry, and
+    /// tells every page the unread count that is left.
+    pub fn mark_read(&self, through: Option<u64>) -> Result<u64, BridgeError> {
+        let mut runtime = lock(&self.runtime);
+        let unread = self.store.mark_read(self.user(), self.chat.id, through)?;
+        runtime.publish(None, json!({"kind":"unread", "unread":unread}));
+        Ok(unread)
+    }
+
+    /// Saves a Jet entry that answers no message, and tells every page: the entry itself, and the
+    /// chat's unread count after it.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "a later check-in saves its message through it")
+    )]
+    pub fn add_jet_entry(&self, entry: agent::NewEntry) -> Result<ShownEntry, BridgeError> {
+        let mut runtime = lock(&self.runtime);
+        if runtime.closing {
+            return Err(BridgeError::ShuttingDown);
         }
+        let shown = self.conversation.add_jet_entry(entry)?;
+        runtime.publish(None, json!({"kind":"entryAdded", "entry":shown}));
+        self.publish_unread(&mut runtime);
+        Ok(shown)
+    }
+
+    /// Gives a topic chat that still has its first title a short one from the user's first words.
+    /// A title the user set stays.
+    fn title_from(&self, text: &str) {
+        let Some(hub) = self.hub.upgrade() else {
+            return;
+        };
+        let title = chats::short_title(text);
+        let named = match self.store.chat(self.user(), self.chat.id) {
+            Ok(Some(chat)) => {
+                chat.kind == crate::store::ChatKind::Topic && chat.title == chats::NEW_CHAT_TITLE
+            }
+            _ => false,
+        };
+        if named
+            && !title.is_empty()
+            && self
+                .store
+                .rename_chat(self.user(), self.chat.id, &title)
+                .is_ok()
+        {
+            hub.chats_changed(self.user(), Some(self.chat.id));
+        }
+    }
+
+    /// Refuses all new work in this chat so that it can be deleted. A chat that is answering is
+    /// refused, and stays as it was.
+    fn retire(&self) -> Result<(), BridgeError> {
+        let mut runtime = lock(&self.runtime);
+        if self.conversation.is_busy() || runtime.active.is_some() {
+            return Err(BridgeError::Busy);
+        }
+        runtime.closing = true;
+        runtime.pending = None;
+        self.review.note_activity();
+        Ok(())
+    }
+
+    /// Takes back `retire` when the chat could not be deleted after all.
+    fn reopen(&self) {
+        lock(&self.runtime).closing = false;
     }
 
     fn owner(&self) -> TurnOwner {
@@ -675,7 +764,6 @@ impl ChatState {
             if let Some(stopper) = &runtime.stopper {
                 stopper.stop();
             }
-            runtime.publish(None, json!({"kind":"shutdown"}));
         }
         self.conversation.stop_review();
     }

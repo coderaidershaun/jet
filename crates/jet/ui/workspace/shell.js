@@ -18,7 +18,9 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
   const notice = h('p', { class: 'workspace-notice', role: 'status' });
   const toolsContent = h('section', { id: 'tools-content', 'aria-label': 'App tools', tabindex: '-1' });
   const content = h('main', { class: 'workspace-content' }, page, frameHost, toolsContent, notice);
-  const root = h('div', { class: 'workspace-shell' }, drawer, content);
+  // Empty and hidden: the third column of the shell, kept free for a pane that a later step puts on the right.
+  const sidePane = h('aside', { class: 'side-pane', id: 'side-pane', 'aria-label': 'Side pane', hidden: true });
+  const root = h('div', { class: 'workspace-shell' }, drawer, content, sidePane);
   document.body.prepend(root);
   const frames = createFrameContainer(frameHost);
 
@@ -71,6 +73,7 @@ export function createWorkspace({ agent, page, onTools = () => {} }) {
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return;
     if (event.target.id === 'field' && document.querySelector('.command-menu:not([hidden])')) return;
+    if (event.target.classList?.contains('chat-rename')) return;
     if (expanded && (narrow.matches || drawer.contains(event.target))) {
       expanded = false;
       paint();

@@ -13,6 +13,7 @@ import { createBrowserAgent } from './browser-agent.js';
  *   reactions?: import('../chat/thread/store.js').Reaction[], at: number,
  * }} ShownEntry
  */
+/** @typedef {{ id: number, kind: 'main' | 'objective' | 'topic', title: string, unread: number, activeAt: number }} ChatSummary */
 /** @typedef {{ memory: string, user: string, recent: string, limits?: { memory: number, user: number, recent: number } }} Notes */
 /** @typedef {{ kind: 'busy' | 'claudeMissing' | 'providerFailed' | 'timeout' | 'io' | 'badLink', message: string }} Failure */
 
@@ -47,7 +48,14 @@ import { createBrowserAgent } from './browser-agent.js';
  * @typedef {object} Agent
  * @property {() => Promise<{ program: ClaudeStatus, context: ContextStatus }>} status
  * @property {(text: string) => Promise<{ mood: string, scores: object }>} feel
- * @property {() => Promise<ShownEntry[]>} history
+ * @property {() => Promise<{ chatId: number, history: ShownEntry[], active: any, unread: number, cursor: number }>} snapshot   the open chat's history and running reply
+ * @property {(id: number, show: (snapshot: any) => void) => Promise<void>} openChat   makes `id` the open chat: every call below then carries it
+ * @property {() => Promise<ChatSummary[]>} chats
+ * @property {() => Promise<ChatSummary>} addChat
+ * @property {(id: number, title: string) => Promise<object>} renameChat
+ * @property {(id: number) => Promise<object>} removeChat
+ * @property {(id: number, through?: number) => Promise<{ unread: number }>} markRead
+ * @property {(listener: (envelope: { chatId: number | null, cursor: number, event: any }) => void) => () => void} onChatEvent   `unread`, `entryAdded` and `chatsChanged`, for every chat
  * @property {(request: SendRequest, onEvent: (event: AgentEvent) => void) => Promise<ShownEntry>} send
  *   resolves with the saved user entry; the reply streams to `onEvent`
  * @property {() => Promise<void>} stop

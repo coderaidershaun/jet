@@ -87,67 +87,6 @@ impl Conversation {
             })
     }
 
-    /// Reads what was said since the last review and updates the notes. `name` is what
-    /// the assistant is called.
-    pub fn review_notes(
-        &self,
-        transport: &dyn Transport,
-        name: &str,
-    ) -> Result<ReviewOutcome, ReviewError> {
-        let Some(_claim) = Claim::take(&self.reviewing) else {
-            return Ok(ReviewOutcome::Skipped);
-        };
-        let Some((_, pending)) = self.pending_since_last_review()? else {
-            return Ok(ReviewOutcome::Skipped);
-        };
-        let before = self.saved.notes()?;
-        let request = Request {
-            prompt: review_prompt(&before, &pending, name),
-            system_prompt: system_prompt(name),
-            model: transport.review_model(),
-            effort: Effort::Low,
-            budget_usd: BUDGET_USD,
-            session: SessionMode::Ephemeral,
-            schema: Some(schema()),
-            mcp: None,
-            hosts: Vec::new(),
-        };
-        let turn = {
-            let mut current = crate::lock(&self.review_stop);
-            if self.shutting_down.load(Ordering::SeqCst) {
-                return Ok(ReviewOutcome::Skipped);
-            }
-            let turn = Turn::start_with_idle(transport, &request, IDLE_LIMIT)?;
-            *current = Some(turn.stopper());
-            turn
-        };
-        let result = run(turn);
-        *crate::lock(&self.review_stop) = None;
-        let summary = result?;
-        let verdict = read_verdict(summary)?;
-
-        let Some(mut session) = self.saved.session()? else {
-            return Ok(ReviewOutcome::Stale);
-        };
-        // A thread forgotten meanwhile starts again at id 1, so it must not be marked as read.
-        let thread = self.saved.entries()?;
-        let Some(last_read) = pending.last().filter(|last| thread.contains(last)) else {
-            return Ok(ReviewOutcome::Stale);
-        };
-        if self.saved.notes()? != before {
-            return Ok(ReviewOutcome::Stale);
-        }
-        let outcome = if verdict.changed {
-            ReviewOutcome::Updated(self.saved.save_notes(&verdict.notes)?)
-        } else {
-            ReviewOutcome::Unchanged
-        };
-        session.reviewed_through = last_read.id;
-        session.reviewed_at = now_ms();
-        self.saved.save_session(&session)?;
-        Ok(outcome)
-    }
-
     /// The session and the entries with text that the review has not read yet, or `None`
     /// when there is no session or nothing new.
     fn pending_since_last_review(&self) -> Result<Option<(Session, Vec<Entry>)>, MemoryError> {
@@ -158,6 +97,95 @@ impl Conversation {
         pending.retain(|entry| !entry.text.trim().is_empty());
         Ok((!pending.is_empty()).then_some((session, pending)))
     }
+}
+
+/// One chat whose new entries a review reads. The title tells the notes where a topic came from.
+pub struct ReviewedChat<'a> {
+    pub title: &'a str,
+    pub conversation: &'a Conversation,
+}
+
+/// What a review read from one chat: the entries it had not read yet.
+struct Source<'a> {
+    chat: &'a ReviewedChat<'a>,
+    pending: Vec<Entry>,
+}
+
+/// Reads what was said since the last review in every one of `chats` and updates the notes they
+/// share, which are saved through the first chat. Each chat keeps its own mark of how far it was
+/// read. The caller sees to it that no two reviews of the same notes run at once.
+pub fn review_chats(
+    transport: &dyn Transport,
+    name: &str,
+    chats: &[ReviewedChat],
+) -> Result<ReviewOutcome, ReviewError> {
+    let Some(lead) = chats.first().map(|chat| chat.conversation) else {
+        return Ok(ReviewOutcome::Skipped);
+    };
+    let Some(_claim) = Claim::take(&lead.reviewing) else {
+        return Ok(ReviewOutcome::Skipped);
+    };
+    let mut sources = Vec::new();
+    for chat in chats {
+        if let Some((_, pending)) = chat.conversation.pending_since_last_review()? {
+            sources.push(Source { chat, pending });
+        }
+    }
+    if sources.is_empty() {
+        return Ok(ReviewOutcome::Skipped);
+    }
+    let before = lead.saved.notes()?;
+    let request = Request {
+        prompt: review_prompt(&before, &sources, name),
+        system_prompt: system_prompt(name),
+        model: transport.review_model(),
+        effort: Effort::Low,
+        budget_usd: BUDGET_USD,
+        session: SessionMode::Ephemeral,
+        schema: Some(schema()),
+        mcp: None,
+        hosts: Vec::new(),
+    };
+    let turn = {
+        let mut current = crate::lock(&lead.review_stop);
+        if lead.shutting_down.load(Ordering::SeqCst) {
+            return Ok(ReviewOutcome::Skipped);
+        }
+        let turn = Turn::start_with_idle(transport, &request, IDLE_LIMIT)?;
+        *current = Some(turn.stopper());
+        turn
+    };
+    let result = run(turn);
+    *crate::lock(&lead.review_stop) = None;
+    let verdict = read_verdict(result?)?;
+
+    // A thread forgotten meanwhile starts again at id 1, so it must not be marked as read.
+    let mut marks = Vec::new();
+    for source in &sources {
+        let saved = &source.chat.conversation.saved;
+        let Some(session) = saved.session()? else {
+            return Ok(ReviewOutcome::Stale);
+        };
+        let thread = saved.entries()?;
+        let Some(last_read) = source.pending.last().filter(|last| thread.contains(last)) else {
+            return Ok(ReviewOutcome::Stale);
+        };
+        marks.push((session, last_read.id));
+    }
+    if lead.saved.notes()? != before {
+        return Ok(ReviewOutcome::Stale);
+    }
+    let outcome = if verdict.changed {
+        ReviewOutcome::Updated(lead.saved.save_notes(&verdict.notes)?)
+    } else {
+        ReviewOutcome::Unchanged
+    };
+    for (source, (mut session, last_read)) in sources.iter().zip(marks) {
+        session.reviewed_through = last_read;
+        session.reviewed_at = now_ms();
+        source.chat.conversation.saved.save_session(&session)?;
+    }
+    Ok(outcome)
 }
 
 fn system_prompt(name: &str) -> String {
@@ -198,39 +226,57 @@ fn read_verdict(summary: Summary) -> Result<Verdict, ReviewError> {
     serde_json::from_value(value).map_err(|source| ReviewError::Shape { source })
 }
 
-fn review_prompt(notes: &Notes, pending: &[Entry], name: &str) -> String {
+fn review_prompt(notes: &Notes, sources: &[Source], name: &str) -> String {
     format!(
         "<memory>{}</memory>\n<user>{}</user>\n<recent>{}</recent>\n<exchange>\n{}\n</exchange>",
         note_or_empty(&notes.memory),
         note_or_empty(&notes.user),
         note_or_empty(&notes.recent),
-        exchange(pending, name),
+        exchange(sources, name),
     )
 }
 
-/// One line per message, newest messages kept first when the text is too long.
-fn exchange(pending: &[Entry], name: &str) -> String {
-    let mut lines: Vec<String> = pending
+/// One line per message. When the text is too long the oldest lines of all the chats go first.
+/// Each chat's lines come under a line with the chat's title.
+fn exchange(sources: &[Source], name: &str) -> String {
+    let mut lines: Vec<(u64, usize, String)> = sources
         .iter()
-        .map(|entry| {
-            let speaker = match entry.role {
-                Role::User => "user",
-                Role::Jet => name,
-            };
-            format!("{speaker}: {}", entry.text.trim())
+        .enumerate()
+        .flat_map(|(at, source)| {
+            source.pending.iter().map(move |entry| {
+                let speaker = match entry.role {
+                    Role::User => "user",
+                    Role::Jet => name,
+                };
+                (entry.at, at, format!("{speaker}: {}", entry.text.trim()))
+            })
         })
         .collect();
-    let length = |lines: &[String]| {
+    lines.sort_by_key(|(at, _, _)| *at);
+    let length = |lines: &[(u64, usize, String)]| {
         lines
             .iter()
-            .map(|line| line.chars().count() + 1)
+            .map(|(_, _, line)| line.chars().count() + 1)
             .sum::<usize>()
     };
     while lines.len() > 1 && length(&lines) > EXCHANGE_LIMIT {
         lines.remove(0);
     }
-    let text = lines.join("\n");
-    text.chars().take(EXCHANGE_LIMIT).collect()
+    let mut text = String::new();
+    for (index, source) in sources.iter().enumerate() {
+        let mut kept = lines
+            .iter()
+            .filter(|(_, chat, _)| *chat == index)
+            .peekable();
+        if kept.peek().is_some() && !source.chat.title.is_empty() {
+            text.push_str(&format!("[chat: {}]\n", source.chat.title));
+        }
+        for (_, _, line) in kept {
+            text.push_str(line);
+            text.push('\n');
+        }
+    }
+    text.trim_end().chars().take(EXCHANGE_LIMIT).collect()
 }
 
 fn schema() -> Value {
@@ -287,6 +333,14 @@ mod tests {
         storage.save_notes(&notes).unwrap();
     }
 
+    fn review_one(chat: &Chat) -> Result<ReviewOutcome, ReviewError> {
+        let only = ReviewedChat {
+            title: "",
+            conversation: &chat.conversation,
+        };
+        review_chats(&*chat.transport(), "Jet", &[only])
+    }
+
     fn verdict(changed: bool, memory: &str) -> Script {
         let output = json!({"changed": changed, "memory": memory, "user": "- Sam", "recent": "- app launch"});
         Script::lines(vec![structured_result_line(&output)])
@@ -316,10 +370,7 @@ mod tests {
         assert!(due_after(100_000 + 600_000));
         chat.edit_session(|session| session.reviewed_at = 0);
 
-        let outcome = chat
-            .conversation
-            .review_notes(&*chat.transport(), "Jet")
-            .unwrap();
+        let outcome = review_one(&chat).unwrap();
         let expected = Notes {
             memory: "- old fact\n- shipped app".into(),
             user: "- Sam".into(),
@@ -340,9 +391,7 @@ mod tests {
         assert!(session.reviewed_at > 0);
         assert!(!due_after(100_000_000), "nothing new to read");
         assert_eq!(
-            chat.conversation
-                .review_notes(&*chat.transport(), "Jet")
-                .unwrap(),
+            review_one(&chat).unwrap(),
             ReviewOutcome::Skipped,
             "nothing new to read"
         );
@@ -359,7 +408,7 @@ mod tests {
             });
         let chat = Chat::in_storage(storage, scripted);
         reviewed_thread(&chat.storage, 1000);
-        let outcome = chat.conversation.review_notes(&*chat.transport(), "Jet");
+        let outcome = review_one(&chat);
         assert_eq!(outcome.unwrap(), ReviewOutcome::Stale);
         chat
     }
@@ -397,5 +446,87 @@ mod tests {
             storage.save_session(Some(&fresh)).unwrap();
         });
         assert_eq!(chat.saved_session().reviewed_through, EntryId(0));
+    }
+
+    #[test]
+    fn one_review_reads_every_chat_and_marks_each_one() {
+        let (kites, boats) = (Arc::new(InMemory::default()), Arc::new(InMemory::default()));
+        for (storage, said) in [(&kites, "kites fly"), (&boats, "boats float")] {
+            storage.add_entry(NewEntry::user_text(said), 1000).unwrap();
+            let session = Session {
+                session_id: SessionId("s".into()),
+                ..Session::default()
+            };
+            storage.save_session(Some(&session)).unwrap();
+        }
+        let scripted = Arc::new(Scripted::new().then(verdict(true, "- both")));
+        let (first, second) = (
+            Conversation::new(kites.clone()),
+            Conversation::new(boats.clone()),
+        );
+        let chats = [
+            ReviewedChat {
+                title: "Kites",
+                conversation: &first,
+            },
+            ReviewedChat {
+                title: "Boats",
+                conversation: &second,
+            },
+        ];
+        let outcome = review_chats(&*scripted, "Jet", &chats).unwrap();
+        assert!(matches!(outcome, ReviewOutcome::Updated(_)));
+        let prompt = &scripted.requests()[0].prompt;
+        assert!(
+            prompt.contains("[chat: Kites]\nuser: kites fly"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("[chat: Boats]\nuser: boats float"),
+            "{prompt}"
+        );
+        for storage in [&kites, &boats] {
+            assert_eq!(
+                storage.session().unwrap().unwrap().reviewed_through,
+                EntryId(1)
+            );
+        }
+        assert_eq!(
+            review_chats(&*scripted, "Jet", &chats).unwrap(),
+            ReviewOutcome::Skipped,
+            "no entry is read twice"
+        );
+    }
+
+    #[test]
+    fn a_long_chat_does_not_push_out_the_newest_lines_of_a_quiet_one() {
+        let (long, quiet) = (Arc::new(InMemory::default()), Arc::new(InMemory::default()));
+        for at in 1..=70 {
+            long.add_entry(NewEntry::user_text(&"x".repeat(100)), at)
+                .unwrap();
+        }
+        quiet
+            .add_entry(NewEntry::user_text("the newest talk"), 1000)
+            .unwrap();
+        let (long, quiet) = (Conversation::new(long), Conversation::new(quiet));
+        let chats = [
+            ReviewedChat {
+                title: "Long",
+                conversation: &long,
+            },
+            ReviewedChat {
+                title: "Quiet",
+                conversation: &quiet,
+            },
+        ];
+        let sources = chats.each_ref().map(|chat| Source {
+            chat,
+            pending: chat.conversation.saved.entries().unwrap(),
+        });
+        let text = exchange(&sources, "Jet");
+        assert!(
+            text.contains("[chat: Quiet]\nuser: the newest talk"),
+            "{text}"
+        );
     }
 }

@@ -3,6 +3,7 @@ mod accounts;
 mod agy;
 mod attachments;
 mod chat;
+mod chats;
 mod facade;
 mod github;
 mod import;

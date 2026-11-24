@@ -156,6 +156,43 @@ impl Store {
             .collect())
     }
 
+    /// The open objectives of a chat made for objectives, each with its deliverable, dates and
+    /// steps, in the words the chat opens with; `None` for any other chat.
+    pub(crate) fn objective_summary(&self, chat: ChatId) -> Result<Option<String>, StoreError> {
+        self.with(|db| {
+            let mut objectives = db.prepare(
+                "SELECT o.id, o.title, o.deliverable, o.start_date, o.due_date FROM objectives o
+                 JOIN chats c ON c.id = o.chat_id
+                 WHERE o.chat_id = ?1 AND c.kind = 'objective' AND o.status IN ('active', 'paused')
+                 ORDER BY o.id",
+            )?;
+            let mut steps = db.prepare(
+                "SELECT title FROM objective_steps WHERE objective_id = ?1 ORDER BY position",
+            )?;
+            let mut texts = Vec::new();
+            let rows = objectives.query_map([chat.0], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            })?;
+            for row in rows {
+                let (id, title, deliverable, start, due) = row?;
+                let mut text =
+                    format!("{title}\n\nDeliverable: {deliverable}\nFrom {start} to {due}.");
+                let titles = steps.query_map([id], |row| row.get::<_, String>(0))?;
+                for (number, step) in (1..).zip(titles) {
+                    text.push_str(&format!("\n{number}. {}", step?));
+                }
+                texts.push(text);
+            }
+            Ok((!texts.is_empty()).then(|| texts.join("\n\n")))
+        })
+    }
+
     /// Makes the objective, its steps and sources, its first check and its chat together, or
     /// nothing at all.
     pub(crate) fn create_objective(&self, new: &NewObjective) -> Result<Created, StoreError> {
@@ -308,8 +345,10 @@ fn objective_chat(tx: &Transaction, new: &NewObjective) -> Result<ChatId, StoreE
                 params![new.user.0, new.title, seconds(new.at)],
             )?;
             let chat = ChatId(tx.last_insert_rowid());
-            insert_entry(tx, chat, jet_text(new.summary), new.at)?;
-            insert_entry(tx, new.agreed_in, jet_text(new.line), new.at)?;
+            // `new.at` is in seconds; an entry's time is in milliseconds, as the page reads it.
+            let at_ms = new.at.saturating_mul(1000);
+            insert_entry(tx, chat, jet_text(new.summary), at_ms)?;
+            insert_entry(tx, new.agreed_in, jet_text(new.line), at_ms)?;
             Ok(chat)
         }
     }

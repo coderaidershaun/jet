@@ -88,6 +88,14 @@ export function createThread({ now = Date.now } = {}) {
       held = null;
     },
 
+    /** An entry that answers no message, saved by Jet while the page was open. A reply that is running stays last. @param {any} entry */
+    addEntry(entry) {
+      const item = { key: nextKey(), type: entry.role, at: entry.at, entry };
+      reactions.set(entry.id, entry.reactions ?? []);
+      if (slot) items.splice(items.indexOf(slot), 0, item);
+      else items.push(item);
+    },
+
     clear() {
       items = [];
       reactions = new Map();

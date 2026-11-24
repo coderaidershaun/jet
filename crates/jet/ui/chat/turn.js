@@ -244,11 +244,14 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
   const turn = {
     paint,
 
-    restore(snapshot) {
-      if (active && !active.turnId && !snapshot.active && !snapshot.history.some((entry) => entry.turn?.requestId === active.requestId)) return;
+    /** @param {{ fresh?: boolean }} [options]   `fresh` shows another chat: nothing of the old one is kept, not even a held message */
+    restore(snapshot, { fresh = false } = {}) {
+      if (!fresh && active && !active.turnId && !snapshot.active && !snapshot.history.some((entry) => entry.turn?.requestId === active.requestId)) return;
       active?.cancelFeeling?.();
       reveal?.end();
-      const held = thread.held;
+      // A message still waiting for its feeling goes on to the chat it was typed in.
+      if (fresh && active && !active.dispatched) active.leftBehind = true;
+      const held = fresh ? null : thread.held;
       thread.load(snapshot.history);
       if (held !== null) thread.hold(held.text, held.attachments);
       active = null;
@@ -283,6 +286,15 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       if (thread.slot) live.replying(performance.now());
     },
 
+    /** Shows an entry that Jet saved with no message to answer, such as the first line of an objective's chat. */
+    addEntry(entry) {
+      thread.addEntry(entry);
+      composer.sent();
+      composerView.setLayout(composer.layout);
+      paint();
+      live.showInLane(view.liveLane());
+    },
+
     observe(envelope) {
       const { event } = envelope;
       // A list of emoji replaces the old one, inside a turn or outside, so one seen twice changes nothing.
@@ -311,7 +323,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
      */
     async send(text, appId = activeAppId(), attachments = []) {
       voice.unlock();
-      const mine = { dispatched: false, cancelFeeling: null, spoken: false, text, appId, attachments };
+      const mine = { dispatched: false, cancelFeeling: null, spoken: false, text, appId, attachments, chatId: agent.chatId?.() ?? null };
       active = mine;
       const now = performance.now();
       const message = { ...request(text, appId, attachments), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
@@ -356,7 +368,10 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
           finish('neutral');
         }
       });
-      if (active !== mine) return;
+      if (active !== mine) {
+        if (mine.leftBehind) agent.send({ ...message, feeling: 'neutral', chatId: mine.chatId }, () => {}).catch((error) => console.warn('the message could not be sent to its chat:', error));
+        return;
+      }
       reveal.holdUntil(live.feel(feeling, performance.now()).revealAt);
       message.feeling = feeling;
       mine.dispatched = true;

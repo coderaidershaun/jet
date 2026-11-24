@@ -21,7 +21,7 @@ async function setup(t, options = {}) {
   const chips = [];
   const live = { feel: () => ({ revealAt: 1000 }), measure: () => ({}), send: noop, mood: () => ({ revealAt: 1650 }), replying: noop, done: () => { settled++; }, failed: noop, stopped: noop, showInLane: () => { relaunched++; } };
   const turn = createTurn({
-    agent: { serverEvents: options.serverEvents, feel: options.feel ?? (async () => ({ mood: 'neutral' })), send: (request, receive) => { requests.push(request); event = receive; return Promise.resolve({}); }, react: (request) => { reacts.push(request); return Promise.resolve({}); }, stop: () => { stopped++; return Promise.resolve(); }, renderMarkdown: async (text) => '<p>' + text + '</p>' },
+    agent: { serverEvents: options.serverEvents, chatId: () => 7, feel: options.feel ?? (async () => ({ mood: 'neutral' })), send: (request, receive) => { requests.push(request); event = receive; return Promise.resolve({}); }, react: (request) => { reacts.push(request); return Promise.resolve({}); }, stop: () => { stopped++; return Promise.resolve(); }, renderMarkdown: async (text) => '<p>' + text + '</p>' },
     settings: { persona: { name: 'Jet' } }, thread, composer, page,
     view: { render: noop, liveLane: noop }, follow: { onSend: noop },
     composerView: { refresh: noop, setLayout: noop, setHeld: (held) => { chips.push(held); } },
@@ -359,4 +359,16 @@ test('a reaction turn that starts while the last reply is still revealed waits f
   reaction({ kind: 'noReply' });
   await s.advance(0);
   assert.equal(s.requests.at(-1).text, 'next');
+});
+
+test('a message typed in a chat still goes to that chat when the page opens another during the feeling wait', async (t) => {
+  const answers = [];
+  const feel = () => new Promise((resolve) => answers.push(resolve));
+  const s = await setup(t, { pending: true, feel });
+  s.turn.restore({ history: [], active: null }, { fresh: true });
+  await s.advance(0);
+  await s.sending;
+  assert.equal(s.requests.length, 1, 'the message is sent');
+  assert.deepEqual([s.requests[0].text, s.requests[0].chatId], ['hi', 7], 'to the chat it was typed in');
+  assert.equal(s.thread.replying, false, 'and shows nothing in the chat now on screen');
 });

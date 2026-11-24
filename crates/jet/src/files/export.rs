@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use super::upload::MAX_STORE_BYTES;
 use super::{About, FileError, FileKind, Files, Origin};
+use crate::store::ChatId;
 use crate::store::{Added, UserId};
 
 /// What the model asks for: the whole document as Markdown, written the way chat maths is
@@ -39,7 +40,12 @@ impl Files {
     /// - [`FileError::Export`] when the renderer cannot make the file.
     /// - [`FileError::Scratch`] when the temporary folder cannot be used.
     /// - [`FileError::StoreFull`] when it would take the store past 2 GiB.
-    pub fn export(&self, user: UserId, request: ExportRequest) -> Result<SavedFile, FileError> {
+    pub fn export(
+        &self,
+        user: UserId,
+        chat: ChatId,
+        request: ExportRequest,
+    ) -> Result<SavedFile, FileError> {
         let id = Uuid::new_v4();
         let format = request.format;
         let name = format.file_name(&request.title);
@@ -74,7 +80,7 @@ impl Files {
         };
         match self
             .store
-            .add_file(user, &about, &contents, MAX_STORE_BYTES)?
+            .add_file(user, Some(chat), &about, &contents, MAX_STORE_BYTES)?
         {
             Added::Kept => Ok(SavedFile {
                 id,

@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use memory::Saved;
 pub use memory::{InMemory, MemoryError, NewEntry, Session, Storage, now_ms};
 pub use reply::Reply;
-pub use review::{REVIEW_QUIET, ReviewError, ReviewOutcome};
+pub use review::{REVIEW_QUIET, ReviewError, ReviewOutcome, ReviewedChat, review_chats};
 use session_policy::decide;
 
 use crate::chat::{
@@ -214,9 +214,15 @@ impl Conversation {
         let prompt_hash = persona::prompt_hash(&message.persona, message.model, message.effort);
         let saved = self.saved.session()?;
         let decision = decide(saved.as_ref(), &prompt_hash, now);
+        // A session that is restarted after the provider lost it opens with the summary too, so the
+        // reply keeps the opening words it was made from.
+        let opening = match self.saved.objective_summary()? {
+            Some(summary) => format!("{}{words}", persona::objective_words(&summary)),
+            None => words.clone(),
+        };
         let prompt = match decision.mode {
-            SessionMode::New => reply::first_message(&message.local_time, &words),
-            _ => words.clone(),
+            SessionMode::New => reply::first_message(&message.local_time, &opening),
+            _ => words,
         };
         let entries = self.saved.entries()?;
         let request = Request {
@@ -242,7 +248,7 @@ impl Conversation {
             memory: self.saved.clone(),
             transport,
             request,
-            text: words,
+            text: opening,
             local_time: message.local_time,
             // A reaction turn often shows nothing at all, so it says nothing about the session.
             notice: decision
@@ -269,6 +275,11 @@ impl Conversation {
         let _claim = Claim::take(&self.answering).ok_or(ConversationError::Busy)?;
         self.saved.forget(now_ms())?;
         Ok(())
+    }
+
+    /// Saves a Jet entry that answers no message, such as a check-in, and gives it back.
+    pub fn add_jet_entry(&self, entry: NewEntry) -> Result<ShownEntry, MemoryError> {
+        Ok(shown(self.saved.append(entry, now_ms())?))
     }
 
     pub fn notes(&self) -> Result<Notes, MemoryError> {

@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="./vendor/katex/katex.min.css">
 <link rel="stylesheet" href="./chat.css">
 <link rel="stylesheet" href="./chat/drawer/drawer.css">
+<link rel="stylesheet" href="./chat/drawer/chats.css">
 <link rel="stylesheet" href="./chat/thread/thread.css">
 <link rel="stylesheet" href="./chat/files.css">
 <link rel="stylesheet" href="./chat/thread/cards/cards.css">
@@ -44,7 +45,17 @@
         <p id="context-percent"></p>
         <p class="context-note" id="context-note"></p>
       </section>
-      <nav class="app-list" aria-label="Registered apps"></nav>
+      <section class="chats" aria-labelledby="chats-title">
+        <div class="nav-head">
+          <h2 class="nav-heading" id="chats-title">Chats</h2>
+          <button class="new-chat" id="new-chat" type="button" aria-label="New chat" title="New chat"><span class="new-chat-label">New chat</span></button>
+        </div>
+        <ul class="chat-list" id="chat-list"></ul>
+      </section>
+      <section class="apps" aria-labelledby="apps-title">
+        <h2 class="nav-heading" id="apps-title">Apps</h2>
+        <nav class="app-list" aria-label="Registered apps"></nav>
+      </section>
       <div class="account" id="account" hidden>
         <span class="account-mark" id="account-mark" aria-hidden="true"></span>
         <p class="account-who"><span class="account-name" id="account-name"></span><span class="account-email" id="account-email"></span></p>
@@ -60,6 +71,7 @@
   <div class="main">
 
     <div class="stage">
+      <h1 class="chat-head" id="chat-title"></h1>
       <div class="thread" id="thread" role="log" aria-live="off" aria-label="Conversation" tabindex="0">
         <div class="column">
           <div id="banner"></div>

@@ -16,7 +16,7 @@ pub const TURN_HEADER: &str = "x-jet-turn";
 /// the id of the call's card.
 pub const TOOL_USE_META: &str = "claudecode/toolUseId";
 
-pub const FACADE_TOOLS: [&str; 15] = [
+pub const FACADE_TOOLS: [&str; 16] = [
     "apps_list",
     "apps_update",
     "apps_open",
@@ -32,6 +32,7 @@ pub const FACADE_TOOLS: [&str; 15] = [
     "tasks_list",
     "tasks_update",
     "people_list",
+    "chats_read",
 ];
 
 /// The `server` of a card for the provider's own web search or page reading.

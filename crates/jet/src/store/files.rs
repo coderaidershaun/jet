@@ -1,6 +1,6 @@
 //! The files of each user, whole: their details and their bytes.
 
-use super::{Store, StoreError, UserId, from_json, to_json};
+use super::{ChatId, Store, StoreError, UserId, from_json, to_json};
 use crate::files::About;
 use rusqlite::{OptionalExtension, params};
 
@@ -12,10 +12,12 @@ pub(crate) enum Added {
 }
 
 impl Store {
-    /// Keeps the file, unless all the files together would then be over `limit` bytes.
+    /// Keeps the file, unless all the files together would then be over `limit` bytes. `chat` is
+    /// the chat that wrote it, or `None` for an upload that is not sent yet.
     pub(crate) fn add_file(
         &self,
         user: UserId,
+        chat: Option<ChatId>,
         about: &About,
         contents: &[u8],
         limit: u64,
@@ -32,14 +34,15 @@ impl Store {
                 return Ok(Added::Full);
             }
             transaction.execute(
-                "INSERT INTO files (id, user_id, at, attached, about, contents) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO files (id, user_id, at, attached, about, contents, chat_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     about.id.to_string(),
                     user.0,
                     i64::try_from(about.at).unwrap_or(i64::MAX),
                     about.attached,
                     text,
-                    contents
+                    contents,
+                    chat.map(|chat| chat.0)
                 ],
             )?;
             transaction.commit()?;
@@ -104,20 +107,22 @@ impl Store {
         rows.iter().map(|text| about(text, true)).collect()
     }
 
-    /// Marks the user's files as sent with a message, all of them or, when one is missing, none.
-    /// Gives the id of the first missing file.
+    /// Marks the user's files as sent with a message in `chat`, all of them or, when one is
+    /// missing, none. A file already sent keeps the chat it was first sent in. Gives the id of the
+    /// first missing file.
     pub(crate) fn attach_files(
         &self,
         user: UserId,
+        chat: ChatId,
         ids: &[&str],
     ) -> Result<Option<String>, StoreError> {
         self.try_with(|db| {
             let transaction = db.transaction()?;
             for id in ids {
                 let marked = transaction.execute(
-                    "UPDATE files SET attached = 1
+                    "UPDATE files SET attached = 1, chat_id = coalesce(chat_id, ?3)
                      WHERE id = ?1 AND user_id = ?2 AND json_extract(about, '$.origin') = 'upload'",
-                    params![id, user.0],
+                    params![id, user.0, chat.0],
                 )?;
                 if marked == 0 {
                     return Ok(Some((*id).to_owned()));
@@ -139,9 +144,10 @@ impl Store {
         })
     }
 
-    pub(crate) fn remove_files(&self, user: UserId) -> Result<(), StoreError> {
+    /// Deletes the files that were sent or written in the chat.
+    pub(crate) fn remove_files(&self, chat: ChatId) -> Result<(), StoreError> {
         self.with(|db| {
-            db.execute("DELETE FROM files WHERE user_id = ?1", [user.0])
+            db.execute("DELETE FROM files WHERE chat_id = ?1", [chat.0])
                 .map(drop)
         })
     }

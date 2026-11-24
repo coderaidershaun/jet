@@ -21,7 +21,7 @@ pub use chat::{
 };
 pub use conversation::{
     Conversation, ConversationError, InMemory, MemoryError, Message, NewEntry, REVIEW_QUIET, Reply,
-    ReviewError, ReviewOutcome, Session, Storage, now_ms,
+    ReviewError, ReviewOutcome, ReviewedChat, Session, Storage, now_ms, review_chats,
 };
 pub use feeling::{Feeling, JevError, feel_message};
 pub use markdown::{CUES, Cue, dollar_math, render_markdown};

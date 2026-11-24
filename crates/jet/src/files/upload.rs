@@ -52,7 +52,7 @@ impl Files {
         let store = self.store.clone();
         let kept = about.clone();
         let added = tokio::task::spawn_blocking(move || {
-            store.add_file(user, &kept, &bytes, MAX_STORE_BYTES)
+            store.add_file(user, None, &kept, &bytes, MAX_STORE_BYTES)
         })
         .await
         .map_err(|error| FileError::Worker(error.into()))??;
