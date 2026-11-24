@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Model {
-    #[default]
     #[serde(rename = "gpt-6.1-sol")]
     Gpt61Sol,
     #[serde(rename = "gpt-6-astra")]
@@ -25,6 +24,7 @@ pub enum Model {
     GptReserve,
     Fable,
     Opus,
+    #[default]
     Sonnet,
     Haiku,
 }

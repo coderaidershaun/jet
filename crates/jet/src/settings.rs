@@ -129,7 +129,7 @@ mod tests {
                 ..Persona::default()
             }
         );
-        assert_eq!(settings.model, Model::Gpt61Sol);
+        assert_eq!(settings.model, Model::Sonnet);
         assert_eq!(settings.effort, Effort::Medium);
         assert_eq!(settings.turn_budget_usd, 1.0);
         assert_eq!(settings.claude_path, None);

@@ -18,7 +18,7 @@ function defaultSettings() {
   return {
     reducedMotion: false,
     persona: { name: 'Jet', jobTitle: 'First-mate', notes: '' },
-    model: 'gpt-6.1-sol',
+    model: 'sonnet',
     effort: 'medium',
     turnBudgetUsd: 10,
     claudePath: null,
