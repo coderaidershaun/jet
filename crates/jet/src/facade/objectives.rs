@@ -1,0 +1,553 @@
+//! The five tools through which Jet records the user's objectives and its own agent-tasks, on
+//! the pattern of `apps_list` and `apps_update`: reads, and typed commands. Each acts for the
+//! user of the turn only.
+use super::Binding;
+use super::handler::Handler;
+use super::tools::object;
+use crate::objectives::{Check, Create, ObjectiveError, Update};
+use crate::on_worker;
+use crate::store::{
+    Edit, NewSource, NewStep, NoteStatus, ObjectiveChat, ObjectiveId, ObjectiveStatus, SourceKind,
+    StepId, TaskId,
+};
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+const OBJECTIVES_LIST: &str = "List the user's objectives with their steps, sources, notes and waiting agent-tasks. Duration and days left are worked out for you. Look here before you create or change one.";
+const OBJECTIVES_UPDATE: &str = "Record what you and the user agreed about an objective, one typed command. The user fills in no form: ask in conversation until you agree the deliverable, the steps and the dates, then record it. `create` must carry the first check and says whether the objective gets a new chat or takes this one. Dates are YYYY-MM-DD; the check's `at` is the user's local time, YYYY-MM-DDTHH:MM. `dates` needs the reason. A `note` marked private is never shared. For a github source leave out `login` when the user has saved a GitHub token.";
+const TASKS_LIST: &str = "List your own agent-tasks, waiting ones first and soonest first, and the newest runs. Look here before you schedule one.";
+const TASKS_UPDATE: &str = "Set or cancel a task for yourself. `schedule` with an objectiveId moves that objective's open check, or adds it; without one it adds a follow-up in this chat. `at` is the user's local time, YYYY-MM-DDTHH:MM, and must be in the future; `why` is one line the user will read. `cancel` stops a waiting task.";
+const PEOPLE_LIST: &str = "List the people of the organisation: each user with their email, teams and manager, and each team with its members.";
+
+const REPO: &str = "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$";
+const DATE: &str = "^[0-9]{4}-[0-9]{2}-[0-9]{2}$";
+const LOCAL_TIME: &str = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}$";
+
+pub(super) fn definitions() -> [(&'static str, bool, &'static str, Value); 5] {
+    [
+        (
+            "objectives_list",
+            true,
+            OBJECTIVES_LIST,
+            object(json!({}), json!([])),
+        ),
+        (
+            "objectives_update",
+            false,
+            OBJECTIVES_UPDATE,
+            object(json!({"command": objective_commands()}), json!(["command"])),
+        ),
+        ("tasks_list", true, TASKS_LIST, object(json!({}), json!([]))),
+        (
+            "tasks_update",
+            false,
+            TASKS_UPDATE,
+            object(json!({"command": task_commands()}), json!(["command"])),
+        ),
+        (
+            "people_list",
+            true,
+            PEOPLE_LIST,
+            object(json!({}), json!([])),
+        ),
+    ]
+}
+
+fn objective_commands() -> Value {
+    let id = json!({"type": "integer"});
+    let date = json!({"type": "string", "pattern": DATE});
+    let title = json!({"type": "string", "minLength": 1, "maxLength": 300});
+    let text = json!({"type": "string", "maxLength": 1000});
+    let step = object(json!({"title": title, "due": date}), json!(["title"]));
+    let source = json!({"oneOf": [
+        object(json!({"kind": {"const": "jet"}}), json!(["kind"])),
+        object(
+            json!({"kind": {"const": "github"}, "repo": {"type": "string", "pattern": REPO}, "login": {"type": "string", "minLength": 1, "maxLength": 39}}),
+            json!(["kind", "repo"]),
+        ),
+        object(
+            json!({"kind": {"const": "web"}, "page": {"type": "string", "maxLength": 2000, "description": "an https address"}}),
+            json!(["kind", "page"]),
+        ),
+        object(
+            json!({"kind": {"const": "web"}, "search": {"type": "string", "minLength": 1, "maxLength": 200}}),
+            json!(["kind", "search"]),
+        ),
+        object(
+            json!({"kind": {"const": "app"}, "appId": {"type": "string", "format": "uuid"}, "tool": {"type": "string"}}),
+            json!(["kind", "appId", "tool"]),
+        ),
+    ]});
+    let sources = json!({"type": "array", "maxItems": 10, "items": source});
+    let variant = |action: &str, properties: Value, required: Value| {
+        let mut properties = properties;
+        properties["action"] = json!({"const": action});
+        let mut required = required.as_array().cloned().unwrap_or_default();
+        required.insert(0, json!("action"));
+        object(properties, json!(required))
+    };
+    json!({"oneOf": [
+        variant("create", json!({
+            "title": {"type": "string", "minLength": 1, "maxLength": 200},
+            "deliverable": {"type": "string", "minLength": 1, "maxLength": 2000},
+            "start": date,
+            "due": date,
+            "steps": {"type": "array", "maxItems": 30, "items": step},
+            "sources": sources,
+            "check": object(json!({"at": {"type": "string", "pattern": LOCAL_TIME}, "why": {"type": "string", "minLength": 1, "maxLength": 300}}), json!(["at", "why"])),
+            "chat": {"enum": ["new", "this"]}
+        }), json!(["title", "deliverable", "due", "check", "chat"])),
+        variant("edit", json!({
+            "id": id,
+            "title": {"type": "string", "minLength": 1, "maxLength": 200},
+            "deliverable": {"type": "string", "minLength": 1, "maxLength": 2000},
+            "status": {"enum": ["active", "paused"]},
+            "sources": sources
+        }), json!(["id"])),
+        variant("step_add", json!({"id": id, "title": title, "due": date}), json!(["id", "title"])),
+        variant("step_tick", json!({"id": id, "step": {"type": "integer"}, "done": {"type": "boolean"}}), json!(["id", "step"])),
+        variant("dates", json!({"id": id, "start": date, "due": date, "reason": {"type": "string", "minLength": 1, "maxLength": 300}}), json!(["id", "reason"])),
+        variant("note", json!({
+            "id": id,
+            "status": {"enum": ["on track", "at risk", "blocked", "done"]},
+            "moved": {"type": "string", "minLength": 1, "maxLength": 1000},
+            "blockers": text,
+            "private": {"type": "boolean"}
+        }), json!(["id", "status", "moved"])),
+        variant("close", json!({"id": id, "outcome": {"enum": ["done", "dropped"]}, "summary": text}), json!(["id", "outcome"])),
+    ]})
+}
+
+fn task_commands() -> Value {
+    json!({"oneOf": [
+        object(json!({
+            "action": {"const": "schedule"},
+            "objectiveId": {"type": "integer"},
+            "at": {"type": "string", "pattern": LOCAL_TIME},
+            "why": {"type": "string", "minLength": 1, "maxLength": 300}
+        }), json!(["action", "at", "why"])),
+        object(json!({"action": {"const": "cancel"}, "id": {"type": "integer"}}), json!(["action", "id"])),
+    ]})
+}
+
+#[derive(Deserialize)]
+struct StepInput {
+    title: String,
+    due: Option<String>,
+}
+
+impl From<StepInput> for NewStep {
+    fn from(step: StepInput) -> Self {
+        NewStep {
+            title: step.title,
+            due: step.due,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct CheckInput {
+    at: String,
+    why: String,
+}
+
+impl From<CheckInput> for Check {
+    fn from(check: CheckInput) -> Self {
+        Check {
+            at: check.at,
+            why: check.why,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
+enum SourceInput {
+    Jet,
+    Github {
+        repo: String,
+        login: Option<String>,
+    },
+    Web {
+        page: Option<String>,
+        search: Option<String>,
+    },
+    App {
+        app_id: String,
+        tool: String,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+enum ObjectiveCommand {
+    Create {
+        title: String,
+        deliverable: String,
+        start: Option<String>,
+        due: String,
+        #[serde(default)]
+        steps: Vec<StepInput>,
+        #[serde(default)]
+        sources: Vec<SourceInput>,
+        check: CheckInput,
+        chat: ChatInput,
+    },
+    Edit {
+        id: i64,
+        title: Option<String>,
+        deliverable: Option<String>,
+        status: Option<ObjectiveStatus>,
+        sources: Option<Vec<SourceInput>>,
+    },
+    StepAdd {
+        id: i64,
+        title: String,
+        due: Option<String>,
+    },
+    StepTick {
+        id: i64,
+        step: i64,
+        #[serde(default = "yes")]
+        done: bool,
+    },
+    Dates {
+        id: i64,
+        start: Option<String>,
+        due: Option<String>,
+        reason: String,
+    },
+    Note {
+        id: i64,
+        status: NoteStatus,
+        moved: String,
+        #[serde(default)]
+        blockers: String,
+        #[serde(default)]
+        private: bool,
+    },
+    Close {
+        id: i64,
+        outcome: ObjectiveStatus,
+        summary: Option<String>,
+    },
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ChatInput {
+    New,
+    This,
+}
+
+#[derive(Deserialize)]
+#[serde(
+    tag = "action",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+enum TaskCommand {
+    Schedule {
+        objective_id: Option<i64>,
+        at: String,
+        why: String,
+    },
+    Cancel {
+        id: i64,
+    },
+}
+
+fn failed(error: impl Into<ObjectiveError>) -> Value {
+    let error = error.into();
+    json!({"kind": error.kind(), "message": error.to_string()})
+}
+
+fn refusal(kind: &str, message: impl std::fmt::Display) -> Value {
+    json!({"kind": kind, "message": message.to_string()})
+}
+
+impl Handler {
+    pub(super) async fn objectives_list(&self, binding: &Binding) -> Result<Value, Value> {
+        let (objectives, user) = (self.0.objectives.clone(), binding.owner.user);
+        let list = on_worker(move || objectives.list(user))
+            .await
+            .map_err(super::handler::message)?
+            .map_err(failed)?;
+        Ok(json!({"objectives": list}))
+    }
+
+    pub(super) async fn tasks_list(&self, binding: &Binding) -> Result<Value, Value> {
+        let (objectives, user) = (self.0.objectives.clone(), binding.owner.user);
+        let tasks = on_worker(move || objectives.tasks(user))
+            .await
+            .map_err(super::handler::message)?
+            .map_err(failed)?;
+        Ok(json!(tasks))
+    }
+
+    pub(super) async fn people_list(&self) -> Result<Value, Value> {
+        let objectives = self.0.objectives.clone();
+        let (users, teams) = on_worker(move || objectives.people())
+            .await
+            .map_err(super::handler::message)?
+            .map_err(failed)?;
+        Ok(json!({"users": users, "teams": teams}))
+    }
+
+    pub(super) async fn objectives_update(
+        &self,
+        arguments: &Value,
+        binding: &Binding,
+    ) -> Result<Value, Value> {
+        let command: ObjectiveCommand = serde_json::from_value(arguments["command"].clone())
+            .map_err(super::handler::message)?;
+        let (owner, objectives) = (binding.owner, self.0.objectives.clone());
+        let done = |result: Result<Result<_, ObjectiveError>, _>| {
+            let view = result.map_err(super::handler::message)?.map_err(failed)?;
+            Ok(json!({"objective": view}))
+        };
+        let id = ObjectiveId;
+        match command {
+            ObjectiveCommand::Create {
+                title,
+                deliverable,
+                start,
+                due,
+                steps,
+                sources,
+                check,
+                chat,
+            } => {
+                let sources = self.resolve_sources(sources, binding).await?;
+                let create = Create {
+                    title,
+                    deliverable,
+                    start,
+                    due,
+                    steps: steps.into_iter().map(NewStep::from).collect(),
+                    sources,
+                    first_check: check.into(),
+                    chat: match chat {
+                        ChatInput::New => ObjectiveChat::New,
+                        ChatInput::This => ObjectiveChat::This,
+                    },
+                };
+                done(on_worker(move || objectives.create(owner, create)).await)
+            }
+            ObjectiveCommand::Edit {
+                id: objective,
+                title,
+                deliverable,
+                status,
+                sources,
+            } => {
+                let sources = match sources {
+                    Some(sources) => Some(self.resolve_sources(sources, binding).await?),
+                    None => None,
+                };
+                let user = owner.user;
+                done(
+                    on_worker(move || {
+                        objectives.edit(
+                            user,
+                            id(objective),
+                            &Edit {
+                                title: title.as_deref(),
+                                deliverable: deliverable.as_deref(),
+                                status,
+                                sources: sources.as_deref(),
+                            },
+                        )
+                    })
+                    .await,
+                )
+            }
+            ObjectiveCommand::StepAdd {
+                id: objective,
+                title,
+                due,
+            } => done(
+                on_worker(move || {
+                    objectives.add_step(owner.user, id(objective), NewStep { title, due })
+                })
+                .await,
+            ),
+            ObjectiveCommand::StepTick {
+                id: objective,
+                step,
+                done: is_done,
+            } => done(
+                on_worker(move || {
+                    objectives.tick_step(owner.user, id(objective), StepId(step), is_done)
+                })
+                .await,
+            ),
+            ObjectiveCommand::Dates {
+                id: objective,
+                start,
+                due,
+                reason,
+            } => done(
+                on_worker(move || {
+                    objectives.change_dates(
+                        owner.user,
+                        id(objective),
+                        start.as_deref(),
+                        due.as_deref(),
+                        &reason,
+                    )
+                })
+                .await,
+            ),
+            ObjectiveCommand::Note {
+                id: objective,
+                status,
+                moved,
+                blockers,
+                private,
+            } => done(
+                on_worker(move || {
+                    objectives.note(
+                        owner.user,
+                        id(objective),
+                        Update {
+                            status,
+                            moved,
+                            blockers,
+                            is_private: private,
+                        },
+                    )
+                })
+                .await,
+            ),
+            ObjectiveCommand::Close {
+                id: objective,
+                outcome,
+                summary,
+            } => done(
+                on_worker(move || objectives.close(owner.user, id(objective), outcome, summary))
+                    .await,
+            ),
+        }
+    }
+
+    pub(super) async fn tasks_update(
+        &self,
+        arguments: &Value,
+        binding: &Binding,
+    ) -> Result<Value, Value> {
+        let command: TaskCommand = serde_json::from_value(arguments["command"].clone())
+            .map_err(super::handler::message)?;
+        let (owner, objectives) = (binding.owner, self.0.objectives.clone());
+        match command {
+            TaskCommand::Schedule {
+                objective_id,
+                at,
+                why,
+            } => {
+                let (task, moved) = on_worker(move || {
+                    objectives.schedule(owner, objective_id.map(ObjectiveId), Check { at, why })
+                })
+                .await
+                .map_err(super::handler::message)?
+                .map_err(failed)?;
+                Ok(json!({"task": task, "moved": moved}))
+            }
+            TaskCommand::Cancel { id } => {
+                let task = on_worker(move || objectives.cancel(owner.user, TaskId(id)))
+                    .await
+                    .map_err(super::handler::message)?
+                    .map_err(failed)?;
+                Ok(json!({"task": task}))
+            }
+        }
+    }
+
+    /// Turns what Jet wrote into the sources to keep. A GitHub source without a login takes the
+    /// login of the user's saved token; an app source is only for the admin and only for a tool
+    /// the app marks read-only.
+    async fn resolve_sources(
+        &self,
+        inputs: Vec<SourceInput>,
+        binding: &Binding,
+    ) -> Result<Vec<NewSource>, Value> {
+        let user = binding.owner.user;
+        let mut sources = Vec::new();
+        for input in inputs {
+            let (kind, target, detail) = match input {
+                SourceInput::Jet => (SourceKind::Jet, String::new(), String::new()),
+                SourceInput::Github { repo, login } => {
+                    let login = match login {
+                        Some(login) => login,
+                        None => self.login_from_token(user).await?,
+                    };
+                    (SourceKind::Github, repo, login)
+                }
+                SourceInput::Web {
+                    page: Some(page), ..
+                } => {
+                    let usable = url::Url::parse(&page)
+                        .is_ok_and(|url| url.scheme() == "https" && url.host_str().is_some());
+                    if !usable {
+                        return Err(refusal(
+                            "badPage",
+                            format!("`{page}` is not an https address of a page"),
+                        ));
+                    }
+                    (SourceKind::Web, page, "page".to_owned())
+                }
+                SourceInput::Web { search, .. } => (
+                    SourceKind::Web,
+                    search.unwrap_or_default(),
+                    "search".to_owned(),
+                ),
+                SourceInput::App { app_id, tool } => {
+                    let objectives = self.0.objectives.clone();
+                    on_worker(move || objectives.require_admin(user))
+                        .await
+                        .map_err(super::handler::message)?
+                        .map_err(failed)?;
+                    let target = json!({"appId": app_id, "tool": tool});
+                    if !self.read_only(&target, binding).await {
+                        return Err(failed(ObjectiveError::AppToolNotReadOnly { tool }));
+                    }
+                    (SourceKind::App, app_id, tool)
+                }
+            };
+            sources.push(NewSource {
+                kind,
+                target,
+                detail,
+            });
+        }
+        Ok(sources)
+    }
+
+    async fn login_from_token(&self, user: crate::store::UserId) -> Result<String, Value> {
+        let evidence = self.0.evidence.clone();
+        let found = on_worker(move || evidence.github_login(user))
+            .await
+            .map_err(super::handler::message)?;
+        match found {
+            Ok(Some(login)) => Ok(login),
+            Ok(None) => Err(refusal(
+                "githubLoginNeeded",
+                "the user saved no GitHub token, so ask them for their GitHub login and pass it as `login`",
+            )),
+            Err(error) => Err(refusal(
+                "githubLoginNeeded",
+                format!(
+                    "the login could not be read from the user's saved token ({error}); ask the user for their GitHub login and pass it as `login`"
+                ),
+            )),
+        }
+    }
+}

@@ -1,4 +1,9 @@
 //! Host Jet's browser interface while provider processes and conversation data stay on the server.
+//!
+//! Priorities, in order: correctness of what Jet says (no nudge without fresh evidence, no wrong or duplicate wake-up), visibility (the user sees each objective and agent-task Jet set and when it runs), simplicity (the least new code), cost of idle wake-ups.
+//! Never: nudge a user without a fresh read of every outside source of the objective.
+//! Never: run one agent-task in two checks at once, or post two check-ins for one due time.
+//! Never: show another user a private note, a chat, or an objective that is not shared with them.
 
 mod account;
 mod apps;
@@ -6,6 +11,7 @@ mod chat;
 mod evidence;
 mod facade;
 mod files;
+mod objectives;
 mod server;
 mod settings;
 mod store;

@@ -17,6 +17,7 @@ hyper = { version = "1.12.0", default-features = false, features = ["client", "h
 hyper-rustls = { version = "0.27.10", default-features = false, features = ["http1", "ring", "webpki-tokio", "tls12"] }
 hyper-util = { version = "0.1.21", default-features = false, features = ["client-legacy", "http1", "tokio"] }
 image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+jiff = { version = "1.0.2", default-features = false, features = ["std", "tzdb-bundle-always"] }
 jsonschema = { version = "0.60.0", default-features = false }
 jsonwebtoken = { version = "12.0.0", default-features = false, features = ["rust_crypto"] }
 krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }

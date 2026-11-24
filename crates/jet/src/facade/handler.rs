@@ -112,7 +112,7 @@ impl WriteRefused {
 fn expired() -> rmcp::ErrorData {
     rmcp::ErrorData::invalid_request("initiating turn has expired", None)
 }
-fn message(error: impl Display) -> Value {
+pub(super) fn message(error: impl Display) -> Value {
     json!({"message":error.to_string()})
 }
 impl Handler {
@@ -239,7 +239,7 @@ impl Handler {
 
     /// Whether the app marks the tool `readOnlyHint`. A tool that cannot be found, or of an app
     /// that is not the turn's user's, is not.
-    async fn read_only(&self, arguments: &Value, binding: &Binding) -> bool {
+    pub(super) async fn read_only(&self, arguments: &Value, binding: &Binding) -> bool {
         let Ok(target) = serde_json::from_value::<ToolTarget>(arguments.clone()) else {
             return false;
         };
@@ -331,6 +331,11 @@ impl Handler {
             "tools_call" => self.tools_call(arguments, token, binding, context).await,
             "files_export" => self.files_export(arguments, &binding).await,
             "github_activity" => self.github_activity(&arguments, token, &binding).await,
+            "objectives_list" => self.objectives_list(&binding).await,
+            "objectives_update" => self.objectives_update(&arguments, &binding).await,
+            "tasks_list" => self.tasks_list(&binding).await,
+            "tasks_update" => self.tasks_update(&arguments, &binding).await,
+            "people_list" => self.people_list().await,
             "files_list" => {
                 let files = self.0.files.clone();
                 let listed = on_worker(move || files.list(user))

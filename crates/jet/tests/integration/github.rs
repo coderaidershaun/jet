@@ -17,7 +17,7 @@ const MANAGER: &str = "admin123@gmail.com";
 const TOKEN: &str = "github_pat_11SECRETabcdef0123456789";
 const LOG: &str = "host-stderr.log";
 
-fn fake_github() -> Paths {
+pub(super) fn fake_github() -> Paths {
     Paths::start(vec![
         (
             "/repos/octo/jet",
@@ -40,7 +40,7 @@ fn fake_github() -> Paths {
 
 /// Starts the real host with the Claude Code and Codex stand-ins, pointed at the fake GitHub, with
 /// everything it writes to standard error kept in a file of its data directory.
-fn start(github: &Paths) -> Host {
+pub(super) fn start(github: &Paths) -> Host {
     let dir = tempfile::tempdir().unwrap();
     let bins = std::path::Path::new(env!("CARGO_BIN_EXE_jet"))
         .parent()

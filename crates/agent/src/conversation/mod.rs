@@ -228,7 +228,7 @@ impl Conversation {
             session: decision.mode,
             schema: None,
             mcp: message.mcp,
-            hosts: hosts::linked_hosts(&entries),
+            hosts: hosts::linked_hosts(&entries, &self.saved.page_hosts()?),
         };
         if request.session == SessionMode::New
             && let Some(session) = &saved

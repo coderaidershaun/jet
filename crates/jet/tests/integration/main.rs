@@ -6,6 +6,7 @@ mod facade;
 mod github;
 mod import;
 mod mcp_fixture;
+mod objectives;
 mod proxy;
 mod reactions;
 mod shutdown;

@@ -24,6 +24,7 @@ use tokio::sync::broadcast;
 
 use crate::files::{About, FileError, Files};
 use crate::lock;
+use crate::objectives::is_time_zone;
 use crate::store::{Chat, Store, UserId};
 pub(crate) use chats::Chats;
 pub use error::BridgeError;
@@ -70,6 +71,10 @@ pub(crate) struct SendRequest {
     pub budget_usd: f64,
     pub persona: Persona,
     pub local_time: String,
+    /// The IANA name of the page's time zone, such as `Europe/London`. The server keeps it on
+    /// the user; Jet's local times are read in it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_zone: Option<String>,
     #[serde(default)]
     pub feeling: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -160,6 +165,7 @@ impl ReactRequest {
             budget_usd: self.budget_usd,
             persona: self.persona.clone(),
             local_time: self.local_time.clone(),
+            time_zone: None,
             feeling: None,
             active_app_id: self.active_app_id.clone(),
             spoken: self.spoken,
@@ -226,6 +232,13 @@ impl ChatState {
 
     pub fn send(self: &Arc<Self>, request: SendRequest) -> Result<Accepted, BridgeError> {
         request.check()?;
+        if let Some(zone) = request
+            .time_zone
+            .as_deref()
+            .filter(|zone| is_time_zone(zone))
+        {
+            self.store.set_time_zone(self.user(), zone)?;
+        }
         let payload = json!(&request);
         // Its error waits until the other checks have passed.
         let transport = self.transport_for(request.model);

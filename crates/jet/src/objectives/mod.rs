@@ -1,0 +1,965 @@
+//! The objectives a user is working towards and the tasks Jet sets itself: the rules above the
+//! store. It turns the local dates and times Jet writes into stored ones, works out duration and
+//! days left when they are read, and acts for one user only.
+
+mod time;
+
+use crate::chat::TurnOwner;
+use crate::store::{
+    AgentTask, CancelOutcome, Edit, NewNote, NewObjective, NewSource, NewStep, NewTask, Note,
+    NoteStatus, Objective, ObjectiveChat, ObjectiveId, ObjectiveStatus, Person, Run, Scheduled,
+    SetBy, Source, Step, StepId, Store, StoreError, TaskId, TaskKind, TaskState, Team, UserId,
+};
+use serde::Serialize;
+use std::sync::Arc;
+pub(crate) use time::TimeError;
+
+/// How many of an objective's newest notes `list` shows.
+const NOTES_SHOWN: usize = 10;
+/// How many runs `tasks_list` shows.
+const RUNS_SHOWN: usize = 20;
+/// How many times a write is tried when the database is busy.
+const WRITE_TRIES: usize = 3;
+const UTC: &str = "UTC";
+
+/// The current time in Unix seconds. Tests set their own.
+pub(crate) type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
+
+/// Whether `name` is an IANA time zone name that the server knows.
+pub(crate) fn is_time_zone(name: &str) -> bool {
+    time::zone(name).is_ok()
+}
+
+pub(crate) fn system_clock() -> Clock {
+    Arc::new(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs())
+    })
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ObjectiveError {
+    #[error(
+        "Jet does not know the user's time zone yet, because no message of theirs has carried it. Ask the user to send another message, then try again"
+    )]
+    NoTimeZone,
+    #[error(transparent)]
+    Time(#[from] TimeError),
+    #[error(
+        "the due date {due} is before the start date {start}; the objective's dates must run forwards"
+    )]
+    DatesBackwards { start: String, due: String },
+    #[error("the user has no objective {id}; objectives_list shows their ids")]
+    NoSuchObjective { id: i64 },
+    #[error("objective {objective} has no step {step}; objectives_list shows the step ids")]
+    NoSuchStep { objective: i64, step: i64 },
+    #[error("objective {id} is closed and cannot be edited; create a new objective instead")]
+    Closed { id: i64 },
+    #[error("the user has no task {id}; tasks_list shows their ids")]
+    NoSuchTask { id: i64 },
+    #[error("task {id} is {state}, so it cannot be cancelled")]
+    TaskNotWaiting { id: i64, state: &'static str },
+    #[error(
+        "the open check of this objective is running now and cannot be moved; set the next one after it ends"
+    )]
+    CheckRunning,
+    #[error("the command changes nothing; give a new start date, a new due date, or both")]
+    NoNewDate,
+    #[error(
+        "only the deployment's admin may name an app as a source, because an app reads one account for everyone. Leave it out, or ask the admin"
+    )]
+    AppSourceAdminOnly,
+    #[error(
+        "{tool} is not marked read-only by its app, and a source may only be read. Pick a tool that only reads, or leave this source out"
+    )]
+    AppToolNotReadOnly { tool: String },
+    #[error("the database failed")]
+    Store(#[from] StoreError),
+}
+
+impl ObjectiveError {
+    pub(crate) fn kind(&self) -> &'static str {
+        match self {
+            Self::NoTimeZone => "noTimeZone",
+            Self::Time(TimeError::Unreadable { .. }) => "badTime",
+            Self::Time(TimeError::UnknownZone { .. }) => "badTimeZone",
+            Self::Time(TimeError::DoesNotExist { .. }) => "timeDoesNotExist",
+            Self::Time(TimeError::InThePast { .. }) => "timeInThePast",
+            Self::DatesBackwards { .. } => "datesBackwards",
+            Self::NoSuchObjective { .. } => "noSuchObjective",
+            Self::Closed { .. } => "objectiveClosed",
+            Self::NoSuchStep { .. } => "noSuchStep",
+            Self::NoSuchTask { .. } => "noSuchTask",
+            Self::TaskNotWaiting { .. } => "taskNotWaiting",
+            Self::CheckRunning => "checkRunning",
+            Self::AppSourceAdminOnly => "adminOnly",
+            Self::AppToolNotReadOnly { .. } => "notReadOnly",
+            Self::NoNewDate => "noNewDate",
+            Self::Store(StoreError::DuplicateCheck) => "duplicateCheck",
+            Self::Store(StoreError::ChatTaken) => "chatTaken",
+            Self::Store(_) => "store",
+        }
+    }
+}
+
+/// A moment Jet picked, as the user's local time, and why.
+pub(crate) struct Check {
+    pub(crate) at: String,
+    pub(crate) why: String,
+}
+
+pub(crate) struct Create {
+    pub(crate) title: String,
+    pub(crate) deliverable: String,
+    /// Today when left out.
+    pub(crate) start: Option<String>,
+    pub(crate) due: String,
+    pub(crate) steps: Vec<NewStep>,
+    pub(crate) sources: Vec<NewSource>,
+    pub(crate) first_check: Check,
+    pub(crate) chat: ObjectiveChat,
+}
+
+pub(crate) struct Update {
+    pub(crate) status: NoteStatus,
+    pub(crate) moved: String,
+    pub(crate) blockers: String,
+    pub(crate) is_private: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ObjectiveView {
+    #[serde(flatten)]
+    objective: Objective,
+    /// Days from the start date to the due date.
+    duration_days: i64,
+    /// Days from today, in the user's zone, to the due date; negative once it has passed.
+    days_left: i64,
+    steps: Vec<Step>,
+    sources: Vec<Source>,
+    /// The newest notes, oldest first.
+    notes: Vec<Note>,
+    /// The tasks that are waiting or running.
+    tasks: Vec<AgentTask>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct TasksView {
+    tasks: Vec<AgentTask>,
+    runs: Vec<Run>,
+}
+
+#[derive(Clone)]
+pub(crate) struct Objectives {
+    store: Store,
+    clock: Clock,
+}
+
+impl Objectives {
+    pub(crate) fn new(store: Store, clock: Clock) -> Self {
+        Self { store, clock }
+    }
+
+    /// Every objective of the user, with its steps, sources, notes and open tasks.
+    pub(crate) fn list(&self, user: UserId) -> Result<Vec<ObjectiveView>, ObjectiveError> {
+        let tasks = self.store.agent_tasks(user)?;
+        self.store
+            .objectives(user)?
+            .into_iter()
+            .map(|objective| self.view(user, objective, &tasks))
+            .collect()
+    }
+
+    pub(crate) fn create(
+        &self,
+        owner: TurnOwner,
+        new: Create,
+    ) -> Result<ObjectiveView, ObjectiveError> {
+        let now = self.now();
+        let zone = self.zone_name(owner.user)?;
+        let today = time::today(&time::zone(&zone)?, now);
+        let start = match &new.start {
+            Some(start) => time::date(start)?,
+            None => today,
+        };
+        let due = time::date(&new.due)?;
+        let (start, due) = (start.to_string(), due.to_string());
+        check_forwards(&start, &due)?;
+        let steps = checked_steps(new.steps.clone())?;
+        let (due_at, local_time) = time::to_utc(&new.first_check.at, &zone, now)?;
+        let summary = summary(&new, &steps, (&start, &due));
+        let line = format!(
+            "I have registered the objective \"{}\". It has its own chat now.",
+            new.title
+        );
+        let created = self.write(|| {
+            self.store.create_objective(&NewObjective {
+                user: owner.user,
+                agreed_in: owner.chat,
+                chat: new.chat,
+                title: &new.title,
+                deliverable: &new.deliverable,
+                start: &start,
+                due: &due,
+                steps: &steps,
+                sources: &new.sources,
+                check: NewTask {
+                    kind: TaskKind::Check,
+                    why: &new.first_check.why,
+                    due_at,
+                    local_time: &local_time,
+                    time_zone: &zone,
+                    set_by: SetBy::Jet,
+                },
+                summary: &summary,
+                line: &line,
+                at: now,
+            })
+        })?;
+        self.show(owner.user, created.objective)
+    }
+
+    pub(crate) fn edit(
+        &self,
+        user: UserId,
+        id: ObjectiveId,
+        edit: &Edit,
+    ) -> Result<ObjectiveView, ObjectiveError> {
+        let open = self.store.objective(user, id)?.map(|found| found.status);
+        if matches!(open, Some(ObjectiveStatus::Done | ObjectiveStatus::Dropped)) {
+            return Err(ObjectiveError::Closed { id: id.0 });
+        }
+        self.write(|| self.store.edit_objective(user, id, edit, self.now()))?
+            .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
+        self.show(user, id)
+    }
+
+    pub(crate) fn add_step(
+        &self,
+        user: UserId,
+        id: ObjectiveId,
+        step: NewStep,
+    ) -> Result<ObjectiveView, ObjectiveError> {
+        let step = checked_steps(vec![step])?.remove(0);
+        self.write(|| self.store.add_step(user, id, &step, self.now()))?
+            .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
+        self.show(user, id)
+    }
+
+    pub(crate) fn tick_step(
+        &self,
+        user: UserId,
+        id: ObjectiveId,
+        step: StepId,
+        is_done: bool,
+    ) -> Result<ObjectiveView, ObjectiveError> {
+        self.write(|| self.store.tick_step(user, id, step, is_done, self.now()))?
+            .ok_or(ObjectiveError::NoSuchStep {
+                objective: id.0,
+                step: step.0,
+            })?;
+        self.show(user, id)
+    }
+
+    /// Moves the start date, the due date or both, and notes why.
+    pub(crate) fn change_dates(
+        &self,
+        user: UserId,
+        id: ObjectiveId,
+        start: Option<&str>,
+        due: Option<&str>,
+        reason: &str,
+    ) -> Result<ObjectiveView, ObjectiveError> {
+        let objective = self
+            .store
+            .objective(user, id)?
+            .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
+        if start.is_none() && due.is_none() {
+            return Err(ObjectiveError::NoNewDate);
+        }
+        let new_start = start.map_or(Ok(objective.start.clone()), |text| {
+            time::date(text).map(|date| date.to_string())
+        })?;
+        let new_due = due.map_or(Ok(objective.due.clone()), |text| {
+            time::date(text).map(|date| date.to_string())
+        })?;
+        check_forwards(&new_start, &new_due)?;
+        let note = NewNote {
+            status: None,
+            moved: "Dates changed".into(),
+            blockers: String::new(),
+            new_dates: format!(
+                "start {} to {}, due {} to {}. Reason: {reason}",
+                objective.start, new_start, objective.due, new_due
+            ),
+            is_private: false,
+            entry_id: None,
+        };
+        self.write(|| {
+            self.store
+                .change_dates(user, id, (&new_start, &new_due), &note, self.now())
+        })?
+        .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
+        self.show(user, id)
+    }
+
+    pub(crate) fn note(
+        &self,
+        user: UserId,
+        id: ObjectiveId,
+        update: Update,
+    ) -> Result<ObjectiveView, ObjectiveError> {
+        let note = NewNote {
+            status: Some(update.status),
+            moved: update.moved,
+            blockers: update.blockers,
+            new_dates: String::new(),
+            is_private: update.is_private,
+            entry_id: None,
+        };
+        self.write(|| self.store.add_update_note(user, id, &note, self.now()))?
+            .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
+        self.show(user, id)
+    }
+
+    /// Ends the objective as done or dropped. Its waiting checks are cancelled.
+    pub(crate) fn close(
+        &self,
+        user: UserId,
+        id: ObjectiveId,
+        status: ObjectiveStatus,
+        summary: Option<String>,
+    ) -> Result<ObjectiveView, ObjectiveError> {
+        let note = summary.map(|moved| NewNote {
+            status: (status == ObjectiveStatus::Done).then_some(NoteStatus::Done),
+            moved,
+            blockers: String::new(),
+            new_dates: String::new(),
+            is_private: false,
+            entry_id: None,
+        });
+        self.write(|| {
+            self.store
+                .close_objective(user, id, status, note.as_ref(), self.now())
+        })?
+        .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
+        self.show(user, id)
+    }
+
+    /// Jet's tasks for the user, and the newest runs.
+    pub(crate) fn tasks(&self, user: UserId) -> Result<TasksView, ObjectiveError> {
+        Ok(TasksView {
+            tasks: self.store.agent_tasks(user)?,
+            runs: self.store.task_runs(user, RUNS_SHOWN)?,
+        })
+    }
+
+    /// Sets the objective's check, moving the open one when there is one. Without an objective
+    /// it sets a follow-up that lands in the chat of the turn. Gives the task and whether an
+    /// existing check was moved.
+    pub(crate) fn schedule(
+        &self,
+        owner: TurnOwner,
+        objective: Option<ObjectiveId>,
+        check: Check,
+    ) -> Result<(AgentTask, bool), ObjectiveError> {
+        let now = self.now();
+        let zone = self.zone_name(owner.user)?;
+        let (due_at, local_time) = time::to_utc(&check.at, &zone, now)?;
+        let task = |kind| NewTask {
+            kind,
+            why: &check.why,
+            due_at,
+            local_time: &local_time,
+            time_zone: &zone,
+            set_by: SetBy::Jet,
+        };
+        let (id, moved) = match objective {
+            Some(objective) => {
+                let new = task(TaskKind::Check);
+                match self.write(|| self.store.schedule_check(owner.user, objective, &new, now))? {
+                    Scheduled::Added(id) => (id, false),
+                    Scheduled::Moved(id) => (id, true),
+                    Scheduled::Running(_) => return Err(ObjectiveError::CheckRunning),
+                    Scheduled::NoObjective => {
+                        return Err(ObjectiveError::NoSuchObjective { id: objective.0 });
+                    }
+                }
+            }
+            None => {
+                let new = task(TaskKind::FollowUp);
+                let id = self.write(|| self.store.add_follow_up(owner.user, owner.chat, &new))?;
+                (id, false)
+            }
+        };
+        Ok((self.task(owner.user, id)?, moved))
+    }
+
+    pub(crate) fn cancel(&self, user: UserId, id: TaskId) -> Result<AgentTask, ObjectiveError> {
+        match self.write(|| self.store.cancel_task(user, id, self.now()))? {
+            CancelOutcome::Cancelled => self.task(user, id),
+            CancelOutcome::NotWaiting(state) => Err(ObjectiveError::TaskNotWaiting {
+                id: id.0,
+                state: state.as_str(),
+            }),
+            CancelOutcome::Missing => Err(ObjectiveError::NoSuchTask { id: id.0 }),
+        }
+    }
+
+    /// The user's time zone name, as their page last sent it.
+    pub(crate) fn zone_name(&self, user: UserId) -> Result<String, ObjectiveError> {
+        self.store
+            .time_zone(user)?
+            .ok_or(ObjectiveError::NoTimeZone)
+    }
+
+    /// Only the admin may name an app as a source.
+    pub(crate) fn require_admin(&self, user: UserId) -> Result<(), ObjectiveError> {
+        match self.store.user(user)? {
+            Some(user) if user.is_admin => Ok(()),
+            _ => Err(ObjectiveError::AppSourceAdminOnly),
+        }
+    }
+
+    /// Every user and team of the organisation.
+    pub(crate) fn people(&self) -> Result<(Vec<Person>, Vec<Team>), ObjectiveError> {
+        Ok(self.store.directory()?)
+    }
+
+    fn now(&self) -> u64 {
+        (self.clock)()
+    }
+
+    fn task(&self, user: UserId, id: TaskId) -> Result<AgentTask, ObjectiveError> {
+        self.store
+            .agent_tasks(user)?
+            .into_iter()
+            .find(|task| task.id == id)
+            .ok_or(ObjectiveError::NoSuchTask { id: id.0 })
+    }
+
+    fn show(&self, user: UserId, id: ObjectiveId) -> Result<ObjectiveView, ObjectiveError> {
+        let objective = self
+            .store
+            .objective(user, id)?
+            .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
+        self.view(user, objective, &self.store.agent_tasks(user)?)
+    }
+
+    fn view(
+        &self,
+        user: UserId,
+        objective: Objective,
+        tasks: &[AgentTask],
+    ) -> Result<ObjectiveView, ObjectiveError> {
+        let zone = match self.store.time_zone(user)? {
+            Some(name) => time::zone(&name)?,
+            None => time::zone(UTC)?,
+        };
+        let (start, due) = (time::date(&objective.start)?, time::date(&objective.due)?);
+        let mut notes = self.store.update_notes(user, objective.id)?;
+        notes.drain(..notes.len().saturating_sub(NOTES_SHOWN));
+        Ok(ObjectiveView {
+            duration_days: time::days_between(start, due),
+            days_left: time::days_between(time::today(&zone, self.now()), due),
+            steps: self.store.steps(user, objective.id)?,
+            sources: self.store.sources(user, objective.id)?,
+            notes,
+            tasks: tasks
+                .iter()
+                .filter(|task| {
+                    task.objective_id == Some(objective.id)
+                        && matches!(task.state, TaskState::Scheduled | TaskState::Running)
+                })
+                .cloned()
+                .collect(),
+            objective,
+        })
+    }
+
+    /// Runs a write again when the database was busy, up to a few times.
+    fn write<T>(&self, mut call: impl FnMut() -> Result<T, StoreError>) -> Result<T, StoreError> {
+        let mut tries = 1;
+        loop {
+            match call() {
+                Err(error) if error.is_busy() && tries < WRITE_TRIES => tries += 1,
+                result => return result,
+            }
+        }
+    }
+}
+
+fn check_forwards(start: &str, due: &str) -> Result<(), ObjectiveError> {
+    // Dates in this form sort the way they run.
+    if due < start {
+        return Err(ObjectiveError::DatesBackwards {
+            start: start.to_owned(),
+            due: due.to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// The steps with their due dates read and written in one form.
+fn checked_steps(steps: Vec<NewStep>) -> Result<Vec<NewStep>, ObjectiveError> {
+    steps
+        .into_iter()
+        .map(|step| {
+            let due = step
+                .due
+                .map(|due| time::date(&due).map(|date| date.to_string()))
+                .transpose()?;
+            Ok(NewStep { due, ..step })
+        })
+        .collect()
+}
+
+/// The first entry of an objective's own chat.
+fn summary(new: &Create, steps: &[NewStep], (start, due): (&str, &str)) -> String {
+    let mut text = format!(
+        "{}\n\nDeliverable: {}\nFrom {start} to {due}.",
+        new.title, new.deliverable
+    );
+    for (number, step) in (1..).zip(steps) {
+        text.push_str(&format!("\n{number}. {}", step.title));
+    }
+    text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::{ChatKind, NewStep, SourceKind, test_store};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    // 2026-01-01 00:00 UTC.
+    const START: u64 = 1_767_225_600;
+
+    struct World {
+        _dir: tempfile::TempDir,
+        objectives: Objectives,
+        store: Store,
+        ada: TurnOwner,
+        bob: TurnOwner,
+    }
+
+    fn world() -> World {
+        let (dir, store, ada, bob) = test_store();
+        let ticking = Arc::new(AtomicU64::new(START));
+        let objectives = Objectives::new(
+            store.clone(),
+            Arc::new(move || ticking.fetch_add(1, Ordering::SeqCst)),
+        );
+        let main = |user| TurnOwner {
+            user,
+            chat: store.main_chat(user).unwrap().id,
+        };
+        World {
+            objectives,
+            ada: main(ada),
+            bob: main(bob),
+            store: store.clone(),
+            _dir: dir,
+        }
+    }
+
+    fn kite(chat: ObjectiveChat) -> Create {
+        Create {
+            title: "Ship the kite".into(),
+            deliverable: "A kite that flies".into(),
+            start: Some("2026-02-01".into()),
+            due: "2026-03-01".into(),
+            steps: ["Build the frame", "Fly it"]
+                .map(|title| NewStep {
+                    title: title.into(),
+                    due: None,
+                })
+                .into(),
+            sources: vec![NewSource {
+                kind: SourceKind::Jet,
+                target: String::new(),
+                detail: String::new(),
+            }],
+            first_check: Check {
+                at: "2026-02-10T09:00".into(),
+                why: "see whether the frame is built".into(),
+            },
+            chat,
+        }
+    }
+
+    fn check_of(view: &ObjectiveView) -> &AgentTask {
+        &view.tasks[0]
+    }
+
+    #[test]
+    fn tasks_schedule_moves_open_check() {
+        let world = world();
+        let view = world
+            .objectives
+            .create(world.ada, kite(ObjectiveChat::New))
+            .unwrap();
+        let first = check_of(&view).clone();
+        assert_eq!(
+            (first.local_time.as_str(), first.time_zone.as_str()),
+            ("2026-02-10T09:00", "Europe/London")
+        );
+        assert_eq!(
+            first.due_at, 1_770_714_000,
+            "09:00 in London in winter is 09:00 UTC"
+        );
+
+        let later = Check {
+            at: "2026-02-12T17:30".into(),
+            why: "the user said Thursday".into(),
+        };
+        let (moved, was_moved) = world
+            .objectives
+            .schedule(world.ada, Some(view.objective.id), later)
+            .unwrap();
+        assert!(was_moved);
+        assert_eq!(moved.id, first.id);
+        assert_eq!(moved.version, first.version + 1);
+
+        let open = world.objectives.tasks(world.ada.user).unwrap().tasks;
+        assert_eq!(open.len(), 1, "{open:?}");
+
+        world.objectives.cancel(world.ada.user, first.id).unwrap();
+        let (added, was_moved) = world
+            .objectives
+            .schedule(
+                world.ada,
+                Some(view.objective.id),
+                Check {
+                    at: "2026-02-20T09:00".into(),
+                    why: "again".into(),
+                },
+            )
+            .unwrap();
+        assert!(!was_moved);
+        assert_ne!(added.id, first.id);
+    }
+
+    #[test]
+    fn every_change_raises_the_version() {
+        let world = world();
+        let ada = world.ada.user;
+        let view = world
+            .objectives
+            .create(world.ada, kite(ObjectiveChat::This))
+            .unwrap();
+        let id = view.objective.id;
+        let version = || world.objectives.list(ada).unwrap()[0].objective.version;
+        let mut seen = vec![version()];
+        let step = view.steps[0].id;
+        let edit = Edit {
+            title: Some("Ship the red kite"),
+            ..Edit::default()
+        };
+        let o = &world.objectives;
+        o.edit(ada, id, &edit).unwrap();
+        seen.push(version());
+        o.add_step(
+            ada,
+            id,
+            NewStep {
+                title: "Photograph it".into(),
+                due: Some("2026-02-27".into()),
+            },
+        )
+        .unwrap();
+        seen.push(version());
+        o.tick_step(ada, id, step, true).unwrap();
+        seen.push(version());
+        o.change_dates(ada, id, None, Some("2026-03-08"), "the wind")
+            .unwrap();
+        seen.push(version());
+        let update = Update {
+            status: NoteStatus::AtRisk,
+            moved: "frame half built".into(),
+            blockers: "no glue".into(),
+            is_private: true,
+        };
+        o.note(ada, id, update).unwrap();
+        seen.push(version());
+        o.close(ada, id, ObjectiveStatus::Done, None).unwrap();
+        seen.push(version());
+        assert_eq!(seen, [1, 2, 3, 4, 5, 6, 7]);
+
+        let task = check_of_open(&world, ada);
+        assert!(task.is_none(), "closing cancels the waiting check");
+        let tasks = o.tasks(ada).unwrap().tasks;
+        assert_eq!(
+            (tasks[0].state, tasks[0].version),
+            (TaskState::Cancelled, 2)
+        );
+    }
+
+    fn check_of_open(world: &World, user: UserId) -> Option<AgentTask> {
+        world.objectives.list(user).unwrap()[0]
+            .tasks
+            .first()
+            .cloned()
+    }
+
+    #[test]
+    fn a_closed_objective_is_not_reopened_by_edit() {
+        let world = world();
+        let view = world
+            .objectives
+            .create(world.ada, kite(ObjectiveChat::This))
+            .unwrap();
+        let id = view.objective.id;
+        world
+            .objectives
+            .close(world.ada.user, id, ObjectiveStatus::Done, None)
+            .unwrap();
+        let edit = Edit {
+            status: Some(ObjectiveStatus::Active),
+            ..Edit::default()
+        };
+        assert_eq!(
+            world
+                .objectives
+                .edit(world.ada.user, id, &edit)
+                .unwrap_err()
+                .kind(),
+            "objectiveClosed"
+        );
+    }
+
+    #[test]
+    fn dates_need_to_run_forwards_and_the_note_keeps_the_reason() {
+        let world = world();
+        let view = world
+            .objectives
+            .create(world.ada, kite(ObjectiveChat::This))
+            .unwrap();
+        let id = view.objective.id;
+        let backwards =
+            world
+                .objectives
+                .change_dates(world.ada.user, id, Some("2026-04-01"), None, "late");
+        assert_eq!(backwards.unwrap_err().kind(), "datesBackwards");
+        let moved = world
+            .objectives
+            .change_dates(
+                world.ada.user,
+                id,
+                Some("2026-02-15"),
+                Some("2026-03-15"),
+                "starting a week late",
+            )
+            .unwrap();
+        assert_eq!((moved.duration_days, moved.objective.version), (28, 2));
+        assert!(moved.notes[0].new_dates.contains("starting a week late"));
+    }
+
+    #[test]
+    fn objective_reads_are_owner_only() {
+        let world = world();
+        let made = world
+            .objectives
+            .create(world.ada, kite(ObjectiveChat::New))
+            .unwrap();
+        let (id, task) = (made.objective.id, made.tasks[0].id);
+        world
+            .objectives
+            .note(
+                world.ada.user,
+                id,
+                Update {
+                    status: NoteStatus::OnTrack,
+                    moved: "x".into(),
+                    blockers: String::new(),
+                    is_private: true,
+                },
+            )
+            .unwrap();
+        let (store, bob) = (&world.store, world.bob.user);
+        assert_eq!(store.objectives(bob).unwrap(), []);
+        assert_eq!(store.objective(bob, id).unwrap(), None);
+        assert_eq!(store.steps(bob, id).unwrap(), []);
+        assert_eq!(store.sources(bob, id).unwrap(), []);
+        assert_eq!(store.update_notes(bob, id).unwrap(), []);
+        assert_eq!(store.agent_tasks(bob).unwrap(), []);
+        assert_eq!(store.task_runs(bob, 10).unwrap(), []);
+        // Nor can another user change any of it.
+        let o = &world.objectives;
+        assert_eq!(
+            o.tick_step(bob, id, made.steps[0].id, true)
+                .unwrap_err()
+                .kind(),
+            "noSuchStep"
+        );
+        assert_eq!(
+            o.close(bob, id, ObjectiveStatus::Dropped, None)
+                .unwrap_err()
+                .kind(),
+            "noSuchObjective"
+        );
+        assert_eq!(o.cancel(bob, task).unwrap_err().kind(), "noSuchTask");
+        assert_eq!(o.list(bob).unwrap().len(), 0);
+        assert_eq!(
+            o.list(world.ada.user).unwrap()[0].objective.status,
+            ObjectiveStatus::Active
+        );
+    }
+
+    #[test]
+    fn create_with_a_new_chat_makes_the_chat_and_leaves_a_line() {
+        let world = world();
+        let main = world.ada.chat;
+        let view = world
+            .objectives
+            .create(world.ada, kite(ObjectiveChat::New))
+            .unwrap();
+        let chat = view.objective.chat_id;
+        assert_ne!(chat, main);
+        let made = world.store.chat(world.ada.user, chat).unwrap().unwrap();
+        assert_eq!(
+            (made.kind, made.title.as_str()),
+            (ChatKind::Objective, "Ship the kite")
+        );
+        let first = world.store.entries(chat, None).unwrap();
+        assert_eq!(first.len(), 1);
+        assert!(
+            first[0].text.contains("A kite that flies")
+                && first[0].text.contains("1. Build the frame")
+        );
+        let line = world.store.entries(main, None).unwrap();
+        assert!(line[0].text.contains("Ship the kite"));
+        assert_eq!(
+            check_of(&view).chat_id,
+            chat,
+            "the check lands in the objective's chat"
+        );
+    }
+
+    #[test]
+    fn create_on_this_chat_converts_it() {
+        let world = world();
+        let topic = world.store.add_chat(world.ada.user, "Kites").unwrap();
+        let owner = TurnOwner {
+            user: world.ada.user,
+            chat: topic,
+        };
+        let view = world
+            .objectives
+            .create(owner, kite(ObjectiveChat::This))
+            .unwrap();
+        assert_eq!(view.objective.chat_id, topic);
+        let converted = world.store.chat(owner.user, topic).unwrap().unwrap();
+        assert_eq!(
+            (converted.kind, converted.title.as_str()),
+            (ChatKind::Objective, "Ship the kite")
+        );
+        let again = world.objectives.create(owner, kite(ObjectiveChat::This));
+        assert_eq!(again.unwrap_err().kind(), "chatTaken");
+    }
+
+    #[test]
+    fn create_on_main_chat_only_links_it() {
+        let world = world();
+        let view = world
+            .objectives
+            .create(world.ada, kite(ObjectiveChat::This))
+            .unwrap();
+        assert_eq!(view.objective.chat_id, world.ada.chat);
+        let main = world.store.main_chat(world.ada.user).unwrap();
+        assert_eq!((main.kind, main.id), (ChatKind::Main, world.ada.chat));
+        assert!(world.store.entries(main.id, None).unwrap().is_empty());
+        assert_eq!(
+            world.store.page_hosts(main.id).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_closed_or_missing_objective_gets_no_check_and_no_zone_means_no_time() {
+        let world = world();
+        let view = world
+            .objectives
+            .create(world.ada, kite(ObjectiveChat::This))
+            .unwrap();
+        world
+            .objectives
+            .close(
+                world.ada.user,
+                view.objective.id,
+                ObjectiveStatus::Dropped,
+                None,
+            )
+            .unwrap();
+        let check = || Check {
+            at: "2026-02-20T09:00".into(),
+            why: "again".into(),
+        };
+        let refused = world
+            .objectives
+            .schedule(world.ada, Some(view.objective.id), check());
+        assert_eq!(refused.unwrap_err().kind(), "noSuchObjective");
+        let stranger = world
+            .objectives
+            .schedule(world.bob, Some(view.objective.id), check());
+        assert_eq!(stranger.unwrap_err().kind(), "noSuchObjective");
+
+        let (_dir, store, ada, _) = test_store();
+        store.set_time_zone(ada, "Mars/Olympus").unwrap();
+        let objectives = Objectives::new(store.clone(), Arc::new(|| START));
+        let owner = TurnOwner {
+            user: ada,
+            chat: store.main_chat(ada).unwrap().id,
+        };
+        assert_eq!(
+            objectives
+                .schedule(owner, None, check())
+                .unwrap_err()
+                .kind(),
+            "badTimeZone"
+        );
+    }
+
+    #[test]
+    fn claim_and_finish_run_an_agent_task_once() {
+        use crate::store::{Finished, RunOutcome};
+        let world = world();
+        let view = world
+            .objectives
+            .create(world.ada, kite(ObjectiveChat::This))
+            .unwrap();
+        let task = check_of(&view);
+        assert_eq!(
+            world.store.claim_task(task.id, task.due_at - 1).unwrap(),
+            None,
+            "not due yet"
+        );
+        let run = world
+            .store
+            .claim_task(task.id, task.due_at)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            world.store.claim_task(task.id, task.due_at).unwrap(),
+            None,
+            "already running"
+        );
+        let done = Finished {
+            outcome: RunOutcome::Silent,
+            found: "no new commits",
+            sources_read: &["github octo/jet".to_owned()],
+            tokens: Some(900),
+            task: TaskState::Done,
+        };
+        assert!(world.store.finish_run(run, &done, task.due_at + 5).unwrap());
+        assert!(!world.store.finish_run(run, &done, task.due_at + 6).unwrap());
+        let runs = world.store.task_runs(world.ada.user, 5).unwrap();
+        assert_eq!(
+            (runs[0].outcome, runs[0].found.as_str(), runs[0].tokens),
+            (Some(RunOutcome::Silent), "no new commits", Some(900))
+        );
+        assert_eq!(runs[0].sources_read, ["github octo/jet"]);
+    }
+}

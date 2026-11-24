@@ -8,14 +8,33 @@ mod files;
 mod github_tokens;
 mod import;
 mod notes;
+mod objectives;
 mod settings;
 mod signins;
+mod sources;
+mod steps;
+mod tasks;
+mod text_enum;
+mod update_notes;
 
+#[cfg(test)]
+pub(crate) use chats::ChatKind;
 pub(crate) use chats::{Chat, ChatId};
-pub(crate) use directory::{Email, NewUser, User, UserId};
+pub(crate) use directory::{Email, NewUser, Person, Team, User, UserId};
 pub(crate) use files::Added;
 pub use import::ImportError;
+pub(crate) use objectives::{
+    Edit, NewObjective, Objective, ObjectiveChat, ObjectiveId, ObjectiveStatus,
+};
 pub(crate) use signins::{Rotation, SigninId};
+pub(crate) use sources::{NewSource, Source, SourceKind};
+pub(crate) use steps::{NewStep, Step, StepId};
+pub(crate) use tasks::{
+    AgentTask, CancelOutcome, NewTask, Run, Scheduled, SetBy, TaskId, TaskKind, TaskState,
+};
+#[cfg(test)]
+pub(crate) use tasks::{Finished, RunOutcome};
+pub(crate) use update_notes::{NewNote, Note, NoteStatus};
 
 use crate::lock;
 use rusqlite::Connection;
@@ -26,6 +45,27 @@ use std::{
 
 const FILE: &str = "jet.sqlite3";
 
+/// A store in a temporary directory with two users, for tests.
+#[cfg(test)]
+pub(crate) fn test_store() -> (tempfile::TempDir, Store, UserId, UserId) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    let add = |email: &str| {
+        let id = store
+            .add_user(&NewUser {
+                email: &Email::from(email),
+                display_name: email,
+                password_hash: "not a real hash",
+                is_admin: false,
+            })
+            .unwrap();
+        store.set_time_zone(id, "Europe/London").unwrap();
+        id
+    };
+    let (ada, bob) = (add("ada@example.com"), add("bob@example.com"));
+    (dir, store, ada, bob)
+}
+
 /// The schema, one entry per version. A new table gets a new file at the end; a migration that
 /// has shipped never changes, because databases in the field have already run it.
 const MIGRATIONS: &[&str] = &[
@@ -33,6 +73,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0002_signins.sql"),
     include_str!("migrations/0003_github_tokens.sql"),
     include_str!("migrations/0004_personal_jet.sql"),
+    include_str!("migrations/0005_objectives.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -59,12 +100,24 @@ pub enum StoreError {
     TooNew { found: usize, known: usize },
     #[error("database query failed")]
     Query(#[from] rusqlite::Error),
+    #[error("the objective already has an open check; move it instead of adding another")]
+    DuplicateCheck,
+    #[error("this chat already belongs to an objective")]
+    ChatTaken,
     #[error("{what} in the database is not valid JSON of its kind")]
     Json {
         what: &'static str,
         #[source]
         source: serde_json::Error,
     },
+}
+
+impl StoreError {
+    /// True when another connection held the database for longer than the busy timeout.
+    pub(crate) fn is_busy(&self) -> bool {
+        matches!(self, Self::Query(rusqlite::Error::SqliteFailure(failure, _))
+            if failure.code == rusqlite::ErrorCode::DatabaseBusy)
+    }
 }
 
 #[derive(Clone)]

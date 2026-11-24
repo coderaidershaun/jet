@@ -26,6 +26,14 @@ impl Evidence {
         }
     }
 
+    /// The GitHub login of the user's saved token; `None` when the user saved none.
+    pub(crate) fn github_login(&self, user: UserId) -> Result<Option<String>, GithubError> {
+        let Some(token) = self.tokens.token(user)? else {
+            return Ok(None);
+        };
+        self.github.login(&token).map(Some)
+    }
+
     /// The facts of `github_activity` for a call in `user`'s turn: GitHub is asked with that
     /// user's token, or with none when the user saved none.
     pub(crate) fn github_activity(

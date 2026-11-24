@@ -262,6 +262,30 @@ mod tests {
     }
 
     #[test]
+    fn the_prompt_teaches_objectives_and_check_ins() {
+        let prompt = compose(&Persona::default(), &Notes::default(), Model::Sonnet);
+        for rule in [
+            "ask exactly one question in each reply, and wait for the answer",
+            "objectives_update with `create` and `chat: \"this\"`",
+            "Do not record before the user says yes",
+            "first check",
+            "the watched places as `sources`",
+            "local date and time in the user's zone",
+            "tasks_update with `schedule` in the same reply",
+            "Look at tasks_list first",
+            "`cancel` it and then `schedule` a new one",
+            "Promise nothing you do not schedule",
+            "objectives_update with `dates` and the reason",
+            "objectives_update with `note`",
+            "`private`",
+            "promise to come back only to what you schedule through tasks_update, in the same reply",
+        ] {
+            assert!(prompt.contains(rule), "missing: {rule}");
+        }
+        assert!(!prompt.contains("never promise to remember"));
+    }
+
+    #[test]
     fn the_voice_line_comes_after_the_feeling_line_only_when_spoken() {
         use super::super::test_support::{Chat, message};
         let chat = Chat::new(["one", "one", "one"]);

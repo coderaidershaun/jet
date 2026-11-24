@@ -117,6 +117,24 @@ impl Github {
         }
     }
 
+    /// The GitHub login the token belongs to.
+    pub(crate) fn login(&self, token: &GithubToken) -> Result<String, GithubError> {
+        let account = Repo("the account of the saved token".into());
+        let mut call = Call {
+            github: self,
+            repo: &account,
+            token: Some(token),
+            has_waited: false,
+        };
+        let about = call.get("user", &[])?;
+        about["login"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| GithubError::Unreachable {
+                detail: "its answer names no login".into(),
+            })
+    }
+
     /// The last push, the commits since `since`, the open pull requests and the issues updated
     /// since `since`, each with its address, and when they were fetched.
     pub(crate) fn activity(

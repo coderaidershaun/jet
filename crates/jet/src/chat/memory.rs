@@ -58,4 +58,8 @@ impl Storage for ChatMemory {
     fn save_notes(&self, notes: &Notes) -> Result<(), MemoryError> {
         self.store.set_notes(self.chat.user, notes).map_err(failed)
     }
+
+    fn page_hosts(&self) -> Result<Vec<String>, MemoryError> {
+        self.store.page_hosts(self.chat.id).map_err(failed)
+    }
 }

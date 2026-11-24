@@ -3,6 +3,7 @@
 mod handler;
 mod handoff;
 mod marks;
+mod objectives;
 mod tools;
 
 use crate::account::Keys;
@@ -11,6 +12,7 @@ use crate::chat::{ChatState, Chats, TurnContext, TurnOwner, TurnTools};
 use crate::evidence::Evidence;
 use crate::files::Files;
 use crate::lock;
+use crate::objectives::Objectives;
 use agent::{McpConnection, TurnIdentity, mcp::HttpMcpClient};
 use axum::{
     Json, Router,
@@ -52,6 +54,7 @@ pub(crate) struct Facade {
     public_origin: Option<String>,
     keys: Keys,
     evidence: Evidence,
+    objectives: Objectives,
     bindings: Mutex<HashMap<String, Binding>>,
     sessions: Mutex<HashMap<String, String>>,
 }
@@ -63,6 +66,7 @@ impl Facade {
         public_origin: Option<String>,
         keys: Keys,
         evidence: Evidence,
+        objectives: Objectives,
     ) -> Arc<Self> {
         Arc::new(Self {
             mcp: apps.mcp().clone(),
@@ -73,6 +77,7 @@ impl Facade {
             public_origin,
             keys,
             evidence,
+            objectives,
             bindings: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
         })
@@ -196,7 +201,7 @@ async fn web_hook(Query(query): Query<HashMap<String, String>>, body: Bytes) -> 
     let host = serde_json::from_slice::<Value>(&body)
         .ok()
         .and_then(|input| url::Url::parse(input["tool_input"]["url"].as_str()?).ok())
-        .and_then(|url| url.host_str().map(str::to_ascii_lowercase));
+        .and_then(|url| url.host_str().map(str::to_owned));
     if host.is_some_and(|host| hosts.split(',').any(|allowed| allowed == host)) {
         // No decision: Claude Code's own allow rule for the host still has to pass.
         return Json(json!({}));
@@ -204,6 +209,29 @@ async fn web_hook(Query(query): Query<HashMap<String, String>>, body: Bytes) -> 
     Json(json!({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
-        "permissionDecisionReason": "Jet reads pages only on sites whose link the user wrote in this chat. Ask the user to paste the link to this page.",
+        "permissionDecisionReason": "Jet reads pages only on sites whose link the user wrote in this chat or that an objective of this chat names. The user can paste the link to this page here, so ask them to.",
     }}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_refused_page_says_the_user_can_paste_the_link() {
+        let hook =
+            serde_json::to_vec(&json!({"tool_input": {"url": "https://other.example/page"}}))
+                .unwrap();
+        let query = HashMap::from([("hosts".to_owned(), "docs.rs,github.com".to_owned())]);
+        let Json(refused) = web_hook(Query(query.clone()), hook.clone().into()).await;
+        let reason = refused["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap();
+        assert!(reason.contains("The user can paste the link"), "{reason}");
+        assert!(reason.contains("objective"), "{reason}");
+
+        let allowed =
+            serde_json::to_vec(&json!({"tool_input": {"url": "https://Docs.rs/serde"}})).unwrap();
+        assert_eq!(web_hook(Query(query), allowed.into()).await.0, json!({}));
+    }
 }

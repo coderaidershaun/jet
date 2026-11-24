@@ -11,6 +11,7 @@ use crate::evidence::{Evidence, GithubTokens, TokenError};
 use crate::facade::Facade;
 use crate::files::Files;
 use crate::lock;
+use crate::objectives::{self, Objectives};
 use crate::store::{Email, ImportError, Store, StoreError};
 use crate::voice::Voice;
 use agent::{apps::Registry, mcp::HttpMcpClient};
@@ -107,6 +108,7 @@ impl Server {
             config.public_origin.clone(),
             accounts.keys().clone(),
             Evidence::new(github_tokens.clone()),
+            Objectives::new(store.clone(), objectives::system_clock()),
         );
         let chats = Chats::new(
             store.clone(),

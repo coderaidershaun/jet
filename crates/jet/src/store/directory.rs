@@ -33,6 +33,25 @@ pub(crate) struct User {
     pub(crate) is_admin: bool,
 }
 
+/// A user as the organisation's directory lists them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Person {
+    pub(crate) id: UserId,
+    pub(crate) email: String,
+    pub(crate) name: String,
+    pub(crate) manager_id: Option<UserId>,
+    pub(crate) teams: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Team {
+    pub(crate) id: i64,
+    pub(crate) name: String,
+    pub(crate) member_ids: Vec<UserId>,
+}
+
 pub(crate) struct NewUser<'a> {
     pub(crate) email: &'a Email,
     pub(crate) display_name: &'a str,
@@ -128,6 +147,69 @@ impl Store {
                 params![user.0, manager.0],
             )?;
             Ok(())
+        })
+    }
+
+    /// Every user and every team of the organisation.
+    pub(crate) fn directory(&self) -> Result<(Vec<Person>, Vec<Team>), StoreError> {
+        self.with(|db| {
+            let mut teams: Vec<Team> = db
+                .prepare("SELECT id, name FROM teams ORDER BY name")?
+                .query_map([], |row| {
+                    Ok(Team {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        member_ids: Vec::new(),
+                    })
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+            let mut people: Vec<Person> = db
+                .prepare("SELECT id, email, display_name, manager_id FROM users ORDER BY id")?
+                .query_map([], |row| {
+                    Ok(Person {
+                        id: UserId(row.get(0)?),
+                        email: row.get(1)?,
+                        name: row.get(2)?,
+                        manager_id: row.get::<_, Option<i64>>(3)?.map(UserId),
+                        teams: Vec::new(),
+                    })
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+            let memberships = db
+                .prepare("SELECT team_id, user_id FROM team_members ORDER BY user_id")?
+                .query_map([], |row| Ok((row.get::<_, i64>(0)?, UserId(row.get(1)?))))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            for (team_id, user) in memberships {
+                if let Some(team) = teams.iter_mut().find(|team| team.id == team_id) {
+                    team.member_ids.push(user);
+                    if let Some(person) = people.iter_mut().find(|person| person.id == user) {
+                        person.teams.push(team.name.clone());
+                    }
+                }
+            }
+            Ok((people, teams))
+        })
+    }
+
+    /// Keeps the IANA time zone the user's page last sent.
+    pub(crate) fn set_time_zone(&self, user: UserId, zone: &str) -> Result<(), StoreError> {
+        self.with(|db| {
+            db.execute(
+                "UPDATE users SET time_zone = ?2 WHERE id = ?1",
+                params![user.0, zone],
+            )
+            .map(drop)
+        })
+    }
+
+    /// The time zone of the user's page, `None` until a message carried one.
+    pub(crate) fn time_zone(&self, user: UserId) -> Result<Option<String>, StoreError> {
+        self.with(|db| {
+            db.query_row(
+                "SELECT time_zone FROM users WHERE id = ?1",
+                [user.0],
+                |row| row.get(0),
+            )
         })
     }
 }

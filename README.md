@@ -9,7 +9,8 @@ crates/jet/                       the server program (axum) and the page it serv
   src/apps/                       app routes: registry (/api/apps), tool browser, proxy to running apps
   src/chat/                       one runtime per chat: commands, the streamed reply, reconnect snapshots, the notes review timer
   src/evidence/                   outside evidence: a GitHub repository's activity, each user's sealed GitHub token
-  src/facade/                     the ten MCP tools the provider sees
+  src/facade/                     the fifteen MCP tools the provider sees
+  src/objectives/                 objectives and agent-tasks: computed dates, local time to UTC
   src/files/                      uploads, files Jet writes, the sandboxed reader child, export, all kept in the store
   src/server/                     shared host state, listen address and the remaining routes
   src/voice/                      the speak and hear routes and their limits
@@ -190,7 +191,7 @@ Jet is served publicly, so every path is bounded: 32 MiB for a file, 10 files fo
 
 ## App tools
 
-Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees ten stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read` and `github_activity`. Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat; Jet's `/web-hook` refuses every other site. After a web read or a `github_activity` call, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex has no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
+Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees fifteen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `github_activity`, and the five that record objectives and agent-tasks (see Objectives and agent-tasks). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link. After a web read or a `github_activity` call, the rest of that reply cannot call `apps_update` or an app tool that is not read-only. Codex has no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
 
 Tools shows searchable summaries, actual input/output schemas, annotations, server identity, capabilities and instructions. Refresh retries failed metadata; stale results remain visibly marked. Only explicitly marked free discovery operations can expand into a hierarchy. Inspect a leaf or use Ask Jet to draft a request; browsing never executes ordinary business tools. In particular, normal Quanty search can cost money.
 
@@ -220,6 +221,39 @@ bytes). Changing the key makes every saved token unreadable, and Jet then asks t
 it again. A call uses only the token of the user who sent the message. When GitHub asks for a wait
 of 10 seconds or less, the call waits once and tries again; a longer wait, a refused token and an
 unreachable GitHub come back as errors that tell Jet what to say to the user.
+
+## Objectives and agent-tasks
+
+Jet records what the user is working towards, and what it sets itself to do, by itself, from the
+conversation; the user fills in no form. Five facade tools do it, each acting for the user of the
+turn only, and every row is private to its owner:
+
+- `objectives_list` reads the user's objectives with their steps, sources, update notes and waiting
+  agent-tasks. Duration (start to due date) and days left are worked out on every read, never stored.
+- `objectives_update` takes one typed `command`: `create` (title, deliverable, due date, optional
+  start date, steps and sources, and the **first check**, which it cannot be made without; `chat`
+  is `new` for a chat of its own or `this` to take the current one), `edit`, `step_add`, `step_tick`,
+  `dates` (with the reason), `note` (status `on track`, `at risk`, `blocked` or `done`, what moved,
+  blockers, and a `private` flag) and `close` (`done` or `dropped`, which also cancels the waiting
+  checks). Every change raises the objective's `version`.
+- `tasks_list` reads Jet's own agent-tasks and its newest runs, so Jet looks before it adds one.
+- `tasks_update` takes `schedule` (with an `objectiveId` it moves that objective's open check, or adds
+  it; without one it adds a follow-up in this chat) or `cancel`. There is at most one open check for
+  an objective.
+- `people_list` reads the directory: users with their teams and manager, and the teams.
+
+A source is `jet`, `github` (a repository and the user's GitHub login, which the server reads from the
+user's saved GitHub token when Jet leaves it out), `web` (a page address or a search topic) or `app`
+(an app and one of its tools; only the admin may name one, and only for a tool the app marks
+read-only).
+
+Jet writes every time as the user's local date and time. The page sends the user's time zone, its
+IANA name, as `timeZone` in the body of `POST /api/chat/send`; the server keeps it on the user, turns
+the local time into UTC with it, and refuses a time that is in the past, that the clocks skip, or that
+cannot be read. When the clocks go back and a time happens twice, the earlier instant is taken. A
+create with a new chat adds a chat of kind objective titled after the objective, opens it with a short
+summary, and leaves a line in the chat where it was agreed. A create on the main chat only links it.
+A turn in a chat may read pages on the hosts of the page sources of that chat's open objectives.
 
 ## Quanty
 

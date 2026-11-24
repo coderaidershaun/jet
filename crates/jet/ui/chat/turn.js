@@ -314,7 +314,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       const mine = { dispatched: false, cancelFeeling: null, spoken: false, text, appId, attachments };
       active = mine;
       const now = performance.now();
-      const message = request(text, appId, attachments);
+      const message = { ...request(text, appId, attachments), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
       if (agent.serverEvents) { message.requestId = randomId(); mine.requestId = message.requestId; }
       const takeoff = live.measure();
       follow.onSend();

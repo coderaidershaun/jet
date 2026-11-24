@@ -1,18 +1,26 @@
 //! Each user's chats: the main one made with the account, the thread of each chat and the record of
 //! its provider session.
 
+use super::text_enum::text_enum;
 use super::{Store, StoreError, UserId, from_json, to_json};
 use agent::{Entry, NewEntry, Session};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, Transaction, params};
+use serde::Serialize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub(crate) struct ChatId(pub(crate) i64);
+
+text_enum!(ChatKind {
+    Main = "main",
+    Objective = "objective",
+    Topic = "topic",
+});
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Chat {
     pub(crate) id: ChatId,
     pub(crate) user: UserId,
-    pub(crate) is_main: bool,
+    pub(crate) kind: ChatKind,
     pub(crate) title: String,
 }
 
@@ -27,7 +35,7 @@ impl Store {
                     Ok(Chat {
                         id: ChatId(row.get(0)?),
                         user,
-                        is_main: true,
+                        kind: ChatKind::Main,
                         title: row.get(1)?,
                     })
                 },
@@ -70,7 +78,7 @@ impl Store {
                     Ok(Chat {
                         id: chat,
                         user,
-                        is_main: row.get::<_, String>(0)? == "main",
+                        kind: row.get(0)?,
                         title: row.get(1)?,
                     })
                 },
@@ -112,16 +120,7 @@ impl Store {
     ) -> Result<Entry, StoreError> {
         self.try_with(|db| {
             let transaction = db.transaction()?;
-            let last: i64 = transaction.query_row(
-                "SELECT coalesce(max(id), 0) FROM entries WHERE chat_id = ?1",
-                [chat.0],
-                |row| row.get(0),
-            )?;
-            let entry = entry.into_entry(last.unsigned_abs() + 1, at);
-            transaction.execute(
-                "INSERT INTO entries (chat_id, id, entry) VALUES (?1, ?2, ?3)",
-                params![chat.0, last + 1, to_json(&entry)?],
-            )?;
+            let entry = insert_entry(&transaction, chat, entry, at)?;
             transaction.commit()?;
             Ok(entry)
         })
@@ -177,6 +176,26 @@ impl Store {
     }
 }
 
+/// Saves the entry under the next id of the chat inside a transaction that the caller commits.
+pub(super) fn insert_entry(
+    transaction: &Transaction,
+    chat: ChatId,
+    entry: NewEntry,
+    at: u64,
+) -> Result<Entry, StoreError> {
+    let last: i64 = transaction.query_row(
+        "SELECT coalesce(max(id), 0) FROM entries WHERE chat_id = ?1",
+        [chat.0],
+        |row| row.get(0),
+    )?;
+    let entry = entry.into_entry(last.unsigned_abs() + 1, at);
+    transaction.execute(
+        "INSERT INTO entries (chat_id, id, entry) VALUES (?1, ?2, ?3)",
+        params![chat.0, last + 1, to_json(&entry)?],
+    )?;
+    Ok(entry)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,12 +221,12 @@ mod tests {
             user(&store, "bob@example.com"),
         );
         let main = store.main_chat(ada).unwrap();
-        assert!(main.is_main);
+        assert_eq!(main.kind, ChatKind::Main);
         assert!(store.entries(main.id, None).unwrap().is_empty());
 
         let topic = store.add_chat(ada, "Kites").unwrap();
         let read = store.chat(ada, topic).unwrap().unwrap();
-        assert_eq!((read.title.as_str(), read.is_main), ("Kites", false));
+        assert_eq!((read.title.as_str(), read.kind), ("Kites", ChatKind::Topic));
         assert_eq!(store.chat(bob, topic).unwrap(), None);
         assert_eq!(store.chat(bob, main.id).unwrap(), None);
         assert_ne!(store.main_chat(bob).unwrap().id, main.id);

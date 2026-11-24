@@ -225,6 +225,11 @@ test('while Jet only speaks, Jet settles after the voice and a new message cuts 
   assert.deepEqual([lastJet().text, lastJet().html, lastJet().status], ['Partial reply', '<p>Partial reply</p>', 'stopped']);
 });
 
+test('a send carries the time zone of the page', async (t) => {
+  const s = await setup(t);
+  assert.equal(s.requests[0].timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone);
+});
+
 test('a send says the reply is not spoken while the speaker is off', async (t) => {
   const s = await setup(t);
   assert.equal(s.requests[0].spoken, false);
@@ -262,7 +267,7 @@ test("a reaction on Jet's message is saved with the settings of a send, and its 
   s.event({ kind: 'finished', entry: { ...s.entry, id: 2 } });
   await s.advance(1000);
   await s.turn.react(2, '👍');
-  const { text: _text, feeling: _feeling, requestId: _id, ...settings } = s.requests[0];
+  const { text: _text, feeling: _feeling, requestId: _id, timeZone: _zone, ...settings } = s.requests[0];
   const { entryId, emoji, ...same } = s.reacts[0];
   assert.deepEqual([entryId, emoji], [2, '👍']);
   assert.deepEqual(same, settings, 'a reaction and a message start their turns the same way');

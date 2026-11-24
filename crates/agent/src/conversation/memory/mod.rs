@@ -36,6 +36,11 @@ pub trait Storage: Send + Sync {
     /// The notes as saved; never-written notes are empty.
     fn notes(&self) -> Result<Notes, MemoryError>;
     fn save_notes(&self, notes: &Notes) -> Result<(), MemoryError>;
+    /// The hosts of the pages that this chat's objectives name, which a turn may read besides
+    /// the sites the user linked. A chat with no objective has none.
+    fn page_hosts(&self) -> Result<Vec<String>, MemoryError> {
+        Ok(Vec::new())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -115,6 +120,10 @@ impl Saved {
 
     pub(crate) fn save_session(&self, session: &Session) -> Result<(), MemoryError> {
         self.storage.save_session(Some(session))
+    }
+
+    pub(crate) fn page_hosts(&self) -> Result<Vec<String>, MemoryError> {
+        self.storage.page_hosts()
     }
 
     /// The notes, cut to their limits.

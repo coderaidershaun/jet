@@ -1,4 +1,5 @@
 //! Define the fixed facade contract without copying registered tool schemas.
+use super::objectives;
 use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Value, json};
 use std::sync::LazyLock;
@@ -41,7 +42,7 @@ static TOOLS: LazyLock<Vec<Tool>> = LazyLock::new(|| {
             "repo":{"type":"string","pattern":"^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$","description":"owner/name"},
             "since":{"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$","description":"ISO 8601 time, such as 2026-11-20T00:00:00Z"}
         }),json!(["repo","since"]))),
-    ].into_iter().map(|(name, read_only, description, schema)| {
+    ].into_iter().chain(objectives::definitions()).map(|(name, read_only, description, schema)| {
         Tool::new(name, description, schema.as_object().cloned().unwrap_or_default())
             .with_annotations(ToolAnnotations::new().read_only(read_only))
     }).collect()
@@ -50,7 +51,7 @@ static TOOLS: LazyLock<Vec<Tool>> = LazyLock::new(|| {
 pub(super) fn definitions() -> &'static [Tool] {
     &TOOLS
 }
-fn object(properties: Value, required: Value) -> Value {
+pub(super) fn object(properties: Value, required: Value) -> Value {
     json!({"type":"object","properties":properties,"required":required,"additionalProperties":false})
 }
 fn command_schema() -> Value {
@@ -100,5 +101,19 @@ mod tests {
     fn the_tools_are_the_ones_the_providers_are_allowed_to_call() {
         let names: Vec<&str> = definitions().iter().map(|tool| &*tool.name).collect();
         assert_eq!(names, agent::FACADE_TOOLS);
+    }
+
+    #[test]
+    fn create_without_a_first_check_is_refused() {
+        let create = |check: Value| {
+            let mut command = json!({"action":"create","title":"Kite","deliverable":"A kite","due":"2026-03-01","chat":"new"});
+            if !check.is_null() {
+                command["check"] = check;
+            }
+            validate("objectives_update", &json!({"command": command}))
+        };
+        assert!(create(Value::Null).is_err());
+        assert!(create(json!({"at":"Friday","why":"look"})).is_err());
+        assert!(create(json!({"at":"2026-02-10T09:00","why":"look"})).is_ok());
     }
 }
