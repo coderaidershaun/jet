@@ -149,6 +149,7 @@ function speakingVoice() {
   const voice = { unlocked: 0, replies: [] };
   voice.part = {
     on: () => true,
+    performsCues: () => true,
     cues: [{ tag: '<laugh>', weight: 8 }],
     unlock: () => { voice.unlocked++; },
     reveal: () => {

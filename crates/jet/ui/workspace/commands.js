@@ -1,19 +1,25 @@
 import { MODELS, effortsFor } from '../bridge/models.js';
 import { requestJson } from '../bridge/browser-agent.js';
 
+// Each row is a command, the arguments it takes, and what it does. A row of two has no arguments.
 const HELP = [
-  ['/model', '[model-id] — choose the model for the next reply'],
-  ['/thinking', '[level] — choose thinking for the next reply'],
-  ['/app add', '<address> ["label"] — register an app'],
-  ['/app list', 'show registered apps and IDs'],
-  ['/app open', '<id-or-label> — open an app'],
-  ['/app edit', '[id-or-label] — show configuration and guidance for Jet'],
-  ['/app reload', '[id-or-label] — reload its page with current endpoints'],
-  ['/app remove', '<id-or-label> — forget an integration'],
-  ['/app enable', '<id-or-label> — enable its tools'],
-  ['/app disable', '<id-or-label> — disable its tools'],
-  ['/tools', '[id-or-label] — browse tools'],
+  ['/model', '[model-id]', 'Choose the model for the next reply'],
+  ['/thinking', '[level]', 'Choose the thinking level for the next reply'],
+  ['/clear', 'Clear this chat’s conversation; other chats, tasks and memory stay'],
+  ['/app add', '<address> ["label"]', 'Register an app'],
+  ['/app list', 'Show the registered apps and their IDs'],
+  ['/app open', '<id-or-label>', 'Open an app'],
+  ['/app edit', '[id-or-label]', 'Show an app’s configuration and guidance for Jet'],
+  ['/app reload', '[id-or-label]', 'Reload an app’s page with its current endpoints'],
+  ['/app remove', '<id-or-label>', 'Forget an app'],
+  ['/app enable', '<id-or-label>', 'Turn on an app’s tools'],
+  ['/app disable', '<id-or-label>', 'Turn off an app’s tools'],
+  ['/tools', '[id-or-label]', 'Browse tools'],
 ];
+
+function helpRow([command, ...rest]) {
+  return { command, args: rest.length > 1 ? rest[0] : '', description: rest.at(-1) };
+}
 
 function words(text) {
   const result = [];
@@ -31,12 +37,18 @@ function words(text) {
   return result;
 }
 
-export function createCommands({ workspace, report, settings, save, changed = () => {}, request = requestJson }) {
+export function createCommands({ workspace, report, settings, save, changed = () => {}, request = requestJson, forget }) {
   let pending = Promise.resolve();
-  const help = () => HELP.map(([command, description]) => command + ' ' + description).join('\n');
+  const help = (heading) => ({ heading, rows: HELP.map(helpRow) });
   async function run(text) {
     try {
       const [root, ...args] = words(text);
+      if (root === '/clear') {
+        if (args.length) throw new Error('/clear takes no arguments. It clears the open chat only.');
+        await forget();
+        report('Cleared this chat.');
+        return;
+      }
       if (root === '/model' || root === '/thinking') {
         const modelCommand = root === '/model';
         const choices = modelCommand ? MODELS.map(([id]) => id) : effortsFor(settings.model);
@@ -54,10 +66,10 @@ export function createCommands({ workspace, report, settings, save, changed = ()
       }
       const action = root === '/tools' ? 'tools' : args.shift();
       if ((root !== '/app' && root !== '/tools') || (root === '/app' && action === 'tools') || !['add', 'list', 'open', 'edit', 'remove', 'enable', 'disable', 'reload', 'tools'].includes(action)) {
-        report('Command help\n' + help()); return;
+        report(help('Commands')); return;
       }
       const limit = action === 'add' ? 2 : action === 'list' ? 0 : 1;
-      if (args.length > limit) throw new Error('Too many arguments. Put labels with spaces in quotes.\n' + help());
+      if (args.length > limit) { report(help('Too many arguments. Put labels with spaces in quotes.')); return; }
       if (action === 'add') {
         if (!args.length) throw new Error('Use /app add <address> ["label"]. Example: /app add 8080 "Research notes".');
         const result = await request('/api/apps', { action, address: args[0], ...(args[1] ? { overrides: { label: args[1] } } : {}) });
@@ -97,7 +109,9 @@ export function createCommands({ workspace, report, settings, save, changed = ()
         const choices = argument[1] === 'model' ? MODELS.map(([id, label]) => [id, label]) : effortsFor(settings.model).map(level => [level, 'Thinking level']);
         return choices.filter(([id]) => id.startsWith(argument[2]) && id !== argument[2].trim()).map(([id, description]) => ({ value: `/${argument[1]} ${id}`, description }));
       }
-      return prefix.startsWith('/') ? HELP.filter(([command]) => command.startsWith(prefix) && command !== prefix).map(([value, description]) => ({ value, description })) : [];
+      if (!prefix.startsWith('/')) return [];
+      const rows = HELP.map(helpRow).filter(({ command }) => command.startsWith(prefix) && command !== prefix);
+      return rows.map(({ command, args, description }) => ({ value: command, description: args ? `${args} · ${description}` : description }));
     },
   };
 }

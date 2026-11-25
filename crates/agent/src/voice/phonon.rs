@@ -57,7 +57,8 @@ impl Phonon {
     /// Returns [`VoiceError::TooLong`] past 2,000 characters, the errors of [`Phonon::status`],
     /// and [`VoiceError::PhononFailed`] when the model cannot say the words.
     pub fn speak(&self, markdown: &str) -> Result<Vec<u8>, VoiceError> {
-        let words = words_to_speak(markdown)?;
+        // Phonon cannot perform a cue such as `<laugh>` and would read it out.
+        let words = words_to_speak(markdown, false)?;
         if words.is_empty() {
             return Ok(Vec::new());
         }

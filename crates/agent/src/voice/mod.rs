@@ -67,7 +67,7 @@ pub fn clip_seconds(pcm: &[u8]) -> u32 {
 /// Returns [`VoiceError::TooLong`] past 2,000 characters, [`VoiceError::NotConfigured`] when
 /// `.env` lacks the key or the voice, and the other errors when Gemini fails.
 pub fn speak(markdown: &str, style: Option<&str>) -> Result<Vec<u8>, VoiceError> {
-    let words = words_to_speak(markdown)?;
+    let words = words_to_speak(markdown, true)?;
     if words.is_empty() {
         return Ok(Vec::new());
     }
@@ -75,8 +75,9 @@ pub fn speak(markdown: &str, style: Option<&str>) -> Result<Vec<u8>, VoiceError>
     Gemini::new(key, model).speak(&voice, &words, style)
 }
 
-/// The words of a piece of Markdown that a voice says aloud, refused past 2,000 characters.
-fn words_to_speak(markdown: &str) -> Result<String, VoiceError> {
+/// The words of a piece of Markdown that a voice says aloud, refused past 2,000 characters. The
+/// vocal cues are kept only with `cues`, for a voice that performs them.
+fn words_to_speak(markdown: &str, cues: bool) -> Result<String, VoiceError> {
     let length = markdown.chars().count();
     if length > MAX_CHARACTERS {
         return Err(VoiceError::TooLong {
@@ -84,7 +85,7 @@ fn words_to_speak(markdown: &str) -> Result<String, VoiceError> {
             limit: MAX_CHARACTERS,
         });
     }
-    Ok(spoken_words(markdown))
+    Ok(spoken_words(markdown, cues))
 }
 
 /// The words in a clip of raw 16 kHz 16-bit little-endian mono audio, empty when the clip holds

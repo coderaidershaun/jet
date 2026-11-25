@@ -50,7 +50,7 @@ test('commands_route_before_chat_and_preserve_composer_keys', async () => {
   assert.match(reports.at(-1), /Same name — a/);
   for (const text of ['/unknown', '/app add "unterminated', '/app open', '/app open missing', '/app list extra']) {
     await commands.submit(text, () => sent++);
-    assert.ok(reports.at(-1).length);
+    assert.ok(reports.at(-1).rows?.length || reports.at(-1).length);
   }
   assert.equal(sent, 0);
   await commands.submit('/model', () => sent++);
@@ -139,4 +139,18 @@ test('a refused /app add shows the server\'s reason in words', async () => {
   const commands = createCommands({ workspace: {}, settings: {}, save: async () => {}, report: text => reports.push(text), request: (path, body) => requestJson(path, body, 'POST', refuse) });
   await commands.submit('/app add 8080', () => {});
   assert.deepEqual(reports, [message]);
+});
+
+test('/clear forgets the open chat through the same callback as the Forget button', async () => {
+  const reports = [];
+  let forgotten = 0, sent = 0;
+  const commands = createCommands({ workspace: {}, settings: {}, save: async () => {}, report: text => reports.push(text), forget: async () => { forgotten++; } });
+  assert.ok(commands.suggestions('/cl').some(item => item.value === '/clear'));
+  await commands.submit('/clear', () => sent++);
+  assert.equal(forgotten, 1);
+  assert.equal(sent, 0);
+  assert.match(reports.at(-1), /Cleared this chat/);
+  await commands.submit('/clear extra', () => sent++);
+  assert.equal(forgotten, 1, 'arguments are refused, nothing is forgotten');
+  assert.match(reports.at(-1), /takes no arguments/);
 });

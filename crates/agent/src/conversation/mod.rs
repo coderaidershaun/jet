@@ -57,6 +57,8 @@ pub struct Message {
     pub feeling: Option<String>,
     /// True when the user hears this reply spoken aloud.
     pub spoken: bool,
+    /// True when the voice that speaks the reply performs vocal cues such as `<laugh>`.
+    pub voice_cues: bool,
     /// Lines for Jet about what the user did since their last message, such as a tap on a card.
     pub notices: Vec<String>,
 }
@@ -357,6 +359,7 @@ mod test_support {
             active_app_id: None,
             feeling: None,
             spoken: false,
+            voice_cues: false,
             notices: Vec::new(),
         }
     }

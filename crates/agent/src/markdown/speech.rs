@@ -9,12 +9,16 @@ use super::restore::Piece;
 
 /// The Markdown cut down to what is spoken: one line per paragraph, heading or list item, with a
 /// full stop added to a heading or list item that has no end mark, so that the voice pauses.
-pub(crate) fn spoken_words(markdown: &str) -> String {
+/// Vocal cues such as `<laugh>` are kept only with `cues`, for a voice that performs them.
+pub(crate) fn spoken_words(markdown: &str, cues: bool) -> String {
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
     let protected = Protected::new(&inline_cues(markdown));
     let events = TextMergeStream::new(Parser::new_ext(&protected.text, options));
-    let mut speaker = Speaker::default();
+    let mut speaker = Speaker {
+        cues,
+        ..Speaker::default()
+    };
     for event in events {
         match event {
             Event::Start(tag) => speaker.start(&tag),
@@ -38,6 +42,7 @@ struct Speaker {
     /// inside one is spoken.
     silent: u32,
     items: u32,
+    cues: bool,
 }
 
 impl Speaker {
@@ -97,7 +102,7 @@ impl Speaker {
     }
 
     fn cue(&mut self, cue: &str) {
-        if self.silent == 0 {
+        if self.silent == 0 && self.cues {
             self.current.push_str(cue);
         }
     }
@@ -244,7 +249,9 @@ mod tests {
             ("", ""),
         ];
         for (markdown, spoken) in cases {
-            assert_eq!(spoken_words(markdown), spoken, "{markdown:?}");
+            assert_eq!(spoken_words(markdown, true), spoken, "{markdown:?}");
         }
+        assert_eq!(spoken_words("Ha <laugh> yes.", true), "Ha <laugh> yes.");
+        assert_eq!(spoken_words("Ha <laugh> yes.", false), "Ha yes.");
     }
 }

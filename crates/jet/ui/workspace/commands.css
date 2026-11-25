@@ -3,7 +3,25 @@
 .command-menu button { display: flex; flex-direction: column; width: 100%; padding: 9px; border: 0; border-radius: var(--r-s); text-align: left; color: inherit; background: transparent; }
 .command-menu button[aria-selected="true"], .command-menu button:hover { background: #29495f; }
 .command-menu span { font-size: 12px; color: #aebcc5; }
-.command-result { max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 12px 0 0; padding: 8px 12px; font-size: 13px; border-top: 1px solid #293942; }
-#rows:empty + .command-result { margin-top: 0; border-top: 0; }
-.command-result:empty { display: none; }
+/* The answer to a /command sits under the thread like a quiet card: the text on the left, Close on the right. */
+.command-panel {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px;
+  margin-top: 16px; padding-left: 16px; background: var(--surface-2); border-radius: var(--r-m);
+}
+#rows:empty + .command-panel { margin-top: 0; }
+.command-close { color: var(--muted); }
+.command-close:hover { color: var(--fg); }
+.command-body { min-width: 0; padding-block: 12px; font-size: 14px; line-height: 20px; }
+.command-line { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.command-heading { margin: 0 0 8px; font-size: 14px; line-height: 20px; font-weight: 600; }
+.command-help { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 24px; margin: 0; }
+.command-help dt { font: 13px/20px var(--mono); white-space: nowrap; }
+.command-help dd { margin: 0; color: var(--muted); }
+.command-args { color: var(--muted); }
+/* On a phone a row is too narrow for both, so each description goes under its command. */
+@media (max-width: 559.98px) {
+  .command-help { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .command-help dd + dt { margin-top: 8px; }
+  .command-help dt { white-space: normal; overflow-wrap: anywhere; }
+}
 .page.has-command-result .empty { visibility: hidden; }

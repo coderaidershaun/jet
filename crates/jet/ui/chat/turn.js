@@ -12,7 +12,7 @@ const TERMINAL = new Set(['finished', 'failed', 'stopped', 'noReply']);
 /** The events that put something in Jet's row, so a turn that a reaction started opens the row on the first of them. */
 const SHOWN = new Set(['text', 'toolStarted', 'toolProgress', 'toolFinished', 'finished', 'failed', 'stopped']);
 
-const SILENT = { on: () => false, cues: [], reveal: (options) => ({ reveal: createReveal(options), spoken: false }), unlock() {} };
+const SILENT = { on: () => false, performsCues: () => false, cues: [], reveal: (options) => ({ reveal: createReveal(options), spoken: false }), unlock() {} };
 
 /**
  * @param {{
@@ -34,6 +34,7 @@ const SILENT = { on: () => false, cues: [], reveal: (options) => ({ reveal: crea
  *   afterReply: () => void,
  *   voice?: {
  *     on: () => boolean,
+ *     performsCues: () => boolean,
  *     cues: { tag: string, weight: number }[],
  *     reveal: (options: { render: (text: string) => Promise<string>, paint: (html: string) => void }) => { reveal: ReturnType<typeof createReveal> | ReturnType<typeof import('./voice/spoken.js').createSpokenReveal>, spoken: boolean },
  *     unlock: () => void,
@@ -230,6 +231,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       persona: { ...settings.persona },
       localTime: localTimeLabel(Date.now()),
       spoken: voice.on(),
+      voiceCues: voice.performsCues(),
     };
   }
 

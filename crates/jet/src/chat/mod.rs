@@ -84,6 +84,9 @@ pub(crate) struct SendRequest {
     /// so that a retried request still matches the one that was accepted.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub spoken: bool,
+    /// True when the voice that speaks the reply performs vocal cues such as `<laugh>` (Gemini's).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub voice_cues: bool,
 }
 
 impl SendRequest {
@@ -129,6 +132,8 @@ pub(crate) struct ReactRequest {
     pub active_app_id: Option<agent::apps::AppId>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub spoken: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub voice_cues: bool,
 }
 
 impl ReactRequest {
@@ -170,6 +175,7 @@ impl ReactRequest {
             feeling: None,
             active_app_id: self.active_app_id.clone(),
             spoken: self.spoken,
+            voice_cues: self.voice_cues,
         }
     }
 }
@@ -528,6 +534,7 @@ impl ChatState {
             active_app_id: request.active_app_id,
             feeling: request.feeling,
             spoken: request.spoken,
+            voice_cues: request.voice_cues,
             notices: Some(index)
                 .filter(|index| !index.is_empty())
                 .into_iter()

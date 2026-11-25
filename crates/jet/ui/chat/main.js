@@ -1,11 +1,12 @@
 // All chat components share one agent connection.
 
 import { createCommands } from '../workspace/commands.js';
+import { createCommandPanel } from '../workspace/command-panel.js';
 import { createCommandMenu } from '../workspace/completion.js';
 import { createToolBrowser } from '../workspace/tools.js';
 import { createWorkspace } from '../workspace/shell.js';
 import { createSession } from '../signin/session.js';
-import { h, icon } from '../dom.js';
+import { icon } from '../dom.js';
 import { failLoading, finishLoading } from '../loading.js';
 import { connectAgent } from '../bridge/agent.js';
 import { requestJson } from '../bridge/browser-agent.js';
@@ -68,14 +69,8 @@ async function start() {
   const skip = $('skip');
   document.body.prepend(skip);
   skip.addEventListener('click', (event) => { event.preventDefault(); workspace.showChat(); });
-  const commandResult = h('pre', { class: 'command-result', role: 'status', 'aria-label': 'Command result' });
-  $('rows').after(commandResult);
-  function reportCommand(text) {
-    commandResult.textContent = text;
-    page.classList.toggle('has-command-result', Boolean(text));
-    if (text && !page.hidden) commandResult.scrollIntoView({ block: 'nearest' });
-  }
-  const commands = createCommands({ workspace, report: reportCommand, settings, save: saveSettings, changed: () => { drawer.setContext(settings.model); refreshStatus(); } });
+  const reportCommand = createCommandPanel({ after: $('rows'), page, field: $('field') }).show;
+  const commands = createCommands({ workspace, report: reportCommand, settings, save: saveSettings, changed: () => { drawer.setContext(settings.model); refreshStatus(); }, forget: () => forget() });
   const systemReduces = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedMotion = () => settings.reducedMotion || systemReduces.matches;
   const applyReduced = () => document.documentElement.classList.toggle('reduced', reducedMotion());
@@ -378,6 +373,8 @@ async function start() {
   }
   const voice = {
     on: () => voiceToggle.on,
+    // Only Gemini performs a cue such as `<laugh>`; Phonon and the browser would read it out.
+    performsCues: () => voiceToggle.on && speaker() === 'gemini',
     cues,
     unlock: () => { if (voiceToggle.on) jetVoice.unlock(); },
     reveal: (options) => voiceToggle.on
