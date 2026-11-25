@@ -41,11 +41,11 @@ CONTEXT.md                        the glossary: one meaning for each word
 
 ## Run
 
-Jet is built with two speech models that run on the server, so its voice works both ways without a Gemini key: Phonon-2 hears the user, and Phonon 31m speaks Jet's replies. The Phonon-2 build compiles CrispASR, so it needs cmake and a C++ compiler first (`xcode-select --install` gives the compiler on macOS); Phonon is pure Rust. Download both models into `models/` at the repo root, which git ignores: Phonon-2 is 674 MB, Phonon 65 MB.
+Jet is built with two speech models that run on the server, so its voice works both ways without a Gemini key: Phonon-2 hears the user, and Phonon 31m speaks Jet's replies. The Phonon-2 build compiles CrispASR, so it needs cmake and a C++ compiler first (`xcode-select --install` gives the compiler on macOS); Phonon is pure Rust. Jet itself needs a current stable Rust ([rustup.rs](https://rustup.rs)). Download both models into `models/` at the repo root, which git ignores: Phonon-2 is 674 MB, Phonon 65 MB. Run these lines from the repo root; if the large download stops part-way (its checksum then fails), run its line again and it carries on from where it stopped.
 
 ```sh
 brew install cmake        # on Debian or Ubuntu: sudo apt install cmake g++
-mkdir -p models && curl -fL -o models/phonon2-q8_0.gguf https://huggingface.co/cstr/phonon2-GGUF/resolve/3ed3e6ad6e7ce63affffeede37328ff756efaa2f/phonon2-q8_0.gguf
+mkdir -p models && curl -fL -C - -o models/phonon2-q8_0.gguf https://huggingface.co/cstr/phonon2-GGUF/resolve/3ed3e6ad6e7ce63affffeede37328ff756efaa2f/phonon2-q8_0.gguf
 echo "a8c4a874195b83604ceb5d87c0e9b5ddf641ef1d5ec2d8e1ca2a040d25b2563a  models/phonon2-q8_0.gguf" | shasum -a 256 -c
 mkdir -p models/phonon-31m-en && cd models/phonon-31m-en
 R=https://huggingface.co/gradium/phonon-31m-en/resolve/8f7a37c94a4c58b04c8287300c53f11d2e208eae
@@ -61,7 +61,7 @@ cd ../..
 cargo run -p jet --features phonon2,phonon-tts -- --listen 127.0.0.1:8787 --data-dir ./jet-data
 ```
 
-Open `http://127.0.0.1:8787/`. Install and sign in to Claude Code, Codex or agy on the server, then select one of its models in Settings. The browser never silently selects a pretend agent. A missing provider is shown as an actionable status/error.
+Open `http://127.0.0.1:8787/` once the terminal prints `Jet listening on http://127.0.0.1:8787`, and sign in with the seeded demo admin, `shaunsurfing@gmail.com` and the password `000111` (see [Accounts and sign-in](#accounts-and-sign-in)). Install and sign in to Claude Code, Codex or agy on the server, then select one of its models in Settings. The browser never silently selects a pretend agent. A missing provider is shown as an actionable status/error.
 
 For access from another computer, choose a reachable listen address. `--public-origin https://jet.example` records the externally visible origin for app forwarding. `--ui-dir PATH` selects the shipped static asset directory; the default is this checkout's `crates/jet/ui`. Keep the UI files with the executable when deploying a copied build. `--disable-feelings` disables optional JEV classification for offline development/testing.
 
