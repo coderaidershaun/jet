@@ -23,6 +23,10 @@ test = false
 [features]
 # The loopback stand-ins for outside services, for the tests of crates that use this one.
 test-server = []
+# Phonon-2, the local speech model. It builds CrispASR with cmake, so it is off unless asked for.
+phonon2 = ["dep:crispasr"]
+# Phonon 31m, the local text-to-speech model. It is pure Rust, but adds some sixty crates, so it is off unless asked for.
+phonon-tts = ["dep:ptts"]
 
 [dependencies]
 base64 = { workspace = true }
@@ -39,6 +43,11 @@ tokio = { workspace = true }
 ureq = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
+crispasr = { git = "https://github.com/CrispStrobe/CrispASR", tag = "v0.8.55", optional = true }
+ptts = { version = "=0.7.1", features = ["hf"], optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+crispasr = { git = "https://github.com/CrispStrobe/CrispASR", tag = "v0.8.55", optional = true, features = ["metal"] }
 
 [dev-dependencies]
 axum = { workspace = true }

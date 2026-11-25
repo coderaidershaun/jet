@@ -147,7 +147,7 @@ No harness here drives the mic button yet. When one does, run Chrome with a fake
 --use-file-for-fake-audio-capture=/absolute/path/to/speech.wav
 ```
 
-The file plays once from the start when the microphone opens, so open it after the page has loaded and expect the words only if the server can hear (`GEMINI_API_KEY`), which spends a little quota. Without the key, `GET /api/voice` says hearing is unavailable and the mic shows why instead of listening.
+The file plays once from the start when the microphone opens, so open it after the page has loaded and expect the words only if an engine can hear: Gemini with `GEMINI_API_KEY`, which spends a little quota, or Phonon-2 in a build with `--features phonon2` and its model. Headless Chrome has no speech recognition of its own, so the Browser engine is always greyed out there. With no engine, `GET /api/voice` says hearing is unavailable on `hear.gemini` and `hear.phonon2`, and the mic shows why instead of listening.
 
 ## App isolation over the debugging protocol
 

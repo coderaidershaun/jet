@@ -15,7 +15,7 @@ const WAITING_KINDS = new Set(['suspended', 'muted']);
 const wordsOf = (text) => text.toLowerCase().match(SPOKEN_WORD) ?? [];
 
 /** True when most of the heard words are words Jet itself said a moment ago. */
-function isEcho(heard, jetWords) {
+export function isEcho(heard, jetWords) {
   const words = wordsOf(heard);
   if (words.length < 3) return false;
   const available = new Map();

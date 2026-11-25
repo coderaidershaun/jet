@@ -59,3 +59,23 @@ opt-level = 3
 
 [profile.dev.package.sha2]
 opt-level = 3
+
+# Phonon takes about 23 seconds to speak one sentence in an unoptimised build, far past the page's
+# wait for a clip, so its model crates are optimised even in debug builds.
+[profile.dev.package.ptts]
+opt-level = 3
+
+[profile.dev.package.xn]
+opt-level = 3
+
+[profile.dev.package.xn-gemm]
+opt-level = 3
+
+[profile.dev.package.xn-gemm-common]
+opt-level = 3
+
+[profile.dev.package.xn-gemm-f32]
+opt-level = 3
+
+[profile.dev.package.xn-gemm-f16]
+opt-level = 3

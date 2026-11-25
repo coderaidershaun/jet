@@ -150,6 +150,9 @@ fn restart_recovers_request_identity_without_replaying_provider() {
     // Settings and notes saved through the page survive forgetting the thread and a restart.
     let mut settings = host.get("/api/settings");
     settings["persona"]["name"] = "Ada".into();
+    settings["hearingEngine"] = "phonon2".into();
+    settings["phonon2Mode"] = "cpu".into();
+    settings["speakingEngine"] = "phonon".into();
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .build()
@@ -171,32 +174,42 @@ fn restart_recovers_request_identity_without_replaying_provider() {
     }
     assert_eq!(host.post("/api/chat/forget", serde_json::json!({})).0, 200);
     let host = host.restart();
-    assert_eq!(host.get("/api/settings")["persona"]["name"], "Ada");
+    let settings = host.get("/api/settings");
+    assert_eq!(settings["persona"]["name"], "Ada");
+    assert_eq!(settings["hearingEngine"], "phonon2");
+    assert_eq!(settings["phonon2Mode"], "cpu");
+    assert_eq!(settings["speakingEngine"], "phonon");
     assert_eq!(host.get("/api/memory")["memory"], "Remember");
     // Under --disable-voice the page is told why Jet cannot speak, and nothing is asked of Google.
     let voice = host.get("/api/voice");
-    assert_eq!(voice["available"], false);
-    assert_eq!(voice["reason"], "Voice is turned off on this server");
-    assert_eq!(voice["hear"]["available"], false);
-    assert_eq!(
-        voice["hear"]["reason"],
-        "Voice is turned off on this server"
-    );
+    for (way, engine) in [
+        ("speak", "gemini"),
+        ("speak", "phonon"),
+        ("hear", "gemini"),
+        ("hear", "phonon2"),
+    ] {
+        assert_eq!(voice[way][engine]["available"], false, "{way} {engine}");
+        assert_eq!(
+            voice[way][engine]["reason"],
+            "Voice is turned off on this server"
+        );
+    }
     let cues = voice["cues"].as_array().unwrap();
     assert!(
         cues.iter()
             .any(|cue| cue["tag"] == "<laugh>" && cue["weight"].as_u64().unwrap() > 0)
     );
-    let speech = host.post(
-        "/api/voice/speech",
-        serde_json::json!({"text":"Hello there."}),
-    );
-    assert_eq!(speech.0, 503);
-    assert_eq!(speech.1["kind"], "notConfigured");
-    let hear = host.post_bytes(
-        "/api/voice/hear?vocabulary=Jet&vocabulary=Quanty",
-        &[0; 3200],
-    );
-    assert_eq!(hear.0, 503);
-    assert_eq!(hear.1["kind"], "notConfigured");
+    for path in ["/api/voice/speech", "/api/voice/speech?engine=phonon"] {
+        let speech = host.post(path, serde_json::json!({"text":"Hello there."}));
+        assert_eq!(speech.0, 503, "{path}");
+        assert_eq!(speech.1["kind"], "notConfigured");
+    }
+    for query in [
+        "vocabulary=Jet&vocabulary=Quanty",
+        "vocabulary=Jet&engine=phonon2&mode=exact",
+    ] {
+        let hear = host.post_bytes(&format!("/api/voice/hear?{query}"), &[0; 3200]);
+        assert_eq!(hear.0, 503, "{query}");
+        assert_eq!(hear.1["kind"], "notConfigured");
+    }
 }

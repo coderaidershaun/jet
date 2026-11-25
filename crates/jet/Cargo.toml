@@ -4,6 +4,13 @@ version.workspace = true
 edition.workspace = true
 description = "Jet browser home and agent server"
 
+[features]
+# Phonon-2, the local speech model, as a voice engine. It needs cmake to build.
+# crispasr-sys is named only so that build.rs learns where its library was built.
+phonon2 = ["agent/phonon2", "dep:crispasr-sys"]
+# Phonon 31m, the local text-to-speech model, as a voice that speaks.
+phonon-tts = ["agent/phonon-tts"]
+
 [dependencies]
 agent = { path = "../agent" }
 argon2 = { workspace = true }
@@ -38,6 +45,7 @@ ureq = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
 zip = { workspace = true }
+crispasr-sys = { git = "https://github.com/CrispStrobe/CrispASR", tag = "v0.8.55", optional = true }
 
 [dev-dependencies]
 agent = { path = "../agent", features = ["test-server"] }

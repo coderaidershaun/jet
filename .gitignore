@@ -4,6 +4,8 @@
 .codex
 .scratch
 jet-data/
+# Downloaded speech models, such as Phonon-2
+/models/
 .rex
 
 # rex:ignore claude

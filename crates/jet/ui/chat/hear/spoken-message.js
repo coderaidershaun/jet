@@ -16,12 +16,13 @@ const UNHEARD = new Set(['failed', 'late']);
  *   reducedMotion: () => boolean,
  *   liveWords: { dropFinished: () => void, dropAll: () => void },
  *   voice: { audible: () => boolean, duck: () => void, unduck: () => void },
+ *   isEcho: (text: string) => boolean,
  *   silence: () => void,
  *   composer: { sendNow: () => boolean, setPending: (on: boolean) => void },
  * }} options   `forming` is the spoken message in the thread and `field` the message field, as the words land in them;
- *   `silence` quiets the voice of the reply that is running; `composer.sendNow` sends the spoken message as Enter would and says whether it went
+ *   `isEcho` says whether live words are Jet's own voice heard through the speakers; `silence` quiets the voice of the reply that is running; `composer.sendNow` sends the spoken message as Enter would and says whether it went
  */
-export function createSpokenMessage({ forming, field, clock, reducedMotion, liveWords, voice, silence, composer }) {
+export function createSpokenMessage({ forming, field, clock, reducedMotion, liveWords, voice, isEcho, silence, composer }) {
   const dictation = createDictation({ forming, field, clock, reducedMotion });
   let pausing = false;
   let duckedTurn = null;
@@ -98,7 +99,8 @@ export function createSpokenMessage({ forming, field, clock, reducedMotion, live
           break;
         case 'discarded':
           if (!forgetTurn(event.turnId)) break;
-          if (UNHEARD.has(event.reason) && dictation.keepLive()) sendTurn();
+          // The live words were never checked as heard words are, so Jet's own voice is caught here.
+          if (UNHEARD.has(event.reason) && !isEcho(dictation.live) && dictation.keepLive()) sendTurn();
           else dictation.discard();
           break;
       }

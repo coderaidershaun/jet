@@ -9,6 +9,9 @@ import { requestJson } from './browser-agent.js';
  * @property {string} model
  * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'} effort
  * @property {number} turnBudgetUsd
+ * @property {'gemini' | 'browser' | 'phonon2'} hearingEngine   the engine the user chose to hear them
+ * @property {'fast' | 'exact' | 'cpu'} phonon2Mode   how Phonon-2 decodes
+ * @property {'gemini' | 'browser' | 'phonon'} speakingEngine   the engine the user chose to speak Jet's replies
  * @property {string | null} [codexPath]   admin only; null = find Codex automatically
  * @property {string | null} [agyPath]   admin only; null = find agy automatically
  * @property {string | null} [claudePath]   admin only; null = find Claude Code on its own
@@ -26,6 +29,9 @@ function defaultSettings(isAdmin) {
     model: 'sonnet',
     effort: 'medium',
     turnBudgetUsd: 10,
+    hearingEngine: 'gemini',
+    phonon2Mode: 'fast',
+    speakingEngine: 'gemini',
     ...(isAdmin ? { claudePath: null, codexPath: null, agyPath: null } : {}),
   };
 }

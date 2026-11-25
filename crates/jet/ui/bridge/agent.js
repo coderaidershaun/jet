@@ -65,12 +65,12 @@ import { createBrowserAgent } from './browser-agent.js';
  * @property {() => Promise<Notes>} loadMemory
  * @property {(notes: { memory: string, user: string, recent: string }) => Promise<Notes>} saveMemory
  * @property {(text: string) => Promise<string>} renderMarkdown
- * @property {() => Promise<{ available: boolean, reason: string | null, warning: string | null, hear: { available: boolean, reason: string | null, warning: string | null }, cues: { tag: string, weight: number }[] }>} voiceStatus
- *   whether the server can speak and whether it can hear, and why not; `warning` is what Google last refused on that route, kept for ten minutes and cleared by an answer; `cues` lists the vocal tags the voice performs, each with the letters of time it takes
- * @property {(markdown: string, signal?: AbortSignal, mood?: string) => Promise<ArrayBuffer>} speech
- *   the spoken words of a piece of Markdown as raw 24 kHz 16-bit mono sound, said in the manner of the reply's `mood`; empty when there is nothing to say; rejects with `{ kind, message }`
- * @property {(pcm: Int16Array, vocabulary: string[], signal?: AbortSignal) => Promise<{ text: string }>} hear
- *   the words in a clip of raw 16 kHz 16-bit mono sound, empty when nobody spoke; `vocabulary` lists names to spell right; rejects with `{ kind, message }`
+ * @property {() => Promise<{ speak: { gemini: { available: boolean, reason: string | null, warning: string | null }, phonon: { available: boolean, reason: string | null, warning: null } }, hear: { gemini: { available: boolean, reason: string | null, warning: string | null }, phonon2: { available: boolean, reason: string | null, warning: null } }, cues: { tag: string, weight: number }[] }>} voiceStatus
+ *   whether each of the server's engines can speak and hear, and why not; `warning` is what Google last refused on that route, kept for ten minutes and cleared by an answer; `cues` lists the vocal tags the voice performs, each with the letters of time it takes
+ * @property {(markdown: string, signal?: AbortSignal, mood?: string, engine?: 'gemini' | 'phonon') => Promise<ArrayBuffer>} speech
+ *   the spoken words of a piece of Markdown as raw 24 kHz 16-bit mono sound, said by the server's `engine` (Gemini when missing) in the manner of the reply's `mood`, which only Gemini follows; empty when there is nothing to say; rejects with `{ kind, message }`
+ * @property {(pcm: Int16Array, vocabulary: string[], signal?: AbortSignal, choice?: { engine: 'gemini' | 'phonon2', mode?: 'fast' | 'exact' | 'cpu' }) => Promise<{ text: string }>} hear
+ *   the words in a clip of raw 16 kHz 16-bit mono sound, empty when nobody spoke; `vocabulary` lists names to spell right; `choice` names the server's engine, Gemini when missing; rejects with `{ kind, message }`
  * @property {(appId: string, path: string) => Promise<string>} readAppImage   rejects when no registered image route is available
  * @property {(file: File, onProgress?: (fraction: number) => void) => Promise<import('../chat/thread/store.js').Attachment>} uploadFile
  *   saves a file the user chose, hidden from Jet until a message carries it; rejects with a reason fit to show

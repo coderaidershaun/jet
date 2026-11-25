@@ -74,7 +74,14 @@ impl Refusal {
 impl From<VoiceError> for Refusal {
     fn from(error: VoiceError) -> Self {
         let (status, kind) = match &error {
-            VoiceError::NotConfigured { .. } | VoiceError::HearingNotConfigured { .. } => {
+            VoiceError::NotConfigured { .. }
+            | VoiceError::HearingNotConfigured { .. }
+            | VoiceError::Phonon2NotBuilt
+            | VoiceError::ModelMissing { .. }
+            | VoiceError::ModelLoad { .. }
+            | VoiceError::PhononNotBuilt
+            | VoiceError::PhononMissing { .. }
+            | VoiceError::PhononLoad { .. } => {
                 (StatusCode::SERVICE_UNAVAILABLE, RefusalKind::NotConfigured)
             }
             VoiceError::TooLong { .. } | VoiceError::AudioTooLong { .. } => {
@@ -84,9 +91,11 @@ impl From<VoiceError> for Refusal {
             VoiceError::Rejected {
                 status: 401 | 403, ..
             } => (StatusCode::BAD_GATEWAY, RefusalKind::Rejected),
-            VoiceError::Rejected { .. } | VoiceError::Http | VoiceError::Decode => {
-                (StatusCode::BAD_GATEWAY, RefusalKind::Http)
-            }
+            VoiceError::Rejected { .. }
+            | VoiceError::Http
+            | VoiceError::Decode
+            | VoiceError::Phonon2Failed(_)
+            | VoiceError::PhononFailed(_) => (StatusCode::BAD_GATEWAY, RefusalKind::Http),
         };
         Self {
             status,

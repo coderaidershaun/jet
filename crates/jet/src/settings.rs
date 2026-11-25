@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use agent::voice::PhononMode;
 use agent::{Effort, Model, Persona};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -16,6 +17,37 @@ pub(crate) struct Settings {
     pub effort: Effort,
     /// The most one Claude answer may cost, in US dollars.
     pub turn_budget_usd: f64,
+    /// The engine the user chose to hear them. The page falls back to another when it cannot.
+    pub hearing_engine: HearingEngine,
+    pub phonon2_mode: PhononMode,
+    /// The engine the user chose to speak Jet's replies. The page falls back to another when it cannot.
+    pub speaking_engine: SpeakingEngine,
+}
+
+/// What turns the user's speech into words.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum HearingEngine {
+    /// Google's Gemini, which needs `GEMINI_API_KEY`.
+    #[default]
+    Gemini,
+    /// The browser's own speech recognition, which runs in the page.
+    Browser,
+    /// The Phonon-2 model, run by this server.
+    Phonon2,
+}
+
+/// What turns Jet's replies into speech.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum SpeakingEngine {
+    /// Google's Gemini, which needs `GEMINI_API_KEY`.
+    #[default]
+    Gemini,
+    /// The browser's own speech synthesis, which runs in the page.
+    Browser,
+    /// The Phonon 31m model, run by this server.
+    Phonon,
 }
 
 impl Default for Settings {
@@ -26,6 +58,9 @@ impl Default for Settings {
             model: Model::default(),
             effort: Effort::default(),
             turn_budget_usd: 10.0,
+            hearing_engine: HearingEngine::default(),
+            phonon2_mode: PhononMode::default(),
+            speaking_engine: SpeakingEngine::default(),
         }
     }
 }

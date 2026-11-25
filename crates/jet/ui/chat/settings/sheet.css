@@ -47,18 +47,30 @@
 .status[data-found="false"] { color: var(--danger); }
 
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: 8px; }
-.switch-text { display: flex; flex-direction: column; font-size: 13px; line-height: 18px; }
+.switch-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 18px; }
+.switch-text > :first-child { font-weight: 600; }
 .switch { appearance: none; position: relative; flex: none; width: 48px; height: 28px; margin: 0; background: #2b3a46; border-radius: var(--r-s); transition: background 120ms; }
 .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: calc(var(--r-s) / 2); background: #fff; transition: transform 120ms; }
 .switch:checked { background: var(--accent); }
 .switch:checked::after { transform: translateX(20px); }
 .switch:disabled { opacity: .6; }
 
-
 .row-actions { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .confirm { margin-top: 12px; padding: 12px 14px; background: var(--surface-2); border-left: 2px solid var(--danger); border-radius: var(--r-s); }
 .confirm p { margin: 0 0 8px; font-size: 13px; }
 
-.model-picker { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.model-picker label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.model-picker select { max-width: 190px; padding: 5px 8px; border: 1px solid var(--edge); border-radius: var(--r-s); background: var(--surface-2); color: inherit; font: inherit; }
+/* A choice is a field like the text fields: its label above, a 44 px box below. Two sit side by side when the sheet is wide enough;
+   an engine's name with "(unavailable)" needs 190 px, so on a phone the voice choices stack. */
+.model-picker, .voice-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.voice-picker { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.model-picker label, .voice-picker label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.model-picker label > span, .voice-picker label > span { font-size: 13px; line-height: 18px; font-weight: 600; }
+.sheet select {
+  width: 100%; min-height: 44px; padding: 0 10px;
+  background: var(--surface-2); border: 1px solid var(--edge); border-radius: var(--r-s);
+  color: inherit; font-size: 16px; line-height: 22px;
+}
+/* The engine at work when it is not the one chosen: the answer to "which voice is this?", so it reads above the reasons. */
+.note.in-use { color: var(--fg); }
+.reasons .note { margin: 0 0 4px; }
+.reasons { margin-bottom: 8px; }

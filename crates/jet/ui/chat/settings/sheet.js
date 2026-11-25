@@ -9,6 +9,7 @@ import { buildMemory } from './memory.js';
 import { buildModel } from './model.js';
 import { paintNames } from './names.js';
 import { buildPersona } from './persona.js';
+import { buildVoice } from './voice.js';
 
 const SAVE_AFTER_EDIT_MS = 600;
 
@@ -61,10 +62,11 @@ export function createSheet({ dialog, context, onChange, save }) {
   const model = buildModel(ctx);
   const memory = buildMemory(ctx);
   const programs = buildClaude(ctx);
+  const voice = buildVoice(ctx);
   const saveError = h('p', { class: 'settings-save-error', role: 'alert' });
   // There is no Save button: every change saves itself a moment after the user stops typing, and this line says so.
   const saved = h('p', { class: 'sheet-saved', role: 'status', text: 'Changes save as you type' });
-  const body = h('div', { class: 'sheet-body' }, saveError, buildPersona(ctx), buildMotion(ctx), model.el, memory.el, buildGithub(ctx), ...programs.el);
+  const body = h('div', { class: 'sheet-body' }, saveError, buildPersona(ctx), model.el, voice.el, buildMotion(ctx), memory.el, buildGithub(ctx), ...programs.el);
 
   const closeButton = h('button', { class: 'icon-button', type: 'button', 'aria-label': 'Close settings', onClick: () => sheet.close() }, icon('close'));
   dialog.append(h('header', { class: 'sheet-head' }, h('h2', { id: 'sheet-title', text: 'Settings' }), saved, closeButton), body);
@@ -88,6 +90,7 @@ export function createSheet({ dialog, context, onChange, save }) {
       if (!dialog.open) dialog.showModal();
       requestAnimationFrame(() => dialog.classList.add('open'));
       model.refresh();
+      voice.refresh();
       memory.refresh();
       programs.refresh();
       if (sectionId) {

@@ -1,4 +1,4 @@
-import { note, section, switchRow } from './controls.js';
+import { section, switchRow } from './controls.js';
 
 /** @param {import('./sheet.js').SheetContext} ctx */
 export function buildMotion({ settings, changed, systemReducesMotion }) {
@@ -8,12 +8,12 @@ export function buildMotion({ settings, changed, systemReducesMotion }) {
   const motion = switchRow({
     label: 'Reduced motion',
     checked: settings.reducedMotion || systemReduces,
-    note: systemReduces ? 'On because your system asks for it' : 'Jet stops zooming and holds still',
+    note: systemReduces ? 'On because your system asks for it. Jet holds still, and panels fade' : 'Jet holds still, and panels fade instead of sliding',
     onChange: (on) => {
       settings.reducedMotion = on;
       changed('motion');
     },
   });
   motion.input.disabled = systemReduces;
-  return section('motion', 'Motion', motion.el, note('Reduced motion also makes panels fade instead of slide.'));
+  return section('motion', 'Motion', motion.el);
 }

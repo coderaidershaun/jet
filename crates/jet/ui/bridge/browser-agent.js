@@ -39,9 +39,14 @@ async function postVoice(path, { contentType, body, read }, fetcher, signal) {
 
 const requestAudio = (path, body, fetcher, signal) => postVoice(path, { contentType: 'application/json', body: JSON.stringify(body), read: (response) => response.arrayBuffer() }, fetcher, signal);
 
-/** The words in a clip of 16 kHz 16-bit mono sound. Only the bytes the view covers are sent, not the whole buffer behind it. */
-function requestWords(pcm, vocabulary, fetcher, signal) {
-  const query = vocabulary.map((term) => 'vocabulary=' + encodeURIComponent(term)).join('&');
+/**
+ * The words in a clip of 16 kHz 16-bit mono sound, heard by the server's `engine` ('gemini' when missing) in Phonon-2's
+ * `mode`. Only the bytes the view covers are sent, not the whole buffer behind it.
+ */
+function requestWords(pcm, vocabulary, { engine, mode } = {}, fetcher, signal) {
+  const terms = vocabulary.map((term) => 'vocabulary=' + encodeURIComponent(term));
+  const choice = engine === 'phonon2' ? ['engine=phonon2', 'mode=' + encodeURIComponent(mode ?? 'fast')] : [];
+  const query = [...terms, ...choice].join('&');
   const body = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength);
   return postVoice('/api/voice/hear' + (query ? '?' + query : ''), { contentType: 'audio/L16;rate=16000;channels=1', body, read: (response) => response.json() }, fetcher, signal);
 }
@@ -242,8 +247,9 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     saveMemory: (notes) => call('/api/memory', notes, 'PUT'),
     renderMarkdown: (text) => call('/api/markdown', { text }),
     voiceStatus: () => call('/api/voice'),
-    hear: (pcm, vocabulary, signal) => requestWords(pcm, vocabulary, fetcher, signal),
-    speech: (text, signal, mood) => requestAudio('/api/voice/speech', mood ? { text, mood } : { text }, fetcher, signal),
+    hear: (pcm, vocabulary, signal, choice) => requestWords(pcm, vocabulary, choice, fetcher, signal),
+    /** The engine is Gemini unless it is 'phonon'; the browser's own voice never reaches the server. */
+    speech: (text, signal, mood, engine) => requestAudio('/api/voice/speech' + (engine === 'phonon' ? '?engine=phonon' : ''), mood ? { text, mood } : { text }, fetcher, signal),
     readAppImage: (appId, path) => readAppImage(call, appId, path),
     uploadFile,
     async removeFile(id) {

@@ -30,7 +30,9 @@ import { createReveal } from './thread/throttle.js';
 import { createThreadView } from './thread/view.js';
 import { createJobWatcher } from './thread/cards/job-watch.js';
 import { createTurn } from './turn.js';
+import { SPEAKING, buttonStatus, engineInUse, enginesOf } from './voice/engines.js';
 import { createVoicePlayer } from './voice/player.js';
+import { createBrowserSpeaker } from './voice/speaker.js';
 import { createSpokenReveal } from './voice/spoken.js';
 import { createVoiceToggle } from './voice/toggle.js';
 import { createWarning } from './warning.js';
@@ -50,7 +52,7 @@ async function start() {
     agent.status(),
     agent.voiceStatus().catch((error) => {
       console.warn('the voice status could not be read:', error);
-      return { available: false, reason: 'The voice could not be reached', cues: [] };
+      return { cues: [] };
     }),
   ]);
 
@@ -311,6 +313,22 @@ async function start() {
   }
 
   const voicePlayer = createVoicePlayer();
+  const cues = voiceStatus.cues ?? [];
+  const browserSpeaker = createBrowserSpeaker({ cues });
+  let speakers = enginesOf(SPEAKING, voiceStatus.speak);
+  const speaker = () => engineInUse(SPEAKING, settings.speakingEngine, speakers);
+  const readSpeakers = async () => {
+    const latest = await agent.voiceStatus();
+    speakers = enginesOf(SPEAKING, latest.speak);
+    return latest;
+  };
+  /** Both voices, for the mic to hear whether Jet is talking and to start sound from a click. */
+  const jetVoice = {
+    unlock() { voicePlayer.unlock(); browserSpeaker.player.unlock(); },
+    audible: () => voicePlayer.audible() || browserSpeaker.player.audible(),
+    duck: () => voicePlayer.duck(),
+    unduck: () => voicePlayer.unduck(),
+  };
   // The first snapshot builds every row of the thread again, so a notice added before it would be lost, and the loading screen waits for it too.
   let resolveFirstSnapshot;
   const firstSnapshot = new Promise((resolve) => { resolveFirstSnapshot = resolve; });
@@ -322,14 +340,17 @@ async function start() {
   }
   const voiceToggle = createVoiceToggle({
     button: $('voice'),
-    status: voiceStatus,
-    check: () => agent.voiceStatus(),
+    status: buttonStatus(SPEAKING, settings.speakingEngine, speakers),
+    check: async () => {
+      await readSpeakers();
+      return buttonStatus(SPEAKING, settings.speakingEngine, speakers);
+    },
     replying: () => composer.replying,
     announce: (message) => { $('announce').textContent = message; },
     onChange: (on) => {
       if (on) {
-        voicePlayer.unlock();
-        agent.voiceStatus().then(speakerSwitchedOn, warn('the voice status could not be read'));
+        jetVoice.unlock();
+        readSpeakers().then(speakerSwitchedOn, warn('the voice status could not be read'));
       } else turn.silence();
       hear?.repaint();
     },
@@ -339,7 +360,7 @@ async function start() {
   /** Switching the speaker on says at once what Google last refused, without waiting for a reply to fail. */
   function speakerSwitchedOn(status) {
     speechWarning.switchedOn();
-    speechWarning.report(speechProblem(status.warning));
+    speechWarning.report(speaker() === 'gemini' ? speechProblem(status.speak?.gemini?.warning) : null);
   }
   if (voiceToggle.on) speakerSwitchedOn(voiceStatus);
   const showVoiceState = (state) => {
@@ -347,14 +368,21 @@ async function start() {
     live.speaking(state.speaking);
     if ('problem' in state) speechWarning.report(speechProblem(state.problem));
   };
-  const cues = voiceStatus.cues ?? [];
+  /** The voice of one reply: the engine in use when it starts speaks all of it. */
+  function spokenReveal({ render, paint }) {
+    const engine = speaker();
+    const { speak, player } = engine === 'browser'
+      ? browserSpeaker
+      : { speak: (text, signal) => agent.speech(text, signal, thread.slot?.mood, engine), player: voicePlayer };
+    return createSpokenReveal({ render, paint, speak, player, onState: showVoiceState, cues });
+  }
   const voice = {
     on: () => voiceToggle.on,
     cues,
-    unlock: () => { if (voiceToggle.on) voicePlayer.unlock(); },
-    reveal: ({ render, paint }) => voiceToggle.on
-      ? { reveal: createSpokenReveal({ render, paint, speak: (text, signal) => agent.speech(text, signal, thread.slot?.mood), player: voicePlayer, onState: showVoiceState, cues }), spoken: true }
-      : { reveal: createReveal({ render, paint }), spoken: false },
+    unlock: () => { if (voiceToggle.on) jetVoice.unlock(); },
+    reveal: (options) => voiceToggle.on
+      ? { reveal: spokenReveal(options), spoken: true }
+      : { reveal: createReveal(options), spoken: false },
   };
 
   const turn = createTurn({
@@ -383,7 +411,7 @@ async function start() {
     thread,
     turn,
     live,
-    voicePlayer,
+    voicePlayer: jetVoice,
     speakerOn: () => voiceToggle.on,
     settings,
     appLabels: workspace.appLabels,

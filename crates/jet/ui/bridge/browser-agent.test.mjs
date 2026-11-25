@@ -178,8 +178,20 @@ test('hear_posts_exactly_the_clip_bytes_with_its_vocabulary_and_throws_refusals_
   await agent.hear(clip, [], undefined);
   assert.equal(requests[1].path, '/api/voice/hear');
 
+  await agent.hear(clip, ['Jet'], undefined, { engine: 'phonon2', mode: 'cpu' });
+  assert.equal(requests[2].path, '/api/voice/hear?vocabulary=Jet&engine=phonon2&mode=cpu');
+
   const refusing = createBrowserAgent({ uuid: () => 'browser', fetch: async () => ({ ok: false, json: async () => ({ kind: 'rateLimited', message: 'Slow down.' }) }) });
   await assert.rejects(refusing.hear(clip, [], undefined), { kind: 'rateLimited', message: 'Slow down.' });
+});
+
+test('speech_asks_gemini_unless_phonon_is_named_and_reads_the_audio', async () => {
+  const paths = [];
+  const audio = new ArrayBuffer(4);
+  const agent = createBrowserAgent({ uuid: () => 'browser', fetch: async (path) => { paths.push(path); return { ok: true, arrayBuffer: async () => audio }; } });
+  assert.equal(await agent.speech('Hi.', undefined, 'warm', 'gemini'), audio);
+  assert.equal(await agent.speech('Hi.', undefined, undefined, 'phonon'), audio);
+  assert.deepEqual(paths, ['/api/voice/speech', '/api/voice/speech?engine=phonon']);
 });
 
 test('a failed event stream opens again only after the sign-in is checked, and not at all once it has ended', async () => {

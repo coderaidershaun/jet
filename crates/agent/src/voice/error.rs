@@ -1,6 +1,8 @@
 //! Why a clip of speech could not be made or heard. The messages are shown to the user, so none
 //! of them can hold the key.
 
+use std::path::PathBuf;
+
 /// What went wrong while turning words into speech, or speech into words.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum VoiceError {
@@ -20,4 +22,20 @@ pub enum VoiceError {
     Rejected { status: u16, message: String },
     #[error("Google's voice answer held no audio or words that could be read")]
     Decode,
+    #[error("This Jet was built without Phonon-2. Build it with --features phonon2")]
+    Phonon2NotBuilt,
+    #[error("Download phonon2-q8_0.gguf to {}", path.display())]
+    ModelMissing { path: PathBuf },
+    #[error("Phonon-2 could not open {}: {reason}", path.display())]
+    ModelLoad { path: PathBuf, reason: String },
+    #[error("Phonon-2 could not hear the clip: {0}")]
+    Phonon2Failed(String),
+    #[error("This Jet was built without Phonon. Build it with --features phonon-tts")]
+    PhononNotBuilt,
+    #[error("Download Phonon 31m to {}", path.display())]
+    PhononMissing { path: PathBuf },
+    #[error("Phonon could not load {}: {reason}", path.display())]
+    PhononLoad { path: PathBuf, reason: String },
+    #[error("Phonon could not speak the words: {0}")]
+    PhononFailed(String),
 }

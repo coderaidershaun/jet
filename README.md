@@ -29,7 +29,7 @@ crates/agent/src/                 the library behind the server
   markdown/                       a reply as safe HTML, math, vocal cues and the words to speak
   mcp/                            one HTTP client for app tools, with a shared catalogue
   turn/                           one exchange with Claude Code, Codex or agy: processes, stream, mood line
-  voice/                          Gemini speaking and hearing
+  voice/                          Gemini speaking and hearing, Phonon speaking and Phonon-2 hearing
   feeling.rs                      the optional JEV feeling classifier
   env_file.rs                     a setting from the environment or the nearest .env
 crates/agent/tests/fakes/         stand-ins for Claude Code, Codex and agy used by tests
@@ -41,8 +41,24 @@ CONTEXT.md                        the glossary: one meaning for each word
 
 ## Run
 
+Jet is built with two speech models that run on the server, so its voice works both ways without a Gemini key: Phonon-2 hears the user, and Phonon 31m speaks Jet's replies. The Phonon-2 build compiles CrispASR, so it needs cmake and a C++ compiler first (`xcode-select --install` gives the compiler on macOS); Phonon is pure Rust. Download both models into `models/` at the repo root, which git ignores: Phonon-2 is 674 MB, Phonon 65 MB.
+
 ```sh
-cargo run -p jet -- --listen 127.0.0.1:8787 --data-dir ./jet-data
+brew install cmake        # on Debian or Ubuntu: sudo apt install cmake g++
+mkdir -p models && curl -fL -o models/phonon2-q8_0.gguf https://huggingface.co/cstr/phonon2-GGUF/resolve/3ed3e6ad6e7ce63affffeede37328ff756efaa2f/phonon2-q8_0.gguf
+echo "a8c4a874195b83604ceb5d87c0e9b5ddf641ef1d5ec2d8e1ca2a040d25b2563a  models/phonon2-q8_0.gguf" | shasum -a 256 -c
+mkdir -p models/phonon-31m-en && cd models/phonon-31m-en
+R=https://huggingface.co/gradium/phonon-31m-en/resolve/8f7a37c94a4c58b04c8287300c53f11d2e208eae
+for f in model.q8.gguf config.json tokenizer.json default-voice.safetensors LICENSE; do curl -fsSL -o "$f" "$R/$f"; done
+shasum -a 256 -c <<'EOF'
+a7d9aad2cd6dc66473f24a08bc6d2939030ef4d751ef82349361fbef3272dbae  model.q8.gguf
+b5d0f88353638370d94035b7d73d7d6577c0554d78f8d7ecfd40490aae39ae85  config.json
+691a00068fa7b989f2f3e5ae5daa2d1a5bb319f2d5360deafcfb19a8bb6e7936  tokenizer.json
+dc537478eaadc1a5257fcda2e3501ab81e14c111a5d95a5838f350db2afd0f1a  default-voice.safetensors
+c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  LICENSE
+EOF
+cd ../..
+cargo run -p jet --features phonon2,phonon-tts -- --listen 127.0.0.1:8787 --data-dir ./jet-data
 ```
 
 Open `http://127.0.0.1:8787/`. Install and sign in to Claude Code, Codex or agy on the server, then select one of its models in Settings. The browser never silently selects a pretend agent. A missing provider is shown as an actionable status/error.
@@ -50,6 +66,16 @@ Open `http://127.0.0.1:8787/`. Install and sign in to Claude Code, Codex or agy 
 For access from another computer, choose a reachable listen address. `--public-origin https://jet.example` records the externally visible origin for app forwarding. `--ui-dir PATH` selects the shipped static asset directory; the default is this checkout's `crates/jet/ui`. Keep the UI files with the executable when deploying a copied build. `--disable-feelings` disables optional JEV classification for offline development/testing.
 
 App processes run independently; Jet does not install, launch or stop them.
+
+Voice input has three engines, chosen under Settings, Voice input: Gemini (needs `GEMINI_API_KEY` in `.env`), the browser's own speech recognition (Chrome, Edge and Safari have one), and Phonon-2. Jet looks for Phonon-2 at `models/phonon2-q8_0.gguf` in the folder it runs in, or at the path in `PHONON2_MODEL`. An engine that cannot hear is greyed out with the reason, and the mic is off only when none can hear. A Jet built without `--features phonon2` shows Phonon-2 as unavailable.
+
+Voice output has three engines too, chosen under Settings, Voice output: Gemini (needs `GEMINI_API_KEY`), the browser's own speech synthesis, and Phonon 31m. Jet looks for Phonon in the folder `models/phonon-31m-en`, or at the path in `PHONON_TTS_MODEL`, and speaks in the model's own voice unless `PHONON_TTS_VOICE` names another `.safetensors` file in the model's `voices/` folder. An engine that cannot speak is greyed out with the reason, and the speaker is off only when none can speak. A Jet built without `--features phonon-tts` shows Phonon as unavailable.
+
+Phonon-2 © Fermion Research, derived from NVIDIA Parakeet TDT 0.6B v3, CC-BY-4.0 ([model card](https://huggingface.co/FermionResearch/Phonon-2), [GGUF file](https://huggingface.co/cstr/phonon2-GGUF), [licence](https://creativecommons.org/licenses/by/4.0/)). Jet does not change or ship the weights; each user downloads them.
+
+Phonon 31m © Gradium, Apache-2.0 ([model card](https://huggingface.co/gradium/phonon-31m-en), [licence](https://www.apache.org/licenses/LICENSE-2.0)), built on Kyutai's Pocket TTS and Mimi codec (CC-BY-4.0). Jet does not ship the weights; each user downloads them with their LICENSE file, which must go with them wherever they are passed on. Jet uses only this Apache-2.0 English model.
+
+**Keep the Phonon-2 and Phonon attributions, here and in [docs/voice.md](docs/voice.md), when you copy, fork or change Jet; their licences require them wherever the models are used or offered.** The `phonon2` build also compiles [CrispASR](https://github.com/CrispStrobe/CrispASR) (MIT, with some parts under BSD-3-Clause and Apache-2.0) into the program, and the `phonon-tts` build compiles [ptts](https://github.com/gradium-ai/xn-ptts) (MIT OR Apache-2.0) and the crates it uses. Anyone who gives a built Jet to others must include the licence files of CrispASR, ptts and its crates with it.
 
 ## Accounts and sign-in
 
@@ -160,10 +186,12 @@ renewal timer maintains it automatically. The live Nginx site is
 `/etc/nginx/sites-available/jet`.
 Every route of this public deployment needs a sign-in (see Accounts and sign-in).
 
-To update the executable and restart Jet:
+To update the executable and restart Jet (the build needs cmake and g++, and Phonon-2 hears and Phonon speaks only once their models are in `/home/ubuntu/code/jet/models/`, the service's working folder; see Run). Jet loads CrispASR's libraries when it starts, so the second and third lines install them where the system's loader finds them, and Jet still starts after `target` is cleaned. On Linux they go to `/usr/local/lib`, not beside the program, because CrispASR's own library looks for the ggml libraries only in its build folder and the system's places. On a Mac, copying the `.dylib` files beside the program is enough.
 
 ```sh
-cargo build -p jet --release --locked
+cargo build -p jet --release --locked --features phonon2,phonon-tts
+L=$(ls -td target/release/build/crispasr-sys-*/out/crispasr-build | head -1)
+sudo cp -a "$L"/src/libcrispasr.so* $(find "$L/ggml/src" -name 'libggml*.so*') /usr/local/lib/ && sudo ldconfig
 install -m 0755 target/release/jet /home/ubuntu/.local/bin/jet.new
 mv /home/ubuntu/.local/bin/jet.new /home/ubuntu/.local/bin/jet
 sudo systemctl restart jet
@@ -690,7 +718,7 @@ cargo fmt --all -- --check
 (cd crates/jet/ui && node --test)
 ```
 
-These checks use local free fixtures. Browser host integration tests require Python 3 for the controlled CLI stand-in. No desktop SDK or webview is needed.
+These checks use local free fixtures. The clippy check builds every feature, so it compiles CrispASR and needs cmake and a C++ compiler, as Run says. Browser host integration tests require Python 3 for the controlled CLI stand-in. No desktop SDK or webview is needed.
 
 Optional feelings use `JEV_API_KEY`, with the existing nearest-`.env` lookup. That service is separate from the provider; absence or failure falls back to neutral. Only deliberately run live tests with `REX_PROD_API=true` when intending to contact that service.
 

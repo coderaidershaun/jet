@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSpokenMessage } from './spoken-message.js';
+import { isEcho } from './engine/hearing.js';
 
 /** The thread's forming message, the field and the page around them. Send works as on the page: it takes the forming message, tells the spoken message so, and the bubble becomes the sent message. */
-function room({ canSend = true, audible = false } = {}) {
+function room({ canSend = true, audible = false, jetSaid = '' } = {}) {
   const forming = { text: '', write(text) { forming.text = text; }, drop() { forming.text = ''; } };
   const field = { text: '', write(text) { field.text = text; } };
   const page = { sent: [], halo: false, ducked: false, silenced: 0, canSend, audible };
@@ -14,6 +15,7 @@ function room({ canSend = true, audible = false } = {}) {
     reducedMotion: () => true,
     liveWords: { dropFinished() {}, dropAll() {} },
     voice: { audible: () => page.audible, duck() { page.ducked = true; }, unduck() { page.ducked = false; } },
+    isEcho: (text) => isEcho(text, jetSaid),
     silence() { page.silenced++; },
     composer: {
       sendNow() {
@@ -121,6 +123,13 @@ test("a turn the mic cut short or threw away never sends itself unless Google co
     unheard.spoken.hear({ kind: 'discarded', turnId: 't1', reason });
     assert.deepEqual(unheard.page.sent, ['Hello there'], reason);
   }
+  // Jet's own voice through the speakers is not sent as the person's message.
+  const echo = room({ jetSaid: 'The kite festival is on Saturday at nine thirty.' });
+  echo.spoken.hear(speech('t1'));
+  echo.spoken.showLive('the kite festival is on Saturday');
+  echo.spoken.hear({ kind: 'discarded', turnId: 't1', reason: 'failed' });
+  assert.deepEqual(echo.page.sent, []);
+  assert.equal(echo.forming.text, '');
   const nothing = room();
   nothing.spoken.hear(speech('t1'));
   nothing.spoken.hear({ kind: 'discarded', turnId: 't1', reason: 'failed' });

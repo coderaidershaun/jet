@@ -132,6 +132,11 @@ export function createDictation({ forming, field, clock, reducedMotion }) {
       flush();
     },
 
+    /** The live words showing, which no heard words have replaced yet. */
+    get live() {
+      return tail;
+    },
+
     /**
      * Google gave no words for the turn, so the live words showing stay as its words.
      * @returns {boolean} whether any live words showed

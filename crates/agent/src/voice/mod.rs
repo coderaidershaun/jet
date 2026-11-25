@@ -1,16 +1,21 @@
-//! Jet's voice, both ways: the words of a reply as Gemini speech, and a clip of the user's speech
-//! as words. The key, the voice and the models are read from the environment or the nearest
-//! `.env` on every call, never from the settings.
+//! Jet's voice, both ways: the words of a reply as speech, made by Gemini or by Phonon on the
+//! server, and a clip of the user's speech as words, heard by Gemini or by Phonon-2 on the server. The key, the voice and the models are
+//! read from the environment or the nearest `.env` on every call, never from the settings.
 
 mod configuration;
 mod error;
 mod gemini;
+mod local;
+mod phonon;
+mod phonon2;
 mod wav;
 
 use crate::markdown::spoken_words;
 use configuration::{Hearing, Speaking};
 pub use error::VoiceError;
 use gemini::Gemini;
+pub use phonon::Phonon;
+pub use phonon2::{Phonon2, PhononMode};
 
 /// The most characters of Markdown one call speaks.
 const MAX_CHARACTERS: usize = 2_000;
@@ -62,6 +67,16 @@ pub fn clip_seconds(pcm: &[u8]) -> u32 {
 /// Returns [`VoiceError::TooLong`] past 2,000 characters, [`VoiceError::NotConfigured`] when
 /// `.env` lacks the key or the voice, and the other errors when Gemini fails.
 pub fn speak(markdown: &str, style: Option<&str>) -> Result<Vec<u8>, VoiceError> {
+    let words = words_to_speak(markdown)?;
+    if words.is_empty() {
+        return Ok(Vec::new());
+    }
+    let Speaking { key, voice, model } = Speaking::read()?;
+    Gemini::new(key, model).speak(&voice, &words, style)
+}
+
+/// The words of a piece of Markdown that a voice says aloud, refused past 2,000 characters.
+fn words_to_speak(markdown: &str) -> Result<String, VoiceError> {
     let length = markdown.chars().count();
     if length > MAX_CHARACTERS {
         return Err(VoiceError::TooLong {
@@ -69,12 +84,7 @@ pub fn speak(markdown: &str, style: Option<&str>) -> Result<Vec<u8>, VoiceError>
             limit: MAX_CHARACTERS,
         });
     }
-    let words = spoken_words(markdown);
-    if words.is_empty() {
-        return Ok(Vec::new());
-    }
-    let Speaking { key, voice, model } = Speaking::read()?;
-    Gemini::new(key, model).speak(&voice, &words, style)
+    Ok(spoken_words(markdown))
 }
 
 /// The words in a clip of raw 16 kHz 16-bit little-endian mono audio, empty when the clip holds
@@ -84,6 +94,16 @@ pub fn speak(markdown: &str, style: Option<&str>) -> Result<Vec<u8>, VoiceError>
 /// Returns [`VoiceError::AudioTooLong`] past 20 seconds, [`VoiceError::HearingNotConfigured`]
 /// when `.env` lacks the key, and the other errors when Gemini fails.
 pub fn hear(pcm: &[u8], vocabulary: &[String]) -> Result<String, VoiceError> {
+    let pcm = checked_clip(pcm)?;
+    if pcm.is_empty() {
+        return Ok(String::new());
+    }
+    let Hearing { key, model } = Hearing::read()?;
+    Gemini::new(key, model).hear(&wav::with_header(pcm, HEAR_SAMPLE_RATE), &clamp(vocabulary))
+}
+
+/// The clip without a last odd byte, refused past 20 seconds.
+fn checked_clip(pcm: &[u8]) -> Result<&[u8], VoiceError> {
     let pcm = &pcm[..pcm.len() & !1];
     let seconds = clip_seconds(pcm);
     if seconds > MAX_CLIP_SECONDS {
@@ -92,11 +112,7 @@ pub fn hear(pcm: &[u8], vocabulary: &[String]) -> Result<String, VoiceError> {
             limit: MAX_CLIP_SECONDS,
         });
     }
-    if pcm.is_empty() {
-        return Ok(String::new());
-    }
-    let Hearing { key, model } = Hearing::read()?;
-    Gemini::new(key, model).hear(&wav::with_header(pcm, HEAR_SAMPLE_RATE), &clamp(vocabulary))
+    Ok(pcm)
 }
 
 /// The vocabulary a call may send: trimmed, without empty, repeated or overlong values, and at

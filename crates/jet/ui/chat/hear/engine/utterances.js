@@ -17,7 +17,8 @@ const FATAL_KINDS = new Set(['notConfigured', 'rejected']);
  *   onFatal: (error: { kind: string, message: string }) => void,
  *   clock?: { after: (fn: () => void, ms: number) => () => void },
  *   stopOnFailure?: boolean,
- * }} options   `transcribe` rejects with `{ kind, message }`; a refused key or a missing one is fatal, anything else is tried once more.
+ * }} options   `transcribe` rejects with `{ kind, message }`; a refused key or a missing one is fatal, one with `retry: false` fails
+ *   at once, and anything else is tried once more.
  *   `stopOnFailure` is true when the page has nothing to send without Google's words: a clip that fails again is then fatal too
  */
 export function createUtterances({ transcribe, vocabulary, onWords, onFatal, clock = realClock, stopOnFailure = false }) {
@@ -56,7 +57,7 @@ export function createUtterances({ transcribe, vocabulary, onWords, onFatal, clo
         if (FATAL_KINDS.has(error?.kind) || (item.retried && stopOnFailure)) {
           stop();
           onFatal({ kind: error.kind, message: error.message });
-        } else if (!item.retried) {
+        } else if (!item.retried && error?.retry !== false) {
           item.retried = true;
           item.cancelTimers.push(clock.after(() => item.status === 'fetching' && request(item), RETRY_AFTER_MS));
         } else {

@@ -25,12 +25,12 @@ const BLOCKED_MESSAGE = 'The browser blocked sound; click the speaker to allow i
  * @param {{
  *   render: (text: string) => Promise<string>,
  *   paint: (html: string) => void,
- *   speak: (markdown: string, signal: AbortSignal) => Promise<ArrayBuffer>,
- *   player: { ready: () => boolean, now: () => number, outputLatency: () => number, play: (pcm: ArrayBuffer, at: number) => { start: number, end: number }, silence: () => void },
+ *   speak: (markdown: string, signal: AbortSignal) => Promise<{ byteLength: number }>,
+ *   player: { ready: () => boolean, now: () => number, outputLatency: () => number, play: (clip: any, at: number) => { start: number, end: number }, silence: () => void },
  *   clock?: { now: () => number, after: (fn: () => void, ms: number) => () => void },
  *   onState?: (state: { speaking: boolean, problem?: string | null }) => void,
  *   cues?: import('./segment.js').Cue[],
- * }} options   `speak` rejects with `{ kind, message }`; `problem` is a message when the voice failed and null once a clip plays again
+ * }} options   `speak` gives a clip that only `player` reads, such as raw sound, and rejects with `{ kind, message }`; `problem` is a message when the voice failed and null once a clip plays again
  */
 export function createSpokenReveal({ render, paint, speak, player, clock = realClock, onState = () => {}, cues = [] }) {
   let renderMs = null;
