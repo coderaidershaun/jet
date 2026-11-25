@@ -4,7 +4,6 @@
 use super::Server;
 use crate::account::SignedIn;
 use crate::chat::BridgeError;
-use crate::files::Artifact;
 use crate::objectives::{ObjectiveError, Pane};
 use crate::on_worker;
 use crate::store::{ObjectiveId, StepId, TaskId};
@@ -42,29 +41,13 @@ async fn run<T: Serialize + Send + 'static>(
     Ok(Json(done))
 }
 
-/// What the pane draws: the plan and, beside it, every file of the user that Jet can see.
-#[derive(Serialize)]
-struct Read {
-    #[serde(flatten)]
-    pane: Pane,
-    artifacts: Vec<Artifact>,
-}
-
-async fn read(State(host): State<Server>, signed_in: SignedIn) -> Result<Json<Read>, Response> {
+async fn read(State(host): State<Server>, signed_in: SignedIn) -> Result<Json<Pane>, Response> {
     let (user, is_admin) = (signed_in.user.id, signed_in.user.is_admin);
-    let files = host.files.clone();
     let Json(pane) = run(host, false, user, move |objectives| objectives.pane(user)).await?;
-    let artifacts = on_worker(move || files.artifacts(user))
-        .await
-        .map_err(|failed| BridgeError::from(failed).into_response())?
-        .map_err(|error| BridgeError::from(error).into_response())?;
-    Ok(Json(Read {
-        pane: if is_admin {
-            pane
-        } else {
-            pane.without_admin_detail()
-        },
-        artifacts,
+    Ok(Json(if is_admin {
+        pane
+    } else {
+        pane.without_admin_detail()
     }))
 }
 

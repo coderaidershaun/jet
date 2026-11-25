@@ -1,7 +1,13 @@
-//! Lets the page upload, delete, download and view files.
+//! Lets the page upload, list, change, delete, download and view the signed-in user's files,
+//! across all of their chats.
 
-use super::{About, FileError, FileKind, Files, MAX_FILE_BYTES, OpenedFile};
-use crate::{account::SignedIn, on_worker};
+use super::{About, Artifact, FileError, FileKind, Files, Library, MAX_FILE_BYTES, OpenedFile};
+use crate::{
+    account::SignedIn,
+    chat::Chats,
+    on_worker,
+    store::{ChatId, UserId},
+};
 use axum::{
     Extension, Json, Router,
     body::Bytes,
@@ -14,23 +20,36 @@ use axum::{
         },
     },
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use serde::Deserialize;
+use serde_json::json;
+use std::sync::Arc;
 
 pub(crate) fn router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
     Files: FromRef<S>,
+    Arc<Chats>: FromRef<S>,
 {
     Router::new()
         .route(
             "/api/files",
-            post(upload_file).layer(DefaultBodyLimit::max(UPLOAD_BODY_LIMIT)),
+            post(upload_file)
+                .layer(DefaultBodyLimit::max(UPLOAD_BODY_LIMIT))
+                .get(list_files),
         )
-        .route("/api/files/{id}", get(download_file).delete(remove_file))
+        .route("/api/files/archive", get(archive_all).post(archive_chosen))
+        .route(
+            "/api/files/{id}",
+            get(download_file).delete(delete_file).patch(rename_file),
+        )
         .route("/api/files/{id}/view", get(view_file))
         .route("/api/files/{id}/frame", get(frame_file))
+        .route("/api/files/{id}/chats", post(add_to_chat))
+        .route("/api/files/{id}/chats/{chat}", delete(remove_from_chat))
+        .route("/api/files/{id}/versions", get(versions))
+        .route("/api/files/{id}/restore", post(restore))
 }
 
 /// A little over the largest file, so that the exact limit is enforced where the file is kept and
@@ -55,17 +74,181 @@ async fn upload_file(
         files.upload(user, &query.name, Vec::from(body)).await?,
     ))
 }
-/// Deletes an upload that was never sent.
-async fn remove_file(
+/// Runs a change on a worker and, when it worked, tells the user's pages that their files changed.
+async fn change<T: Send + 'static>(
+    (files, chats): (Files, Arc<Chats>),
+    user: UserId,
+    call: impl FnOnce(&Files) -> Result<T, FileError> + Send + 'static,
+) -> Result<T, FileError> {
+    let done = on_worker(move || call(&files))
+        .await
+        .map_err(FileError::Worker)??;
+    chats.pane_changed(user);
+    Ok(done)
+}
+
+/// Every file of the user that Jet can see, across all chats, and the room they take.
+async fn list_files(
     State(files): State<Files>,
+    signed_in: SignedIn,
+) -> Result<Json<Library>, FileError> {
+    let user = signed_in.user.id;
+    let library = on_worker(move || files.library(user))
+        .await
+        .map_err(FileError::Worker)??;
+    Ok(Json(library))
+}
+
+/// Deletes the user's file from every chat that holds it, or an upload that was never sent.
+async fn delete_file(
+    State(files): State<Files>,
+    State(chats): State<Arc<Chats>>,
     signed_in: SignedIn,
     Path(id): Path<String>,
 ) -> Result<StatusCode, FileError> {
     let user = signed_in.user.id;
-    on_worker(move || files.remove(user, &id))
+    change((files, chats), user, move |files| files.delete(user, &id)).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct NewName {
+    name: String,
+}
+/// Renames the user's file, keeping its kind.
+async fn rename_file(
+    State(files): State<Files>,
+    State(chats): State<Arc<Chats>>,
+    signed_in: SignedIn,
+    Path(id): Path<String>,
+    Json(request): Json<NewName>,
+) -> Result<Json<Artifact>, FileError> {
+    let user = signed_in.user.id;
+    let renamed = change((files, chats), user, move |files| {
+        let keeper = files.keeper(user, &id)?;
+        files.rename(user, keeper, &id, &request.name)
+    });
+    Ok(Json(renamed.await?.0))
+}
+
+#[derive(Deserialize)]
+struct ToChat {
+    chat: i64,
+}
+/// Lets another chat of the user hold the user's file too. Only the user's own request does this.
+async fn add_to_chat(
+    State(files): State<Files>,
+    State(chats): State<Arc<Chats>>,
+    signed_in: SignedIn,
+    Path(id): Path<String>,
+    Json(request): Json<ToChat>,
+) -> Result<Json<Artifact>, FileError> {
+    let (user, to) = (signed_in.user.id, ChatId(request.chat));
+    let shared = change((files, chats), user, move |files| {
+        files.share(user, to, &id, to)
+    });
+    Ok(Json(shared.await?.0))
+}
+
+/// Takes the user's file out of one chat, but not out of the last chat that holds it.
+async fn remove_from_chat(
+    State(files): State<Files>,
+    State(chats): State<Arc<Chats>>,
+    signed_in: SignedIn,
+    Path((id, chat)): Path<(String, i64)>,
+) -> Result<Json<Artifact>, Response> {
+    let user = signed_in.user.id;
+    let removed = change((files, chats), user, move |files| {
+        files.remove_from(user, &id, ChatId(chat))
+    });
+    match removed.await {
+        Ok(file) => Ok(Json(file)),
+        Err(error @ FileError::LastChat) => {
+            let body = json!({"kind": "conflict", "message": error.to_string()});
+            Err((StatusCode::CONFLICT, Json(body)).into_response())
+        }
+        Err(error) => Err(error.into_response()),
+    }
+}
+
+/// The current version of the user's file and the earlier ones kept, newest first.
+async fn versions(
+    State(files): State<Files>,
+    signed_in: SignedIn,
+    Path(id): Path<String>,
+) -> Result<Response, FileError> {
+    let user = signed_in.user.id;
+    let versions = on_worker(move || files.versions(user, &id))
         .await
         .map_err(FileError::Worker)??;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(Json(versions).into_response())
+}
+
+#[derive(Deserialize)]
+struct Restore {
+    version: u32,
+}
+/// Brings an earlier version of the user's file back as its newest version.
+async fn restore(
+    State(files): State<Files>,
+    State(chats): State<Arc<Chats>>,
+    signed_in: SignedIn,
+    Path(id): Path<String>,
+    Json(request): Json<Restore>,
+) -> Result<Json<Artifact>, FileError> {
+    let user = signed_in.user.id;
+    let keeper = {
+        let (files, id) = (files.clone(), id.clone());
+        on_worker(move || files.keeper(user, &id))
+            .await
+            .map_err(FileError::Worker)??
+    };
+    let (file, _) = files
+        .restore(user, keeper, &id, Some(request.version))
+        .await?;
+    chats.pane_changed(user);
+    Ok(Json(file))
+}
+
+/// Every file of the user that Jet can see, as one zip.
+async fn archive_all(
+    State(files): State<Files>,
+    signed_in: SignedIn,
+) -> Result<Response, FileError> {
+    archive(files, signed_in.user.id, None).await
+}
+
+#[derive(Deserialize)]
+struct Chosen {
+    ids: Vec<String>,
+}
+/// The chosen files of the user as one zip. One id that is not the user's refuses them all.
+async fn archive_chosen(
+    State(files): State<Files>,
+    signed_in: SignedIn,
+    Json(request): Json<Chosen>,
+) -> Result<Response, FileError> {
+    archive(files, signed_in.user.id, Some(request.ids)).await
+}
+
+async fn archive(
+    files: Files,
+    user: UserId,
+    ids: Option<Vec<String>>,
+) -> Result<Response, FileError> {
+    let (name, bytes) = on_worker(move || files.archive(user, ids.as_deref()))
+        .await
+        .map_err(FileError::Worker)??;
+    let headers = [
+        (CONTENT_TYPE, HeaderValue::from_static("application/zip")),
+        (
+            CONTENT_DISPOSITION,
+            content_disposition(&name, Disposition::Attachment)
+                .ok_or(FileError::NameNotSendable)?,
+        ),
+        (CACHE_CONTROL, HeaderValue::from_static("private, no-cache")),
+    ];
+    Ok((headers, bytes).into_response())
 }
 
 /// Even a file opened on Jet's own address can run nothing and load nothing.

@@ -3,7 +3,7 @@ import { requestJson } from '../bridge/browser-agent.js';
 import { createFrameContainer } from './frames.js';
 import { createPlanPane } from '../plan/pane.js';
 
-export function createWorkspace({ agent, page, onTools = () => {}, openChat = () => {} }) {
+export function createWorkspace({ agent, page, library, titleOf, onTools = () => {}, openChat = () => {} }) {
   const narrow = matchMedia('(max-width: 759px)');
   let expanded = !narrow.matches;
   let mode = 'chat', apps = [], selected = null, refreshNumber = 0;
@@ -18,7 +18,11 @@ export function createWorkspace({ agent, page, onTools = () => {}, openChat = ()
   const frameHost = h('div', { class: 'workspace-frames', tabindex: '-1', 'aria-label': 'App content' });
   const notice = h('p', { class: 'workspace-notice', role: 'status' });
   const toolsContent = h('section', { id: 'tools-content', 'aria-label': 'App tools', tabindex: '-1' });
-  const content = h('main', { class: 'workspace-content' }, page, frameHost, toolsContent, notice);
+  const content = h('main', { class: 'workspace-content' }, page, library.el, frameHost, toolsContent, notice);
+  // The library is one row above the chats, so it stays in sight however long the chat list grows.
+  const filesButton = h('button', { type: 'button', class: 'chat-open', 'aria-label': 'Files', title: 'Files', onClick: () => api.showFiles() },
+    h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, icon('files')), h('span', { class: 'nav-label', text: 'Files' }));
+  inner.querySelector('.chats').before(h('nav', { class: 'files-nav', 'aria-label': 'Files' }, h('div', { class: 'files-row' }, filesButton)));
   const sidePane = h('aside', { class: 'side-pane', id: 'side-pane', hidden: true });
   // On a phone the chats are one button in the chat's head, and open over the page with a scrim that closes them.
   const chatsCount = h('span', { class: 'chats-count', 'aria-hidden': 'true', hidden: true });
@@ -26,7 +30,7 @@ export function createWorkspace({ agent, page, onTools = () => {}, openChat = ()
   const scrim = h('div', { class: 'drawer-scrim', 'aria-hidden': 'true', hidden: true, onClick: () => closeChats() });
   const root = h('div', { class: 'workspace-shell' }, drawer, content, sidePane, scrim);
   document.body.prepend(root);
-  content.append(chatsButton, createPlanPane({ shell: root, host: sidePane, openChat }).button);
+  content.append(chatsButton, createPlanPane({ shell: root, host: sidePane, openChat, titleOf, showFiles: () => api.showFiles() }).button);
 
   function openChats() {
     expanded = true;
@@ -51,6 +55,8 @@ export function createWorkspace({ agent, page, onTools = () => {}, openChat = ()
     page.hidden = mode !== 'chat';
     frameHost.hidden = mode !== 'app';
     toolsContent.hidden = mode !== 'tools';
+    if (mode !== 'files') library.hide();
+    if (mode === 'files') filesButton.setAttribute('aria-current', 'page'); else filesButton.removeAttribute('aria-current');
     toggle.setAttribute('aria-expanded', String(expanded));
     const label = mode !== 'chat' ? 'Return to chat' : expanded ? 'Collapse drawer' : 'Expand drawer';
     toggle.setAttribute('aria-label', label);
@@ -101,6 +107,12 @@ export function createWorkspace({ agent, page, onTools = () => {}, openChat = ()
     }
   }, true);
   narrow.addEventListener('change', () => { expanded = !narrow.matches && mode === 'chat'; paint(); });
+  // The library has an address of its own, so back leaves it, and back while files are being chosen ends the choice first.
+  addEventListener('popstate', () => {
+    if (library.choosing && history.state?.files !== 'choose') library.stopChoosing(true);
+    if (location.hash === '#files') { if (mode !== 'files') api.showFiles(false); }
+    else if (mode === 'files') api.showChat();
+  });
   agent.onRegistryChanged?.(refresh);
   const api = {
     activeAppId: () => selected,
@@ -110,7 +122,18 @@ export function createWorkspace({ agent, page, onTools = () => {}, openChat = ()
     toolsContent,
     openApp(id) { const app = apps.find(item => item.id === id); if (!app) throw new Error('This app is no longer registered.'); select(app); },
     async reloadApp(id) { if (!await refresh()) throw new Error('Apps could not be refreshed. Try reloading again.'); if (!apps.some(item => item.id === id)) throw new Error('This app is no longer registered.'); frames.reload(id); },
-    showChat() { mode = 'chat'; expanded = !narrow.matches; paint(); document.getElementById('field').focus(); },
+    showChat() {
+      if (location.hash === '#files') history.replaceState(null, '', location.pathname + location.search);
+      mode = 'chat'; expanded = !narrow.matches; paint(); document.getElementById('field').focus();
+    },
+    /** Shows the library in the main area. `remember` adds it to the browser's history, so back returns to the chat. */
+    showFiles(remember = true) {
+      if (remember && mode !== 'files') history.pushState({ files: 'list' }, '', '#files');
+      mode = 'files';
+      if (narrow.matches) expanded = false;
+      paint();
+      library.show({ narrow: narrow.matches });
+    },
     /** The number of unread entries in all chats, on the phone's chats button. */
     setUnread(count) {
       chatsCount.hidden = count === 0;
@@ -123,5 +146,6 @@ export function createWorkspace({ agent, page, onTools = () => {}, openChat = ()
   };
   paint();
   refresh();
+  if (location.hash === '#files') api.showFiles(false);
   return api;
 }

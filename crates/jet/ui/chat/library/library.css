@@ -1,0 +1,86 @@
+/* The library of the user's files, and the file row it shares with the plan pane: rows with a hairline between them,
+   a field to search, and plain text buttons. The column is as wide as reading a name and its facts allows. */
+.library { display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: auto; background: var(--ground); scrollbar-width: thin; }
+.library-head {
+  position: sticky; top: 0; z-index: 3; flex: none; height: 52px; padding: 0 calc(var(--gutter) + 52px); background: var(--ground); border-bottom: 1px solid var(--line);
+}
+.library-title { margin: 0; overflow: hidden; color: var(--fg); font-size: 14px; font-weight: 600; line-height: 52px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+/* The title takes the focus only so a phone's keyboard stays down; it is not a control, so it shows no ring. */
+.library-title:focus { outline: none; }
+.library-column { display: flex; flex-direction: column; width: min(100%, 880px); margin: 0 auto; padding: 0 var(--gutter) max(32px, env(safe-area-inset-bottom)); }
+.library-tools { position: sticky; top: 52px; z-index: 2; background: var(--ground); }
+.library-bar { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 8px 0; }
+.library-search {
+  flex: 1; min-width: 0; height: 36px; padding: 0 10px; background: var(--surface); border: 1px solid var(--edge); border-radius: var(--r-s);
+  outline-offset: 0; font-size: 14px;
+}
+.library-search::placeholder { color: var(--muted); }
+.library .text-button { min-height: 36px; padding: 0 8px; font-size: 13px; }
+.library .text-button:disabled { color: var(--muted); opacity: .6; }
+.library-count { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.library-zip { height: 36px; padding: 0 14px; background: var(--fill); border: 0; border-radius: var(--r-s); color: var(--on-fill); font-size: 13px; font-weight: 600; }
+.library-zip:hover:not(:disabled) { background: var(--fill-hover); }
+.library-zip:disabled { opacity: .45; }
+.library .library-delete { color: var(--muted); }
+.library .library-delete.is-armed { color: var(--danger); }
+.library-usage { margin: 0; padding: 0 0 10px; color: var(--muted); font-size: 12px; line-height: 18px; font-variant-numeric: tabular-nums; }
+.library-usage[data-tone="warn"] { color: var(--warning); }
+.library-usage[data-tone="bad"] { color: var(--danger); }
+.library-usage .text-button { min-height: 0; padding: 0 4px; font-size: 12px; }
+.library-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.library-list:empty { display: none; }
+.library-state { padding: 72px 16px; text-align: center; }
+.library-state-head { margin: 0; font-size: 15px; font-weight: 600; line-height: 22px; }
+.library-state-words { max-width: 38ch; margin: 6px auto 0; color: var(--muted); font-size: 13px; line-height: 19px; }
+.library-state .text-button { margin-top: 10px; }
+
+/* One file: its sheet, its name over its facts, and the download button at the end. A thousand rows paint as fast as a screenful. */
+.file-row { display: flex; align-items: center; gap: 4px; min-width: 0; min-height: 56px; content-visibility: auto; contain-intrinsic-size: auto 56px; }
+.file-row + .file-row { border-top: 1px solid var(--line); }
+.file-row-open { display: flex; align-items: center; flex: 1; gap: 12px; min-width: 0; min-height: 56px; padding: 8px 0; color: var(--fg); text-decoration: none; cursor: pointer; }
+.file-row-open:focus-visible { outline-offset: -2px; }
+.file-row-text { display: flex; flex-direction: column; min-width: 0; }
+.file-row-name, .file-row-facts { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-row-name { font-size: 15px; line-height: 20px; }
+.file-row-facts { color: var(--muted); font-size: 12px; line-height: 17px; }
+a.file-row-open:hover .file-row-name { text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .25); text-underline-offset: 3px; }
+.file-row-download { color: var(--muted); }
+.file-row-download:hover { color: var(--fg); }
+.file-row-download .icon { width: 20px; height: 20px; }
+label.file-row-open { padding-block: 6px; }
+.file-row-box { display: grid; place-items: center; flex: none; width: 44px; height: 44px; margin-left: -12px; }
+.file-row-check { width: 18px; height: 18px; margin: 0; accent-color: var(--fill); }
+.file-row[data-chosen="true"] { background: var(--surface-2); }
+.file-row.is-skeleton { gap: 12px; }
+.skeleton-sheet { flex: none; width: 24px; height: 30px; border-radius: calc(var(--r-s) / 2); background: var(--surface-2); }
+.skeleton-lines { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.skeleton-lines > span { display: block; width: 44%; height: 12px; border-radius: var(--r-s); background: var(--surface-2); }
+.skeleton-lines > span + span { width: 28%; height: 9px; }
+/* The pane is narrower and its words smaller, so its rows take the pane's own sizes. */
+.side-pane .file-row-name { font-size: 13px; }
+
+/* The drawer's row that opens the library: a chat row's look, current while the library is open. */
+.files-nav { flex: none; padding: 0 8px 4px; }
+.files-row { display: flex; border-radius: var(--r-s); }
+.files-row:hover { background: rgba(255, 255, 255, .04); }
+.files-row:has(.chat-open[aria-current="page"]) { background: var(--surface-2); }
+.files-row .nav-icon { color: var(--muted); }
+.files-row:has(.chat-open[aria-current="page"]) .nav-icon { color: var(--fg); }
+.files-row .nav-icon .icon { width: 18px; height: 18px; }
+/* While the library is open it is the current place, not the chat that was open before it. */
+.workspace-shell[data-mode="files"] .chat-row:has(.chat-open[aria-current="true"]) { background: none; }
+.workspace-shell[data-mode="files"] .chat-row:has(.chat-open[aria-current="true"]) .nav-icon { color: var(--muted); }
+.workspace-shell[data-mode="files"] .chat-row:not(:hover, :focus-within) .chat-actions { display: none; }
+/* The library takes the whole width; the plan of the chat comes back with the chat. */
+.workspace-shell[data-mode="files"][data-pane] { --pane-w: 0px; }
+.workspace-shell[data-mode="files"] :is(.side-pane, .pane-toggle, .pane-scrim) { display: none !important; }
+
+@media (max-width: 759.98px) {
+  /* The choice bar puts its count on a line of its own, so the actions keep their full words. */
+  .library-bar { flex-wrap: wrap; }
+  .library-count { flex-basis: 100%; }
+  .library-search { height: 44px; font-size: 16px; }
+  .library .text-button, .library-zip { min-height: 44px; }
+  .library-zip { height: 44px; }
+}
+@media (pointer: coarse) { .library .text-button { min-height: 44px; } }

@@ -47,7 +47,7 @@ import { shareOf } from './share.js';
  *   | { kind: 'share', view: import('./share.js').ShareView }
  *   | { kind: 'send', view: import('./send.js').SendView }
  *   | { kind: 'reply', view: import('./reply.js').ReplyView }
- *   | { kind: 'file', name: string, title: string, tag: string, meta: string, id: string, html: boolean, download: string, view: string }} Body
+ *   | { kind: 'file', name: string, title: string, tag: string, meta: string, id: string, download: string }} Body
  */
 /**
  * How far a running call is, for the bar: `value` of `max`, both null when it cannot say, and the words beside it.
@@ -288,7 +288,7 @@ function readFile(result, input, call) {
   const title = orNull(result.title) ?? orNull(input.title) ?? 'Document';
   const name = orNull(result.name) ?? title;
   const meta = joined(format.label, typeof result.bytes === 'number' ? sizeOf(result.bytes) : '');
-  const body = { kind: 'file', name, title, tag: format.tag, meta, id: result.id.toLowerCase(), html: format === KINDS.html, download: links.download, view: format === KINDS.html ? links.frame : links.view };
+  const body = { kind: 'file', name, title, tag: format.tag, meta, id: result.id.toLowerCase(), download: links.download };
   return { outcome: meta, tone: 'ok', body };
 }
 
@@ -307,7 +307,7 @@ function readUpdate(result, input) {
     const kind = KINDS[file.kind];
     if (!links || !kind) return { problem: "This file can't be found." };
     const meta = joined(kind.label, typeof file.bytes === 'number' ? sizeOf(file.bytes) : '', CHANGED[change]);
-    return { outcome: meta, tone: 'ok', body: { kind: 'file', name, title: name, tag: kind.tag, meta, id: file.id.toLowerCase(), html: file.kind === 'html', download: links.download, view: file.kind === 'html' ? links.frame : links.view } };
+    return { outcome: meta, tone: 'ok', body: { kind: 'file', name, title: name, tag: kind.tag, meta, id: file.id.toLowerCase(), download: links.download } };
   }
   const chat = orNull(recordOf(result.chat).title) ?? 'another chat';
   const said = {

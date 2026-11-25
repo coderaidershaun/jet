@@ -11,6 +11,7 @@ import { svgIcon } from './icons.js';
 import { dueWords, isoDay, keysOf, newCount, readPane, scopeOf } from './model.js';
 import { CONFIRM_MS, disarm, idleTaps, pressCancel, tapEnded } from './taps.js';
 import { planNodes } from './view.js';
+import { files } from '../chat/library/store.js';
 
 const OPEN_KEY = 'jet.pane';
 const SEEN_KEY = 'jet.pane.seen';
@@ -38,11 +39,12 @@ function seenKeys() {
 }
 
 /**
- * @param {{ shell: HTMLElement, host: HTMLElement, openChat: (chatId: number, entryId?: number | null) => void }} parts
- *   `shell` carries `data-pane`; `host` is the pane itself; `openChat` shows a chat by its id, at an entry when given
+ * @param {{ shell: HTMLElement, host: HTMLElement, openChat: (chatId: number, entryId?: number | null) => void, showFiles: () => void, titleOf: (chatId: number) => string }} parts
+ *   `shell` carries `data-pane`; `host` is the pane itself; `openChat` shows a chat by its id, at an entry when given;
+ *   `showFiles` shows the library
  * @returns {{ button: HTMLElement, refresh: () => Promise<void> }}
  */
-export function createPlanPane({ shell, host, openChat }) {
+export function createPlanPane({ shell, host, openChat, showFiles, titleOf }) {
   const overlay = matchMedia('(max-width: 1023px)');
   let desktopOpen = stored.read(OPEN_KEY) !== 'closed';
   let overlayOpen = false, wasModal = false;
@@ -126,7 +128,7 @@ export function createPlanPane({ shell, host, openChat }) {
     const now = Date.now() / 1000;
     const ctx = {
       year: new Date().getFullYear(), now, today: isoDay(now, zone), timeZone: zone, shares, act, taps, mainId, chatId,
-      scope: pane ? scopeOf(pane, chatId, mainId) : null, overview: swapped,
+      scope: pane ? scopeOf(pane, chatId, mainId) : null, overview: swapped, files: files.inChat(chatId), titleOf,
       isOpen: (key, byDefault = false) => folds.get(key) ?? byDefault,
     };
     body.replaceChildren(...(pane ? planNodes(pane, ctx) : [h('p', { class: 'pane-hint', text: 'Loading the plan…' })]));
@@ -234,6 +236,7 @@ export function createPlanPane({ shell, host, openChat }) {
     },
     openChat: (objective) => leaveFor(() => openChat(objective.chatId)),
     openRun: (run) => leaveFor(() => openChat(run.chatId, run.entryId)),
+    allFiles: () => leaveFor(showFiles),
     draft: (text) => leaveFor(() => host.dispatchEvent(new CustomEvent('jet:draft', { bubbles: true, detail: { text } }))),
   };
 
@@ -262,6 +265,8 @@ export function createPlanPane({ shell, host, openChat }) {
   });
   // The page says so when Jet or a tap changed what the pane shows, and when the event stream started again.
   document.addEventListener('jet:pane-changed', refresh);
+  // The chat's files come from the page's one list of files, which reads itself again on the same news.
+  files.subscribe(draw);
   // Times such as "in 2 h" age while the page sits still.
   setInterval(() => { if (isOpen() && pane) draw(); }, 60000);
   draw();

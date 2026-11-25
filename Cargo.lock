@@ -1673,6 +1673,7 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "zip",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { chatFiles, fileWords, otherChats, closedWords, clockWords, costWords, daysLeftWords, groupObjectives, heldReason, keysOf, dueWords, newCount, nextCheck, noteTone, outcomeOf, readPane, relativeWords, runTitle, sharedWithWords, stepDueWords, stepsEndWords, stepProgress, isEmpty, dueDayWords, tokensWords, needsFirst, scopeOf, dayWords, timeWords, progressWords } from './model.js';
+import { closedWords, clockWords, costWords, daysLeftWords, groupObjectives, heldReason, keysOf, dueWords, newCount, nextCheck, noteTone, outcomeOf, readPane, relativeWords, runTitle, sharedWithWords, stepDueWords, stepsEndWords, stepProgress, isEmpty, dueDayWords, tokensWords, needsFirst, scopeOf, dayWords, timeWords, progressWords } from './model.js';
 
 const pane = readPane(JSON.parse(readFileSync(new URL('../../tests/fixtures/pane.json', import.meta.url), 'utf8')));
 
@@ -92,19 +92,4 @@ test("an objective's own chat holds that objective, its tasks and the follow-ups
   assert.deepEqual(scope.tasks.map((t) => t.id), [...pane.tasks.filter((t) => t.objectiveId === kite.id).map((t) => t.id), 50]);
   assert.equal(scopeOf(all, 1000, 1000), null);
   assert.equal(scopeOf(all, 12345, 1000), null, 'a chat nothing belongs to shows the main view');
-});
-
-test("the pane lists the open chat's files, newest change first, and marks a shared one", () => {
-  const artifacts = [
-    { id: 'b', name: 'other.md', kind: 'markdown', bytes: 10, changedAt: 9000, chats: [4] },
-    { id: 'c', name: 'new.html', kind: 'html', bytes: 3120, changedAt: 5000, chats: [3, 4] },
-    { id: 'a', name: 'old.md', kind: 'markdown', bytes: 10, changedAt: 1000, chats: [3] },
-  ];
-  const read = readPane({ artifacts: [...artifacts, 'nonsense'] });
-  assert.deepEqual(chatFiles(read, 3).map((file) => file.name), ['new.html', 'old.md']);
-  assert.equal(chatFiles(read, 4)[0].name, 'other.md', 'the server\'s order is kept');
-  assert.equal(otherChats(artifacts[1], 3), 1);
-  assert.equal(otherChats(artifacts[2], 3), 0);
-  assert.equal(fileWords(artifacts[1], 5 + 300), 'HTML page · 3 KB · 5 min ago');
-  assert.deepEqual(readPane({}).artifacts, [], 'an older server sends none');
 });

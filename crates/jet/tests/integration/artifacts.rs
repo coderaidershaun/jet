@@ -122,8 +122,8 @@ fn a_file_sent_in_a_chat_is_noted_read_changed_and_restored_and_five_versions_ar
         text(&results[9]).contains("span 2m"),
         "the original is back"
     );
-    let pane = owner.get("/api/pane");
-    assert_eq!(pane["artifacts"][0]["id"], id, "{pane}");
+    let library = owner.get("/api/files");
+    assert_eq!(library["files"][0]["id"], id, "{library}");
 }
 
 #[test]
@@ -327,7 +327,7 @@ fn a_shared_file_is_one_file_in_each_chat_and_only_its_owner_reaches_it() {
         assert_eq!(other.fetch(&path).0, 404, "{path}");
     }
     assert_eq!(other.fetch(&format!("/api/files/{shared}/frame")).0, 404);
-    assert_eq!(other.get("/api/pane")["artifacts"], json!([]));
+    assert_eq!(other.get("/api/files")["files"], json!([]));
     let results = run_turn(&host, &owner, shared_to, "still", json!([read(&shared)]));
     assert_eq!(
         text(&results[0]),
@@ -484,9 +484,9 @@ fn a_check_is_told_the_files_and_may_read_them_but_changes_none() {
     assert_eq!(error_kind(&results[1]), "checkIsReadOnly");
     assert_eq!(error_kind(&results[2]), "checkIsReadOnly");
     assert_eq!(data(&results[3])["files"][0]["version"], 1);
-    let pane = owner.get("/api/pane");
-    assert_eq!(pane["artifacts"].as_array().unwrap().len(), 1, "{pane}");
-    assert_eq!(pane["artifacts"][0]["version"], 1);
+    let library = owner.get("/api/files");
+    assert_eq!(library["files"].as_array().unwrap().len(), 1, "{library}");
+    assert_eq!(library["files"][0]["version"], 1);
 }
 
 #[test]

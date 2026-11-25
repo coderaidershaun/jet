@@ -47,6 +47,7 @@ tower-http = { version = "0.7.1", default-features = false, features = ["fs"] }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
 url = { version = "2.5.8", default-features = false, features = ["std", "serde"] }
 uuid = { version = "1.28.0", default-features = false, features = ["std", "v4", "serde"] }
+zip = { version = "9.1.2", default-features = false, features = ["deflate"] }
 
 # Argon2id runs on every sign-in and at every seed, and each integration test starts a fresh host
 # that seeds five accounts, so the hashing crates are optimised even in debug builds.

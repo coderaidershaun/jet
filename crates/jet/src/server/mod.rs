@@ -82,6 +82,12 @@ impl FromRef<Server> for Files {
     }
 }
 
+impl FromRef<Server> for Arc<Chats> {
+    fn from_ref(server: &Server) -> Self {
+        server.chats.clone()
+    }
+}
+
 impl FromRef<Server> for GithubTokens {
     fn from_ref(server: &Server) -> Self {
         server.github_tokens.clone()

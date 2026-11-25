@@ -18,6 +18,9 @@ import { showAccount } from './drawer/account.js';
 import { createChats } from './drawer/chats.js';
 import { createChatsView } from './drawer/chats-view.js';
 import { createDrawerView } from './drawer/view.js';
+import { connectFileView } from './file-view.js';
+import { files } from './library/store.js';
+import { createLibrary } from './library/view.js';
 import { connectHearing } from './hear/connect.js';
 import { createSheet } from './settings/sheet.js';
 import { createLive } from './stage/live.js';
@@ -55,7 +58,10 @@ async function start() {
   const page = $('page');
   const announce = (message) => { $('announce').textContent = message; };
   let toolBrowser, commandMenu, hear;
-  const workspace = createWorkspace({ agent, page, onTools: appId => toolBrowser.open(appId), openChat: (id, entryId) => { workspace.showChat(); showChat(id, entryId); } });
+  // The chat list is made further down; nothing asks for a title before the first files arrive.
+  const titleOf = (chatId) => chats.items.find((chat) => chat.id === chatId)?.title ?? 'A chat';
+  const library = createLibrary({ titleOf, announce });
+  const workspace = createWorkspace({ agent, page, library, titleOf, onTools: appId => toolBrowser.open(appId), openChat: (id, entryId) => { workspace.showChat(); showChat(id, entryId); } });
   // The shell puts itself first in the page, so the skip link moves back in front of it to stay the first Tab stop.
   const skip = $('skip');
   document.body.prepend(skip);
@@ -188,6 +194,7 @@ async function start() {
     attending: () => !document.hidden,
     onChange: () => {
       chatsView.paint();
+      library.paint();
       // The plan pane shows what belongs to the open chat.
       if (chats.openId !== shownChat) {
         shownChat = chats.openId;
@@ -219,6 +226,8 @@ async function start() {
     if (event.kind === 'paneChanged') paneChanged();
   });
   document.addEventListener('visibilitychange', () => chats.attend());
+  connectFileView({ chats: () => chats.items, openChat: (id) => { workspace.showChat(); showChat(id); }, announce });
+  files.start();
 
   /**
    * Opens a chat: its history and running reply replace the thread, and every later call carries its id.

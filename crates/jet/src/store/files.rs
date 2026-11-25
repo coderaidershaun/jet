@@ -157,14 +157,44 @@ impl Store {
         })
     }
 
-    /// Deletes the user's upload that was never sent, and says whether there was one.
-    pub(crate) fn remove_unsent_file(&self, user: UserId, id: &str) -> Result<bool, StoreError> {
+    /// Deletes the user's file, sent or not, with its earlier versions and its place in every
+    /// chat, and says whether there was one.
+    pub(crate) fn delete_file(&self, user: UserId, id: &str) -> Result<bool, StoreError> {
         self.with(|db| {
             db.execute(
-                "DELETE FROM files WHERE id = ?1 AND user_id = ?2 AND attached = 0",
+                "DELETE FROM files WHERE id = ?1 AND user_id = ?2",
                 params![id, user.0],
             )
             .map(|removed| removed > 0)
+        })
+    }
+
+    /// The bytes of the user's files and of the earlier versions kept of them.
+    pub(crate) fn file_bytes(&self, user: UserId) -> Result<u64, StoreError> {
+        self.with(|db| user_bytes(db, user))
+    }
+
+    /// The earlier versions kept of the user's file, newest first: each one's number, when it was
+    /// written and its size.
+    pub(crate) fn earlier_versions(
+        &self,
+        user: UserId,
+        id: &str,
+    ) -> Result<Vec<(u32, u64, u64)>, StoreError> {
+        self.with(|db| {
+            db.prepare(
+                "SELECT v.version, v.at, length(v.contents) FROM file_versions v
+                 JOIN files f ON f.id = v.file_id
+                 WHERE f.id = ?1 AND f.user_id = ?2 ORDER BY v.version DESC",
+            )?
+            .query_map(params![id, user.0], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get::<_, i64>(1)?.unsigned_abs(),
+                    row.get::<_, i64>(2)?.unsigned_abs(),
+                ))
+            })?
+            .collect()
         })
     }
 
@@ -279,10 +309,12 @@ impl Store {
                 return Ok(Changed::Full);
             }
             let mut about = about(&text, true)?;
+            // A kept version is stamped with the time it was written, not the time it was replaced.
+            let written = i64::try_from(about.changed_at()).unwrap_or(i64::MAX);
             transaction.execute(
                 "INSERT INTO file_versions (file_id, version, at, contents)
                  SELECT id, ?2, ?3, contents FROM files WHERE id = ?1",
-                params![id, about.version, i64::try_from(at).unwrap_or(i64::MAX)],
+                params![id, about.version, written],
             )?;
             // What the user uploaded is never pruned: its first version stays.
             let original = i64::from(about.origin == Origin::Upload);

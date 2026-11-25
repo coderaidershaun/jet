@@ -1,8 +1,9 @@
-//! Keeps each user's files in the database until the user forgets or deletes the chat they were sent or written in: the files Jet writes
-//! for the user to download, and the files the user attaches to a message. The routes that move
-//! them to and from the page are here too.
+//! Keeps each user's files in the database until the user deletes them, or forgets or deletes
+//! the last chat that holds them: the files Jet writes for the user to download, and the files the
+//! user attaches to a message. The routes that move them to and from the page are here too.
 
 mod about;
+mod archive;
 mod artifacts;
 mod export;
 mod kind;
@@ -17,7 +18,7 @@ use crate::WorkerFailed;
 use crate::store::{Added, ChatId, Store, StoreError, UserId};
 
 pub(crate) use about::{About, Origin};
-pub(crate) use artifacts::{Artifact, MAX_CONTEXT_CHARS};
+pub(crate) use artifacts::{Artifact, Library, MAX_CONTEXT_CHARS};
 pub(crate) use export::ExportRequest;
 pub(crate) use kind::FileKind;
 pub(crate) use read::{Range, Reading};
@@ -85,6 +86,10 @@ pub(crate) enum FileError {
     Unreadable(String),
     #[error("{0}")]
     NoSuchSheet(String),
+    #[error("This is the only chat that holds this file. Delete the file instead.")]
+    LastChat,
+    #[error("could not write the zip of files: {0}")]
+    Archive(#[from] zip::result::ZipError),
     #[error("the file name cannot be sent")]
     NameNotSendable,
     #[error("request worker failed: {0}")]
@@ -182,13 +187,13 @@ impl Files {
         about.attached.then_some(about.id)
     }
 
-    /// Deletes the user's upload that was never sent. Anything else is left alone and reported as
-    /// missing.
+    /// Deletes the user's file, sent or not, from every chat that holds it, with its earlier
+    /// versions.
     ///
     /// # Errors
-    /// - [`FileError::NotFound`] when there is no such upload, or it was already sent.
-    pub fn remove(&self, user: UserId, id: &str) -> Result<(), FileError> {
-        match self.store.remove_unsent_file(user, id)? {
+    /// - [`FileError::NotFound`] when there is no such file, or it is another user's.
+    pub fn delete(&self, user: UserId, id: &str) -> Result<(), FileError> {
+        match self.store.delete_file(user, id)? {
             true => Ok(()),
             false => Err(FileError::NotFound(id.to_owned())),
         }

@@ -12,7 +12,6 @@ test('file card links only to the saved file', () => {
   assert.equal(done.state, 'done');
   assert.equal(done.body.kind, 'file');
   assert.equal(done.body.download, '/api/files/' + ID);
-  assert.equal(done.body.view, '/api/files/' + ID + '/view');
 
   const running = cardOf(call(undefined, { ok: undefined }));
   assert.equal(running.state, 'running');
@@ -46,9 +45,6 @@ test('files_update: a made or changed file is a file card, the other changes are
   const made = update({ action: 'create', name: 'summary.html' }, { change: 'created', file: file() });
   assert.equal(made.body.kind, 'file');
   assert.equal(made.body.meta, 'HTML page · 3 KB');
-  assert.equal(made.body.html, true);
-  assert.equal(made.body.view, '/api/files/' + ID + '/frame', 'an HTML page opens in its wrapper');
-  assert.equal(update({ action: 'write' }, { change: 'written', file: file({ kind: 'markdown' }) }).body.view, '/api/files/' + ID + '/view');
   assert.equal(update({ action: 'write' }, { change: 'written', file: file({ kind: 'markdown' }) }).body.meta, 'Markdown · 3 KB · changed');
   assert.equal(update({ action: 'restore' }, { change: 'restored', file: file() }).body.meta, 'HTML page · 3 KB · earlier version back');
   assert.equal(cardOf({ id: 'u2', server: 'jet', tool: 'files_update', input: { command: { action: 'create', name: 'summary.html' } } }).line, 'Making summary.html');

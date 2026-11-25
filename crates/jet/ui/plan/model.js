@@ -1,7 +1,6 @@
 // What the plan pane says about Jet's read of the user's objectives, tasks and checks, in plain words.
 // Pure, with no DOM, so every wording is tested.
 
-import { KINDS, sizeOf } from '../chat/files.js';
 import { isRecord, joined, listOf, numberOrNull, orNull, recordOf, stringOf } from '../chat/thread/cards/guard.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -38,18 +37,8 @@ export function readPane(raw) {
     runs: records(pane.runs),
     sharedWithMe: records(pane.sharedWithMe),
     sent: records(pane.sent),
-    artifacts: records(pane.artifacts),
   };
 }
-
-/** The files the open chat holds; the server sends them newest change first. */
-export const chatFiles = (pane, chatId) => pane.artifacts.filter((file) => listOf(file.chats).includes(chatId));
-
-/** 'HTML page · 3 KB · 5 min ago' for a file; `now` is in Unix seconds, `changedAt` in milliseconds. */
-export const fileWords = (file, now) => joined(KINDS[file.kind]?.label ?? 'File', numberOrNull(file.bytes) === null ? '' : sizeOf(file.bytes), numberOrNull(file.changedAt) === null ? '' : relativeWords(file.changedAt / 1000 - now));
-
-/** How many other chats hold the file, which is what makes it shared. */
-export const otherChats = (file, chatId) => listOf(file.chats).filter((id) => id !== chatId).length;
 
 export const isEmpty = (pane) => !pane.objectives.length && !pane.tasks.length && !pane.runs.length && !pane.sharedWithMe.length && !pane.sent.length;
 

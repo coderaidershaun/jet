@@ -92,7 +92,7 @@ if (/^facade:/m.test(input)) {
   const chat = (await call('GET', '/api/pane')).objectives[0].chatId;
   const upload = await call('POST', '/api/files?name=kite-budget.txt', 'Kite budget\ncloth 24\nspars 18\nreel 9\n', 'text/plain');
   await turn(chat, 'Here is my budget.', [files({ action: 'describe', id: upload.id, context: NOTE }), files({ action: 'create', name: 'kite-summary.html', content: html(leak), context: PAGE_NOTE })], [upload.id]);
-  const made = (await call('GET', '/api/pane')).artifacts.find((file) => file.name === 'kite-summary.html');
+  const made = (await call('GET', '/api/files')).files.find((file) => file.name === 'kite-summary.html');
   assert.ok(made, 'Jet made the page');
   await turn(chat, 'Share the summary with the main chat.', [files({ action: 'share', id: made.id, chat: mainChat })]);
 
@@ -159,7 +159,7 @@ if (/^facade:/m.test(input)) {
     const box = await dialog.boundingBox();
     if (phone) {
       assert.deepEqual([box.width, box.height], [viewport.width, viewport.height], 'the file view fills the phone');
-      for (const control of await dialog.locator('a.file-view-link, button.file-view-close').all()) assert.ok((await control.boundingBox()).height >= 44, 'a control in the file view is under 44 px');
+      for (const control of await dialog.locator('.file-view-download, .file-view-tab, .file-view-close').all()) assert.ok((await control.boundingBox()).height >= 44, 'a control in the file view is under 44 px');
     }
     await fits(`${name} file view`);
     await shoot('2-file-view');
@@ -180,15 +180,18 @@ if (/^facade:/m.test(input)) {
     assert.match(await page.locator('#side-pane .pane-heading', { hasText: 'Files' }).innerText(), /Files\s*2/, 'the heading counts them');
     const pageRow = rows.filter({ hasText: 'kite-summary.html' });
     const textRow = rows.filter({ hasText: 'kite-budget.txt' });
-    assert.match(await pageRow.innerText(), /HTML page · \d+ KB · .*(ago|just now)[\s\S]*Shared/, 'the page row has kind, size, when and Shared');
-    assert.match(await textRow.innerText(), /Text · \d+ B · /, 'the text row has kind, size and when');
-    assert.match(await textRow.innerText(), new RegExp(NOTE), 'the uploaded file shows the note Jet wrote');
-    assert.doesNotMatch(await textRow.innerText(), /Shared/, 'a file of one chat is not shared');
-    if (phone) for (const row of await rows.all()) assert.ok((await row.locator('a').boundingBox()).height >= 44, 'a file row is under 44 px');
+    assert.match(await pageRow.innerText(), /HTML page · \d+ KB · .*(ago|just now) · Kite budget and 1 more/, 'the page row has kind, size, when and its chats');
+    assert.match(await textRow.innerText(), /Text · \d+ B · .* · Kite budget$/, 'the text row has kind, size, when and its one chat');
+    assert.doesNotMatch(await textRow.innerText(), new RegExp(NOTE), 'the note is in the dialog, not the row');
+    if (phone) for (const row of await rows.all()) assert.ok((await row.locator('.file-row-open').boundingBox()).height >= 44, 'a file row is under 44 px');
     await fits(`${name} pane`);
     await shoot('3-pane-files');
     if (!phone) {
-      await pageRow.locator('a').click();
+      await textRow.locator('.file-row-open').click();
+      await dialog.locator('.file-view-note', { hasText: NOTE }).waitFor();
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'detached' });
+      await pageRow.locator('.file-row-open').click();
       await dialog.waitFor();
       await inner.getByRole('heading', { name: 'Kite budget summary' }).waitFor();
       await page.keyboard.press('Escape');

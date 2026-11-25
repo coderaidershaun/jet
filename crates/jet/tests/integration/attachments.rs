@@ -233,8 +233,8 @@ fn attached_files_reach_jet_as_details_and_are_read_on_request() {
     );
     assert_eq!(
         host.delete(&format!("/api/files/{sheet_id}")),
-        404,
-        "a file that was sent is not deleted"
+        204,
+        "a file that was sent is deleted from every chat too"
     );
     assert_eq!(host.post("/api/chat/forget", json!({})).0, 200);
     assert!(!host.dir.path().join("files").exists());

@@ -4,12 +4,12 @@
 
 import { h } from '../dom.js';
 import { listOf, numberOrNull, orNull, recordOf, stringOf } from '../chat/thread/cards/guard.js';
-import { openProps } from '../chat/file-view.js';
+import { fileRow } from '../chat/library/row.js';
 import { svgIcon } from './icons.js';
 import { sentList } from './sent.js';
 import {
-  chatFiles, clockWords, closedWords, costWords, dateWords, dayWords, daysLeftWords, dueDayWords, dueWords, groupObjectives, heldReason, isEmpty, kindWords,
-  fileWords, latestNote, needsFirst, noteTone, otherChats, outcomeOf, progressWords, relativeWords, runTitle, setByWords, sharedWithWords,
+  clockWords, closedWords, costWords, dateWords, dayWords, daysLeftWords, dueDayWords, dueWords, groupObjectives, heldReason, isEmpty, kindWords,
+  latestNote, needsFirst, noteTone, outcomeOf, progressWords, relativeWords, runTitle, setByWords, sharedWithWords,
   stepDueWords, stepsEndWords, timeWords, tokensWords, waitingItems,
 } from './model.js';
 
@@ -235,33 +235,24 @@ function scopedNodes(pane, ctx) {
       soonest.length ? h('ul', { class: 'plan-rows' }, ...soonest.map((task) => scopedTaskRow(task, ctx))) : h('p', { class: 'pane-hint', text: objectives.some(isOpen) ? 'No check is set. Tell Jet when to look in.' : 'Nothing is scheduled.' })),
     sent.length ? foldLine(ctx, 'waiting', 'Waiting on colleagues', sent.length, () => sentList(sent, ctx, foldRow), true) : null,
     last && unseen.length ? foldLine(ctx, 'did', lastLine, `${unseen.length} not in the chat`, () => runList(unseen, ctx, false)) : line('last-look', lastLine),
-    filesSection(pane, ctx),
+    filesSection(ctx),
     h('div', { class: 'back' }, textButton('All objectives and tasks', () => ctx.act.swap(true), { class: 'text-button back-button', 'data-key': 'swap' })),
   ].filter(Boolean);
 }
 
-/** One file of the open chat: a link that opens it the way its kind asks, with its facts and its note under the name in muted text. */
-function fileRow(file, ctx) {
-  const name = stringOf(file.name);
-  const others = otherChats(file, ctx.chatId);
-  const note = orNull(file.context);
-  const words = [h('span', { class: 'file-name', text: name }),
-    h('span', { class: 'file-facts' }, fileWords(file, ctx.now), others ? h('span', { class: 'file-shared', title: `Also in ${others} other chat${others === 1 ? '' : 's'}`, text: ' · Shared' }) : null),
-    line('file-note', note)];
-  const opens = openProps({ id: file.id, kind: file.kind, name });
-  return h('li', { class: 'plan-row file-row', 'data-id': stringOf(file.id) },
-    opens ? h('a', { class: 'file-open', 'data-key': `file-${file.id}`, 'aria-label': 'Open ' + name, ...(note ? { title: note } : {}), ...opens }, ...words) : h('div', { class: 'file-open' }, ...words));
-}
-
-/** The files of the open chat, newest change first; nothing when it holds none. */
-function filesSection(pane, ctx) {
-  const files = chatFiles(pane, ctx.chatId);
-  return files.length ? section('files', 'Files', files.length, h('ul', { class: 'plan-rows' }, ...files.map((file) => fileRow(file, ctx)))) : null;
+/** The files of the open chat, newest change first, as the library shows them; nothing when it holds none. */
+function filesSection(ctx) {
+  if (!ctx.files.length) return null;
+  return h('section', { class: 'pane-section' },
+    h('div', { class: 'pane-heading-line' },
+      h('h3', { class: 'pane-heading', tabindex: '-1', 'data-key': 'heading-files' }, 'Files', h('span', { class: 'heading-count', text: String(ctx.files.length) })),
+      textButton('All files', () => ctx.act.allFiles(), { 'data-key': 'all-files' })),
+    h('ul', { class: 'plan-rows file-rows' }, ...ctx.files.map((file) => fileRow(file, { now: ctx.now * 1000, titleOf: ctx.titleOf }))));
 }
 
 /** @returns {HTMLElement[]} the sections of the pane for `pane` (from readPane) */
 export function planNodes(pane, ctx) {
-  if (isEmpty(pane)) return [invitation(ctx), filesSection(pane, ctx)].filter(Boolean);
+  if (isEmpty(pane)) return [invitation(ctx), filesSection(ctx)].filter(Boolean);
   // The scoped pane draws its files above its way back to the overview.
-  return ctx.scope && !ctx.overview ? scopedNodes(pane, ctx) : [...overviewNodes(pane, ctx), filesSection(pane, ctx)].filter(Boolean);
+  return ctx.scope && !ctx.overview ? scopedNodes(pane, ctx) : [...overviewNodes(pane, ctx), filesSection(ctx)].filter(Boolean);
 }

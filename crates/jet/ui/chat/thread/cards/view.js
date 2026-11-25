@@ -4,8 +4,9 @@
 // nothing.
 
 import { h, icon } from '../../../dom.js';
-import { fileSheet } from '../../files.js';
-import { viewOnClick } from '../../file-view.js';
+import { fileSheet, kindOfName } from '../../files.js';
+import { openProps } from '../../file-view.js';
+import { files } from '../../library/store.js';
 import { blocksBody, fieldNodes } from './block-view.js';
 import { findSource, splitCitations } from './cite.js';
 import { RUNNING } from './job.js';
@@ -202,19 +203,31 @@ function bodyOf(card, parts) {
   }
 }
 
-/** The card of a written file: what it is, and two links built from its id alone. */
+/** A file card whose file was deleted keeps its place in the thread, says so, and offers nothing to open. */
+function markGone(el) {
+  el.dataset.gone = 'true';
+  el.querySelector('.file-meta').textContent = 'This file was deleted.';
+  el.querySelector('.file-actions')?.remove();
+}
+files.subscribe(() => {
+  for (const el of document.querySelectorAll('.card-file:not([data-gone])')) if (files.isGone(el.dataset.fileId)) markGone(el);
+});
+
+/** The card of a written file: what it is, and two links built from its id alone. Open shows it in the file dialog. */
 function fileCard(card) {
   const { body } = card;
   const sheet = fileSheet(body.tag);
-  const open = h('a', { class: 'file-action', 'data-file': true, 'aria-label': 'Open ' + body.name, text: 'Open', href: body.view, target: '_blank', rel: 'noopener', ...(body.html ? { onClick: viewOnClick({ id: body.id, name: body.name }) } : {}) });
+  const open = h('a', { class: 'file-action', 'data-file': true, 'aria-label': 'Open ' + body.name, text: 'Open', ...openProps({ id: body.id, name: body.name, kind: kindOfName(body.name) }) });
   const download = h('a', { class: 'file-action file-primary', href: body.download, download: body.name, 'data-file': true, 'aria-label': 'Download ' + body.name }, icon('download'), 'Download');
-  return h(
+  const el = h(
     'div',
-    { class: 'card card-file', 'data-tone': card.tone, ...cardData(card) },
+    { class: 'card card-file', 'data-tone': card.tone, 'data-file-id': body.id, ...cardData(card) },
     sheet,
     h('div', { class: 'file-what' }, h('p', { class: 'file-title', text: body.title }), h('p', { class: 'file-meta', title: body.name, text: body.meta })),
     h('div', { class: 'file-actions' }, open, download),
   );
+  if (files.isGone(body.id)) markGone(el);
+  return el;
 }
 
 function defaultCard(card, parts) {

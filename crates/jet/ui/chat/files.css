@@ -33,8 +33,8 @@
 .file-sheet.is-small::after { left: 4px; right: 4px; top: 11px; height: 6px; background: repeating-linear-gradient(to bottom, rgba(11, 20, 27, .16) 0 1px, transparent 1px 3px); }
 .file-sheet.is-small .file-tag { height: 10px; font-size: 7px; line-height: 10px; }
 
-/* An HTML file opened in the page: a modal sheet holding a sandboxed frame. The frame is white, so a page with no
-   background of its own reads as a normal page. It fills the window on a phone and is a large centred sheet on a desktop. */
+/* A saved file opened in the page: the file on the left, what can be done with it in a column on the right. It is a large
+   centred sheet on a desktop and fills the window on a phone, where the column follows the file and the whole sheet scrolls. */
 .file-view {
   position: fixed; inset: 0; z-index: 50; margin: auto; padding: 0; width: min(1100px, calc(100vw - 48px)); height: calc(100dvh - 48px); max-width: 100vw; max-height: 100dvh;
   background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden;
@@ -42,14 +42,76 @@
 .file-view[open] { display: flex; flex-direction: column; }
 .file-view::backdrop { background: rgba(0, 0, 0, .5); }
 body:has(.file-view[open]) { overflow: hidden; }
-.file-view-head { display: flex; align-items: center; gap: 12px; flex: none; min-width: 0; padding: 6px 6px 6px 16px; border-bottom: 1px solid var(--line); }
-.file-view-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
-.file-view-link { flex: none; display: inline-flex; align-items: center; min-height: 44px; color: var(--link-jet); font-size: 13px; text-decoration: none; white-space: nowrap; }
-.file-view-link:hover { text-decoration: underline; }
-.file-view-frame { flex: 1; min-height: 0; background: #fff; }
-.file-view-frame iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.file-view-head { display: flex; align-items: center; gap: 4px; flex: none; min-width: 0; min-height: 56px; padding: 6px 6px 6px 16px; border-bottom: 1px solid var(--line); }
+.file-view-name {
+  flex: 1; min-width: 0; margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
+  font-size: 15px; font-weight: 650; line-height: 20px;
+}
+.file-view-name:has(input) { display: flex; align-items: center; gap: 4px; }
+.file-view-rename-input { flex: 1; min-width: 0; height: 36px; padding: 0 8px; background: var(--ground); border: 1px solid var(--edge); border-radius: var(--r-s); outline-offset: 0; font-size: 15px; font-weight: 400; }
+.file-view-extension { flex: none; color: var(--muted); font-weight: 400; }
+.file-view-head .icon-button { color: var(--muted); }
+.file-view-head .icon-button:hover:not(:disabled) { color: var(--fg); }
+.file-view-head .icon-button:disabled { opacity: .35; }
+.file-view-head .icon-button .icon { width: 20px; height: 20px; }
+
+.file-view-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; }
+/* Pages, PDFs and text sit on white, as they would on paper; a picture and the plain words sit on the page's ground. */
+.file-view-preview { display: grid; place-items: center; min-width: 0; min-height: 0; overflow: hidden; background: var(--ground); }
+.file-view-preview:is([data-kind="html"], [data-kind="pdf"]) { background: #fff; }
+.file-view-text { place-self: stretch; min-width: 0; min-height: 0; overflow: auto; padding: 24px; scrollbar-width: thin; }
+.file-view-text pre { margin: 0; color: var(--fg); font: 13px/20px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.file-view-cut { margin: 16px 0 0; color: var(--muted); font-size: 13px; line-height: 20px; }
+.file-view-preview iframe { display: block; place-self: stretch; width: 100%; height: 100%; border: 0; background: #fff; }
+.file-view-image { display: block; max-width: calc(100% - 48px); max-height: calc(100% - 48px); object-fit: contain; }
+.file-view-words { max-width: 34ch; margin: 0; padding: 24px; color: var(--muted); font-size: 14px; line-height: 20px; text-align: center; }
+
+.file-view-side { display: flex; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; overflow: auto; padding: 16px 16px 20px; border-left: 1px solid var(--line); scrollbar-width: thin; }
+.file-view-facts p { margin: 0; color: var(--muted); font-size: 12px; line-height: 18px; }
+.file-view-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.file-view-download {
+  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: var(--r-s);
+  background: var(--fill); color: var(--on-fill); font-size: 14px; font-weight: 600; text-decoration: none;
+}
+.file-view-download:hover { background: var(--fill-hover); }
+.file-view-download .icon { width: 18px; height: 18px; }
+.file-view-tab { display: inline-flex; align-items: center; min-height: 36px; color: var(--link-jet); font-size: 13px; font-weight: 600; text-decoration: none; }
+.file-view-tab:hover { text-decoration: underline; text-underline-offset: 3px; }
+.file-view-actions [aria-disabled="true"] { opacity: .45; pointer-events: none; }
+.file-view-note { margin: 0; font-size: 13px; line-height: 19px; overflow-wrap: anywhere; }
+.file-view-section { display: flex; flex-direction: column; min-width: 0; }
+.file-view-section h3 { margin: 0 0 2px; color: var(--muted); font-size: 12px; font-weight: 600; line-height: 18px; }
+.file-view-list { margin: 0; padding: 0; list-style: none; }
+.file-view-list > li + li { border-top: 1px solid var(--line); }
+.file-view-chat, .file-view-version { display: flex; align-items: center; gap: 8px; min-height: 40px; font-size: 13px; }
+.file-view-chat .nav-icon, .file-view-pick .nav-icon { width: 20px; color: var(--muted); }
+.file-view-chat .icon, .file-view-pick .icon { width: 16px; height: 16px; }
+.file-view-chat-open, .file-view-pick { flex: 1; min-width: 0; padding: 0; background: none; border: 0; color: var(--fg); font-size: 13px; text-align: left; }
+.file-view-chat-open { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 40px; }
+.file-view-pick { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; }
+.file-view-pick-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.file-view-chat-open, .file-view-pick):hover { text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .25); text-underline-offset: 3px; }
+.file-view-version > span:first-child { flex: 1; font-variant-numeric: tabular-nums; }
+.file-view-current { color: var(--muted); font-size: 12px; }
+.file-view .text-button { min-height: 32px; font-size: 13px; }
+.file-view-section > .text-button { align-self: flex-start; margin: 4px 0 0 -6px; }
+/* A line's own action is quiet until pointed at, so a long list of chats does not read as a column of links. */
+.file-view-list .text-button { margin-right: -6px; color: var(--muted); }
+.file-view-list .text-button:hover:not(:disabled) { color: var(--fg); }
+.file-view-hint { margin: 2px 0 4px; color: var(--muted); font-size: 13px; line-height: 19px; }
+.file-view-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); }
+.file-view-foot .text-button { margin-left: -6px; }
+/* Delete is quiet until the first tap, which turns it into the question. */
+.file-view-delete { color: var(--muted); }
+.file-view-delete.is-armed { color: var(--danger); }
+.file-view-delete:disabled { opacity: .45; }
 @media (max-width: 759.98px) {
   .file-view { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
-  .file-view-head { gap: 8px; padding-left: 12px; }
-  .file-view-link { font-size: 12px; }
+  .file-view-head { padding-top: max(6px, env(safe-area-inset-top)); padding-left: max(16px, env(safe-area-inset-left)); }
+  .file-view-rename-input { height: 40px; font-size: 16px; }
+  .file-view-body { display: block; overflow: auto; }
+  .file-view-preview { height: 60dvh; }
+  .file-view-side { overflow: visible; border-left: 0; border-top: 1px solid var(--line); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+  .file-view .text-button, .file-view-download, .file-view-tab, .file-view-chat, .file-view-version, .file-view-chat-open, .file-view-pick { min-height: 44px; }
+  .file-view-download { height: 44px; }
 }

@@ -106,10 +106,10 @@ fn assert_imported(owner: &User) {
     assert_eq!(apps[0]["id"], APP);
     assert_eq!(owner.get("/api/status")["context"]["usedTokens"], 15049);
     assert_eq!(owner.fetch(&format!("/api/files/{FILE}")).0, 200);
-    let pane = owner.get("/api/pane");
+    let library = owner.get("/api/files");
     assert_eq!(
-        pane["artifacts"][0]["id"], FILE,
-        "an imported file is in the main chat: {pane}"
+        library["files"][0]["id"], FILE,
+        "an imported file is in the main chat: {library}"
     );
 }
 

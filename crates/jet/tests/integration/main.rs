@@ -10,6 +10,7 @@ mod facade;
 mod github;
 mod import;
 mod inbox;
+mod library;
 mod mcp_fixture;
 mod objectives;
 mod pane;

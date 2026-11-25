@@ -168,8 +168,5 @@ button.step:hover { background: rgba(255, 255, 255, .05); }
   .row-summary { padding: 8px 0; }
 }
 
-/* The files of the open chat: a name, then its facts and its note in muted text, all one link. */
-.file-open { display: flex; flex-direction: column; min-width: 0; min-height: 44px; padding: 6px 0; justify-content: center; color: var(--fg); font-size: 13px; line-height: 20px; text-decoration: none; }
-a.file-open:hover .file-name { text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .25); text-underline-offset: 3px; }
-.file-name, .file-facts, .file-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-facts, .file-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 17px; }
+/* The Files heading carries its way to the library at its end. */
+.pane-heading-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
