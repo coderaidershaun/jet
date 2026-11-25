@@ -458,7 +458,7 @@ fn the_objective_pane_calls_show_change_and_flip() {
         "Admin 123"
     );
 
-    // Deleting the chat that holds the card moves the card, with its objective, to the main chat.
+    // Deleting the chat that holds the card drops its objective and moves the card, with the objective, to the main chat.
     let chat_of_card = || -> i64 {
         database(&host)
             .query_row("SELECT chat_id FROM share_proposals", [], |row| row.get(0))

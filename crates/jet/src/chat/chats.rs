@@ -163,8 +163,8 @@ impl Chats {
         Ok(())
     }
 
-    /// Deletes a chat of the user with its thread. Its objectives and agent-tasks move to the
-    /// main chat. The main chat is refused, and so is a chat that is still answering.
+    /// Deletes a chat of the user with its thread. Its open objectives are dropped with their
+    /// waiting checks, and what the chat held moves to the main chat. The main chat is refused, and so is a chat that is still answering.
     pub(crate) fn delete(self: &Arc<Self>, user: UserId, id: ChatId) -> Result<(), BridgeError> {
         let Some(chat) = self.store.chat(user, id)? else {
             return Err(no_such_chat());
@@ -176,14 +176,14 @@ impl Chats {
         }
         let runtime = self.chat(user, Some(id))?;
         runtime.retire()?;
-        if let Err(error) = self.store.delete_chat(user, id) {
+        if let Err(error) = self.store.delete_chat(user, id, agent::now_ms()) {
             runtime.reopen();
             return Err(error.into());
         }
         lock(&self.open).chats.remove(&id);
         self.chats_changed(user, Some(id));
-        // What the chat held is in the main chat now, which the pane shows differently, and the
-        // files only that chat held went with it.
+        // Its objectives are dropped and in the main chat now, which the pane shows differently,
+        // and the files only that chat held went with it.
         self.pane_changed(user);
         Ok(())
     }

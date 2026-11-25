@@ -341,7 +341,7 @@ fn snapshot_status(user: &User, chat: i64) -> u16 {
 }
 
 #[test]
-fn deleting_chats_moves_their_objectives_and_follow_ups_to_the_main_chat() {
+fn deleting_chats_drops_their_objectives_and_moves_follow_ups_to_the_main_chat() {
     let host = host();
     let user = host.owner();
     let main = main_chat(&user);
@@ -414,13 +414,14 @@ fn deleting_chats_moves_their_objectives_and_follow_ups_to_the_main_chat() {
     );
     let objective = &data(&results[0])["objectives"][0];
     assert_eq!(
-        objective["chatId"], main,
-        "the objective stays, linked to the main chat"
+        (&objective["status"], &objective["chatId"]),
+        (&json!("dropped"), &json!(main)),
+        "the objective is dropped, its history kept in the main chat"
     );
-    let check = &objective["tasks"][0];
     assert_eq!(
-        (&check["state"], &check["chatId"]),
-        (&json!("scheduled"), &json!(main))
+        objective["tasks"],
+        json!([]),
+        "its waiting check is cancelled"
     );
     let tasks = data(&results[1])["tasks"].as_array().unwrap().clone();
     let follow_up = tasks

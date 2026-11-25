@@ -127,8 +127,8 @@ refusal is `403` with `{"kind":"adminOnly","message":...}`.
 
 A user has one main chat and any number of other chats. `GET /api/chats` lists them (main first,
 then by latest entry) with each unread count; `POST /api/chats` opens one, `PATCH /api/chats/{id}`
-renames it, `DELETE /api/chats/{id}` deletes it (the main chat refuses; the chat's objectives and
-agent-tasks move to the main chat, and the files only it holds go with it, see Artifacts). Every chat route (`status`, `snapshot`, `events`, `send`,
+renames it, `DELETE /api/chats/{id}` deletes it (the main chat refuses; the chat's open objectives are
+dropped with their waiting checks, then its objectives and agent-tasks move to the main chat, and the files only it holds go with it, see Artifacts). Every chat route (`status`, `snapshot`, `events`, `send`,
 `react`, `stop`, `forget`) takes `?chat={id}` and acts on the main chat without it; a chat that is
 not the user's gets the answer of one that does not exist. One `/api/events` stream carries the
 events of all the user's chats, each with its `chatId`. A Jet entry after a chat's read mark is

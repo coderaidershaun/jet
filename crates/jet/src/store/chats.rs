@@ -149,9 +149,15 @@ impl Store {
         (renamed == 1).then_some(()).ok_or(StoreError::NoSuchChat)
     }
 
-    /// Deletes the chat with its thread. Its objectives, agent-tasks and share cards move to the user's main
-    /// chat in the same transaction, so the objectives stay and their checks still run.
-    pub(crate) fn delete_chat(&self, user: UserId, chat: ChatId) -> Result<(), StoreError> {
+    /// Deletes the chat with its thread. Its objectives that are still open are dropped and their
+    /// waiting checks cancelled, as of `at`. The objectives, agent-tasks and share cards then move
+    /// to the user's main chat in the same transaction, so their history stays.
+    pub(crate) fn delete_chat(
+        &self,
+        user: UserId,
+        chat: ChatId,
+        at: u64,
+    ) -> Result<(), StoreError> {
         self.try_with(|db| {
             let transaction = db.transaction()?;
             let kind: Option<ChatKind> = transaction
@@ -170,6 +176,17 @@ impl Store {
                 "SELECT id FROM chats WHERE user_id = ?1 AND kind = 'main'",
                 [user.0],
                 |row| row.get(0),
+            )?;
+            transaction.execute(
+                "UPDATE agent_tasks SET state = 'cancelled', version = version + 1, updated_at = ?2
+                 WHERE state = 'scheduled' AND objective_id IN
+                   (SELECT id FROM objectives WHERE chat_id = ?1 AND status IN ('active', 'paused'))",
+                params![chat.0, super::seconds(at)],
+            )?;
+            transaction.execute(
+                "UPDATE objectives SET status = 'dropped', closed_at = ?2, version = version + 1, updated_at = ?2
+                 WHERE chat_id = ?1 AND status IN ('active', 'paused')",
+                params![chat.0, super::seconds(at)],
             )?;
             for table in ["objectives", "agent_tasks", "share_proposals"] {
                 transaction.execute(
