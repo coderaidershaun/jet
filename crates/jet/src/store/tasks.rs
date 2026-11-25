@@ -652,7 +652,7 @@ fn set_state(tx: &Transaction, task: i64, state: &str, at: i64) -> rusqlite::Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{Edit, NewObjective, ObjectiveChat, ObjectiveStatus, test_store};
+    use crate::store::{Edit, NewObjective, ObjectiveStatus, test_store};
 
     /// An objective with one check due at 1000, and that check claimed and running.
     fn running_check() -> (
@@ -677,7 +677,6 @@ mod tests {
             .create_objective(&NewObjective {
                 user: ada,
                 agreed_in: chat,
-                chat: ObjectiveChat::This,
                 title: "T",
                 deliverable: "D",
                 start: "2033-01-01",
@@ -857,7 +856,6 @@ mod tests {
             .create_objective(&NewObjective {
                 user: ada,
                 agreed_in: chat,
-                chat: ObjectiveChat::This,
                 title: "T",
                 deliverable: "D",
                 start: "2033-01-01",

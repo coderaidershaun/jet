@@ -9,10 +9,10 @@ crates/jet/                       the server program (axum) and the page it serv
   src/apps/                       app routes: registry (/api/apps), tool browser, proxy to running apps
   src/chat/                       one runtime per chat: commands, the streamed reply, reconnect snapshots, the notes review timer (it also sets a follow-up for each promise Jet made in its own lines, and rearms when it falls due too soon)
   src/evidence/                   outside evidence: a GitHub repository's activity, each user's sealed GitHub token
-  src/facade/                     the seventeen MCP tools the provider sees
+  src/facade/                     the eighteen MCP tools the provider sees
   src/objectives/                 objectives and agent-tasks: computed dates, local time to UTC
   src/scheduler/                  wakes Jet when an agent-task falls due and runs the check, and brings a colleague's item to its user
-  src/files/                      uploads, files Jet writes, the sandboxed reader child, export, all kept in the store
+  src/files/                      uploads, files Jet writes, artifacts (a chat's files, their notes, versions and sharing), the sandboxed reader child, export, all kept in the store
   src/server/                     shared host state, listen address and the remaining routes
   src/voice/                      the speak and hear routes and their limits
   src/settings.rs                 each user's settings and the admin-only provider program paths
@@ -102,7 +102,7 @@ refusal is `403` with `{"kind":"adminOnly","message":...}`.
 A user has one main chat and any number of other chats. `GET /api/chats` lists them (main first,
 then by latest entry) with each unread count; `POST /api/chats` opens one, `PATCH /api/chats/{id}`
 renames it, `DELETE /api/chats/{id}` deletes it (the main chat refuses; the chat's objectives and
-agent-tasks move to the main chat). Every chat route (`status`, `snapshot`, `events`, `send`,
+agent-tasks move to the main chat, and the files only it holds go with it, see Artifacts). Every chat route (`status`, `snapshot`, `events`, `send`,
 `react`, `stop`, `forget`) takes `?chat={id}` and acts on the main chat without it; a chat that is
 not the user's gets the answer of one that does not exist. One `/api/events` stream carries the
 events of all the user's chats, each with its `chatId`. A Jet entry after a chat's read mark is
@@ -233,13 +233,27 @@ Complete explicit commands execute without a second confirmation.
 
 The **+** at the left of the message box opens a picker for PDF, Markdown, HTML, Excel (`.xlsx`), CSV, text and image (PNG, JPEG, GIF, WebP) files. Dragging files onto the chat and pasting them into the field attach them too. Each file shows as a chip in the box and uploads at once; Send waits until every upload is done, and a chip that failed must be removed with its **×** first. A message may be files alone.
 
-Jet sees an upload only after the message that carries it is sent, and then only its details (name, size, and pages, sheets, rows or pixel size) with an instruction to leave the file alone until asked. When the user asks about a file's contents, Jet reads it with `files_read`: PDFs by page, workbooks and CSV by row, other text by line, and pictures as a picture. A file you remove before sending is deleted from the server. The thread keeps the files on the message, and Forget deletes them all.
+Jet sees an upload only after the message that carries it is sent, and then only its details (name, size, and pages, sheets, rows or pixel size). It acknowledges the file and writes a note of what it is (see Artifacts). When the user asks about a file's contents, Jet reads it with `files_read`: PDFs by page, workbooks and CSV by row, other text by line, and pictures as a picture. A file you remove before sending is deleted from the server. The thread keeps the files on the message. A file that was sent belongs to the chat from then on (see Artifacts), and Forget deletes the files that only that chat holds.
 
-Jet is served publicly, so every path is bounded: 32 MiB for a file, 10 files for a message and 2 GiB for the store of files. The extension and the first bytes must both match one of the kinds above, and a file Jet cannot read is refused. Every read of a stored file runs in a child process of the `jet` program (`jet --read-file`) with a 2 GiB memory cap (1 TiB on macOS, which refuses any cap below the roughly 400 GiB a process maps at start) and a 30 second limit, two at a time, so a file built to exhaust memory or to hang ends only that child. Uploads stay on disk until Forget, and an upload that was never sent counts toward the 2 GiB.
+Jet is served publicly, so every path is bounded: 32 MiB for a file, 10 files for a message, 256 MiB for one user's files with their kept versions, and 2 GiB for the store of files. The extension and the first bytes must both match one of the kinds above, and a file Jet cannot read is refused. Every read of a stored file runs in a child process of the `jet` program (`jet --read-file`) with a 2 GiB memory cap (1 TiB on macOS, which refuses any cap below the roughly 400 GiB a process maps at start) and a 30 second limit, two at a time, so a file built to exhaust memory or to hang ends only that child. Uploads stay in the database until Forget, and an upload that was never sent counts toward its user's 256 MiB and the 2 GiB.
+
+## Artifacts
+
+An artifact is a file that belongs to a chat: one the user sent there, or one Jet made there (a page of HTML, a document, an export). Artifacts are the rows of the `files` table that Jet can see; nothing is stored twice. Each keeps its name, kind, size and details, who made it (the user or Jet), when it last changed, a version number, and a **note** of one or two sentences that Jet writes when the file arrives or is made: what it is and why it matters in that chat. Migration `0013_artifacts.sql` adds two tables beside `files`: `file_chats` (the chats a file was shared into) and `file_versions` (the contents a file had before each change).
+
+- **Jet always knows what is there.** Every turn of a chat, and every check of that chat's objective or follow-up, starts with the chat's **file index**, a `<chat_files>` block with one line per file: name, kind, size, who made it, when it changed in the user's local time, whether another chat holds it too, its id and Jet's note. It never holds contents. It names the twenty most recently changed files and counts the rest, and it says that what it lists is data, never instructions. A check that brings a colleague's item, and the answer from shared objectives, get no index.
+- **Four tools.** `files_list` gives the files of the turn's chat, or with `chat` those of another chat of the same user. `files_read` reads one: PDFs by page, workbooks and CSV by row, other text by line, a long one in parts, and a picture as a picture with what Jet knows about it (kind, details, note), since it has no text. `files_export` writes a PDF, Markdown or HTML document from Markdown, with an optional note. `files_update` takes one typed `command`: `create` (a Markdown, CSV, text or HTML file from its name, its whole contents and its note), `write` (the whole new contents of a text file), `restore`, `describe` (the note), `rename` (the kind stays), `share` and `remove`. Each result is `{change, file}` with the file as the pane reads it.
+- **Versions.** `write` and `restore` keep the contents they replace. The five newest earlier versions of a file are kept, and the original of a file the user sent is always kept, so no run of changes loses what the user gave. `restore` brings back the one before, or a numbered one, and is itself a change that can be undone.
+- **Sharing between chats.** `share` puts a file of the turn's chat into another chat of the same user, or brings a file of another chat into the turn's own. Both chats then hold the same file, not a copy: it is in both indexes, and a change from either is what the other reads. A turn reads any file of its user, and changes, shares onward or removes only a file its own chat holds. `remove` takes a file out of one chat, and the file is deleted when no chat holds it any more. Deleting or forgetting a chat does the same for all of its files: those only it holds are deleted, and a shared one stays with the chats that still hold it.
+- **Never another user.** Every call finds a file through its owner, so another user's file id, or chat id, is answered as one that does not exist, by the tools and by `GET /api/files/{id}` alike.
+- **A check only reads.** A check may call `files_list` and `files_read`; `files_update` and `files_export` are refused as `checkIsReadOnly`. After web text, `remove` is refused until the user's next message. Reading a file never limits the rest of a reply: a file's name, note and contents are data, and the prompt says so.
+- **Limits, each refused with its reason.** 32 MiB for a file; 200,000 characters for the contents Jet writes in one call; 256 MiB for one user's files together with their kept versions (`Your files in Jet take more than 256 MB. Remove a file or forget a chat to free room.`); 2 GiB for the store, versions included. An upload that was never sent is deleted a day later, when its user next uploads.
+- **An HTML file is untrusted, whoever wrote it.** `GET /api/files/{id}/view` and the download send every HTML file with `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`. With `sandbox` and no `allow-same-origin` the page has an opaque origin, as an app page has: it cannot read Jet's page or its cookies, the browser sends Jet's `SameSite` cookies with none of its requests, and the guard refuses a cross-site request to the API anyway. `default-src 'none'` leaves it nothing to load and nothing to call, so a page must carry its own CSS and scripts. One thing a sandbox does not stop is a page sending its own frame to another address, with what it holds in the address. So an HTML file is always shown inside a wrapper, `GET /api/files/{id}/frame`: a fixed document of Jet's own, with no word of the user's in it, that holds the file in `<iframe sandbox="allow-scripts">` under `frame-src 'self'`, which keeps that frame on Jet's address, where its request carries no sign-in and is refused. `/view` of an HTML file opened as a tab redirects to the wrapper. The page shows the wrapper in a **file view**, a dialog; nothing of a file is ever put into Jet's own page. The cost is that a link inside an HTML file does not open from Jet; the downloaded file is an ordinary page.
+- **On the page.** A file Jet made or changed (`create`, `write`, `restore`) shows in the thread as a file card with Open and Download; the other commands are one line in plain words ("Shared summary.html with Kite"). The plan pane ends with **Files**, the open chat's artifacts as rows: the name, then kind, size, when it changed and "Shared" when another chat holds it too, and Jet's note under it. A tap opens the file. `GET /api/pane` carries them as `artifacts`, and `paneChanged` follows every change. Uploading stays in the message box.
 
 ## App tools
 
-Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees seventeen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `github_activity`, the six that record objectives and agent-tasks and change the directory (see Objectives and agent-tasks), and `chats_read` (see Many chats). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link; the reason starts with the fixed mark `[page-not-linked]`, which the page matches. After a web read, a `github_activity` call or a read of a colleague's shared objectives, the rest of that reply cannot call `apps_update`, `people_update`, `objectives_update` with `propose_share`, or an app tool that is not read-only. Codex and agy have no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, until Forget. `files_list` lists the files Jet can read, and `files_read` reads one when the user asks (see Attaching files). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
+Jet shares one HTTP MCP client between the assistant and tool browser. Commands and `/api/apps` share the registry; descriptors and explicit URL overrides locate each MCP endpoint. The provider sees eighteen stable tools of Jet's: `apps_list`, `apps_update`, `apps_open`, `tools_search`, `tools_describe`, `tools_call`, `files_export`, `files_list`, `files_read`, `files_update`, `github_activity`, the six that record objectives and agent-tasks and change the directory (see Objectives and agent-tasks), and `chats_read` (see Many chats). Claude Code also has its own web search, and its own page reading on sites whose link the user wrote in the chat (with or without `https://`, as `docs.rs/serde`) and on the pages that the chat's open objective names as sources; Jet's `/web-hook` refuses every other site and says the user can paste the link; the reason starts with the fixed mark `[page-not-linked]`, which the page matches. After a web read, a `github_activity` call or a read of a colleague's shared objectives, the rest of that reply cannot call `apps_update`, `people_update`, `objectives_update` with `propose_share`, or an app tool that is not read-only. Codex and agy have no web tools. `files_export` writes a PDF, Markdown or HTML file from Markdown the provider composes, and the thread shows it as a download card; the files live in the database, with the user's other files, as artifacts of the chat. `files_list` lists the files of a chat, `files_read` reads one when the user asks, and `files_update` makes and changes them (see Artifacts). Maths in a file is written as in chat (`\( \)`, `\[ \]`), and a single `$` is money. Search returns concise summaries; describe returns the actual schema and server instructions. Tool cards retain the real app ID, tool, arguments and result.
 
 Tools shows searchable summaries, actual input/output schemas, annotations, server identity, capabilities and instructions. Refresh retries failed metadata; stale results remain visibly marked. Only explicitly marked free discovery operations can expand into a hierarchy. Inspect a leaf or use Ask Jet to draft a request; browsing never executes ordinary business tools. In particular, normal Quanty search can cost money.
 
@@ -268,7 +282,7 @@ Jet starts every `agy` turn with `--dangerously-skip-permissions`, because nobod
 | Part | What it does |
 | --- | --- |
 | Agent file `.agents/agents/jet.md` with `tools: []`, `excludeDefaultComponents: true` and `inheritCustomizations: false` | The turn runs as an agent that has none of `agy`'s own tools (shell, files, web search, subagents) and takes no rules, skills, plugins or hooks from the user or from a folder above. The body of the file is Jet's system prompt. |
-| `.agents/mcp_config.json` | Names Jet's tool server with the token of the turn, and lists Jet's ten tools. Jet writes it before each turn and removes it after. |
+| `.agents/mcp_config.json` | Names Jet's tool server with the token of the turn, and lists Jet's eighteen tools. Jet writes it before each turn and removes it after. |
 | Hook: `.agents/hooks.json` and `.agents/allow.awk` | `agy` asks this program before every tool call. It allows Jet's tools by name and refuses every other call. That includes the three tools `agy` adds to every agent (`manage_task`, `list_resources`, `read_resource`) and any tool server the user saved. When the program fails, `agy` refuses the call. |
 | `--settings` with deny rules | A second layer: `agy`'s shell, file read and file write stay refused. |
 | `--disable-slash-commands`, and the message on standard input | A message cannot run an `agy` command, and cannot be taken for a flag. |
@@ -313,10 +327,11 @@ turn only, and every row is private to its owner until the owner shares it (see 
 - `objectives_list` reads the user's objectives with their steps, sources, update notes and waiting
   agent-tasks. Duration (start to due date) and days left are worked out on every read, never stored.
 - `objectives_update` takes one typed `command`: `create` (title, deliverable, due date, optional
-  start date, steps and sources, and the **first check**, which it cannot be made without; `chat`
-  is `new` for a chat of its own or `this` to take the current one), `edit`, `step_add`, `step_tick`,
+  start date, steps and sources, and the **first check**, which it cannot be made without; the
+  server picks the chat: a new one when the turn is in the main chat or in a chat that already holds
+  an objective, otherwise the current chat, and the answer's `chat` says which), `edit`, `step_add`, `step_tick`,
   `step_edit` (one step's new title, new due date, or both, as when a step slips),
-  `dates` (with the reason, for the whole objective), `note` (status `on track`, `at risk`, `blocked` or `done`, what moved,
+  `dates` (with the reason; it moves the objective's start and due dates and its note says in words what moved, and the steps keep theirs), `note` (status `on track`, `at risk`, `blocked` or `done`, what moved,
   blockers, and a `private` flag) and `close` (`done` or `dropped`, which also cancels the waiting
   checks and keeps the instant as `closedAt`). Every change raises the objective's `version`.
 - `tasks_list` reads Jet's own agent-tasks and its newest runs, so Jet looks before it adds one.
@@ -379,7 +394,8 @@ title, who set it, `isDefault` when the server set the time, and `snoozeAt`, whe
 `runs` (the newest twenty, each with a `cost` once the run has one, the objective's `title` or
 "Follow-up", the task's `why`, and the `chatId`, `entryId` and user's `reaction` of its check-in) and `sharedWithMe` (what colleagues shared: owner
 name, title, due, days left, steps and the latest public note, never a private note, chat or
-source). The one-tap controls are `PUT /api/objectives/{id}/steps/{step}` with `{"done": true|false}`,
+source). It also carries `artifacts`, every file of the user that Jet can see with the chats that hold it
+(see Artifacts). The one-tap controls are `PUT /api/objectives/{id}/steps/{step}` with `{"done": true|false}`,
 `POST /api/tasks/{id}/snooze` (to the next 08:00 in the user's zone strictly after the task's own time,
 or after now when that has passed, so a snooze never brings a check forward) and
 `POST /api/tasks/{id}/cancel`. Each acts only on the signed-in user's own things, answers another
@@ -398,14 +414,17 @@ failed tap), `view.js` (the rows), `pane.js` (reading, taps, open state, the dia
 one row per task, objective, run or item, a hairline between rows, plain headings, and a row unfolds in place
 (nothing starts unfolded). A row with a second thing to say puts it under the first, so neither is cut short.
 The pane's rows are `plan-row` in a `plan-rows` list, apart from the thread's `row`. A fact is plain text; colour marks only what needs the user (overdue, blocked, at risk,
-failed). Only a text button is a control. It reads `GET /api/pane` once on load and again on each `paneChanged`
-event of the one stream (also after the stream reconnects), so Jet's replies, finished checks and taps in another
-window show with no reload.
+failed). Only a text button is a control. It reads `GET /api/pane` once on load and again each time the page raises
+`jet:pane-changed`, which `chat/main.js` does for each `paneChanged` event of the one stream and for each snapshot
+the stream starts again from (a snapshot holds none of the events before it), so Jet's replies, finished checks and
+taps in another window show with no reload, also after the stream or the server started again.
 
 The pane follows the open chat. `chat/main.js` says which chat is open (`jet:chat-opened`, with the main chat's id),
 and the page picks the view from the one read: in an objective's own chat (or one where Jet set a follow-up) the
-pane holds those things only, in this order: the objective (title, state, days left, steps as "2/5", dates, the
-deliverable), its steps, the latest note with its Private control, who sees it and "Change", "Jet's tasks" (its
+pane holds those things only, in this order: the objective (title, "Due Fri 4 Dec" in the text colour, state, days
+left, steps as "2/5", the start date, the deliverable), its steps (one dated after the due date says so, and while
+the newest note is a change of dates and the last open step is dated before the due date a line says "Steps end
+27 Nov, before the new due date."), the latest note with its Private control, who sees it and "Change", "Jet's tasks" (its
 check and the follow-ups set in that chat, Snooze and Cancel in sight), what waits on colleagues, one line for the
 last look, and "All objectives and tasks", which swaps to the overview in place. In the main chat, and in a chat
 nothing belongs to, the pane is the overview: "Jet's tasks" (every open task under its day; today and tomorrow
@@ -425,8 +444,11 @@ it as a dialog over the page, which is inert behind a scrim that closes it on a 
 px the drawer folds to its rail beside it. The control's count is what Jet and colleagues did since the
 user last opened the pane (`jet.pane.seen`): checks run, checks set or moved, colleagues' updates and
 answers, counting only the open chat's things in a scoped chat; the user's own taps do not count. A later section is a new field of the read, a new function in
-`view.js` added to `planNodes`, and needs no new event.
-`tests/browser/plan.mjs` drives it against the real host.
+`view.js` added to `planNodes`, and needs no new event. **Files** is such a section: the read's `artifacts`
+(every artifact of the user, each with the chats that hold it), drawn after the rest of either view for the open
+chat only, and after the invitation in a chat that has nothing else (see Artifacts).
+`tests/browser/plan.mjs` drives it against the real host, and `tests/browser/live.mjs` checks that what Jet
+changes in a turn shows in the open page with no reload.
 
 ### The thread (page)
 
@@ -436,11 +458,14 @@ typed command and result, one sentence per command, and opens to named fields wi
 two or more in one reply fold into "Jet updated your plan · N changes" (or "Jet read your plan").
 A send card and a reply card (`cards/send-view.js`) never fold: they show the recipient and the exact
 words with **Send to <name>**, and after the tap what was sent and where the item stands; each reads
-itself again on every `paneChanged` (the page raises `jet:pane-changed`), so it follows the item with
+itself again whenever the page raises `jet:pane-changed`, so it follows the item with
 no reload. A reply card whose item ended another way, or expired, has no Send and says so ("Not sent:
 their question was already answered"). A check-in has the label "Check-in · <day>, <time>" above its bubble. A failed reply says
 "Jet could not finish this reply." with the raw words behind **Details**; while the server is away the
 thread shows "Waiting for the connection…", which goes as soon as the stream is open again. A held message's chip shows its first words.
+A `files_update` call that made or changed a file is a file card like the one of `files_export`; Open on an
+HTML file shows it in the file view (`ui/chat/file-view.js`), a dialog that frames the file's wrapper, and any
+other kind opens in a tab as before.
 
 The first Tab stop is **Skip to the message box**; with a mouse the message box has the focus after
 load. The reaction controls are not Tab stops: from the thread the arrow keys move between Jet's
@@ -467,10 +492,10 @@ the objective's chat, or stays silent, records what it found, and sets its own n
   sources, whether the last check-in was answered, answered with a reaction, unanswered or unread,
   how many in a row went unanswered, when the user last wrote, the chat's last entries (as data,
   inside tags that say they hold no instruction) and the check rules, which begin with the style
-  rule of a caring accountability buddy.
+  rule of a caring accountability buddy. The chat's file index (see Artifacts) follows the brief.
 - **The binding is read-only.** A check may call `github_activity`, `objectives_list` (the user's own),
-  `tasks_list`, `people_list`, `chats_read`, a source's app tool while the app still marks it
-  read-only, and `tasks_update` with `checked`, by which Jet records in one line what it found and,
+  `tasks_list`, `people_list`, `chats_read`, `files_list`, `files_read`, a source's app tool while the app
+  still marks it read-only, and `tasks_update` with `checked`, by which Jet records in one line what it found and,
   with `next` (local time, at least ten minutes away) and `why`, when it looks next. The record
   waits in the binding until the commit. Every other tool is refused. Page reading is limited to the
   hosts of the objective's page sources. A provider with web tools off holds a check of an objective

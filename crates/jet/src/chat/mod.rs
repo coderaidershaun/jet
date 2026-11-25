@@ -269,11 +269,15 @@ impl ChatState {
             name: request.persona.name.clone(),
         };
         let taps = self.store.unannounced_taps(self.chat.id)?;
+        let sent_files = !attachments.is_empty();
         let (identity, mut message) = self.bind_new_turn(request, payload, attachments);
-        message.notices = taps.iter().map(Tapped::notice).collect();
+        message.notices.extend(taps.iter().map(Tapped::notice));
         // The user's message stops a running check and holds the chat's checks back before the
         // check-ins are read, so a check-in is either read here or never posted.
         let hub = self.hub.upgrade();
+        if let (true, Some(hub)) = (sent_files, &hub) {
+            hub.pane_changed(self.user());
+        }
         let stop_holding = || {
             if let Some(hub) = &hub {
                 hub.signals.reply_ended(self.chat.id);
@@ -510,6 +514,8 @@ impl ChatState {
             request: payload,
         };
         let reads_web = request.model.reads_web();
+        // The files of the chat, with any sent in this message, come first among the notices.
+        let index = self.files.index(self.user(), self.chat.id);
         let message = Message {
             text: request.text,
             attachments,
@@ -522,7 +528,10 @@ impl ChatState {
             active_app_id: request.active_app_id,
             feeling: request.feeling,
             spoken: request.spoken,
-            notices: Vec::new(),
+            notices: Some(index)
+                .filter(|index| !index.is_empty())
+                .into_iter()
+                .collect(),
         };
         (identity, message)
     }
@@ -671,6 +680,9 @@ impl ChatState {
         runtime.publish(None, json!({"kind":"historyChanged"}));
         self.publish_unread(&mut runtime);
         self.files.clear(self.chat.id)?;
+        if let Some(hub) = self.hub.upgrade() {
+            hub.pane_changed(self.user());
+        }
         Ok(())
     }
 

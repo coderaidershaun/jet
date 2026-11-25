@@ -3,7 +3,7 @@
 //! to its owner, each tap acts on the owner's own things and raises their version, Jet is told of
 //! each tap once, and the user's event stream carries each change.
 use super::{
-    objectives::{MANAGER, create, database, objectives, run_turn},
+    objectives::{MANAGER, create, database, objectives, run_turn, run_turn_in},
     support::{Host, OWNER, User, agent, host},
 };
 use serde_json::{Value, json};
@@ -33,7 +33,7 @@ fn owner_plans(host: &Host, owner: &User) {
     let secret = objectives(json!({
         "action":"create","title":SECRET_TITLE,"deliverable":"A plan nobody sees",
         "start":"2099-06-01","due":"2099-08-01","steps":[],"sources":[{"kind":"jet"}],
-        "check":{"at":"2099-06-09T09:00","why":"secret check reason"},"chat":"this"
+        "check":{"at":"2099-06-09T09:00","why":"secret check reason"}
     }));
     let note = |moved: &str, private: bool| {
         objectives(
@@ -41,7 +41,7 @@ fn owner_plans(host: &Host, owner: &User) {
         )
     };
     let script = json!([
-        create("this", json!([{"kind":"jet"}])),
+        create(json!([{"kind":"jet"}])),
         note(PUBLIC_NOTE, false),
         note(PRIVATE_NOTE, true),
         secret
@@ -436,9 +436,21 @@ fn tap_is_told_to_jet_on_next_turn() {
         assert_eq!(status, 200, "{name}: {answer}");
         let prompt = || std::fs::read_to_string(host.dir.path().join("facade-prompt.txt")).unwrap();
         let idle = json!([{"tool":"people_list","arguments":{}}]);
-        run_turn(&host, &owner, "after-tap", "Thanks.", idle.clone());
+        let kite: i64 = database(&host)
+            .query_row("SELECT chat_id FROM objectives WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        run_turn_in(
+            &host,
+            &owner,
+            Some(kite),
+            "after-tap",
+            "Thanks.",
+            idle.clone(),
+        );
         assert!(prompt().contains(told), "{name}: {}", prompt());
-        run_turn(&host, &owner, "after-that", "And again.", idle);
+        run_turn_in(&host, &owner, Some(kite), "after-that", "And again.", idle);
         assert!(
             !prompt().contains("in the pane"),
             "{name} is told once: {}",

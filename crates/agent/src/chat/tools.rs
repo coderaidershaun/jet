@@ -16,7 +16,7 @@ pub const TURN_HEADER: &str = "x-jet-turn";
 /// the id of the call's card.
 pub const TOOL_USE_META: &str = "claudecode/toolUseId";
 
-pub const FACADE_TOOLS: [&str; 17] = [
+pub const FACADE_TOOLS: [&str; 18] = [
     "apps_list",
     "apps_update",
     "apps_open",
@@ -26,6 +26,7 @@ pub const FACADE_TOOLS: [&str; 17] = [
     "files_export",
     "files_list",
     "files_read",
+    "files_update",
     "github_activity",
     "objectives_list",
     "objectives_update",

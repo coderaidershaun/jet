@@ -182,6 +182,9 @@ impl Chats {
         }
         lock(&self.open).chats.remove(&id);
         self.chats_changed(user, Some(id));
+        // What the chat held is in the main chat now, which the pane shows differently, and the
+        // files only that chat held went with it.
+        self.pane_changed(user);
         Ok(())
     }
 

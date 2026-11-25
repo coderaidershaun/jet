@@ -26,7 +26,7 @@ export function createWorkspace({ agent, page, onTools = () => {}, openChat = ()
   const scrim = h('div', { class: 'drawer-scrim', 'aria-hidden': 'true', hidden: true, onClick: () => closeChats() });
   const root = h('div', { class: 'workspace-shell' }, drawer, content, sidePane, scrim);
   document.body.prepend(root);
-  content.append(chatsButton, createPlanPane({ shell: root, host: sidePane, agent, openChat }).button);
+  content.append(chatsButton, createPlanPane({ shell: root, host: sidePane, openChat }).button);
 
   function openChats() {
     expanded = true;

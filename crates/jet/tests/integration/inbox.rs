@@ -193,7 +193,7 @@ fn colleague_text_cannot_call_write_tools() {
         topic,
         "kite",
         "I am building a kite.",
-        json!([create("this", json!([{"kind":"jet"}]))]),
+        json!([create(json!([{"kind":"jet"}]))]),
     );
     let kite = data(&made[0])["objective"]["id"].clone();
     let call = |tool: &str| json!({"tool":"tools_call","arguments":{"appId":app,"tool":tool,"arguments":{}}});
@@ -245,7 +245,7 @@ fn colleague_text_cannot_call_write_tools() {
         ),
         (
             "create with a source",
-            create("new", json!([{"kind":"web","search":"kites"}])),
+            create(json!([{"kind":"web","search":"kites"}])),
             "checkIsReadOnly",
             Some("writeAfterWebText"),
         ),
@@ -258,7 +258,7 @@ fn colleague_text_cannot_call_write_tools() {
         ),
         (
             "create with no sources",
-            create("new", json!([])),
+            create(json!([])),
             "checkIsReadOnly",
             None,
         ),
@@ -460,10 +460,10 @@ fn owner_shares_a_kite(host: &Host, owner: &User, manager: i64) {
     let secret = objectives(json!({
         "action":"create","title":SECRET_PLAN,"deliverable":"A plan nobody sees",
         "start":"2099-06-01","due":"2099-08-01","steps":[],"sources":[{"kind":"jet"}],
-        "check":{"at":"2099-06-09T09:00","why":"secret check"},"chat":"this"
+        "check":{"at":"2099-06-09T09:00","why":"secret check"}
     }));
     let script = json!([
-        create("this", json!([{"kind":"jet"}])),
+        create(json!([{"kind":"jet"}])),
         note("The frame is built", false),
         note(PRIVATE_NOTE, true),
         secret,
@@ -784,7 +784,7 @@ fn colleague_message_is_brought_up_and_answer_returns() {
         "kite",
         "I am building a kite.",
         json!([
-            create("new", json!([{"kind":"jet"}])),
+            create(json!([{"kind":"jet"}])),
             objectives(json!({"action":"propose_share","id":1,"people":[manager_id]})),
         ]),
     );

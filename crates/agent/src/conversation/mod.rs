@@ -19,6 +19,7 @@ pub use answer::{AnswerAsk, AnswerError, CANNOT_ANSWER, answer_from_shared};
 pub use colleague::colleague_notice;
 use memory::Saved;
 pub use memory::{InMemory, MemoryError, NewEntry, Session, Storage, now_ms};
+pub use persona::size_words;
 pub use reply::Reply;
 pub use review::{
     Promise, REVIEW_GAP, REVIEW_QUIET, Review, ReviewError, ReviewOutcome, ReviewedChat,

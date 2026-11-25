@@ -54,6 +54,8 @@ fn write_after_web_text_is_refused_in_order() {
         disable(&app),
         call(&app, "job_write"),
         call(&app, "job_status"),
+        // A removed file cannot be brought back, so it is refused after web text, whatever the id.
+        json!({"tool":"files_update","arguments":{"command":{"action":"remove","id":"00000000-0000-4000-8000-000000000000"}}}),
     ]);
     let words = "What is https://github.com/anthropics/claude-code about?";
     let results = run_turn(&host, "web-then-write", words, script);
@@ -65,6 +67,12 @@ fn write_after_web_text_is_refused_in_order() {
         assert!(message.unwrap().contains("Tell the user"), "{refused}");
     }
     assert_eq!(results[3]["isError"], false, "{}", results[3]);
+    assert_eq!(
+        refusal_kind(&results[4]),
+        "writeAfterWebText",
+        "{}",
+        results[4]
+    );
     assert_eq!(
         fixture.app.calls.load(Ordering::SeqCst),
         1,

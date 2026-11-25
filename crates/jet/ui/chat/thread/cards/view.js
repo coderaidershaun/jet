@@ -5,6 +5,7 @@
 
 import { h, icon } from '../../../dom.js';
 import { fileSheet } from '../../files.js';
+import { viewOnClick } from '../../file-view.js';
 import { blocksBody, fieldNodes } from './block-view.js';
 import { findSource, splitCitations } from './cite.js';
 import { RUNNING } from './job.js';
@@ -205,7 +206,7 @@ function bodyOf(card, parts) {
 function fileCard(card) {
   const { body } = card;
   const sheet = fileSheet(body.tag);
-  const open = h('a', { class: 'file-action', href: body.view, target: '_blank', rel: 'noopener', 'data-file': true, 'aria-label': 'Open ' + body.name, text: 'Open' });
+  const open = h('a', { class: 'file-action', 'data-file': true, 'aria-label': 'Open ' + body.name, text: 'Open', href: body.view, target: '_blank', rel: 'noopener', ...(body.html ? { onClick: viewOnClick({ id: body.id, name: body.name }) } : {}) });
   const download = h('a', { class: 'file-action file-primary', href: body.download, download: body.name, 'data-file': true, 'aria-label': 'Download ' + body.name }, icon('download'), 'Download');
   return h(
     'div',

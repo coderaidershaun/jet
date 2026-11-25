@@ -1,4 +1,4 @@
-// The plan pane on the right of the window: reads GET /api/pane, redraws on each paneChanged event,
+// The plan pane on the right of the window: reads GET /api/pane, reads it again each time the page says it changed,
 // and turns each tap into one call. It owns whether the pane is open and what the user has seen of it.
 // Below 1024 px the open pane is a dialog over the page, which stays inert behind a scrim until it closes.
 
@@ -38,11 +38,11 @@ function seenKeys() {
 }
 
 /**
- * @param {{ shell: HTMLElement, host: HTMLElement, agent: any, openChat: (chatId: number, entryId?: number | null) => void }} parts
+ * @param {{ shell: HTMLElement, host: HTMLElement, openChat: (chatId: number, entryId?: number | null) => void }} parts
  *   `shell` carries `data-pane`; `host` is the pane itself; `openChat` shows a chat by its id, at an entry when given
  * @returns {{ button: HTMLElement, refresh: () => Promise<void> }}
  */
-export function createPlanPane({ shell, host, agent, openChat }) {
+export function createPlanPane({ shell, host, openChat }) {
   const overlay = matchMedia('(max-width: 1023px)');
   let desktopOpen = stored.read(OPEN_KEY) !== 'closed';
   let overlayOpen = false, wasModal = false;
@@ -125,7 +125,7 @@ export function createPlanPane({ shell, host, agent, openChat }) {
     const zone = pane?.timeZone ?? undefined;
     const now = Date.now() / 1000;
     const ctx = {
-      year: new Date().getFullYear(), now, today: isoDay(now, zone), timeZone: zone, shares, act, taps, mainId,
+      year: new Date().getFullYear(), now, today: isoDay(now, zone), timeZone: zone, shares, act, taps, mainId, chatId,
       scope: pane ? scopeOf(pane, chatId, mainId) : null, overview: swapped,
       isOpen: (key, byDefault = false) => folds.get(key) ?? byDefault,
     };
@@ -260,8 +260,8 @@ export function createPlanPane({ shell, host, agent, openChat }) {
     chatChanged = true;
     draw();
   });
-  agent.onChatEvent?.((envelope) => { if (envelope.event.kind === 'paneChanged') refresh(); });
-  agent.onConnectionChanged?.((connected) => { if (connected) refresh(); });
+  // The page says so when Jet or a tap changed what the pane shows, and when the event stream started again.
+  document.addEventListener('jet:pane-changed', refresh);
   // Times such as "in 2 h" age while the page sits still.
   setInterval(() => { if (isOpen() && pane) draw(); }, 60000);
   draw();

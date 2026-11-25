@@ -81,8 +81,8 @@ if (/^facade:/m.test(input)) {
   const idOf = (email) => db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
   await turn(owner, 'I need to ship the kite page by the 3rd, and I am planning the launch party for Thursday.', [
     { tool: 'objectives_list', arguments: {} },
-    objectives({ action: 'create', title: 'Ship the kite page', deliverable: 'A kite page that flies and takes orders', start: day(-7), due: day(9), steps: [{ title: 'Build the frame', due: day(2) }, { title: 'Fly it in the park', due: day(7) }, { title: 'Post the photos' }], sources: [{ kind: 'jet' }], check: { at: day(1) + 'T09:00', why: 'see whether the frame is built' }, chat: 'new' }),
-    objectives({ action: 'create', title: 'Plan the launch party', deliverable: 'A venue, a guest list and a cake', start: day(-2), due: day(2), steps: [{ title: 'Book the venue' }, { title: 'Send the invites' }], sources: [{ kind: 'jet' }], check: { at: day(1) + 'T08:30', why: 'ask whether the venue is booked' }, chat: 'new' }),
+    objectives({ action: 'create', title: 'Ship the kite page', deliverable: 'A kite page that flies and takes orders', start: day(-7), due: day(9), steps: [{ title: 'Build the frame', due: day(2) }, { title: 'Fly it in the park', due: day(7) }, { title: 'Post the photos' }], sources: [{ kind: 'jet' }], check: { at: day(1) + 'T09:00', why: 'see whether the frame is built' } }),
+    objectives({ action: 'create', title: 'Plan the launch party', deliverable: 'A venue, a guest list and a cake', start: day(-2), due: day(2), steps: [{ title: 'Book the venue' }, { title: 'Send the invites' }], sources: [{ kind: 'jet' }], check: { at: day(1) + 'T08:30', why: 'ask whether the venue is booked' } }),
     objectives({ action: 'step_tick', id: 1, step: 1 }),
     tasks({ action: 'schedule', objectiveId: 2, at: day(2) + 'T14:00', why: 'ask who has replied to the invite' }),
   ]);

@@ -138,7 +138,7 @@ fn attachment_words(attachments: &[Attachment]) -> String {
 }
 
 /// Rounded the way the page rounds, so Jet and the user see the same size.
-fn size_words(bytes: u64) -> String {
+pub fn size_words(bytes: u64) -> String {
     const KB: u64 = 1024;
     const MB: u64 = 1024 * 1024;
     match bytes {
@@ -299,8 +299,8 @@ mod tests {
         for rule in [
             "ask exactly one question in each reply, and wait for the answer",
             "objectives_update with `create` in that reply",
-            "offer the objective a chat of its own",
-            "call it with `chat: \"new\"`; if they want to keep it in the current chat, use `chat: \"this\"`",
+            "Never ask the user where an objective should live",
+            "When the answer's `chat.new` is true, say in one short line that you created a separate chat for tracking it",
             "chats_read lists the user's other chats",
             "Do not record before the user says yes",
             "first check",
@@ -311,6 +311,10 @@ mod tests {
             "`cancel` it and then `schedule` a new one",
             "Promise nothing you do not schedule",
             "objectives_update with `dates` and the reason",
+            "move each open step in that same reply with `step_edit`, by as much as the finish moved, and say the dates you set",
+            "Ask first only when the new step dates are a real choice",
+            "The plan pane beside the chat shows what is saved",
+            "Never tell the user to reload the page, and never say the pane may be out of date",
             "objectives_update with `note`",
             "`private`",
             "promise to come back only to what you schedule through tasks_update, in the same reply",
@@ -376,6 +380,23 @@ mod tests {
         assert!(requests[0].prompt.ends_with(
             "[The user tapped Share on the card for \"Kite\": it is now shared with nobody.]\nuser words"
         ));
+    }
+
+    #[test]
+    fn the_prompt_teaches_when_and_with_what_to_react() {
+        let prompt = compose(&Persona::default(), &Notes::default(), Model::Sonnet);
+        for rule in [
+            "Use one emoji only",
+            "when in doubt, leave it out",
+            "🫡",
+            "🫂",
+            "never a cheerful one",
+            "Never put a playful emoji on bad news, on a message about health, money trouble or loss, or on a colleague's words",
+            "an emoji alone is often the best answer",
+            "react: <emoji>",
+        ] {
+            assert!(prompt.contains(rule), "{rule}");
+        }
     }
 
     #[test]

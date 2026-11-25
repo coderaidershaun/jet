@@ -2,6 +2,7 @@
 //! sent its message: their apps, their files and their credentials only.
 mod chats;
 mod check;
+mod files;
 mod handler;
 mod handoff;
 mod marks;

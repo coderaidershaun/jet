@@ -184,14 +184,33 @@ above sign in through the same form with `signIn` from `process.mjs`.
 
 `chats.mjs` drives the real host with a provider stand-in, a signed-in owner and Playwright: a reply
 in another chat raises its badge with no reload and opening the chat clears it, a new chat needs no
-form, rename and the two-tap delete, an objective's chat shows its summary first, every call carries
-the open chat, and at 390 px a 300-letter message and an 80-letter title overflow nothing. It writes
-the ten screenshots to `SCREENSHOT_DIR`.
+form, rename and the two-tap delete, the jump to the latest entry shows only while something is below
+the reader, an objective's chat shows its summary first, every call carries the open chat, and at
+390 px a 300-letter message and an 80-letter title overflow nothing. It writes the eleven screenshots
+to `SCREENSHOT_DIR`.
 
 ```sh
 PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
 CHROME_BINARY='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
 SCREENSHOT_DIR=/tmp/jet-screens node crates/jet/tests/browser/chats.mjs
+```
+
+`live.mjs` runs the same way and takes no screenshots. With two windows of the owner open, the stand-in
+makes Jet's tool calls in a reply that is held open: a new objective's chat joins the list, a moved due date
+shows in the pane of the objective's own chat while the reply still runs, and a new task and a ticked step
+show in the main chat. It then starts the event stream again with no error, and the server itself again,
+and checks that both windows catch up and that unread counts still rise. No window is ever reloaded.
+
+`artifacts.mjs` drives the files of a chat the same way: through the stand-in Jet notes an uploaded file, makes an
+HTML page and shares it with the main chat; the script then checks the file card and the one-line cards in the thread,
+opens the page in the file view and reads, from inside the frame, that its script ran with no origin and could reach
+neither Jet's API, its cookies nor its page, opens the same address as a tab, reads the Files rows of the pane in both
+chats, and repeats the three views at 390 px. It writes six screenshots to `SCREENSHOT_DIR`.
+
+```sh
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
+CHROME_BINARY='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
+SCREENSHOT_DIR=/tmp/jet-artifacts node crates/jet/tests/browser/artifacts.mjs
 ```
 
 `workspace.mjs` and `commands.mjs` need the same two variables. `acceptance.mjs` also needs

@@ -210,7 +210,7 @@ test('every call of a chat carries the open chat, and the one stream gives each 
   const storage = { getItem: () => 'client', setItem() {} };
   const fetch = async (path, options) => {
     calls.push({ path, method: options.method });
-    return { ok: true, json: async () => (path.startsWith('/api/snapshot') ? { chatId: 7, cursor: 20, history: [], active: null, unread: 0 } : { user: {} }) };
+    return { ok: true, json: async () => (path.startsWith('/api/snapshot') ? { chatId: 7, epoch: 'e', cursor: 20, history: [], active: null, unread: 0 } : { user: {} }) };
   };
   const agent = createBrowserAgent({ EventSource: Source, storage, fetch, uuid: () => 'id', delay: async () => {} });
   const snapshots = [], turnEvents = [], chatEvents = [];
@@ -240,6 +240,11 @@ test('every call of a chat carries the open chat, and the one stream gives each 
   stream.emit(event(23, 7, 'text', { delta: 'here' }));
   assert.deepEqual(turnEvents.map((envelope) => envelope.event.delta), ['here'], 'a turn of another chat stays off this page');
   assert.deepEqual(chatEvents.map((envelope) => [envelope.chatId, envelope.event.unread]), [[1, 4]], 'an event of the open chat that its snapshot already holds is skipped, one of another chat is not');
+
+  // The server started again: its feed counts from nothing, and what the page kept of the old feed hides none of it.
+  stream.emit({ kind: 'snapshot', data: { chatId: 7, epoch: 'f', cursor: 0, history: [], active: null } });
+  stream.emit(event(1, 1, 'unread', { unread: 2 }));
+  assert.deepEqual(chatEvents.at(-1).event, { kind: 'unread', unread: 2 }, 'after a restart another chat\'s unread count still arrives');
 });
 
 test('a chat deleted while the stream was down is dropped, and the stream starts again from the main chat', async () => {

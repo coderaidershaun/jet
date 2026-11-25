@@ -20,6 +20,20 @@ pub(super) struct Gathered {
 }
 
 impl Scheduler {
+    /// What a check is told: its facts and the index of the files its chat holds. A check that
+    /// brings a colleague's message is told no index.
+    pub(super) fn brief(&self, task: &AgentTask, gathered: &Gathered) -> String {
+        let brief = agent::check_brief(&gathered.facts);
+        let index = match gathered.item {
+            Some(_) => String::new(),
+            None => self.facade.files_index(task.user, task.chat_id),
+        };
+        match index.is_empty() {
+            true => brief,
+            false => format!("{brief}\n\n{index}"),
+        }
+    }
+
     /// The facts of a running task. The objective is read first, so a change made while the facts
     /// are read moves its version past the one the result is held to.
     pub(super) fn gather(&self, task: &AgentTask, name: &str) -> Result<Gathered, ObjectiveError> {

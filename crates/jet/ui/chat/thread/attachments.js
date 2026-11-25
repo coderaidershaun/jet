@@ -1,14 +1,15 @@
 // The files sent with a message, drawn above its bubble: pictures as thumbnails, everything else as
 // chips on a small paper sheet. Each opens in a new tab; a workbook, which a browser cannot show,
-// is downloaded instead.
+// is downloaded instead, and an HTML page opens in a sandboxed frame over the page.
 
 import { h } from '../../dom.js';
 import { KINDS, fileLinks, fileSheet, sizeOf } from '../files.js';
+import { openProps } from '../file-view.js';
 
 /** @param {import('./store.js').Attachment} file */
 function chip(file) {
   const kind = KINDS[file.kind];
-  const links = fileLinks(file.id);
+  const opens = openProps(file);
   const what = h(
     'span',
     { class: 'attach-text' },
@@ -16,10 +17,7 @@ function chip(file) {
     h('span', { class: 'attach-meta', text: [kind?.tag ?? 'FILE', file.details, sizeOf(file.bytes)].filter(Boolean).join(' · ') }),
   );
   const content = [fileSheet(kind?.tag ?? 'FILE', { small: true }), what];
-  if (!links) return h('span', { class: 'attach-chip' }, ...content);
-  const opens = file.kind === 'xlsx'
-    ? { href: links.download, download: file.name }
-    : { href: links.view, target: '_blank', rel: 'noopener' };
+  if (!opens) return h('span', { class: 'attach-chip' }, ...content);
   return h('a', { class: 'attach-chip', 'data-file': true, title: file.name, ...opens }, ...content);
 }
 

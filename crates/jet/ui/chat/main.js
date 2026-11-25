@@ -180,6 +180,8 @@ async function start() {
     else { view.setBanner(null); refreshStatus(); }
   });
 
+  /** The plan pane, and each send or reply card in the thread, reads what it shows again. */
+  const paneChanged = () => document.dispatchEvent(new CustomEvent('jet:pane-changed'));
   let shownChat = null;
   const chats = createChats({
     agent,
@@ -214,8 +216,7 @@ async function start() {
       const title = chats.items.find((chat) => chat.id === envelope.chatId)?.title;
       announce(envelope.chatId === chats.openId || !title ? 'Jet checked in.' : `Jet checked in, in ${title}.`);
     }
-    // A send or reply card in the thread reads its item again when the server says something changed.
-    if (event.kind === 'paneChanged') document.dispatchEvent(new CustomEvent('jet:pane-changed'));
+    if (event.kind === 'paneChanged') paneChanged();
   });
   document.addEventListener('visibilitychange', () => chats.attend());
 
@@ -459,6 +460,8 @@ async function start() {
     turn.restore(snapshot);
     workspace.refresh();
     chats.refresh().catch(warn('the chat list could not be read'));
+    // A snapshot holds none of the events before it, so a change of the plan may have been missed.
+    paneChanged();
     resolveFirstSnapshot();
     refreshStatus();
   }, (event) => turn.observe(event));

@@ -24,16 +24,16 @@ pub trait Provider {
 pub fn run_as(provider: &dyn Provider, args: &[String], input: &str) -> bool {
     // Tests read this to see exactly what the model was sent, even when no script follows.
     std::fs::write("facade-prompt.txt", input).unwrap();
-    // A check starts with a brief that holds no `facade:` line, so a test leaves the script of the
-    // next check in a file.
+    // A check starts with a brief that holds no `facade:` line of its own, so a test leaves the
+    // script of the next check in a file. The file comes first, because the brief quotes the
+    // chat, and the chat may hold the `facade:` line of an earlier message.
     let from_file = input
         .starts_with("[Check.")
         .then(|| std::fs::read_to_string("check-script.json").ok())
         .flatten();
-    let Some(script) = input
-        .lines()
-        .find_map(|line| line.strip_prefix("facade:"))
-        .or(from_file.as_deref())
+    let Some(script) = from_file
+        .as_deref()
+        .or_else(|| input.lines().find_map(|line| line.strip_prefix("facade:")))
     else {
         return false;
     };

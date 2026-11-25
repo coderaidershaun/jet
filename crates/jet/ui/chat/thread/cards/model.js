@@ -47,7 +47,7 @@ import { shareOf } from './share.js';
  *   | { kind: 'share', view: import('./share.js').ShareView }
  *   | { kind: 'send', view: import('./send.js').SendView }
  *   | { kind: 'reply', view: import('./reply.js').ReplyView }
- *   | { kind: 'file', name: string, title: string, tag: string, meta: string, download: string, view: string }} Body
+ *   | { kind: 'file', name: string, title: string, tag: string, meta: string, id: string, html: boolean, download: string, view: string }} Body
  */
 /**
  * How far a running call is, for the bar: `value` of `max`, both null when it cannot say, and the words beside it.
@@ -68,6 +68,7 @@ const FAILED_LINE = /FAILED/;
 const HEALTH_HINT = 'Ask for a health check to see which service is down.';
 const FILE_TOOL = 'jet/files_export';
 const READ_TOOL = 'jet/files_read';
+const UPDATE_TOOL = 'jet/files_update';
 const LIST_TOOL = 'jet/files_list';
 const WEB_FETCH = 'web/fetch';
 const WEB_SEARCH = 'web/search';
@@ -150,6 +151,11 @@ function titleOfDocument(documentId, earlier) {
   return null;
 }
 
+const UPDATE_RUNNING = {
+  create: 'Making a file', write: 'Changing a file', restore: 'Bringing back an earlier version', describe: 'Noting what a file is',
+  rename: 'Renaming a file', remove: 'Removing a file', share: 'Sharing a file',
+};
+
 /** What the call is doing, in words. It also stays on the card as the name of what was asked. */
 function lineOf(call, earlier) {
   const input = recordOf(call.input);
@@ -190,6 +196,11 @@ function lineOf(call, earlier) {
       return 'Reading a file';
     case LIST_TOOL:
       return 'Listing files';
+    case UPDATE_TOOL: {
+      const command = recordOf(input.command);
+      const name = orNull(command.name);
+      return command.action === 'create' && name ? 'Making ' + name : Object.hasOwn(UPDATE_RUNNING, command.action) ? UPDATE_RUNNING[command.action] : 'Changing a file';
+    }
     case FILE_TOOL: {
       const writing = fileFormatOf(call)?.writing;
       const title = orNull(input.title);
@@ -277,8 +288,36 @@ function readFile(result, input, call) {
   const title = orNull(result.title) ?? orNull(input.title) ?? 'Document';
   const name = orNull(result.name) ?? title;
   const meta = joined(format.label, typeof result.bytes === 'number' ? sizeOf(result.bytes) : '');
-  const body = { kind: 'file', name, title, tag: format.tag, meta, download: links.download, view: links.view };
+  const body = { kind: 'file', name, title, tag: format.tag, meta, id: result.id.toLowerCase(), html: format === KINDS.html, download: links.download, view: format === KINDS.html ? links.frame : links.view };
   return { outcome: meta, tone: 'ok', body };
+}
+
+const CHANGED = { created: '', written: 'changed', restored: 'earlier version back' };
+
+/**
+ * What Jet's files_update did. A file it made or changed is a file card; the other changes are one line in plain words.
+ * A result without a UUID id makes no link, and a change it does not know is shown as plain fields.
+ */
+function readUpdate(result, input) {
+  const change = stringOf(result.change);
+  const file = recordOf(result.file);
+  const name = orNull(file.name) ?? 'a file';
+  if (Object.hasOwn(CHANGED, change)) {
+    const links = fileLinks(file.id);
+    const kind = KINDS[file.kind];
+    if (!links || !kind) return { problem: "This file can't be found." };
+    const meta = joined(kind.label, typeof file.bytes === 'number' ? sizeOf(file.bytes) : '', CHANGED[change]);
+    return { outcome: meta, tone: 'ok', body: { kind: 'file', name, title: name, tag: kind.tag, meta, id: file.id.toLowerCase(), html: file.kind === 'html', download: links.download, view: file.kind === 'html' ? links.frame : links.view } };
+  }
+  const chat = orNull(recordOf(result.chat).title) ?? 'another chat';
+  const said = {
+    described: 'Noted what ' + name + ' is',
+    renamed: 'Renamed ' + (orNull(result.from) ?? 'a file') + ' to ' + name,
+    removed: result.deleted === true ? 'Removed ' + name : 'Took ' + name + ' out of ' + (recordOf(input.command).chat == null ? 'this' : 'another') + ' chat',
+    shared: 'Shared ' + name + ' with ' + chat,
+  };
+  const words = Object.hasOwn(said, change) ? said[change] : null;
+  return words ? { outcome: words, tone: 'quiet', body: null, plain: true } : null;
 }
 
 const grouped = (n) => n.toLocaleString('en-US');
@@ -341,6 +380,7 @@ function readPeople(result, input) {
 function readerFor(call) {
   const key = call.server + '/' + call.tool;
   if (key === FILE_TOOL) return readFile;
+  if (key === UPDATE_TOOL) return readUpdate;
   if (key === READ_TOOL) return readAttached;
   if (key === LIST_TOOL) return readFileList;
   if (!isRecord(call.result)) return readGeneric;
@@ -416,8 +456,8 @@ export function cardOf(call, earlier = []) {
 
   if (state === 'running') return { ...card, progress: barOf(call.progress) };
   if (state === 'unfinished') return ended('stopped');
-  if (state === 'failed' && (card.key === FILE_TOOL || card.key === READ_TOOL)) {
-    const failedName = card.key === READ_TOOL ? "Couldn't read the file" : "Couldn't write the " + (fileFormatOf(call)?.label ?? 'file');
+  if (state === 'failed' && (card.key === FILE_TOOL || card.key === READ_TOOL || card.key === UPDATE_TOOL)) {
+    const failedName = card.key === READ_TOOL ? "Couldn't read the file" : card.key === UPDATE_TOOL ? "Couldn't change the file" : "Couldn't write the " + (fileFormatOf(call)?.label ?? 'file');
     const meta = joined('failed', time);
     return { ...card, name: failedName, meta, head: failedName + ' · ' + meta, tone: 'invalid', advice: messageOf(call.result) };
   }
@@ -442,7 +482,9 @@ export function cardOf(call, earlier = []) {
   if (records) {
     return { ...card, name: records.line, meta: time, head: joined(records.line, time), body: { kind: 'fields', fields: records.fields } };
   }
-  const { outcome, tone, body, problem } = read(result, input, call) ?? readGeneric(result, input, call);
+  const { outcome, tone, body, problem, plain } = read(result, input, call) ?? readGeneric(result, input, call);
+  // A change in plain words is the whole card: no tool name before it.
+  if (plain) return { ...card, name: outcome, meta: time, head: joined(outcome, time), tone, body };
   if (problem) return { ...ended(joined('failed', time)), state: 'failed', tone: 'invalid', advice: problem };
   return { ...ended(joined(outcome, time)), tone, body, job: read === readJob ? jobOf(call.result) : null };
 }

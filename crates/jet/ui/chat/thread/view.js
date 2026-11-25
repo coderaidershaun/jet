@@ -177,16 +177,15 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     return JSON.stringify([row.type, row.label, row.message, row.first, row.last, isFinal, shown, failure && failure.kind]);
   };
 
-  scroller.addEventListener('scroll', () => {
+  // The jump control shows only while there is something below the reader: never on an empty or short thread.
+  const syncJump = () => {
     follow.onScroll(scroller);
     jumpButton.hidden = !follow.jumpVisible;
-  });
+  };
+  scroller.addEventListener('scroll', syncJump);
   // The visible part of the thread shrinks when the held chip or a tall field appears; stay at the bottom if the reader was there.
-  new ResizeObserver(() => { if (follow.following) view.scrollToBottom(); }).observe(scroller);
-  jumpButton.addEventListener('click', () => {
-    follow.onSend();
-    view.scrollToBottom();
-  });
+  new ResizeObserver(() => { if (follow.following) view.scrollToBottom(); else syncJump(); }).observe(scroller);
+  jumpButton.addEventListener('click', () => view.scrollToBottom());
 
   rowsEl.addEventListener('click', (event) => {
     const target = /** @type {HTMLElement} */ (event.target);
@@ -199,8 +198,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
     } else if (target.closest('.cite')) {
       const chip = /** @type {HTMLElement} */ (target.closest('.cite'));
       if (openSource(rowsEl, chip.dataset.call, Number(chip.dataset.n))) {
-        follow.onScroll(scroller);
-        jumpButton.hidden = !follow.jumpVisible;
+        syncJump();
       }
     } else if (target.closest('.react-open')) {
       openChooser(/** @type {HTMLElement} */ (target.closest('.react-open')));
@@ -300,7 +298,9 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
         record.el.remove();
         nodes.delete(key);
       }
+      // A thread that was emptied or swapped for a short one fires no scroll event, so look again here.
       if (follow.following) view.scrollToBottom();
+      else syncJump();
     },
 
     /** The lane where the live Jet stands, or null when there is no Jet row. */
@@ -310,6 +310,7 @@ export function createThreadView({ scroller, rowsEl, bannerEl, jumpButton, follo
 
     scrollToBottom() {
       scroller.scrollTop = scroller.scrollHeight;
+      syncJump();
     },
 
     /** One pill at the top of the thread, for a problem found at launch. */

@@ -1,7 +1,8 @@
 // What the plan pane says about Jet's read of the user's objectives, tasks and checks, in plain words.
 // Pure, with no DOM, so every wording is tested.
 
-import { isRecord, listOf, numberOrNull, orNull, recordOf, stringOf } from '../chat/thread/cards/guard.js';
+import { KINDS, sizeOf } from '../chat/files.js';
+import { isRecord, joined, listOf, numberOrNull, orNull, recordOf, stringOf } from '../chat/thread/cards/guard.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -37,8 +38,18 @@ export function readPane(raw) {
     runs: records(pane.runs),
     sharedWithMe: records(pane.sharedWithMe),
     sent: records(pane.sent),
+    artifacts: records(pane.artifacts),
   };
 }
+
+/** The files the open chat holds; the server sends them newest change first. */
+export const chatFiles = (pane, chatId) => pane.artifacts.filter((file) => listOf(file.chats).includes(chatId));
+
+/** 'HTML page · 3 KB · 5 min ago' for a file; `now` is in Unix seconds, `changedAt` in milliseconds. */
+export const fileWords = (file, now) => joined(KINDS[file.kind]?.label ?? 'File', numberOrNull(file.bytes) === null ? '' : sizeOf(file.bytes), numberOrNull(file.changedAt) === null ? '' : relativeWords(file.changedAt / 1000 - now));
+
+/** How many other chats hold the file, which is what makes it shared. */
+export const otherChats = (file, chatId) => listOf(file.chats).filter((id) => id !== chatId).length;
 
 export const isEmpty = (pane) => !pane.objectives.length && !pane.tasks.length && !pane.runs.length && !pane.sharedWithMe.length && !pane.sent.length;
 
@@ -77,10 +88,10 @@ export function daysLeftWords(daysLeft) {
   return { words: `${plural(days)} left`, tone: days <= 3 ? 'warn' : 'quiet' };
 }
 
-/** '1 Jan to 1 Feb · 31 days'. */
-export function rangeWords(objective, year) {
-  const days = numberOrNull(objective.durationDays);
-  return [`${dateWords(objective.start, year)} to ${dateWords(objective.due, year)}`, days === null ? '' : `${days} day${days === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+/** 'Sun 1 Feb' for '2026-02-01', the way an objective's due date reads; the year is added when it is not `year`. */
+export function dueDayWords(iso, year) {
+  const words = dateWords(iso, year);
+  return words && `${WEEKDAYS[new Date(iso + 'T00:00Z').getUTCDay()]} ${words}`;
 }
 
 /** 'in 2 days', 'in 3 h', '5 min ago', for a distance in seconds; later is positive. */
@@ -98,13 +109,26 @@ export function isoDay(seconds, timeZone) {
   return new Intl.DateTimeFormat('en-CA', { ...(timeZone ? { timeZone } : {}), year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(seconds * 1000));
 }
 
-/** A step's due day, said late in the danger tone once it has passed unticked, and in amber on the day. */
-export function stepDueWords(step, today, year) {
+/**
+ * A step's due day, said late in the danger tone once it has passed unticked, in amber on the day, and in amber
+ * when it lies after `due`, the day its objective is due.
+ */
+export function stepDueWords(step, today, year, due) {
   const words = dateWords(step.due, year);
   if (!words || step.doneAt != null || !today) return { words, tone: 'quiet' };
   if (step.due < today) return { words: `${words}, late`, tone: 'bad' };
+  if (due && step.due > due) return { words: `${words}, after the due date`, tone: 'warn' };
   if (step.due === today) return { words: 'Today', tone: 'warn' };
   return { words, tone: 'quiet' };
+}
+
+/**
+ * 'Steps end 27 Nov, before the new due date.' while the newest note is a change of dates and the last open step
+ * is dated before the day the objective is due: the due date moved and the steps did not follow. Else nothing.
+ */
+export function stepsEndWords(objective, year) {
+  const last = listOf(objective.steps).filter((step) => isRecord(step) && step.doneAt == null && step.due).map((step) => step.due).sort().at(-1);
+  return latestNote(objective)?.newDates && last && last < objective.due ? `Steps end ${dateWords(last, year)}, before the new due date.` : '';
 }
 
 /** 'Closed 3 Dec' for a done or dropped objective, from the instant it was closed. */

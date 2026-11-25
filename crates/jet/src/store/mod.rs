@@ -22,15 +22,13 @@ mod update_notes;
 
 pub(crate) use chats::{Chat, ChatId, ChatKind, ChatSummary};
 pub(crate) use directory::{Email, NewUser, Person, Team, User, UserId};
-pub(crate) use files::Added;
+pub(crate) use files::{Added, Changed, Held};
 pub use import::ImportError;
 pub(crate) use inbox::{
     CardId, Close, Closed, Item, ItemId, ItemKind, ItemState, Posted, ReplyCard, ReplyCardId,
     ReplyOutcome, SendCard, SendTap, Sent,
 };
-pub(crate) use objectives::{
-    Edit, NewObjective, Objective, ObjectiveChat, ObjectiveId, ObjectiveStatus,
-};
+pub(crate) use objectives::{Edit, NewObjective, Objective, ObjectiveId, ObjectiveStatus};
 pub(crate) use shares::{
     Applied, CardPerson, CardTeam, ProposalId, ShareCard, Shared, SharedNote, Sharing, Tapped,
 };
@@ -88,6 +86,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0010_check_runs.sql"),
     include_str!("migrations/0011_inbox.sql"),
     include_str!("migrations/0012_closed_and_reply_cards.sql"),
+    include_str!("migrations/0013_artifacts.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -116,8 +115,6 @@ pub enum StoreError {
     Query(#[from] rusqlite::Error),
     #[error("the objective already has an open check; move it instead of adding another")]
     DuplicateCheck,
-    #[error("this chat already belongs to an objective")]
-    ChatTaken,
     #[error("the main chat cannot be deleted")]
     MainChat,
     #[error("no such chat")]

@@ -126,7 +126,8 @@ impl Handler {
     ) -> Option<Value> {
         let refusal = |kind: &str, message: &str| Some(json!({"kind": kind, "message": message}));
         match name {
-            "github_activity" | "tasks_list" | "chats_read" | "people_list" => None,
+            "github_activity" | "tasks_list" | "chats_read" | "people_list" | "files_list"
+            | "files_read" => None,
             "objectives_list" if arguments.get("owner").is_none() => None,
             "tasks_update" if arguments["command"]["action"] == "checked" => None,
             "tools_call" | "tools_describe" => {

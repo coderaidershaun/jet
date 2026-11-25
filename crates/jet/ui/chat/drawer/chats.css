@@ -25,7 +25,7 @@
 .chat-title { flex: 1; }
 /* One weight for every title; only a chat with something unread is stronger. */
 .chat-row:has(.badge) .chat-title { font-weight: 650; }
-.badge { display: grid; place-items: center; flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--fill); color: var(--on-fill); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.badge { display: grid; place-items: center; flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--fill); color: var(--on-fill); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; text-box: trim-both cap alphabetic; }
 
 .chat-actions { display: none; flex: none; padding-right: 3px; }
 .chat-row:hover .chat-actions, .chat-row:focus-within .chat-actions, .chat-row:has(.chat-open[aria-current="true"]) .chat-actions { display: flex; }

@@ -144,26 +144,28 @@ a.attach-chip:hover, .attach-thumb:hover { border-color: rgba(255, 255, 255, .22
 .math-display .katex-display { margin: 0; }
 .math-error { color: var(--danger); }
 
+/* One quiet arrow at the lower right of the conversation, where the reader's eye ends. */
 .jump {
-  position: absolute; left: 50%; bottom: 16px; z-index: 4; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 18px 0 12px;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-s);
-  font-size: 14px; font-weight: 600; box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+  position: absolute; right: max(var(--gutter), calc(50% - 410px)); bottom: 12px; z-index: 4;
+  display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-m); color: var(--muted);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
 }
+.jump:hover { color: var(--fg); }
 .jump .icon { width: 18px; height: 18px; }
+@media (pointer: coarse) { .jump { width: 44px; height: 44px; } }
 
 /* An emoji on a message sits on the bubble's lower edge, as on WhatsApp, at its left so the time stays clear. */
 .reacts { position: relative; z-index: 1; display: flex; gap: 4px; align-self: flex-start; margin: -16px 0 0 10px; }
 .reacts:empty { display: none; }
 .row.has-reacts { margin-bottom: 10px; }
 .react-chip {
-  display: inline-grid; place-items: center; min-width: 30px; height: 26px; padding: 0 6px;
-  background: var(--surface-2); border: 2px solid var(--ground); border-radius: var(--r-s);
-  font-size: 15px; line-height: 1;
+  display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px;
+  background: none; border: 0; font-size: 24px; line-height: 1;
 }
 button.react-chip { position: relative; }
 button.react-chip::after { content: ""; position: absolute; inset: -9px -7px; }
-button.react-chip:hover { background: #1d2c38; }
+button.react-chip:hover { background: rgba(255, 255, 255, .06); border-radius: var(--r-s); }
 
 /* The button that opens the chooser shows beside a Jet bubble while the pointer is on the message. On a touch screen a long press opens it instead. */
 .react-open {

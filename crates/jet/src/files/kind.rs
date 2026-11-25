@@ -58,6 +58,14 @@ impl FileKind {
         }
     }
 
+    /// Whether Jet can write this kind itself: it is text.
+    pub fn is_text(self) -> bool {
+        matches!(
+            self,
+            FileKind::Markdown | FileKind::Html | FileKind::Csv | FileKind::Text
+        )
+    }
+
     /// The same word the kind has in JSON.
     pub fn word(self) -> &'static str {
         match self {

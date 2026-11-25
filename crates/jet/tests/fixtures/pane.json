@@ -1,7 +1,7 @@
 {
   "objectives": [
     {
-      "chatId": 1,
+      "chatId": 3,
       "closedAt": null,
       "createdAt": 1767225600,
       "daysLeft": 31,
@@ -57,7 +57,7 @@
       "tasks": [
         {
           "attempts": 1,
-          "chatId": 1,
+          "chatId": 3,
           "createdAt": 1767225600,
           "dueAt": 1767603600,
           "id": 1,
@@ -76,7 +76,7 @@
       "version": 3
     },
     {
-      "chatId": 1,
+      "chatId": 5,
       "closedAt": 1767225600,
       "createdAt": 1767225600,
       "daysLeft": 31,
@@ -111,10 +111,10 @@
   ],
   "runs": [
     {
-      "chatId": 1,
+      "chatId": 3,
       "cost": null,
       "endedAt": 1777225700,
-      "entryId": 1,
+      "entryId": 2,
       "found": "The frame is built",
       "id": 1,
       "objectiveId": 1,
@@ -178,7 +178,7 @@
   "tasks": [
     {
       "attempts": 1,
-      "chatId": 1,
+      "chatId": 3,
       "createdAt": 1767225600,
       "dueAt": 1767603600,
       "id": 1,

@@ -98,7 +98,7 @@ impl ServerHandler for Handler {
 #[derive(Debug, thiserror::Error)]
 enum WriteRefused {
     #[error(
-        "this reply has read web text or a colleague's words, so Jet refuses changes to apps, people, shares and the sources of an objective, sending to colleagues, and app tools that are not read-only, until the user's next message. Tell the user exactly what you wanted to do, so their next message can allow it"
+        "this reply has read web text or a colleague's words, so Jet refuses changes to apps, people, shares and the sources of an objective, removing a file, sending to colleagues, and app tools that are not read-only, until the user's next message. Tell the user exactly what you wanted to do, so their next message can allow it"
     )]
     WriteAfterWebText,
     #[error(
@@ -154,7 +154,7 @@ impl Handler {
                 width,
                 height,
             } => {
-                let facts = json!({"id":about.id,"name":about.name,"mime":"image/jpeg","width":width,"height":height});
+                let facts = json!({"id":about.id,"name":about.name,"kind":about.kind,"details":about.details,"context":about.context,"note":"a picture has no text to read; this is what Jet knows about it","mime":"image/jpeg","width":width,"height":height});
                 CallToolResult::success(vec![
                     ContentBlock::image(data, "image/jpeg"),
                     ContentBlock::text(facts.to_string()),
@@ -226,6 +226,8 @@ impl Handler {
         let command = &arguments["command"];
         let has_sources = |sources: &Value| sources.as_array().is_some_and(|list| !list.is_empty());
         let sends = name == "tasks_update" && command["action"] == "send";
+        // A removed file cannot be brought back.
+        let removes_file = name == "files_update" && command["action"] == "remove";
         let changes_shares = name == "objectives_update"
             && match command["action"].as_str() {
                 Some("propose_share") => true,
@@ -236,6 +238,7 @@ impl Handler {
             };
         if !(matches!(name, "apps_update" | "tools_call" | "people_update")
             || changes_shares
+            || removes_file
             || sends)
         {
             return None;
@@ -363,7 +366,21 @@ impl Handler {
             "tools_search" => self.tools_search(&arguments, &binding).await,
             "tools_describe" => self.tools_describe(arguments, &binding).await,
             "tools_call" => self.tools_call(arguments, token, binding, context).await,
-            "files_export" => self.files_export(arguments, &binding).await,
+            "files_export" => {
+                let result = self.files_export(arguments, &binding).await;
+                if let (Ok(_), Some(chats)) = (&result, self.0.chats()) {
+                    chats.pane_changed(user);
+                }
+                result
+            }
+            "files_update" => {
+                let result = self.files_update(&arguments, &binding).await;
+                if let (Ok(_), Some(chats)) = (&result, self.0.chats()) {
+                    chats.pane_changed(user);
+                }
+                result
+            }
+            "files_list" => self.files_list(&arguments, &binding).await,
             "github_activity" => self.github_activity(&arguments, token, &binding).await,
             "objectives_list" => self.objectives_list(&arguments, token, &binding).await,
             "objectives_update" => {
@@ -389,14 +406,6 @@ impl Handler {
             "people_list" => self.people_list().await,
             "people_update" => self.people_update(&arguments, &binding).await,
             "chats_read" => self.chats_read(&arguments, &binding).await,
-            "files_list" => {
-                let files = self.0.files.clone();
-                let listed = on_worker(move || files.list(user))
-                    .await
-                    .map_err(message)?
-                    .map_err(message)?;
-                Ok(json!({"files": listed}))
-            }
             _ => Err(message("unknown facade tool")),
         }
     }

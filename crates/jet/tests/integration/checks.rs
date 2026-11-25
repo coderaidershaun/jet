@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
 /// 2099-06-08T13:00:00Z: 09:00 in New York, when the first check of `create` falls due.
-const DUE: u64 = 4_084_606_800;
+pub(super) const DUE: u64 = 4_084_606_800;
 const MINUTE: u64 = 60;
 const DAY: u64 = 24 * 3600;
 const REPO: &str = "octo/jet";
@@ -29,7 +29,7 @@ fn say(text: &str) -> Value {
 }
 
 /// The script the next check runs.
-fn script(host: &Host, script: Value) {
+pub(super) fn script(host: &Host, script: Value) {
     std::fs::write(
         host.dir.path().join("check-script.json"),
         script.to_string(),
@@ -59,14 +59,14 @@ fn query<T: rusqlite::types::FromSql>(host: &Host, sql: &str) -> Vec<T> {
 }
 
 /// The outcomes of the runs that ended, oldest first.
-fn outcomes(host: &Host) -> Vec<String> {
+pub(super) fn outcomes(host: &Host) -> Vec<String> {
     query(
         host,
         "SELECT outcome FROM task_runs WHERE outcome IS NOT NULL ORDER BY id",
     )
 }
 
-fn wait_for_runs(host: &Host, count: usize) -> Vec<String> {
+pub(super) fn wait_for_runs(host: &Host, count: usize) -> Vec<String> {
     until(&format!("{count} runs"), || {
         Some(outcomes(host)).filter(|runs| runs.len() >= count)
     })
@@ -81,13 +81,13 @@ fn wait_for_running_check(host: &Host) {
 }
 
 /// The objective made by a turn, with its chat. `sources` are as `objectives_update` takes them.
-fn objective_with(host: &Host, user: &User, id: &str, sources: Value) -> (i64, i64) {
+pub(super) fn objective_with(host: &Host, user: &User, id: &str, sources: Value) -> (i64, i64) {
     objective_at(host, user, id, sources, "2099-06-08T09:00")
 }
 
 /// Like `objective_with`, with the first check at the local time `at`.
 fn objective_at(host: &Host, user: &User, id: &str, sources: Value, at: &str) -> (i64, i64) {
-    let mut made = create("new", sources);
+    let mut made = create(sources);
     made["arguments"]["command"]["check"]["at"] = json!(at);
     let results = run_turn(host, user, id, "I am building a kite.", json!([made]));
     let objective = &data(&results[0])["objective"];
@@ -813,7 +813,7 @@ fn after_a_turn_read_web_text_a_command_that_adds_a_source_is_refused() {
     let table = [
         (
             "create with a source",
-            create("new", json!([{"kind":"web","search":"kites"}])),
+            create(json!([{"kind":"web","search":"kites"}])),
             Some("writeAfterWebText"),
         ),
         (

@@ -72,14 +72,14 @@ if (/^facade:/m.test(input)) {
   };
   const objectives = (command) => ({ tool: 'objectives_update', arguments: { command } });
   const tasks = (command) => ({ tool: 'tasks_update', arguments: { command } });
-  const create = (command) => objectives({ action: 'create', sources: [{ kind: 'jet' }], chat: 'new', ...command });
+  const create = (command) => objectives({ action: 'create', sources: [{ kind: 'jet' }], ...command });
 
   const owner = await as(OWNER), manager = await as(MANAGER);
   await turn(owner, 'I am building a kite and planning a party.', [
     create({ title: 'Ship the kite page', deliverable: 'A kite page that flies and takes orders', start: clock(-7), due: clock(9), steps: [{ title: 'Build the frame', due: clock(2) }, { title: 'Fly it in the park', due: clock(7) }, { title: 'Post the photos' }], check: { at: clock(1, '09:00'), why: 'see whether the frame is built' } }),
     create({ title: 'Plan the launch party', deliverable: 'A venue, a guest list and a cake', start: clock(-2), due: clock(2), steps: [{ title: 'Book the venue' }, { title: 'Send the invites' }], check: { at: clock(1, '08:30'), why: 'ask whether the venue is booked' } }),
-    create({ chat: 'this', title: 'Tidy the old website', deliverable: 'Old pages removed', start: clock(-1), due: clock(5), steps: [{ title: 'Delete the old pages' }], check: { at: clock(2, '09:00'), why: 'see whether the old pages are gone' } }),
-    create({ chat: 'this', title: 'Move flat', deliverable: 'Keys handed back', start: clock(-1), due: clock(6), steps: [], check: { at: clock(3, '09:00'), why: 'see whether the keys are back' } }),
+    create({ title: 'Tidy the old website', deliverable: 'Old pages removed', start: clock(-1), due: clock(5), steps: [{ title: 'Delete the old pages' }], check: { at: clock(2, '09:00'), why: 'see whether the old pages are gone' } }),
+    create({ title: 'Move flat', deliverable: 'Keys handed back', start: clock(-1), due: clock(6), steps: [], check: { at: clock(3, '09:00'), why: 'see whether the keys are back' } }),
     objectives({ action: 'close', id: 3, outcome: 'done' }),
     objectives({ action: 'close', id: 4, outcome: 'dropped' }),
     objectives({ action: 'step_tick', id: 1, step: 1 }),
@@ -87,8 +87,8 @@ if (/^facade:/m.test(input)) {
     objectives({ action: 'note', id: 1, status: 'at risk', moved: 'Doubt I can fly it before the weekend', blockers: 'wind', private: true }),
     objectives({ action: 'note', id: 2, status: 'on track', moved: 'Invites are drafted', blockers: '', private: false }),
     tasks({ action: 'schedule', objectiveId: 2, at: clock(2, '14:00'), why: 'ask who has replied to the invite' }),
-    create({ chat: 'this', title: 'Write the newsletter', deliverable: 'November issue sent', start: clock(-4), due: clock(12), steps: [{ title: 'Pick three stories', due: clock(-1) }, { title: 'Send it', due: clock(10) }], check: { at: clock(4, '09:00'), why: 'see whether the stories are picked' } }),
-    create({ chat: 'this', title: 'Renew the passport', deliverable: 'New passport in hand', start: clock(-1), due: clock(20), steps: [{ title: 'Book the photo', due: clock(0) }], check: { at: clock(5, '09:00'), why: 'ask whether the photo is booked' } }),
+    create({ title: 'Write the newsletter', deliverable: 'November issue sent', start: clock(-4), due: clock(12), steps: [{ title: 'Pick three stories', due: clock(-1) }, { title: 'Send it', due: clock(10) }], check: { at: clock(4, '09:00'), why: 'see whether the stories are picked' } }),
+    create({ title: 'Renew the passport', deliverable: 'New passport in hand', start: clock(-1), due: clock(20), steps: [{ title: 'Book the photo', due: clock(0) }], check: { at: clock(5, '09:00'), why: 'ask whether the photo is booked' } }),
     tasks({ action: 'schedule', at: clock(3, '11:00'), why: 'ask how the move went' }),
   ]);
   const managerId = new DatabaseSync(path.join(data, 'jet.sqlite3')).prepare('SELECT id FROM users WHERE email = ?').get(MANAGER).id;

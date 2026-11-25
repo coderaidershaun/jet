@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { closedWords, clockWords, costWords, daysLeftWords, groupObjectives, heldReason, keysOf, dueWords, newCount, nextCheck, noteTone, outcomeOf, readPane, relativeWords, runTitle, sharedWithWords, stepDueWords, stepProgress, isEmpty, rangeWords, tokensWords, needsFirst, scopeOf, dayWords, timeWords, progressWords } from './model.js';
+import { chatFiles, fileWords, otherChats, closedWords, clockWords, costWords, daysLeftWords, groupObjectives, heldReason, keysOf, dueWords, newCount, nextCheck, noteTone, outcomeOf, readPane, relativeWords, runTitle, sharedWithWords, stepDueWords, stepsEndWords, stepProgress, isEmpty, dueDayWords, tokensWords, needsFirst, scopeOf, dayWords, timeWords, progressWords } from './model.js';
 
 const pane = readPane(JSON.parse(readFileSync(new URL('../../tests/fixtures/pane.json', import.meta.url), 'utf8')));
 
@@ -22,8 +22,8 @@ test('days left read as words, overdue and close ones in a loud tone', () => {
 
 test('dates, local times and distances read as words', () => {
   const [kite] = pane.objectives;
-  assert.equal(rangeWords(kite, 2026), '1 Jan to 1 Feb · 31 days');
-  assert.equal(rangeWords(kite, 2027), '1 Jan 2026 to 1 Feb 2026 · 31 days');
+  assert.equal(dueDayWords(kite.due, 2026), 'Sun 1 Feb');
+  assert.equal(dueDayWords(kite.due, 2027), 'Sun 1 Feb 2026');
   assert.equal(dueWords(pane.tasks[0].dueAt, pane.timeZone, 2026), 'Mon 5 Jan, 09:00');
   assert.equal(relativeWords(2 * 86400 + 60), 'in 2 days');
   assert.equal(relativeWords(1.6 * 86400), 'in 2 days');
@@ -61,6 +61,12 @@ test('a passed step is late, today is amber, and a done objective shows the day 
   assert.deepEqual(stepDueWords(step, '2026-01-06', 2026), { words: '5 Jan, late', tone: 'bad' });
   assert.deepEqual(stepDueWords(step, '2026-01-05', 2026), { words: 'Today', tone: 'warn' });
   assert.deepEqual(stepDueWords({ ...step, doneAt: 1 }, '2026-01-06', 2026), { words: '5 Jan', tone: 'quiet' });
+  assert.deepEqual(stepDueWords(step, '2026-01-02', 2026, '2026-01-04'), { words: '5 Jan, after the due date', tone: 'warn' });
+  // The due date moved to the 9th and the steps stayed: the pane says so until a step reaches it or a newer note comes.
+  const moved = { due: '2026-01-09', steps: [step, { due: '2026-01-07', doneAt: 1 }], notes: [{ newDates: 'due Fri 9 Jan (was Mon 5 Jan)' }] };
+  assert.equal(stepsEndWords(moved, 2026), 'Steps end 5 Jan, before the new due date.');
+  assert.equal(stepsEndWords({ ...moved, steps: [{ due: '2026-01-09', doneAt: null }] }, 2026), '');
+  assert.equal(stepsEndWords({ ...moved, notes: [...moved.notes, { newDates: '' }] }, 2026), '');
   assert.equal(closedWords(pane.objectives[1], pane.timeZone, 2026), 'Closed 1 Jan');
 });
 
@@ -86,4 +92,19 @@ test("an objective's own chat holds that objective, its tasks and the follow-ups
   assert.deepEqual(scope.tasks.map((t) => t.id), [...pane.tasks.filter((t) => t.objectiveId === kite.id).map((t) => t.id), 50]);
   assert.equal(scopeOf(all, 1000, 1000), null);
   assert.equal(scopeOf(all, 12345, 1000), null, 'a chat nothing belongs to shows the main view');
+});
+
+test("the pane lists the open chat's files, newest change first, and marks a shared one", () => {
+  const artifacts = [
+    { id: 'b', name: 'other.md', kind: 'markdown', bytes: 10, changedAt: 9000, chats: [4] },
+    { id: 'c', name: 'new.html', kind: 'html', bytes: 3120, changedAt: 5000, chats: [3, 4] },
+    { id: 'a', name: 'old.md', kind: 'markdown', bytes: 10, changedAt: 1000, chats: [3] },
+  ];
+  const read = readPane({ artifacts: [...artifacts, 'nonsense'] });
+  assert.deepEqual(chatFiles(read, 3).map((file) => file.name), ['new.html', 'old.md']);
+  assert.equal(chatFiles(read, 4)[0].name, 'other.md', 'the server\'s order is kept');
+  assert.equal(otherChats(artifacts[1], 3), 1);
+  assert.equal(otherChats(artifacts[2], 3), 0);
+  assert.equal(fileWords(artifacts[1], 5 + 300), 'HTML page · 3 KB · 5 min ago');
+  assert.deepEqual(readPane({}).artifacts, [], 'an older server sends none');
 });

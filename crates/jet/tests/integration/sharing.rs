@@ -67,7 +67,7 @@ fn owner_makes_a_kite(host: &Host, owner: &User) -> Value {
         "kite",
         "I am building a kite.",
         json!([
-            create("new", sources),
+            create(sources),
             note("The frame is built", false),
             note(PRIVATE_NOTE, true)
         ]),

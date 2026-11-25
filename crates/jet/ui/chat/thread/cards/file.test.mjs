@@ -38,3 +38,36 @@ test('file card links only to the saved file', () => {
   const listed = cardOf({ id: 'l1', server: 'jet', tool: 'files_list', input: {}, ok: true, result: { files: [{ id: ID }, { id: ID }, { id: ID }] }, durationMs: 100 });
   assert.equal(listed.body, null);
 });
+
+test('files_update: a made or changed file is a file card, the other changes are one line, a failure gives its reason', () => {
+  const update = (command, result, rest = {}) => cardOf({ id: 'u1', server: 'jet', tool: 'files_update', input: { command }, ok: true, result, durationMs: 300, ...rest });
+  const file = (extra = {}) => ({ id: ID.toUpperCase(), name: 'summary.html', kind: 'html', bytes: 3120, ...extra });
+
+  const made = update({ action: 'create', name: 'summary.html' }, { change: 'created', file: file() });
+  assert.equal(made.body.kind, 'file');
+  assert.equal(made.body.meta, 'HTML page · 3 KB');
+  assert.equal(made.body.html, true);
+  assert.equal(made.body.view, '/api/files/' + ID + '/frame', 'an HTML page opens in its wrapper');
+  assert.equal(update({ action: 'write' }, { change: 'written', file: file({ kind: 'markdown' }) }).body.view, '/api/files/' + ID + '/view');
+  assert.equal(update({ action: 'write' }, { change: 'written', file: file({ kind: 'markdown' }) }).body.meta, 'Markdown · 3 KB · changed');
+  assert.equal(update({ action: 'restore' }, { change: 'restored', file: file() }).body.meta, 'HTML page · 3 KB · earlier version back');
+  assert.equal(cardOf({ id: 'u2', server: 'jet', tool: 'files_update', input: { command: { action: 'create', name: 'summary.html' } } }).line, 'Making summary.html');
+
+  const bad = update({ action: 'write' }, { change: 'written', file: file({ id: '../../settings' }) });
+  assert.equal(bad.body, null);
+  assert.equal(bad.state, 'failed');
+
+  const words = (result) => {
+    const card = update({}, result);
+    assert.equal(card.body, null);
+    return card.head.split(' · ')[0];
+  };
+  assert.equal(words({ change: 'described', file: file() }), 'Noted what summary.html is');
+  assert.equal(words({ change: 'renamed', from: 'plan.md', file: file({ name: 'kite-plan.md' }) }), 'Renamed plan.md to kite-plan.md');
+  assert.equal(words({ change: 'removed', file: { name: 'notes.txt' }, deleted: true }), 'Removed notes.txt');
+  assert.equal(words({ change: 'removed', file: { name: 'notes.txt' }, deleted: false }), 'Took notes.txt out of this chat');
+  assert.equal(update({ action: 'remove', chat: 3 }, { change: 'removed', file: { name: 'notes.txt' }, deleted: false }).head.split(' · ')[0], 'Took notes.txt out of another chat');
+  assert.equal(words({ change: 'shared', file: file(), chat: { id: 3, title: 'Kite' } }), 'Shared summary.html with Kite');
+
+  assert.equal(update({ action: 'remove' }, { error: { message: 'no such file' } }, { ok: false }).advice, 'no such file');
+});

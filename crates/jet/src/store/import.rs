@@ -164,14 +164,15 @@ fn write(transaction: &Transaction, owner: UserId, legacy: Legacy) -> Result<(),
     }
     for (about, contents) in legacy.files {
         transaction.execute(
-            "INSERT INTO files (id, user_id, at, attached, about, contents) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO files (id, user_id, at, attached, about, contents, chat_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 about.id.to_string(),
                 owner.0,
                 about.at as i64,
                 about.attached,
                 to_json(&about)?,
-                contents
+                contents,
+                chat
             ],
         )?;
     }
@@ -298,13 +299,7 @@ fn files(root: &Path) -> Result<Vec<(About, Vec<u8>)>, ImportError> {
             Some(about) => about,
             None => About {
                 id,
-                name,
-                kind,
-                bytes: contents.len() as u64,
-                details: String::new(),
-                origin: Origin::Export,
-                attached: true,
-                at: modified_ms(&path),
+                ..About::new(name, kind, &contents, Origin::Export, modified_ms(&path))
             },
         };
         files.push((about, contents));

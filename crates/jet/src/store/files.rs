@@ -1,37 +1,78 @@
-//! The files of each user, whole: their details and their bytes.
+//! The files of each user, whole: their details and their bytes, the chats that hold them and the
+//! earlier versions kept of them.
 
 use super::{ChatId, Store, StoreError, UserId, from_json, to_json};
-use crate::files::About;
-use rusqlite::{OptionalExtension, params};
+use crate::files::{About, Origin};
+use rusqlite::{Connection, OptionalExtension, params};
+
+/// How many earlier versions of a file are kept.
+const VERSIONS_KEPT: i64 = 5;
+/// How long an upload that was never sent is kept, in milliseconds.
+const UNSENT_MS: i64 = 24 * 60 * 60 * 1000;
 
 /// What `add_file` did.
 pub(crate) enum Added {
     Kept,
-    /// Keeping the file would take every user's files together past this many bytes.
+    /// Keeping the file would take every user's files together past the store's limit.
     Full,
+    /// Keeping the file would take this user's files and their kept versions past the user's limit.
+    UserFull,
 }
 
+/// What `change_file` did.
+pub(crate) enum Changed {
+    Done,
+    /// The new contents would take the user's files past the user's limit.
+    Full,
+    /// The new contents would take every user's files together past the store's limit.
+    StoreFull,
+    Missing,
+}
+
+/// A file that Jet can see, with the chats that hold it (the keeper first) and the numbers of the
+/// earlier versions kept, newest first.
+pub(crate) struct Held {
+    pub about: About,
+    pub chats: Vec<ChatId>,
+    pub earlier: Vec<u32>,
+}
+
+/// The files of one user that a chat holds: the ones it keeps and the ones shared into it.
+const HELD_BY_CHAT: &str = "user_id = ?1 AND attached = 1 AND (chat_id = ?2
+    OR EXISTS (SELECT 1 FROM file_chats WHERE file_id = files.id AND chat_id = ?2))";
+/// Newest change first.
+const NEWEST: &str = "max(at, coalesce(json_extract(about, '$.changed'), 0)) DESC, id";
+/// One file of a user that Jet can see.
+const ONE_SEEN: &str = "SELECT about FROM files WHERE id = ?1 AND user_id = ?2 AND attached = 1";
+
 impl Store {
-    /// Keeps the file, unless all the files together would then be over `limit` bytes. `chat` is
-    /// the chat that wrote it, or `None` for an upload that is not sent yet.
+    /// Keeps the file, unless all the files together would then be over `limit` bytes, or the
+    /// user's own over `user_limit`. `chat` is the chat that wrote it, or `None` for an upload
+    /// that is not sent yet.
     pub(crate) fn add_file(
         &self,
         user: UserId,
         chat: Option<ChatId>,
         about: &About,
         contents: &[u8],
-        limit: u64,
+        (limit, user_limit): (u64, u64),
     ) -> Result<Added, StoreError> {
         let text = to_json(about)?;
         self.try_with(|db| {
             let transaction = db.transaction()?;
-            let stored: i64 = transaction.query_row(
-                "SELECT coalesce(sum(length(contents)), 0) FROM files",
-                [],
-                |row| row.get(0),
-            )?;
-            if stored.unsigned_abs() + contents.len() as u64 > limit {
+            // An upload that was never sent is dropped after a day, so a user is not locked out by
+            // files they cannot see.
+            if chat.is_none() {
+                transaction.execute(
+                    "DELETE FROM files WHERE user_id = ?1 AND attached = 0 AND at < ?2",
+                    params![user.0, i64::try_from(about.at).unwrap_or(i64::MAX) - UNSENT_MS],
+                )?;
+            }
+            if store_bytes(&transaction)? + contents.len() as u64 > limit {
                 return Ok(Added::Full);
+            }
+            if user_bytes(&transaction, user)? + contents.len() as u64 > user_limit {
+                return Ok(Added::UserFull);
             }
             transaction.execute(
                 "INSERT INTO files (id, user_id, at, attached, about, contents, chat_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -90,23 +131,6 @@ impl Store {
             .transpose()
     }
 
-    /// The user's files that Jet can see, newest first, at most `limit` of them.
-    pub(crate) fn attached_files(
-        &self,
-        user: UserId,
-        limit: usize,
-    ) -> Result<Vec<About>, StoreError> {
-        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-        let rows = self.with(|db| {
-            let mut query = db.prepare(
-                "SELECT about FROM files WHERE user_id = ?1 AND attached = 1 ORDER BY at DESC LIMIT ?2",
-            )?;
-            let rows = query.query_map(params![user.0, limit], |row| row.get::<_, String>(0))?;
-            rows.collect::<rusqlite::Result<Vec<String>>>()
-        })?;
-        rows.iter().map(|text| about(text, true)).collect()
-    }
-
     /// Marks the user's files as sent with a message in `chat`, all of them or, when one is
     /// missing, none. A file already sent keeps the chat it was first sent in. Gives the id of the
     /// first missing file.
@@ -144,17 +168,351 @@ impl Store {
         })
     }
 
-    /// Deletes the files that were sent or written in the chat.
+    /// Deletes the files that only this chat holds. A file shared with another chat stays there.
     pub(crate) fn remove_files(&self, chat: ChatId) -> Result<(), StoreError> {
         self.with(|db| {
-            db.execute("DELETE FROM files WHERE chat_id = ?1", [chat.0])
-                .map(drop)
+            let transaction = db.transaction()?;
+            rehome_files(&transaction, chat)?;
+            transaction.execute("DELETE FROM files WHERE chat_id = ?1", [chat.0])?;
+            transaction.commit()
         })
     }
+
+    /// The files of the user that the chat holds, newest change first, at most `limit` of them,
+    /// and how many more there are.
+    pub(crate) fn held_by_chat(
+        &self,
+        user: UserId,
+        chat: ChatId,
+        limit: usize,
+    ) -> Result<(Vec<Held>, usize), StoreError> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        self.try_with(|db| {
+            let total: i64 = db.query_row(
+                &format!("SELECT count(*) FROM files WHERE {HELD_BY_CHAT}"),
+                params![user.0, chat.0],
+                |row| row.get(0),
+            )?;
+            let held = held_where(
+                db,
+                &format!(
+                    "SELECT id, about FROM files WHERE {HELD_BY_CHAT} ORDER BY {NEWEST} LIMIT ?3"
+                ),
+                params![user.0, chat.0, limit],
+            )?;
+            let more = usize::try_from(total)
+                .unwrap_or(0)
+                .saturating_sub(held.len());
+            Ok((held, more))
+        })
+    }
+
+    /// Every file of the user that Jet can see, newest change first, at most `limit` of them.
+    pub(crate) fn held_by_user(&self, user: UserId, limit: usize) -> Result<Vec<Held>, StoreError> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        self.try_with(|db| {
+            held_where(
+                db,
+                &format!(
+                    "SELECT id, about FROM files WHERE user_id = ?1 AND attached = 1 ORDER BY {NEWEST} LIMIT ?2"
+                ),
+                params![user.0, limit],
+            )
+        })
+    }
+
+    /// One file of the user that Jet can see. Another user's is `None`, as a missing one is.
+    pub(crate) fn held_file(&self, user: UserId, id: &str) -> Result<Option<Held>, StoreError> {
+        self.try_with(|db| {
+            let sql = "SELECT id, about FROM files WHERE id = ?1 AND user_id = ?2 AND attached = 1";
+            Ok(held_where(db, sql, params![id, user.0])?.pop())
+        })
+    }
+
+    /// Changes the details of a file of the user that Jet can see, and gives them as they are now.
+    pub(crate) fn update_about(
+        &self,
+        user: UserId,
+        id: &str,
+        change: impl FnOnce(&mut About),
+    ) -> Result<Option<About>, StoreError> {
+        self.try_with(|db| {
+            let transaction = db.transaction()?;
+            let Some(text) = transaction
+                .query_row(ONE_SEEN, params![id, user.0], |row| row.get::<_, String>(0))
+                .optional()?
+            else {
+                return Ok(None);
+            };
+            let mut about = about(&text, true)?;
+            change(&mut about);
+            transaction.execute(
+                "UPDATE files SET about = ?2 WHERE id = ?1",
+                params![id, to_json(&about)?],
+            )?;
+            transaction.commit()?;
+            Ok(Some(about))
+        })
+    }
+
+    /// Gives the file new contents at time `at`. The contents it had stay as an earlier version,
+    /// and only the newest few earlier versions are kept.
+    pub(crate) fn change_file(
+        &self,
+        user: UserId,
+        id: &str,
+        (contents, details): (&[u8], String),
+        (at, store_limit, user_limit): (u64, u64, u64),
+    ) -> Result<Changed, StoreError> {
+        self.try_with(|db| {
+            let transaction = db.transaction()?;
+            let Some(text) = transaction
+                .query_row(ONE_SEEN, params![id, user.0], |row| row.get::<_, String>(0))
+                .optional()?
+            else {
+                return Ok(Changed::Missing);
+            };
+            if store_bytes(&transaction)? + contents.len() as u64 > store_limit {
+                return Ok(Changed::StoreFull);
+            }
+            if user_bytes(&transaction, user)? + contents.len() as u64 > user_limit {
+                return Ok(Changed::Full);
+            }
+            let mut about = about(&text, true)?;
+            transaction.execute(
+                "INSERT INTO file_versions (file_id, version, at, contents)
+                 SELECT id, ?2, ?3, contents FROM files WHERE id = ?1",
+                params![id, about.version, i64::try_from(at).unwrap_or(i64::MAX)],
+            )?;
+            // What the user uploaded is never pruned: its first version stays.
+            let original = i64::from(about.origin == Origin::Upload);
+            transaction.execute(
+                "DELETE FROM file_versions WHERE file_id = ?1 AND version <= ?2 AND version > ?3",
+                params![id, i64::from(about.version) - VERSIONS_KEPT, original],
+            )?;
+            about.bytes = contents.len() as u64;
+            about.details = details;
+            about.changed = at;
+            about.version += 1;
+            transaction.execute(
+                "UPDATE files SET about = ?2, contents = ?3 WHERE id = ?1",
+                params![id, to_json(&about)?, contents],
+            )?;
+            transaction.commit()?;
+            Ok(Changed::Done)
+        })
+    }
+
+    /// The contents of an earlier version of the user's file: the one asked for, or the newest.
+    pub(crate) fn earlier_contents(
+        &self,
+        user: UserId,
+        id: &str,
+        version: Option<u32>,
+    ) -> Result<Option<(u32, Vec<u8>)>, StoreError> {
+        self.with(|db| {
+            db.query_row(
+                "SELECT v.version, v.contents FROM file_versions v JOIN files f ON f.id = v.file_id
+                 WHERE f.id = ?1 AND f.user_id = ?2 AND (?3 IS NULL OR v.version = ?3)
+                 ORDER BY v.version DESC LIMIT 1",
+                params![id, user.0, version],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+        })
+    }
+
+    /// Lets a chat of the user hold the user's file too. Says whether there was such a file.
+    pub(crate) fn share_file(
+        &self,
+        user: UserId,
+        id: &str,
+        chat: ChatId,
+    ) -> Result<bool, StoreError> {
+        self.with(|db| {
+            let Some(keeper) = db
+                .query_row(
+                    "SELECT chat_id FROM files WHERE id = ?1 AND user_id = ?2 AND attached = 1",
+                    params![id, user.0],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
+                .optional()?
+            else {
+                return Ok(false);
+            };
+            if keeper != Some(chat.0) {
+                db.execute(
+                    "INSERT OR IGNORE INTO file_chats (file_id, chat_id) VALUES (?1, ?2)",
+                    params![id, chat.0],
+                )?;
+            }
+            Ok(true)
+        })
+    }
+
+    /// Takes the file out of one chat that holds it. The file goes when no other chat holds it.
+    /// Gives whether it went and the chats that hold it still, or `None` when the user has no such
+    /// file or the chat does not hold it.
+    pub(crate) fn release_file(
+        &self,
+        user: UserId,
+        id: &str,
+        chat: ChatId,
+    ) -> Result<Option<(bool, Vec<ChatId>)>, StoreError> {
+        self.try_with(|db| {
+            let transaction = db.transaction()?;
+            let mut holders = holders(&transaction, id)?;
+            let found = transaction
+                .query_row(ONE_SEEN, params![id, user.0], |_| Ok(()))
+                .optional()?;
+            if found.is_none() || !holders.contains(&chat) {
+                return Ok(None);
+            }
+            let keeper = holders[0] == chat;
+            holders.retain(|holder| *holder != chat);
+            match holders.first() {
+                None => {
+                    transaction.execute("DELETE FROM files WHERE id = ?1", [id])?;
+                }
+                Some(next) if keeper => {
+                    transaction.execute(
+                        "UPDATE files SET chat_id = ?2 WHERE id = ?1",
+                        params![id, next.0],
+                    )?;
+                    transaction.execute(
+                        "DELETE FROM file_chats WHERE file_id = ?1 AND chat_id = ?2",
+                        params![id, next.0],
+                    )?;
+                }
+                Some(_) => {
+                    transaction.execute(
+                        "DELETE FROM file_chats WHERE file_id = ?1 AND chat_id = ?2",
+                        params![id, chat.0],
+                    )?;
+                }
+            }
+            transaction.commit()?;
+            Ok(Some((holders.is_empty(), holders)))
+        })
+    }
+}
+
+/// Hands each file that the chat keeps and another chat holds to that other chat, and drops the
+/// chat's own shares, so that the files the chat still keeps are the ones only it holds.
+pub(super) fn rehome_files(db: &Connection, chat: ChatId) -> rusqlite::Result<()> {
+    db.execute(
+        "UPDATE files SET chat_id = (SELECT min(chat_id) FROM file_chats WHERE file_id = files.id)
+         WHERE chat_id = ?1 AND EXISTS (SELECT 1 FROM file_chats WHERE file_id = files.id)",
+        [chat.0],
+    )?;
+    db.execute(
+        "DELETE FROM file_chats WHERE chat_id = (SELECT chat_id FROM files WHERE id = file_id)",
+        [],
+    )?;
+    db.execute("DELETE FROM file_chats WHERE chat_id = ?1", [chat.0])?;
+    Ok(())
+}
+
+/// The bytes of every user's files and of the earlier versions kept of them.
+fn store_bytes(db: &Connection) -> rusqlite::Result<u64> {
+    db.query_row(
+        "SELECT (SELECT coalesce(sum(length(contents)), 0) FROM files)
+              + (SELECT coalesce(sum(length(contents)), 0) FROM file_versions)",
+        [],
+        |row| row.get::<_, i64>(0).map(i64::unsigned_abs),
+    )
+}
+
+/// The bytes of the user's files and of the earlier versions kept of them.
+fn user_bytes(db: &Connection, user: UserId) -> rusqlite::Result<u64> {
+    db.query_row(
+        "SELECT (SELECT coalesce(sum(length(contents)), 0) FROM files WHERE user_id = ?1)
+              + (SELECT coalesce(sum(length(v.contents)), 0) FROM file_versions v
+                 JOIN files f ON f.id = v.file_id WHERE f.user_id = ?1)",
+        [user.0],
+        |row| row.get::<_, i64>(0).map(i64::unsigned_abs),
+    )
+}
+
+/// The chats that hold a file, the one that keeps it first.
+fn holders(db: &Connection, id: &str) -> rusqlite::Result<Vec<ChatId>> {
+    let mut query = db.prepare(
+        "SELECT chat_id FROM (
+             SELECT chat_id, 0 AS rank FROM files WHERE id = ?1 AND chat_id IS NOT NULL
+             UNION ALL SELECT chat_id, 1 FROM file_chats WHERE file_id = ?1)
+         ORDER BY rank, chat_id",
+    )?;
+    let rows = query.query_map([id], |row| row.get(0).map(ChatId))?;
+    rows.collect()
+}
+
+/// Reads the `id, about` rows of the query as files with their chats and earlier versions.
+fn held_where(
+    db: &Connection,
+    sql: &str,
+    arguments: impl rusqlite::Params,
+) -> Result<Vec<Held>, StoreError> {
+    let rows = db
+        .prepare(sql)?
+        .query_map(arguments, |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    rows.into_iter()
+        .map(|(id, text)| {
+            let earlier = db
+                .prepare(
+                    "SELECT version FROM file_versions WHERE file_id = ?1 ORDER BY version DESC",
+                )?
+                .query_map([&id], |row| row.get(0))?
+                .collect::<rusqlite::Result<Vec<u32>>>()?;
+            Ok(Held {
+                about: about(&text, true)?,
+                chats: holders(db, &id)?,
+                earlier,
+            })
+        })
+        .collect()
 }
 
 fn about(text: &str, attached: bool) -> Result<About, StoreError> {
     let mut about: About = from_json("a file's details", text)?;
     about.attached = attached;
     Ok(about)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::files::FileKind;
+    use crate::store::test_store;
+
+    fn upload(at: u64, attached: bool) -> About {
+        let mut about = About::new("a.txt".into(), FileKind::Text, b"x", Origin::Upload, at);
+        about.attached = attached;
+        about
+    }
+
+    #[test]
+    fn a_new_upload_clears_the_uploads_never_sent_that_are_a_day_old() {
+        let (_dir, store, ada, _) = test_store();
+        let main = store.main_chat(ada).unwrap().id;
+        let (old_unsent, old_sent) = (upload(1_000, false), upload(1_000, true));
+        let limits = (u64::MAX, u64::MAX);
+        store
+            .add_file(ada, None, &old_unsent, b"x", limits)
+            .unwrap();
+        store
+            .add_file(ada, Some(main), &old_sent, b"x", limits)
+            .unwrap();
+        let fresh = upload(10 * UNSENT_MS as u64, false);
+        store.add_file(ada, None, &fresh, b"x", limits).unwrap();
+        let has = |about: &About| {
+            store
+                .file_about(ada, &about.id.to_string())
+                .unwrap()
+                .is_some()
+        };
+        assert!(!has(&old_unsent) && has(&old_sent) && has(&fresh));
+    }
 }

@@ -299,8 +299,8 @@ mod tests {
     use crate::objectives::{Check, Create, Update};
     use crate::scheduler::Signals;
     use crate::store::{
-        ItemKind, NewStep, NewTask, NoteStatus, ObjectiveChat, RunId, RunOutcome, Settled, Store,
-        TaskEnd, test_store,
+        ItemKind, NewStep, NewTask, NoteStatus, RunId, RunOutcome, Settled, Store, TaskEnd,
+        test_store,
     };
     use agent::{McpConnection, NewEntry, Reaction, Role, TurnIdentity};
     use serde_json::{Value, json};
@@ -334,7 +334,6 @@ mod tests {
                         at: "2026-01-05T09:00".into(),
                         why: "see whether the first step is done".into(),
                     },
-                    chat: ObjectiveChat::This,
                 },
             )
             .unwrap()
@@ -607,7 +606,7 @@ mod tests {
                 Value::Null
             ]
         );
-        let entry = store.entries(made.objective.chat_id, None).unwrap()[0].id;
+        let entry = store.entries(made.objective.chat_id, None).unwrap()[1].id;
         assert_eq!(
             row(&read["runs"][1]),
             [

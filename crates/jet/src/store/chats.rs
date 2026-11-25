@@ -177,6 +177,7 @@ impl Store {
                     params![chat.0, main],
                 )?;
             }
+            super::files::rehome_files(&transaction, chat)?;
             transaction.execute("DELETE FROM chats WHERE id = ?1", [chat.0])?;
             transaction.commit()?;
             Ok(())

@@ -6,23 +6,27 @@ const NEAR_BOTTOM_PX = 80;
 
 export function createFollow() {
   let following = true;
+  let far = false;
   return {
     get following() {
       return following;
     },
 
-    /** The "Jump to latest" pill shows while the reader is away from the bottom. */
+    /** The jump control waits until the reader is half a screen above the latest entry, so a small scroll does not flash it. */
     get jumpVisible() {
-      return !following;
+      return far;
     },
 
     /** @param {{ scrollTop: number, clientHeight: number, scrollHeight: number }} metrics */
     onScroll({ scrollTop, clientHeight, scrollHeight }) {
-      following = scrollHeight - scrollTop - clientHeight <= NEAR_BOTTOM_PX;
+      const away = scrollHeight - scrollTop - clientHeight;
+      following = away <= NEAR_BOTTOM_PX;
+      far = away > Math.max(NEAR_BOTTOM_PX, clientHeight / 2);
     },
 
     onSend() {
       following = true;
+      far = false;
     },
   };
 }

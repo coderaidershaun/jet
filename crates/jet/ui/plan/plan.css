@@ -21,7 +21,8 @@
   .pane-scrim { left: 64px; background: rgba(11, 20, 27, .45); }
 }
 .pane-head { position: sticky; top: 0; z-index: 2; flex: none; background: var(--surface); border-bottom: 1px solid var(--line); }
-.pane-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 6px 16px; }
+/* As tall as the chat's title band beside it, so the two rules under them meet. */
+.pane-bar { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: 51px; padding: 0 8px 0 16px; }
 .pane-title { margin: 0; font-size: 15px; font-weight: 650; }
 .pane-body { display: flex; flex-direction: column; gap: 22px; padding: 12px 16px max(28px, env(safe-area-inset-bottom)); min-width: 0; }
 .pane-notice { margin: 0; padding: 8px 16px; background: rgba(242, 177, 84, .12); color: var(--warning); font-size: 12px; line-height: 17px; }
@@ -37,6 +38,8 @@
 .pane-count { color: var(--link-jet); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .pane-section { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* A rule above each headed section that follows something, so Jet's tasks stand apart from the objective above them. */
+.pane-body > * + .pane-section { padding-top: 18px; border-top: 1px solid var(--line); }
 .pane-heading { display: flex; align-items: baseline; gap: 8px; margin: 0 0 2px; color: var(--fg); font-size: 13px; font-weight: 650; line-height: 20px; }
 .pane-heading:focus { outline: none; }
 .pane-heading:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
@@ -93,6 +96,8 @@ button.row-summary:hover .row-title { text-decoration: underline; text-decoratio
 .scoped-task .task-time { color: var(--muted); font-size: 12px; }
 
 .fold, .folds { display: flex; flex-direction: column; min-width: 0; }
+/* With no fold line it takes no room, so the section after it keeps one gap above its rule. */
+.folds:empty { display: none; }
 .fold-line { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 0; background: none; border: 0; border-top: 1px solid var(--line); color: var(--muted); text-align: left; font-size: 13px; font-weight: 600; line-height: 20px; }
 .fold-line:hover { color: var(--fg); }
 .fold-line > .icon { flex: none; width: 14px; height: 14px; margin-left: auto; transition: transform .15s; }
@@ -137,6 +142,9 @@ button.step:hover { background: rgba(255, 255, 255, .05); }
 .focus-title { margin: 0; font-size: 16px; font-weight: 650; line-height: 22px; overflow-wrap: anywhere; }
 .focus-title:focus { outline: none; }
 .focus-head .row-facts { display: flex; margin: 4px 0 0; }
+/* The day the objective is due leads its facts in the text colour, so it is not taken for a step's date. */
+.focus-due { color: var(--fg); font-weight: 600; }
+.focus > .row-warn { margin: -8px 0 0; }
 .focus-deliverable { display: -webkit-box; overflow: hidden; margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 19px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .who { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; color: var(--muted); font-size: 12px; line-height: 17px; }
 .pane-share { margin: 0 -4px; }
@@ -159,3 +167,9 @@ button.step:hover { background: rgba(255, 255, 255, .05); }
   .text-button.more, .back-button { padding-left: 0; }
   .row-summary { padding: 8px 0; }
 }
+
+/* The files of the open chat: a name, then its facts and its note in muted text, all one link. */
+.file-open { display: flex; flex-direction: column; min-width: 0; min-height: 44px; padding: 6px 0; justify-content: center; color: var(--fg); font-size: 13px; line-height: 20px; text-decoration: none; }
+a.file-open:hover .file-name { text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .25); text-underline-offset: 3px; }
+.file-name, .file-facts, .file-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-facts, .file-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 17px; }

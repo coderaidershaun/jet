@@ -84,10 +84,15 @@ impl From<FileError> for BridgeError {
             FileError::Unsupported(_) | FileError::Unreadable(_) => {
                 BridgeError::Unsupported(error.to_string())
             }
-            FileError::TooLarge(_) | FileError::StoreFull => {
+            FileError::TooLarge(_) | FileError::StoreFull | FileError::UserFull(_) => {
                 BridgeError::TooLarge(error.to_string())
             }
-            FileError::NoSuchSheet(_) => BridgeError::InvalidRequest(error.to_string()),
+            FileError::NoChat(_) => BridgeError::NotFound(error.to_string()),
+            FileError::NoSuchSheet(_)
+            | FileError::NotHeld
+            | FileError::NotText(_)
+            | FileError::RenameKind(_)
+            | FileError::NoEarlier => BridgeError::InvalidRequest(error.to_string()),
             other => BridgeError::Io(other.to_string()),
         }
     }

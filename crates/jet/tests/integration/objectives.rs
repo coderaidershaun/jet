@@ -21,18 +21,36 @@ pub(super) fn run_turn(
     words: &str,
     script: Value,
 ) -> Vec<Value> {
+    run_turn_in(host, user, None, id, words, script)
+}
+
+/// `run_turn` in the chat with that id, or in the main chat when there is none.
+pub(super) fn run_turn_in(
+    host: &Host,
+    user: &User,
+    chat: Option<i64>,
+    id: &str,
+    words: &str,
+    script: Value,
+) -> Vec<Value> {
+    let chat = chat.map_or(String::new(), |chat| format!("?chat={chat}"));
     let _ = std::fs::remove_file(host.dir.path().join("facade-results.json"));
     let mut message = request(id);
     message["text"] = json!(format!("{words}\nfacade:{script}"));
     message["timeZone"] = json!(ZONE);
-    let (status, accepted) = user.post("/api/chat/send", message);
+    let (status, accepted) = user.post(&format!("/api/chat/send{chat}"), message);
     assert_eq!(status, 200, "{accepted}");
-    user.until(|snapshot| {
-        snapshot["active"].is_null()
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while {
+        let snapshot = user.get(&format!("/api/snapshot{chat}"));
+        !(snapshot["active"].is_null()
             && snapshot["history"]
                 .as_array()
-                .is_some_and(|history| history.last().is_some_and(|last| last["role"] == "jet"))
-    });
+                .is_some_and(|history| history.last().is_some_and(|last| last["role"] == "jet")))
+    } {
+        assert!(Instant::now() < deadline, "the reply did not end");
+        std::thread::sleep(Duration::from_millis(15));
+    }
     let deadline = Instant::now() + Duration::from_secs(8);
     loop {
         let results = wait_file(host, "facade-results.json");
@@ -62,14 +80,13 @@ pub(super) fn tool(name: &str) -> Value {
     json!({"tool":name,"arguments":{}})
 }
 
-pub(super) fn create(chat: &str, sources: Value) -> Value {
+pub(super) fn create(sources: Value) -> Value {
     objectives(json!({
         "action":"create","title":"Ship the kite","deliverable":"A kite that flies",
         "start":"2099-06-01","due":"2099-07-01",
         "steps":[{"title":"Build the frame","due":"2099-06-10"},{"title":"Fly it"}],
         "sources":sources,
-        "check":{"at":"2099-06-08T09:00","why":"see whether the frame is built"},
-        "chat":chat
+        "check":{"at":"2099-06-08T09:00","why":"see whether the frame is built"}
     }))
 }
 
@@ -109,7 +126,7 @@ fn a_turn_records_an_objective_that_only_its_owner_can_list() {
         &owner,
         "create",
         "I am building a kite.",
-        json!([create("new", sources), tool("objectives_list")]),
+        json!([create(sources), tool("objectives_list")]),
     );
     let made = &data(&results[0])["objective"];
     let listed = &data(&results[1])["objectives"][0];
@@ -166,6 +183,11 @@ fn a_turn_records_an_objective_that_only_its_owner_can_list() {
         (chat, title.as_str()),
         (listed["chatId"].as_i64().unwrap(), "Ship the kite")
     );
+    assert_eq!(
+        data(&results[0])["chat"],
+        json!({"id": chat, "title": "Ship the kite", "new": true}),
+        "the answer says where the objective landed"
+    );
     let first: String = db
         .query_row(
             "SELECT json_extract(entry, '$.text') FROM entries WHERE chat_id = ?1",
@@ -205,17 +227,10 @@ fn steps_dates_notes_checks_and_close_do_what_they_say() {
         &owner,
         "create",
         "A kite.",
-        json!([create("this", json!([]))]),
+        json!([create(json!([]))]),
     );
     let objective = &data(&results[0])["objective"];
     let (id, step) = (objective["id"].clone(), objective["steps"][0]["id"].clone());
-    assert_eq!(
-        objective["chatId"],
-        database(&host)
-            .query_row("SELECT id FROM chats WHERE kind = 'main'", [], |row| row
-                .get::<_, i64>(0))
-            .unwrap()
-    );
 
     let results = run_turn(
         &host,
@@ -357,9 +372,9 @@ fn app_source_needs_read_only_tool() {
         "app",
         "Watch my job.",
         json!([
-            create("this", source("job_write")),
-            create("this", source("no_such_tool")),
-            create("this", source("job_status"))
+            create(source("job_write")),
+            create(source("no_such_tool")),
+            create(source("job_status"))
         ]),
     );
     assert_eq!(error_kind(&results[0]), "notReadOnly");
@@ -381,13 +396,7 @@ fn a_user_who_is_not_the_admin_cannot_name_an_app_source() {
         .clone();
     let manager = host.sign_in_as(MANAGER);
     let source = json!([{"kind":"app","appId":app,"tool":"job_status"}]);
-    let results = run_turn(
-        &host,
-        &manager,
-        "app",
-        "Watch it.",
-        json!([create("this", source)]),
-    );
+    let results = run_turn(&host, &manager, "app", "Watch it.", json!([create(source)]));
     assert_eq!(error_kind(&results[0]), "adminOnly");
 }
 
@@ -410,7 +419,7 @@ fn github_source_takes_login_from_saved_token() {
         &host.owner(),
         "login",
         "Watch my repo.",
-        json!([create("this", source.clone())]),
+        json!([create(source.clone())]),
     );
     let kept = &data(&results[0])["objective"]["sources"][0];
     assert_eq!(
@@ -428,7 +437,7 @@ fn github_source_takes_login_from_saved_token() {
         &manager,
         "login",
         "Watch my repo.",
-        json!([create("this", source)]),
+        json!([create(source)]),
     );
     assert_eq!(error_kind(&results[0]), "githubLoginNeeded");
 }
@@ -438,17 +447,19 @@ fn the_page_source_of_an_objective_puts_its_host_on_the_turn() {
     let host = host();
     let owner = host.owner();
     let page = json!([{"kind":"web","page":"https://docs.example.com/kites"}]);
-    run_turn(
-        &host,
-        &owner,
-        "create",
-        "A kite.",
-        json!([create("this", page)]),
-    );
+    let made = run_turn(&host, &owner, "create", "A kite.", json!([create(page)]));
+    let chat = data(&made[0])["chat"]["id"].as_i64();
     // The script above held the address as a link, so the thread starts over.
     assert_eq!(owner.post("/api/chat/forget", json!({})).0, 200);
     let fetch = || json!([{"fetch":"docs.example.com/kites"},{"fetch":"other.example/x"}]);
-    let results = run_turn(&host, &owner, "read", "Look at the kite page.", fetch());
+    let results = run_turn_in(
+        &host,
+        &owner,
+        chat,
+        "read",
+        "Look at the kite page.",
+        fetch(),
+    );
     assert!(results[0]["refused"].is_null(), "{}", results[0]);
     let refusal = results[1]["refused"].as_str().unwrap_or_default();
     assert!(refusal.contains("paste the link"), "{}", results[1]);

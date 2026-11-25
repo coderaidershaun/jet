@@ -11,8 +11,8 @@ use crate::chat::TurnOwner;
 use crate::scheduler::Signals;
 use crate::store::{
     AgentTask, CancelOutcome, Edit, NewNote, NewObjective, NewSource, NewStep, NewTask, Note,
-    NoteStatus, Objective, ObjectiveChat, ObjectiveId, ObjectiveStatus, Person, Run, Scheduled,
-    SetBy, Source, Step, StepId, Store, StoreError, TaskId, TaskKind, TaskState, Team, UserId,
+    NoteStatus, Objective, ObjectiveId, ObjectiveStatus, Person, Run, Scheduled, SetBy, Source,
+    Step, StepId, Store, StoreError, TaskId, TaskKind, TaskState, Team, UserId,
 };
 pub(crate) use inbox::InboxError;
 pub(crate) use pane::Pane;
@@ -173,7 +173,6 @@ impl ObjectiveError {
             Self::ProposalNotOpen { .. } => "proposalNotOpen",
             Self::NotOnCard => "notOnCard",
             Self::Store(StoreError::DuplicateCheck) => "duplicateCheck",
-            Self::Store(StoreError::ChatTaken) => "chatTaken",
             Self::Store(_) => "store",
         }
     }
@@ -194,7 +193,6 @@ pub(crate) struct Create {
     pub(crate) steps: Vec<NewStep>,
     pub(crate) sources: Vec<NewSource>,
     pub(crate) first_check: Check,
-    pub(crate) chat: ObjectiveChat,
 }
 
 /// A new title, a new due date, or both, for one step.
@@ -323,7 +321,6 @@ impl Objectives {
             self.store.create_objective(&NewObjective {
                 user: owner.user,
                 agreed_in: owner.chat,
-                chat: new.chat,
                 title: &new.title,
                 deliverable: &new.deliverable,
                 start: &start,
@@ -419,7 +416,8 @@ impl Objectives {
         self.show(user, id)
     }
 
-    /// Moves the start date, the due date or both, and notes why.
+    /// Moves the start date, the due date or both, and notes in words what moved and why. The
+    /// steps keep their dates.
     pub(crate) fn change_dates(
         &self,
         user: UserId,
@@ -432,9 +430,6 @@ impl Objectives {
             .store
             .objective(user, id)?
             .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
-        if start.is_none() && due.is_none() {
-            return Err(ObjectiveError::NoNewDate);
-        }
         let new_start = start.map_or(Ok(objective.start.clone()), |text| {
             time::date(text).map(|date| date.to_string())
         })?;
@@ -442,14 +437,24 @@ impl Objectives {
             time::date(text).map(|date| date.to_string())
         })?;
         check_forwards(&new_start, &new_due)?;
+        let words = |day: &str| time::date(day).map(time::in_words);
+        let mut moved = Vec::new();
+        for (name, old, new) in [
+            ("start", &objective.start, &new_start),
+            ("due", &objective.due, &new_due),
+        ] {
+            if old != new {
+                moved.push(format!("{name} {} (was {})", words(new)?, words(old)?));
+            }
+        }
+        if moved.is_empty() {
+            return Err(ObjectiveError::NoNewDate);
+        }
         let note = NewNote {
             status: None,
             moved: "Dates changed".into(),
             blockers: String::new(),
-            new_dates: format!(
-                "start {} to {}, due {} to {}. Reason: {reason}",
-                objective.start, new_start, objective.due, new_due
-            ),
+            new_dates: format!("{}. Reason: {reason}", moved.join(", ")),
             is_private: false,
             entry_id: None,
         };
@@ -734,7 +739,7 @@ mod tests {
         }
     }
 
-    fn kite(chat: ObjectiveChat) -> Create {
+    fn kite() -> Create {
         Create {
             title: "Ship the kite".into(),
             deliverable: "A kite that flies".into(),
@@ -755,7 +760,6 @@ mod tests {
                 at: "2026-02-10T09:00".into(),
                 why: "see whether the frame is built".into(),
             },
-            chat,
         }
     }
 
@@ -766,10 +770,7 @@ mod tests {
     #[test]
     fn tasks_schedule_moves_open_check() {
         let world = world();
-        let view = world
-            .objectives
-            .create(world.ada, kite(ObjectiveChat::New))
-            .unwrap();
+        let view = world.objectives.create(world.ada, kite()).unwrap();
         let first = check_of(&view).clone();
         assert_eq!(
             (first.local_time.as_str(), first.time_zone.as_str()),
@@ -815,10 +816,7 @@ mod tests {
     fn every_change_raises_the_version() {
         let world = world();
         let ada = world.ada.user;
-        let view = world
-            .objectives
-            .create(world.ada, kite(ObjectiveChat::This))
-            .unwrap();
+        let view = world.objectives.create(world.ada, kite()).unwrap();
         let id = view.objective.id;
         let version = || world.objectives.list(ada).unwrap()[0].objective.version;
         let mut seen = vec![version()];
@@ -872,7 +870,7 @@ mod tests {
         let ada = world.ada.user;
         let id = world
             .objectives
-            .create(world.ada, kite(ObjectiveChat::This))
+            .create(world.ada, kite())
             .unwrap()
             .objective
             .id;
@@ -898,7 +896,7 @@ mod tests {
     fn step_edit_changes_date_and_title_raises_version_and_refuses_another_user() {
         let world = world();
         let o = &world.objectives;
-        let made = o.create(world.ada, kite(ObjectiveChat::This)).unwrap();
+        let made = o.create(world.ada, kite()).unwrap();
         let (id, step) = (made.objective.id, made.steps[0].id);
         let change = StepChange {
             title: Some("Build the red frame".into()),
@@ -944,10 +942,7 @@ mod tests {
     #[test]
     fn a_closed_objective_is_not_reopened_by_edit() {
         let world = world();
-        let view = world
-            .objectives
-            .create(world.ada, kite(ObjectiveChat::This))
-            .unwrap();
+        let view = world.objectives.create(world.ada, kite()).unwrap();
         let id = view.objective.id;
         world
             .objectives
@@ -970,10 +965,7 @@ mod tests {
     #[test]
     fn dates_need_to_run_forwards_and_the_note_keeps_the_reason() {
         let world = world();
-        let view = world
-            .objectives
-            .create(world.ada, kite(ObjectiveChat::This))
-            .unwrap();
+        let view = world.objectives.create(world.ada, kite()).unwrap();
         let id = view.objective.id;
         let backwards =
             world
@@ -991,16 +983,32 @@ mod tests {
             )
             .unwrap();
         assert_eq!((moved.duration_days, moved.objective.version), (28, 2));
-        assert!(moved.notes[0].new_dates.contains("starting a week late"));
+        assert_eq!(
+            moved.notes[0].new_dates,
+            "start Sun 15 Feb 2026 (was Sun 1 Feb 2026), due Sun 15 Mar 2026 (was Sun 1 Mar 2026). Reason: starting a week late"
+        );
+        // Only what moved is said, and a date that is the one already kept moves nothing.
+        let due = |day| {
+            let moved = world.objectives.change_dates(
+                world.ada.user,
+                id,
+                Some("2026-02-15"),
+                Some(day),
+                "slipped",
+            );
+            moved.map(|view| view.notes.last().unwrap().new_dates.clone())
+        };
+        assert_eq!(
+            due("2026-03-22").unwrap(),
+            "due Sun 22 Mar 2026 (was Sun 15 Mar 2026). Reason: slipped"
+        );
+        assert_eq!(due("2026-03-22").unwrap_err().kind(), "noNewDate");
     }
 
     #[test]
     fn objective_reads_are_owner_only() {
         let world = world();
-        let made = world
-            .objectives
-            .create(world.ada, kite(ObjectiveChat::New))
-            .unwrap();
+        let made = world.objectives.create(world.ada, kite()).unwrap();
         let (id, task) = (made.objective.id, made.tasks[0].id);
         world
             .objectives
@@ -1046,13 +1054,10 @@ mod tests {
     }
 
     #[test]
-    fn create_with_a_new_chat_makes_the_chat_and_leaves_a_line() {
+    fn create_in_the_main_chat_makes_the_chat_and_leaves_a_line() {
         let world = world();
         let main = world.ada.chat;
-        let view = world
-            .objectives
-            .create(world.ada, kite(ObjectiveChat::New))
-            .unwrap();
+        let view = world.objectives.create(world.ada, kite()).unwrap();
         let chat = view.objective.chat_id;
         assert_ne!(chat, main);
         let made = world.store.chat(world.ada.user, chat).unwrap().unwrap();
@@ -1083,51 +1088,39 @@ mod tests {
     }
 
     #[test]
-    fn create_on_this_chat_converts_it() {
+    fn create_in_a_topic_chat_converts_it() {
         let world = world();
         let topic = world.store.add_chat(world.ada.user, "Kites").unwrap();
         let owner = TurnOwner {
             user: world.ada.user,
             chat: topic,
         };
-        let view = world
-            .objectives
-            .create(owner, kite(ObjectiveChat::This))
-            .unwrap();
+        let view = world.objectives.create(owner, kite()).unwrap();
         assert_eq!(view.objective.chat_id, topic);
         let converted = world.store.chat(owner.user, topic).unwrap().unwrap();
         assert_eq!(
             (converted.kind, converted.title.as_str()),
             (ChatKind::Objective, "Ship the kite")
         );
-        let again = world.objectives.create(owner, kite(ObjectiveChat::This));
-        assert_eq!(again.unwrap_err().kind(), "chatTaken");
     }
 
     #[test]
-    fn create_on_main_chat_only_links_it() {
+    fn create_in_a_chat_that_holds_an_objective_makes_a_new_chat() {
         let world = world();
-        let view = world
-            .objectives
-            .create(world.ada, kite(ObjectiveChat::This))
-            .unwrap();
-        assert_eq!(view.objective.chat_id, world.ada.chat);
-        let main = world.store.main_chat(world.ada.user).unwrap();
-        assert_eq!((main.kind, main.id), (ChatKind::Main, world.ada.chat));
-        assert!(world.store.entries(main.id, None).unwrap().is_empty());
-        assert_eq!(
-            world.store.page_hosts(main.id).unwrap(),
-            Vec::<String>::new()
-        );
+        let topic = world.store.add_chat(world.ada.user, "Kites").unwrap();
+        let owner = TurnOwner {
+            user: world.ada.user,
+            chat: topic,
+        };
+        world.objectives.create(owner, kite()).unwrap();
+        let again = world.objectives.create(owner, kite()).unwrap();
+        assert_ne!(again.objective.chat_id, topic);
     }
 
     #[test]
     fn a_closed_or_missing_objective_gets_no_check_and_no_zone_means_no_time() {
         let world = world();
-        let view = world
-            .objectives
-            .create(world.ada, kite(ObjectiveChat::This))
-            .unwrap();
+        let view = world.objectives.create(world.ada, kite()).unwrap();
         world
             .objectives
             .close(

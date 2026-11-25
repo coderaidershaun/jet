@@ -221,7 +221,7 @@ impl Scheduler {
             notes: &notes,
             model: settings.model,
             effort: settings.effort,
-            brief: agent::check_brief(&gathered.facts),
+            brief: self.brief(task, gathered),
             mcp: connection.clone(),
             hosts: page_hosts(&gathered.sources),
             time_limit: (!settings.model.reads_web()).then_some(self.time_limit),

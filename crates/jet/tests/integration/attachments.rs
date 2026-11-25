@@ -48,7 +48,7 @@ fn prompt(host: &Host) -> String {
     std::fs::read_to_string(host.dir.path().join("facade-prompt.txt")).unwrap()
 }
 
-fn fetch(host: &Host, path: &str) -> (u16, String, String, Vec<u8>) {
+pub(super) fn fetch(host: &Host, path: &str) -> (u16, String, String, Vec<u8>) {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .build()
@@ -212,10 +212,16 @@ fn attached_files_reach_jet_as_details_and_are_read_on_request() {
     // The stand-in fails this reply, so Jet starts a fresh conversation and sends it again, and
     // then the time line comes first.
     let told = prompt(&host);
-    let told = told.strip_prefix("[local time: Friday]\n").unwrap_or(&told);
+    let (index, told) = told
+        .split_once("</chat_files>\n")
+        .expect("the index comes first");
+    assert!(
+        index.contains("sheet.xlsx") && index.contains("noise.png"),
+        "{index}"
+    );
     assert!(
         told.starts_with("[Attached files: only these details are shown;"),
-        "a message of files alone is the details block alone: {told}"
+        "after the index, a message of files alone is the details block alone: {told}"
     );
     assert_eq!(told.trim_end().lines().count(), 2, "{told}");
 

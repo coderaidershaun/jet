@@ -4,10 +4,9 @@ use export::{Document, Format, Source};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::upload::MAX_STORE_BYTES;
 use super::{About, FileError, FileKind, Files, Origin};
 use crate::store::ChatId;
-use crate::store::{Added, UserId};
+use crate::store::UserId;
 
 /// What the model asks for: the whole document as Markdown, written the way chat maths is
 /// written, and the sources it cites in order.
@@ -20,6 +19,9 @@ pub(crate) struct ExportRequest {
     pub markdown: String,
     #[serde(default)]
     pub sources: Vec<String>,
+    /// One or two sentences on what the file is, kept as its note.
+    #[serde(default)]
+    pub context: Option<String>,
 }
 
 /// A file that has just been written, as the tool call gives it back.
@@ -40,6 +42,7 @@ impl Files {
     /// - [`FileError::Export`] when the renderer cannot make the file.
     /// - [`FileError::Scratch`] when the temporary folder cannot be used.
     /// - [`FileError::StoreFull`] when it would take the store past 2 GiB.
+    /// - [`FileError::UserFull`] when it would take the user's files past their limit.
     pub fn export(
         &self,
         user: UserId,
@@ -68,28 +71,26 @@ impl Files {
         export::write(&document, format, &path)?;
         let contents = std::fs::read(&path).map_err(FileError::Scratch)?;
         let kind = FileKind::of_name(&name).ok_or_else(|| FileError::Unsupported(name.clone()))?;
-        let about = About {
-            id,
-            name: name.clone(),
+        let mut about = About::new(
+            name.clone(),
             kind,
-            bytes: contents.len() as u64,
-            details: String::new(),
-            origin: Origin::Export,
-            attached: true,
-            at: agent::now_ms(),
-        };
-        match self
-            .store
-            .add_file(user, Some(chat), &about, &contents, MAX_STORE_BYTES)?
-        {
-            Added::Kept => Ok(SavedFile {
-                id,
-                name,
-                title: request.title,
-                format,
-                bytes: about.bytes,
-            }),
-            Added::Full => Err(FileError::StoreFull),
-        }
+            &contents,
+            Origin::Export,
+            agent::now_ms(),
+        );
+        about.id = id;
+        about.context = request
+            .context
+            .as_deref()
+            .map(super::artifacts::cap_context)
+            .unwrap_or_default();
+        self.keep(user, Some(chat), &about, &contents)?;
+        Ok(SavedFile {
+            id,
+            name,
+            title: request.title,
+            format,
+            bytes: about.bytes,
+        })
     }
 }

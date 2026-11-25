@@ -4,12 +4,13 @@
 
 import { h } from '../dom.js';
 import { listOf, numberOrNull, orNull, recordOf, stringOf } from '../chat/thread/cards/guard.js';
+import { openProps } from '../chat/file-view.js';
 import { svgIcon } from './icons.js';
 import { sentList } from './sent.js';
 import {
-  clockWords, closedWords, costWords, dateWords, dayWords, daysLeftWords, dueWords, groupObjectives, heldReason, isEmpty, kindWords,
-  latestNote, needsFirst, noteTone, outcomeOf, progressWords, rangeWords, relativeWords, runTitle, setByWords, sharedWithWords,
-  stepDueWords, timeWords, tokensWords, waitingItems,
+  chatFiles, clockWords, closedWords, costWords, dateWords, dayWords, daysLeftWords, dueDayWords, dueWords, groupObjectives, heldReason, isEmpty, kindWords,
+  fileWords, latestNote, needsFirst, noteTone, otherChats, outcomeOf, progressWords, relativeWords, runTitle, setByWords, sharedWithWords,
+  stepDueWords, stepsEndWords, timeWords, tokensWords, waitingItems,
 } from './model.js';
 
 const TASKS_SHOWN_DAYS = 2;
@@ -47,16 +48,17 @@ function foldRow(kind, id, ctx, head, body, aside = null, under = null) {
     h('div', { class: 'row-body', id: bodyId, hidden: !open }, ...body));
 }
 
-function stepRow(step, ctx, tick) {
+function stepRow(step, ctx, tick, objectiveDue) {
   const done = step.doneAt != null;
-  const due = stepDueWords(step, ctx.today, ctx.year);
+  const due = stepDueWords(step, ctx.today, ctx.year, objectiveDue);
   const dueSpan = due.words ? h('span', { class: 'step-due', 'data-tone': due.tone, text: due.words }) : null;
   if (!tick) return h('li', { class: 'step-read', 'data-done': String(done) }, done ? svgIcon('check') : h('span', { class: 'step-dot', 'aria-hidden': 'true' }), h('span', { class: 'step-title', text: stringOf(step.title) }), done ? h('span', { class: 'sr-only', text: ', done' }) : null, dueSpan);
   return h('li', {}, h('button', { type: 'button', class: 'step', role: 'checkbox', 'aria-checked': String(done), 'data-done': String(done), 'data-key': `step-${step.id}`, onClick: (event) => tick(step, !done, event.currentTarget) },
     h('span', { class: 'step-box' }, done ? svgIcon('check') : null), h('span', { class: 'step-title', text: stringOf(step.title) }), dueSpan));
 }
 
-const stepsList = (steps, ctx, tick) => (listOf(steps).length ? h('ul', { class: 'steps' }, ...listOf(steps).map((step) => stepRow(recordOf(step), ctx, tick))) : null);
+/** The steps of an objective that is due on `due`. */
+const stepsList = (steps, ctx, tick, due) => (listOf(steps).length ? h('ul', { class: 'steps' }, ...listOf(steps).map((step) => stepRow(recordOf(step), ctx, tick, due))) : null);
 
 /** The state word of an objective: a paused one, else its latest note's status, coloured when it needs the user. */
 function stateFact(objective) {
@@ -92,7 +94,7 @@ function objectiveRow(objective, ctx) {
   const noCheck = objective.hasOpenCheck === false && isOpen(objective);
   return foldRow('objective', objective.id, ctx,
     [h('span', { class: 'row-title', text: stringOf(objective.title) }), h('span', { class: 'row-facts' }, stateFact(objective), leftFact(objective.daysLeft), fact(progressWords(objective.steps), 'quiet', 'fact progress'))],
-    [stepsList(objective.steps, ctx, tick), note ? ownNote(objective, note, ctx) : null, ownChat ? textButton('Open chat', () => ctx.act.openChat(objective), { 'data-key': `chat-${objective.id}` }) : null],
+    [stepsList(objective.steps, ctx, tick, objective.due), note ? ownNote(objective, note, ctx) : null, ownChat ? textButton('Open chat', () => ctx.act.openChat(objective), { 'data-key': `chat-${objective.id}` }) : null],
     null,
     noCheck ? h('p', { class: 'row-warn', text: 'No check is set. Tell Jet when to look in.' }) : null);
 }
@@ -165,7 +167,7 @@ function sharedRow(item, ctx) {
   const latest = item.latest == null ? null : recordOf(item.latest);
   return foldRow('shared', item.id, ctx,
     [h('span', { class: 'row-title', text: stringOf(item.title) }), h('span', { class: 'row-facts' }, leftFact(item.daysLeft), fact(progressWords(item.steps), 'quiet', 'fact progress'))],
-    [stepsList(item.steps, ctx, null), latest ? noteBlock(latest, ctx, null) : h('p', { class: 'pane-hint', text: 'No update yet.' })]);
+    [stepsList(item.steps, ctx, null, item.due), latest ? noteBlock(latest, ctx, null) : h('p', { class: 'pane-hint', text: 'No update yet.' })]);
 }
 
 /** What colleagues share, one row each under its owner. */
@@ -201,7 +203,7 @@ function overviewNodes(pane, ctx) {
 /** The words after "Jet last looked 2 h ago:". */
 const lookWords = (run) => { const words = outcomeOf(run.outcome).words; return words.charAt(0).toLowerCase() + words.slice(1); };
 
-/** One objective in its own chat: title, facts, deliverable, steps, latest note and who sees it. */
+/** One objective in its own chat: title, the day it is due and the other facts, deliverable, steps, latest note and who sees it. */
 function objectiveBlock(objective, ctx) {
   const note = latestNote(objective);
   const sharing = ctx.shares.get(objective.id);
@@ -210,9 +212,10 @@ function objectiveBlock(objective, ctx) {
   return h('div', { class: 'focus', 'data-id': objective.id },
     h('header', { class: 'focus-head' },
       h('h3', { class: 'focus-title', tabindex: '-1', 'data-key': 'heading-focus', text: stringOf(objective.title) }),
-      h('p', { class: 'row-facts' }, stateFact(objective), leftFact(objective.daysLeft), fact(progressWords(objective.steps), 'quiet', 'fact progress'), fact(rangeWords(objective, ctx.year).split(' · ')[0], 'quiet', 'fact focus-range')),
+      h('p', { class: 'row-facts' }, fact(`Due ${dueDayWords(objective.due, ctx.year)}`, 'quiet', 'fact focus-due'), stateFact(objective), leftFact(objective.daysLeft), fact(progressWords(objective.steps), 'quiet', 'fact progress'), fact(`from ${dateWords(objective.start, ctx.year)}`)),
       line('focus-deliverable', stringOf(objective.deliverable))),
-    stepsList(objective.steps, ctx, tick),
+    stepsList(objective.steps, ctx, tick, objective.due),
+    line('row-warn', stepsEndWords(objective, ctx.year)),
     note ? ownNote(objective, note, ctx) : null,
     h('p', { class: 'who' }, h('span', { text: priv ? 'Private, only you' : 'Shared with ' + sharedWithWords(objective) }),
       textButton(sharing ? 'Close' : priv ? 'Share' : 'Change', (el) => ctx.act.share(objective, el), { 'data-key': `share-${objective.id}`, 'aria-expanded': String(Boolean(sharing)), 'aria-label': sharing ? 'Close' : priv ? 'Share' : 'Change who sees it' })),
@@ -232,12 +235,33 @@ function scopedNodes(pane, ctx) {
       soonest.length ? h('ul', { class: 'plan-rows' }, ...soonest.map((task) => scopedTaskRow(task, ctx))) : h('p', { class: 'pane-hint', text: objectives.some(isOpen) ? 'No check is set. Tell Jet when to look in.' : 'Nothing is scheduled.' })),
     sent.length ? foldLine(ctx, 'waiting', 'Waiting on colleagues', sent.length, () => sentList(sent, ctx, foldRow), true) : null,
     last && unseen.length ? foldLine(ctx, 'did', lastLine, `${unseen.length} not in the chat`, () => runList(unseen, ctx, false)) : line('last-look', lastLine),
+    filesSection(pane, ctx),
     h('div', { class: 'back' }, textButton('All objectives and tasks', () => ctx.act.swap(true), { class: 'text-button back-button', 'data-key': 'swap' })),
   ].filter(Boolean);
 }
 
+/** One file of the open chat: a link that opens it the way its kind asks, with its facts and its note under the name in muted text. */
+function fileRow(file, ctx) {
+  const name = stringOf(file.name);
+  const others = otherChats(file, ctx.chatId);
+  const note = orNull(file.context);
+  const words = [h('span', { class: 'file-name', text: name }),
+    h('span', { class: 'file-facts' }, fileWords(file, ctx.now), others ? h('span', { class: 'file-shared', title: `Also in ${others} other chat${others === 1 ? '' : 's'}`, text: ' · Shared' }) : null),
+    line('file-note', note)];
+  const opens = openProps({ id: file.id, kind: file.kind, name });
+  return h('li', { class: 'plan-row file-row', 'data-id': stringOf(file.id) },
+    opens ? h('a', { class: 'file-open', 'data-key': `file-${file.id}`, 'aria-label': 'Open ' + name, ...(note ? { title: note } : {}), ...opens }, ...words) : h('div', { class: 'file-open' }, ...words));
+}
+
+/** The files of the open chat, newest change first; nothing when it holds none. */
+function filesSection(pane, ctx) {
+  const files = chatFiles(pane, ctx.chatId);
+  return files.length ? section('files', 'Files', files.length, h('ul', { class: 'plan-rows' }, ...files.map((file) => fileRow(file, ctx)))) : null;
+}
+
 /** @returns {HTMLElement[]} the sections of the pane for `pane` (from readPane) */
 export function planNodes(pane, ctx) {
-  if (isEmpty(pane)) return [invitation(ctx)];
-  return ctx.scope && !ctx.overview ? scopedNodes(pane, ctx) : overviewNodes(pane, ctx);
+  if (isEmpty(pane)) return [invitation(ctx), filesSection(pane, ctx)].filter(Boolean);
+  // The scoped pane draws its files above its way back to the overview.
+  return ctx.scope && !ctx.overview ? scopedNodes(pane, ctx) : [...overviewNodes(pane, ctx), filesSection(pane, ctx)].filter(Boolean);
 }

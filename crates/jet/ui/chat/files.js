@@ -48,7 +48,7 @@ export function kindOfName(name) {
 export function fileLinks(id) {
   if (typeof id !== 'string' || !FILE_ID.test(id)) return null;
   const lower = id.toLowerCase();
-  return { download: '/api/files/' + lower, view: '/api/files/' + lower + '/view' };
+  return { download: '/api/files/' + lower, view: '/api/files/' + lower + '/view', frame: '/api/files/' + lower + '/frame' };
 }
 
 /** @param {number} bytes */

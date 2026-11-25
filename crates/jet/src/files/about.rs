@@ -31,9 +31,48 @@ pub(crate) struct About {
     pub attached: bool,
     /// Unix milliseconds.
     pub at: u64,
+    /// One or two sentences that Jet wrote about the file. Empty until it has.
+    #[serde(default)]
+    pub context: String,
+    /// When the file last changed, in Unix milliseconds. 0 in an old row, which means `at`.
+    #[serde(default)]
+    pub changed: u64,
+    /// Starts at 1 and goes up with each change of the contents.
+    #[serde(default = "first_version")]
+    pub version: u32,
+}
+
+fn first_version() -> u32 {
+    1
 }
 
 impl About {
+    /// A new file, with no details yet. A file Jet wrote is visible to it at once.
+    pub fn new(name: String, kind: FileKind, contents: &[u8], origin: Origin, now: u64) -> About {
+        About {
+            id: Uuid::new_v4(),
+            name,
+            kind,
+            bytes: contents.len() as u64,
+            details: String::new(),
+            origin,
+            attached: origin == Origin::Export,
+            at: now,
+            context: String::new(),
+            changed: now,
+            version: 1,
+        }
+    }
+
+    /// When the file last changed, in Unix milliseconds.
+    pub fn changed_at(&self) -> u64 {
+        if self.changed == 0 {
+            self.at
+        } else {
+            self.changed
+        }
+    }
+
     /// The part of this that goes into a message.
     pub fn attachment(&self) -> agent::Attachment {
         agent::Attachment {

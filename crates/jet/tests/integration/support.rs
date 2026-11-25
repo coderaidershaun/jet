@@ -29,6 +29,10 @@ impl Host {
     }
     /// Like `start`, with extra flags for the host.
     pub fn start_with(flags: &[&str]) -> Self {
+        Self::start_env(flags, &[])
+    }
+    /// Like `start_with`, with extra environment variables for the host.
+    pub fn start_env(flags: &[&str], env: &[(&str, &str)]) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let program = dir.path().join("provider.py");
         std::fs::write(&program, include_str!("provider.py")).unwrap();
@@ -37,7 +41,7 @@ impl Host {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
-        let host = Self::launch_with(dir, flags);
+        let host = Self::launch_env(dir, flags, env);
         host.set_programs(json!({"claudePath": program}));
         host
     }
@@ -46,6 +50,9 @@ impl Host {
     }
     /// Starts the host with extra flags and signs the owner in.
     pub fn launch_with(dir: tempfile::TempDir, flags: &[&str]) -> Self {
+        Self::launch_env(dir, flags, &[])
+    }
+    fn launch_env(dir: tempfile::TempDir, flags: &[&str], env: &[(&str, &str)]) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_jet"))
             .args(["--listen", "127.0.0.1:0", "--data-dir"])
             .arg(dir.path())
@@ -54,6 +61,7 @@ impl Host {
             .args(flags)
             .env("JET_TEST_CLOCK_FILE", dir.path().join("clock"))
             .env("JET_TEST_CHECK_LIMIT_MS", "1500")
+            .envs(env.iter().copied())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
@@ -343,7 +351,13 @@ pub fn cookie_header<B>(response: &ureq::http::Response<B>) -> String {
 }
 
 pub fn host() -> Host {
-    let host = Host::start();
+    with_fakes(Host::start())
+}
+/// Like `host`, with extra environment variables for the host.
+pub fn host_env(env: &[(&str, &str)]) -> Host {
+    with_fakes(Host::start_env(&[], env))
+}
+fn with_fakes(host: Host) -> Host {
     let bins = std::path::Path::new(env!("CARGO_BIN_EXE_jet"))
         .parent()
         .unwrap();

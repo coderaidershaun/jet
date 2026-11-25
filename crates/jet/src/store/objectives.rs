@@ -40,20 +40,10 @@ pub(crate) struct Objective {
     pub(crate) closed_at: Option<u64>,
 }
 
-/// Where the objective's chat is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ObjectiveChat {
-    /// A new chat of kind objective, titled after the objective.
-    New,
-    /// The chat the objective was agreed in. A main chat stays the main chat and is only linked.
-    This,
-}
-
 pub(crate) struct NewObjective<'a> {
     pub(crate) user: UserId,
     /// The chat of the turn that agreed the objective.
     pub(crate) agreed_in: ChatId,
-    pub(crate) chat: ObjectiveChat,
     pub(crate) title: &'a str,
     pub(crate) deliverable: &'a str,
     pub(crate) start: &'a str,
@@ -334,17 +324,8 @@ fn objective_chat(tx: &Transaction, new: &NewObjective) -> Result<ChatId, StoreE
         params![new.agreed_in.0, new.user.0],
         |row| row.get(0),
     )?;
-    match (new.chat, kind.as_str()) {
-        (ObjectiveChat::This, "main") => Ok(new.agreed_in),
-        (ObjectiveChat::This, "objective") => Err(StoreError::ChatTaken),
-        (ObjectiveChat::This, _) => {
-            tx.execute(
-                "UPDATE chats SET kind = 'objective', title = ?2 WHERE id = ?1",
-                params![new.agreed_in.0, new.title],
-            )?;
-            Ok(new.agreed_in)
-        }
-        (ObjectiveChat::New, _) => {
+    match kind.as_str() {
+        "main" | "objective" => {
             tx.execute(
                 "INSERT INTO chats (user_id, kind, title, created_at) VALUES (?1, 'objective', ?2, ?3)",
                 params![new.user.0, new.title, seconds(new.at)],
@@ -355,6 +336,13 @@ fn objective_chat(tx: &Transaction, new: &NewObjective) -> Result<ChatId, StoreE
             insert_entry(tx, chat, jet_text(new.summary), at_ms)?;
             insert_entry(tx, new.agreed_in, jet_text(new.line), at_ms)?;
             Ok(chat)
+        }
+        _ => {
+            tx.execute(
+                "UPDATE chats SET kind = 'objective', title = ?2 WHERE id = ?1",
+                params![new.agreed_in.0, new.title],
+            )?;
+            Ok(new.agreed_in)
         }
     }
 }

@@ -85,7 +85,7 @@ if (/^facade:/m.test(input)) {
   assert.equal((await get('/api/chats')).find(chat => chat.id === boats.id).unread, 2);
 
   // An objective made with its own chat appears with its summary as the first entry.
-  const objective = [{ tool: 'objectives_update', arguments: { command: { action: 'create', title: 'Sail the Solent', deliverable: 'A weekend sail with the crew booked', start: '2099-06-01', due: '2099-07-01', steps: [], sources: [], check: { at: '2099-06-08T09:00', why: 'see the crew' }, chat: 'new' } } }];
+  const objective = [{ tool: 'objectives_update', arguments: { command: { action: 'create', title: 'Sail the Solent', deliverable: 'A weekend sail with the crew booked', start: '2099-06-01', due: '2099-07-01', steps: [], sources: [], check: { at: '2099-06-08T09:00', why: 'see the crew' } } } }];
   await send(main.id, 'facade:' + JSON.stringify(objective));
   await settled(main.id);
   await until(async () => (await row('Sail the Solent').count()) === 1, 'the objective chat must appear in the list');
@@ -112,14 +112,30 @@ if (/^facade:/m.test(input)) {
   assert.equal((await get('/api/chats')).find(chat => chat.id === boats.id).unread, 0, 'a reply in the open chat is read');
   assert.ok(!(await page.locator('#rows').innerText()).includes('Sail the Solent'), 'another chat shows nowhere in this one');
 
+  // "Jump to latest" shows only while something is below the reader: it goes on the jump, and a chat that fits has none.
+  const size = page.viewportSize();
+  const jump = page.locator('#jump');
+  const toTop = () => page.locator('#thread').evaluate(element => { element.scrollTop = 0; });
+  await page.setViewportSize({ width: size.width, height: 320 });
+  // The page follows the latest entry while the window shrinks, so scroll up until it stays up.
+  const scrolledUp = async () => { await toTop(); return jump.isVisible(); };
+  await until(scrolledUp, 'a reader above the latest entry must get the jump');
+  await shoot('1280-6-jump.png');
+  await jump.click();
+  await until(async () => !(await jump.isVisible()), 'the jump must go once the reader is at the latest entry');
+  await until(scrolledUp, 'the jump must come back when the reader scrolls up again');
+  await page.setViewportSize(size);
+
   // The objective's chat: its summary comes first.
   await row('Sail the Solent').locator('.chat-open').click();
   await until(async () => (await page.locator('#rows .row').first().innerText()).includes('Sail the Solent'), "the objective's summary must be its first entry");
+  assert.equal(await jump.isVisible(), false, 'a chat that fits the window has nothing to jump to');
   await shoot('1280-5-objective-chat.png');
 
   // New chat: opens at once, empty, with no form.
   await page.locator('#new-chat').click();
   await until(async () => (await row('New chat').count()) === 1 && await row('New chat').locator('.chat-open').getAttribute('aria-current') === 'true', 'a new chat must open at once');
+  assert.equal(await page.locator('#jump').isVisible(), false, 'an empty chat has nothing to jump to');
   assert.equal(await page.locator('.empty').evaluate(element => getComputedStyle(element).visibility), 'visible', 'an empty chat shows the greeting');
   assert.equal(await page.locator('dialog[open], form').count(), 0, 'a new chat asks for nothing');
   await shoot('1280-2-new-chat.png');

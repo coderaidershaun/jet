@@ -305,9 +305,7 @@ fn team_name(name: &str) -> Result<String, ObjectiveError> {
 mod tests {
     use super::*;
     use crate::objectives::{Check, Create, Update};
-    use crate::store::{
-        Email, NewSource, NewStep, NoteStatus, ObjectiveChat, SourceKind, test_store,
-    };
+    use crate::store::{Email, NewSource, NewStep, NoteStatus, SourceKind, test_store};
     use serde_json::{Value, json};
     use std::sync::{
         Arc,
@@ -370,7 +368,6 @@ mod tests {
                         at: "2026-02-10T09:00".into(),
                         why: "private check reason".into(),
                     },
-                    chat: ObjectiveChat::New,
                 },
             )
             .unwrap();

@@ -25,7 +25,7 @@ pub use conversation::{
     ConversationError, InMemory, MemoryError, Message, NewEntry, ObjectiveFacts, Promise,
     REVIEW_GAP, REVIEW_QUIET, Reply, Review, ReviewError, ReviewOutcome, ReviewedChat, SILENT,
     Session, StepFacts, Storage, WakeError, answer_from_shared, brief as check_brief,
-    colleague_notice, now_ms, review_chats, start_check,
+    colleague_notice, now_ms, review_chats, size_words, start_check,
 };
 pub use feeling::{Feeling, JevError, feel_message};
 pub use markdown::{CUES, Cue, dollar_math, render_markdown};

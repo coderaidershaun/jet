@@ -74,7 +74,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
   let cursor = null;
   /** The chat on screen. Null means the main chat until a snapshot names it. Every call of a chat carries it. */
   let chat = null;
-  /** Per chat, the feed position its snapshot already holds, so a later event at or before it is not shown twice. */
+  /** Per chat, the feed and the position in it that its snapshot already holds, so a later event at or before it is not shown twice. */
   const floors = new Map();
   /** While a chat is being opened, the events of that chat wait here until its snapshot is on screen. */
   let loading = null;
@@ -85,7 +85,8 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
   let pending = null;
 
   const inChat = (path) => (chat === null ? path : path + '?chat=' + chat);
-  const seenBefore = (chatId, at) => at <= (floors.get(chatId) ?? -1);
+  // A position counts only in its own feed: a server that started again counts from nothing.
+  const seenBefore = (chatId, at) => floors.get(chatId)?.epoch === epoch && at <= floors.get(chatId).cursor;
   function sameTurn(left, right) {
     return left && right && ['clientId', 'requestId', 'turnId'].every(key => typeof left[key] === 'string' && left[key] && left[key] === right[key]);
   }
@@ -136,7 +137,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
         const shown = message.data.chatId ?? null;
         chat ??= shown;
         if (shown !== chat) return;
-        floors.set(shown, cursor);
+        floors.set(shown, { epoch, cursor });
         actionGeneration++;
         activeIdentity = message.data.active?.identity ?? null;
         observer?.snapshot(message.data);
@@ -195,7 +196,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
       try {
         const snapshot = await call(inChat('/api/snapshot'));
         if (token !== openToken) return;
-        floors.set(id, snapshot.cursor);
+        floors.set(id, { epoch: snapshot.epoch, cursor: snapshot.cursor });
         actionGeneration++;
         activeIdentity = snapshot.active?.identity ?? null;
         const late = loading;

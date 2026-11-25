@@ -1,6 +1,7 @@
 //! Exercise the browser host through real HTTP and controlled provider processes.
 mod accounts;
 mod agy;
+mod artifacts;
 mod attachments;
 mod chat;
 mod chats;

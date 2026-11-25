@@ -82,6 +82,10 @@ button:disabled { cursor: default; }
 .stage {
   grid-row: 1; grid-column: 1;
   position: relative; min-height: 0;
+  background:
+    linear-gradient(var(--veil), var(--veil)),
+    url(assets/tile.png) 0 0 / 512px 512px repeat,
+    var(--ground);
 }
 
 /* Says which chat is open; on a phone the drawer is hidden, so this is the one place that tells. It is a solid band,

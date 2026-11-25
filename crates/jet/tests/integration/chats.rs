@@ -50,11 +50,11 @@ fn chats(user: &User) -> Vec<Value> {
     user.get("/api/chats").as_array().unwrap().clone()
 }
 
-fn main_chat(user: &User) -> i64 {
+pub(super) fn main_chat(user: &User) -> i64 {
     chats(user)[0]["id"].as_i64().unwrap()
 }
 
-fn add_chat(user: &User) -> i64 {
+pub(super) fn add_chat(user: &User) -> i64 {
     let (status, chat) = user.post("/api/chats", json!({}));
     assert_eq!(status, 200, "{chat}");
     chat["id"].as_i64().unwrap()
@@ -123,10 +123,26 @@ fn event_of(events: &mpsc::Receiver<Value>, kind: &str, chat: i64) -> Value {
 
 /// Sends one message that carries `script` as the provider's instruction, waits for the reply to
 /// end, and gives the result of each call of the script.
-fn run_turn(host: &Host, user: &User, chat: i64, id: &str, script: Value) -> Vec<Value> {
+pub(super) fn run_turn(host: &Host, user: &User, chat: i64, id: &str, script: Value) -> Vec<Value> {
+    run_turn_with(host, user, chat, id, script, &[])
+}
+
+/// Like `run_turn`, with files sent in the message.
+pub(super) fn run_turn_with(
+    host: &Host,
+    user: &User,
+    chat: i64,
+    id: &str,
+    script: Value,
+    files: &[&str],
+) -> Vec<Value> {
     let _ = std::fs::remove_file(host.dir.path().join("facade-results.json"));
     let before = snapshot(user, chat)["history"].as_array().unwrap().len();
-    let (status, accepted) = send_in(user, chat, id, &format!("Go.\nfacade:{script}"));
+    let mut message = request(id);
+    message["text"] = json!(format!("Go.\nfacade:{script}"));
+    message["timeZone"] = json!("America/New_York");
+    message["attachments"] = json!(files);
+    let (status, accepted) = user.post(&format!("/api/chat/send?chat={chat}"), message);
     assert_eq!(status, 200, "{accepted}");
     let deadline = Instant::now() + Duration::from_secs(10);
     while !(snapshot(user, chat)["active"].is_null()
@@ -334,7 +350,7 @@ fn deleting_chats_moves_their_objectives_and_follow_ups_to_the_main_chat() {
         json!({"command": {
             "action":"create","title":"Ship the kite","deliverable":"A kite that flies",
             "start":"2099-06-01","due":"2099-07-01","steps":[],"sources":[],
-            "check":{"at":"2099-06-08T09:00","why":"see the frame"},"chat":"new"
+            "check":{"at":"2099-06-08T09:00","why":"see the frame"}
         }}),
     );
     let results = run_turn(

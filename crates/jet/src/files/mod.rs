@@ -3,6 +3,7 @@
 //! them to and from the page are here too.
 
 mod about;
+mod artifacts;
 mod export;
 mod kind;
 mod read;
@@ -13,9 +14,10 @@ mod upload;
 use uuid::Uuid;
 
 use crate::WorkerFailed;
-use crate::store::{ChatId, Store, StoreError, UserId};
+use crate::store::{Added, ChatId, Store, StoreError, UserId};
 
 pub(crate) use about::{About, Origin};
+pub(crate) use artifacts::{Artifact, MAX_CONTEXT_CHARS};
 pub(crate) use export::ExportRequest;
 pub(crate) use kind::FileKind;
 pub(crate) use read::{Range, Reading};
@@ -23,6 +25,7 @@ pub(crate) use routes::router;
 use sandbox::Sandbox;
 pub use sandbox::{READ_FILE_ARGUMENT, run_file_reader};
 pub(crate) use upload::MAX_FILE_BYTES;
+use upload::MAX_USER_BYTES;
 
 /// The most files `list` returns.
 const LIST_LIMIT: usize = 200;
@@ -30,6 +33,7 @@ const LIST_LIMIT: usize = 200;
 /// A saved file, read back to be sent to the browser.
 #[derive(Debug)]
 pub(crate) struct OpenedFile {
+    pub id: Uuid,
     pub name: String,
     pub kind: FileKind,
     pub contents: Vec<u8>,
@@ -59,6 +63,24 @@ pub(crate) enum FileError {
     TooLarge(String),
     #[error("Jet's file store is full. Forget the conversation to free it.")]
     StoreFull,
+    #[error(
+        "Your files in Jet take more than {0} MB. Remove a file or forget a chat to free room."
+    )]
+    UserFull(u64),
+    #[error(
+        "this chat does not hold that file; share brings a file of another chat here (files_list with that chat's id shows what it holds), or puts a file of this chat in another chat"
+    )]
+    NotHeld,
+    #[error(
+        "“{0}” is not a text file, so Jet can't write it; only Markdown, HTML, CSV and text can be written"
+    )]
+    NotText(String),
+    #[error("a file keeps its kind, so its new name must end the way “{0}” does")]
+    RenameKind(String),
+    #[error("no earlier version of that file is kept")]
+    NoEarlier,
+    #[error("no chat with id {0}")]
+    NoChat(i64),
     #[error("Jet couldn't read “{0}”.")]
     Unreadable(String),
     #[error("{0}")]
@@ -70,19 +92,44 @@ pub(crate) enum FileError {
 }
 
 /// Every user's files. Each call acts for one user and sees only that user's files.
-// SMELL: files are kept until Forget, and an upload that was never sent stays too. The store is
-// held to 2 GiB in all, so a visitor can fill it with unsent uploads until Forget is pressed.
+// SMELL: files are kept until Forget or until they are removed. Each user is held to 256 MiB and
+// the store to 2 GiB in all, counting earlier versions, and an upload never sent goes after a day
+// but only when its user next uploads, so a few visitors can still fill the store for a while.
 #[derive(Clone)]
 pub(crate) struct Files {
     store: Store,
     sandbox: Sandbox,
+    /// What one user's files and their kept versions may take, in bytes.
+    user_limit: u64,
 }
 
 impl Files {
     pub fn new(store: Store) -> Files {
+        // A test sets a small limit, because filling 256 MiB would take too long.
+        let user_limit = std::env::var("JET_TEST_USER_FILE_BYTES")
+            .ok()
+            .and_then(|bytes| bytes.parse().ok())
+            .unwrap_or(MAX_USER_BYTES);
         Files {
             store,
             sandbox: Sandbox::new(),
+            user_limit,
+        }
+    }
+
+    /// Keeps a new file, or says which limit it is over.
+    fn keep(
+        &self,
+        user: UserId,
+        chat: Option<ChatId>,
+        about: &About,
+        contents: &[u8],
+    ) -> Result<(), FileError> {
+        let limits = (upload::MAX_STORE_BYTES, self.user_limit);
+        match self.store.add_file(user, chat, about, contents, limits)? {
+            Added::Kept => Ok(()),
+            Added::Full => Err(FileError::StoreFull),
+            Added::UserFull => Err(FileError::UserFull(self.user_limit.div_ceil(1024 * 1024))),
         }
     }
 
@@ -97,6 +144,7 @@ impl Files {
             .file(user, id)?
             .ok_or_else(|| FileError::NotFound(id.to_owned()))?;
         Ok(OpenedFile {
+            id: about.id,
             name: about.name,
             kind: about.kind,
             contents,
@@ -132,11 +180,6 @@ impl Files {
     pub fn visible_id(&self, user: UserId, id: &str) -> Option<Uuid> {
         let about = self.store.file_about(user, id).ok()??;
         about.attached.then_some(about.id)
-    }
-
-    /// Every file of the user that Jet can see, newest first.
-    pub fn list(&self, user: UserId) -> Result<Vec<About>, FileError> {
-        Ok(self.store.attached_files(user, LIST_LIMIT)?)
     }
 
     /// Deletes the user's upload that was never sent. Anything else is left alone and reported as
