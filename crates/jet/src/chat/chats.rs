@@ -176,15 +176,21 @@ impl Chats {
         }
         let runtime = self.chat(user, Some(id))?;
         runtime.retire()?;
-        if let Err(error) = self.store.delete_chat(user, id, agent::now_ms()) {
-            runtime.reopen();
-            return Err(error.into());
-        }
+        let dropped = match self.store.delete_chat(user, id, agent::now_ms() / 1000) {
+            Ok(dropped) => dropped,
+            Err(error) => {
+                runtime.reopen();
+                return Err(error.into());
+            }
+        };
         lock(&self.open).chats.remove(&id);
         self.chats_changed(user, Some(id));
         // Its objectives are dropped and in the main chat now, which the pane shows differently,
         // and the files only that chat held went with it.
         self.pane_changed(user);
+        for objective in dropped {
+            self.viewers_pane_changed(objective);
+        }
         Ok(())
     }
 
@@ -240,15 +246,20 @@ impl Chats {
 
     /// Tells the people an objective is shared with that their "shared with you" list changed.
     pub(crate) fn viewers_pane_changed(&self, objective: ObjectiveId) {
-        match self.store.viewers(objective) {
-            Ok(viewers) => viewers
-                .into_iter()
-                .for_each(|viewer| self.pane_changed(viewer)),
-            Err(error) => eprintln!(
+        self.viewers_of(objective)
+            .into_iter()
+            .for_each(|viewer| self.pane_changed(viewer));
+    }
+
+    /// The people who see the objective now. A read that fails is reported and gives nobody.
+    pub(crate) fn viewers_of(&self, objective: ObjectiveId) -> Vec<UserId> {
+        self.store.viewers(objective).unwrap_or_else(|error| {
+            eprintln!(
                 "jet: could not find who sees objective {}: {error}",
                 objective.0
-            ),
-        }
+            );
+            Vec::new()
+        })
     }
 
     /// The feed of the user's events, made the first time it is asked for.

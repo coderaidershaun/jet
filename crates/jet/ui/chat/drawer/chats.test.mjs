@@ -68,3 +68,16 @@ test('a chat wears one of the twenty marks, the same on every draw, and the main
   assert.deepEqual(worn.toSorted(), marks.toSorted(), 'twenty chats made one after another wear all twenty');
   assert.deepEqual(worn.map((_, n) => chatIcon({ id: 41 + n, kind: 'objective' })), worn);
 });
+
+test('a slow older chat list does not replace a newer one', async () => {
+  const answers = [];
+  const agent = { chats: () => new Promise((resolve) => answers.push(resolve)), markRead: async () => ({ unread: 0 }) };
+  const chats = createChats({ agent });
+  const older = chats.refresh();
+  const newer = chats.refresh();
+  answers[1]([summary(1, 'main', 'Main chat', 100), summary(2, 'topic', 'New title', 300)]);
+  await newer;
+  answers[0]([summary(1, 'main', 'Main chat', 100), summary(2, 'topic', 'Old title', 300)]);
+  await older;
+  assert.equal(chats.items.find((chat) => chat.id === 2).title, 'New title');
+});

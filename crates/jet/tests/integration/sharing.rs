@@ -402,6 +402,7 @@ fn people_update_is_for_admins_and_refused_after_outside_text() {
     );
 
     // The admin's own turn changes the directory, and the new member sees what the team is given.
+    let events = super::pane::listen(&outsider);
     let results = run_turn(
         &host,
         &owner,
@@ -413,6 +414,10 @@ fn people_update_is_for_admins_and_refused_after_outside_text() {
         data(&results[0])["teams"]
             .to_string()
             .contains(&outsider_id.to_string())
+    );
+    assert!(
+        super::pane::pane_changed(&events),
+        "the new member's pane was not told"
     );
     assert_eq!(
         read_as(&host, &outsider, "now-in", owner_id)[0]["title"],

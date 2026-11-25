@@ -1,6 +1,8 @@
 //! The steps of an objective, in the order Jet and the user agreed them.
 
+use super::Tap;
 use super::objectives::touch;
+use super::pane::insert_tap;
 use super::{ObjectiveId, Store, StoreError, UserId, seconds};
 use rusqlite::{Transaction, params};
 use serde::Serialize;
@@ -125,7 +127,7 @@ impl Store {
         objective: ObjectiveId,
         step: StepId,
         is_done: bool,
-        at: u64,
+        (at, tap): (u64, Tap),
     ) -> Result<Option<()>, StoreError> {
         self.try_with(|db| {
             let tx = db.transaction()?;
@@ -139,6 +141,7 @@ impl Store {
             if changed == 0 {
                 return Ok(None);
             }
+            insert_tap(&tx, owner, tap, at)?;
             tx.commit()?;
             Ok(Some(()))
         })

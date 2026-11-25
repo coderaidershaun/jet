@@ -96,6 +96,13 @@ export function shareCard(card) {
     }
   }
 
+  // A tap in another window, or a newer card from the pane, changes this card without a tap here.
+  const onPaneChanged = () => {
+    if (!el.isConnected) document.removeEventListener('jet:pane-changed', onPaneChanged);
+    else if (view.state === 'proposed' && !busy && view.id !== null) reread();
+  };
+  document.addEventListener('jet:pane-changed', onPaneChanged);
+
   draw();
   if (view.id !== null) reread();
   return el;

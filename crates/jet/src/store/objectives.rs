@@ -228,6 +228,12 @@ impl Store {
                 return Ok(None);
             }
             tx.execute(
+                "UPDATE chats SET title = ?2 WHERE ?2 IS NOT NULL
+                 AND id = (SELECT chat_id FROM objectives WHERE id = ?1)
+                 AND title = (SELECT title FROM objectives WHERE id = ?1)",
+                params![id.0, edit.title],
+            )?;
+            tx.execute(
                 "UPDATE objectives SET title = coalesce(?2, title), deliverable = coalesce(?3, deliverable),
                  status = coalesce(?4, status) WHERE id = ?1",
                 params![id.0, edit.title, edit.deliverable, edit.status],

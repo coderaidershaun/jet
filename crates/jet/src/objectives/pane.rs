@@ -197,8 +197,8 @@ impl Objectives {
         step: StepId,
         is_done: bool,
     ) -> Result<ObjectiveView, ObjectiveError> {
-        let view = self.tick_step(user, objective, step, is_done)?;
-        let title = view
+        let before = self.show(user, objective)?;
+        let title = before
             .steps
             .iter()
             .find(|found| found.id == step)
@@ -206,10 +206,10 @@ impl Objectives {
         let how = if is_done { "done" } else { "not done" };
         let line = format!(
             "[The user tapped step \"{title}\" of \"{}\" in the pane: it is now marked {how}.]",
-            view.objective.title
+            before.objective.title
         );
-        self.told(user, view.objective.chat_id, &line)?;
-        Ok(view)
+        let tap = Some((before.objective.chat_id, line.as_str()));
+        self.tick_step_told(user, objective, step, is_done, tap)
     }
 
     /// A snooze lands on the next 08:00 after the task's own time, or after now when that has
@@ -226,9 +226,14 @@ impl Objectives {
             .time_zone(user)?
             .unwrap_or_else(|| old.time_zone.clone());
         let (due_at, local) = self.snooze_to(&old, &zone)?;
+        let line = format!(
+            "[The user tapped Snooze in the pane on your task \"{}\": it now falls due at {local} ({zone}).]",
+            old.why
+        );
+        let tap = Some((old.chat_id, line.as_str()));
         match self.write(|| {
             self.store
-                .snooze_task(user, id, (due_at, &local, &zone), self.now())
+                .snooze_task(user, id, (due_at, &local, &zone), (self.now(), tap))
         })? {
             Snoozed::Moved => {}
             Snoozed::NotWaiting(state) => {
@@ -239,28 +244,21 @@ impl Objectives {
             }
             Snoozed::Missing => return Err(ObjectiveError::NoSuchTask { id: id.0 }),
         }
-        let task = self.task(user, id)?;
-        let line = format!(
-            "[The user tapped Snooze in the pane on your task \"{}\": it now falls due at {local} ({zone}).]",
-            task.why
-        );
-        self.told(user, task.chat_id, &line)?;
-        Ok(task)
+        self.task(user, id)
     }
 
     /// Cancels a waiting task of the user's by a tap.
     pub(crate) fn tap_cancel(&self, user: UserId, id: TaskId) -> Result<AgentTask, ObjectiveError> {
-        let task = self.cancel(user, id)?;
+        let task = self.task(user, id)?;
         let line = format!(
             "[The user tapped Cancel in the pane on your task \"{}\": it is cancelled.]",
             task.why
         );
-        self.told(user, task.chat_id, &line)?;
-        Ok(task)
+        self.cancel_told(user, id, Some((task.chat_id, line.as_str())))
     }
 
-    /// Keeps the tap of flipping a note between private and shared, for Jet to be told of.
-    pub(crate) fn note_flipped(
+    /// Flips a note between private and shared by a tap, and keeps the line Jet is told of it.
+    pub(crate) fn flip_note(
         &self,
         user: UserId,
         objective: ObjectiveId,
@@ -282,12 +280,13 @@ impl Objectives {
             "[The user tapped your note \"{moved}\" on \"{}\" in the pane: it is now {how}.]",
             found.title
         );
-        self.told(user, found.chat_id, &line)
-    }
-
-    fn told(&self, user: UserId, chat: ChatId, line: &str) -> Result<(), ObjectiveError> {
-        self.write(|| self.store.record_tap(user, chat, line, self.now()))?;
-        Ok(())
+        self.set_note_private(
+            user,
+            objective,
+            note,
+            is_private,
+            Some((found.chat_id, line.as_str())),
+        )
     }
 }
 
@@ -337,6 +336,23 @@ mod tests {
                 },
             )
             .unwrap()
+    }
+
+    #[test]
+    fn a_tap_and_its_line_commit_together() {
+        let (dir, store, ada, _) = test_store();
+        let objectives = objectives(&store);
+        let made = create(&store, &objectives, ada, "Ship the kite");
+        let (id, step) = (made.objective.id, made.steps[0].id);
+        rusqlite::Connection::open(dir.path().join("jet.sqlite3"))
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER no_taps BEFORE INSERT ON pane_taps BEGIN SELECT RAISE(ABORT, 'full'); END",
+            )
+            .unwrap();
+        assert!(objectives.tap_step(ada, id, step, true).is_err());
+        let after = objectives.show(ada, id).unwrap();
+        assert_eq!(after.steps[0].done_at, None, "the step was not ticked");
     }
 
     #[test]

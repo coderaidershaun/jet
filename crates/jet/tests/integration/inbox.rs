@@ -1183,3 +1183,32 @@ fn a_third_user_reads_taps_and_answers_nothing_of_an_item_between_two_others() {
     assert_eq!(item_state(&host), "seen");
     assert!(colleague_entries(&host, user_id(&host, MANAGER)).is_empty());
 }
+
+#[test]
+fn a_reply_tap_that_cannot_keep_its_line_sends_nothing() {
+    let host = host();
+    let (owner, manager) = (host.owner(), host.sign_in_as(MANAGER));
+    manager_sends_and_owner_sees(&host, &manager, "ask", "Is Friday good?");
+    let results = run_turn(
+        &host,
+        &owner,
+        "answer",
+        "Tell them Friday works.",
+        json!([reply(1, "answered", "Friday works")]),
+    );
+    let card = data(&results[0])["reply"].clone();
+    rusqlite::Connection::open(host.dir.path().join("jet.sqlite3"))
+        .unwrap()
+        .execute_batch(
+            "CREATE TRIGGER no_taps BEFORE INSERT ON pane_taps BEGIN SELECT RAISE(ABORT, 'full'); END",
+        )
+        .unwrap();
+
+    assert_eq!(tap_reply(&owner, &card).0, 500);
+    assert_eq!(item_state(&host), "seen", "the item stays open");
+    assert_eq!(
+        owner.get(&format!("/api/inbox/replies?ids={}", card["id"]))[0]["state"],
+        "proposed",
+        "the card stays open"
+    );
+}

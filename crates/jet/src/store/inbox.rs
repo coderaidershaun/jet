@@ -2,9 +2,10 @@
 //! that the tap stores, and the states the item moves through until it ends.
 
 use super::chats::insert_entry;
+use super::pane::insert_tap;
 use super::tasks::insert_task;
 use super::text_enum::text_enum;
-use super::{ChatId, NewTask, ObjectiveId, Store, StoreError, TaskId, UserId, seconds};
+use super::{ChatId, NewTask, ObjectiveId, Store, StoreError, Tap, TaskId, UserId, seconds};
 use agent::{Entry, NewEntry};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
@@ -104,6 +105,8 @@ pub(crate) struct Close<'a> {
     pub(crate) to_sender: NewEntry,
     /// A line for the recipient's main chat.
     pub(crate) to_recipient: Option<NewEntry>,
+    /// The reply card this tap sends, and the line Jet is told of the tap: both commit with the close.
+    pub(crate) reply_card: Option<(ReplyCardId, ChatId, &'a str)>,
 }
 
 #[derive(Debug)]
@@ -322,23 +325,6 @@ impl Store {
             Ok(found)
         })
     }
-
-    /// Marks the user's reply card sent. False when it was sent already or is not theirs.
-    pub(crate) fn mark_reply_sent(
-        &self,
-        user: UserId,
-        card: ReplyCardId,
-        at: u64,
-    ) -> Result<bool, StoreError> {
-        self.with(|db| {
-            let changed = db.execute(
-                "UPDATE reply_cards SET sent_at = ?3 WHERE id = ?1 AND user_id = ?2 AND sent_at IS NULL",
-                params![card.0, user.0, seconds(at)],
-            )?;
-            Ok(changed == 1)
-        })
-    }
-
     /// The newest `limit` items the user sent, newest first.
     pub(crate) fn sent_items(&self, user: UserId, limit: usize) -> Result<Vec<Sent>, StoreError> {
         self.with(|db| {
@@ -423,6 +409,7 @@ impl Store {
         card: CardId,
         task: &NewTask,
         (since, limit): (u64, u64),
+        tap: Tap,
     ) -> Result<SendTap, StoreError> {
         self.try_with(|db| {
             let tx = db.transaction()?;
@@ -469,7 +456,8 @@ impl Store {
                 params![sender.0, to.0, chat, kind, body, objective, seconds(task.due_at)],
             )?;
             let item = ItemId(tx.last_insert_rowid());
-            let task = insert_task(&tx, to, landing, None, task, task.due_at)?;
+            let at = task.due_at;
+            let task = insert_task(&tx, to, landing, None, task, at)?;
             tx.execute(
                 "UPDATE inbox_items SET task_id = ?2 WHERE id = ?1",
                 params![item.0, task.0],
@@ -478,6 +466,7 @@ impl Store {
                 "UPDATE send_cards SET item_id = ?2 WHERE id = ?1",
                 params![card.0, item.0],
             )?;
+            insert_tap(&tx, sender, tap, at)?;
             tx.commit()?;
             Ok(SendTap::Sent)
         })
@@ -547,6 +536,13 @@ impl Store {
                  WHERE state = 'scheduled' AND id = (SELECT task_id FROM inbox_items WHERE id = ?1)",
                 params![close.item.0, at],
             )?;
+            if let Some((card, chat, line)) = close.reply_card {
+                tx.execute(
+                    "UPDATE reply_cards SET sent_at = ?3 WHERE id = ?1 AND user_id = ?2 AND sent_at IS NULL",
+                    params![card.0, close.recipient.0, at],
+                )?;
+                insert_tap(&tx, close.recipient, Some((chat, line)), close.at)?;
+            }
             let now = agent::now_ms();
             let mut posted = vec![Posted {
                 user: UserId(sender),

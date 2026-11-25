@@ -91,15 +91,32 @@ async fn tap(
     Json(ticked): Json<Ticked>,
 ) -> Result<Json<ShareCard>, Response> {
     let user = signed_in.user.id;
-    let applied = on_worker(move || {
-        host.objectives
-            .apply_share(user, ProposalId(id), &ticked.people(), &ticked.teams)
+    let chats = host.chats.clone();
+    let (applied, before) = on_worker(move || {
+        let before = host
+            .objectives
+            .share_cards(user, &[ProposalId(id)])
+            .ok()
+            .and_then(|cards| {
+                cards
+                    .first()
+                    .map(|card| chats.viewers_of(card.objective_id))
+            })
+            .unwrap_or_default();
+        let applied =
+            host.objectives
+                .apply_share(user, ProposalId(id), &ticked.people(), &ticked.teams);
+        (applied, before)
     })
     .await
     .map_err(|failed| BridgeError::from(failed).into_response())?;
     let card = applied.map_err(IntoResponse::into_response)?;
     host.chats.pane_changed(user);
     host.chats.viewers_pane_changed(card.objective_id);
+    // People the tap took off the share no longer show up as viewers, so they are told from the list read before.
+    before
+        .into_iter()
+        .for_each(|viewer| host.chats.pane_changed(viewer));
     Ok(Json(card))
 }
 
@@ -159,8 +176,7 @@ async fn flip_note(
     let chats = host.chats.clone();
     let flipped = on_worker(move || {
         let objectives = &host.objectives;
-        objectives.set_note_private(user, ObjectiveId(id), note, privacy.private)?;
-        objectives.note_flipped(user, ObjectiveId(id), note, privacy.private)
+        objectives.flip_note(user, ObjectiveId(id), note, privacy.private)
     })
     .await
     .map_err(|failed| BridgeError::from(failed).into_response())?;

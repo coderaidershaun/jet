@@ -1,26 +1,23 @@
 //! What the plan pane keeps: the taps Jet is told of, and who has shared objectives with a user.
 
 use super::{ChatId, ObjectiveId, Store, StoreError, UserId, seconds};
-use rusqlite::params;
+use rusqlite::{Connection, params};
+
+/// A pane tap and the line Jet is told of it, written in the same transaction as the change.
+pub(crate) type Tap<'a> = Option<(ChatId, &'a str)>;
+
+/// Keeps the line of a tap inside the transaction of the change it tells of.
+pub(super) fn insert_tap(db: &Connection, user: UserId, tap: Tap, at: u64) -> rusqlite::Result<()> {
+    if let Some((chat, line)) = tap {
+        db.execute(
+            "INSERT INTO pane_taps (user_id, chat_id, line, at) VALUES (?1, ?2, ?3, ?4)",
+            params![user.0, chat.0, line, seconds(at)],
+        )?;
+    }
+    Ok(())
+}
 
 impl Store {
-    /// Keeps a tap of the user's, as the line Jet is told before their next message in `chat`.
-    pub(crate) fn record_tap(
-        &self,
-        user: UserId,
-        chat: ChatId,
-        line: &str,
-        at: u64,
-    ) -> Result<(), StoreError> {
-        self.with(|db| {
-            db.execute(
-                "INSERT INTO pane_taps (user_id, chat_id, line, at) VALUES (?1, ?2, ?3, ?4)",
-                params![user.0, chat.0, line, seconds(at)],
-            )
-            .map(drop)
-        })
-    }
-
     /// The people an objective is shared with, directly or through a team.
     pub(crate) fn viewers(&self, objective: ObjectiveId) -> Result<Vec<UserId>, StoreError> {
         self.with(|db| {

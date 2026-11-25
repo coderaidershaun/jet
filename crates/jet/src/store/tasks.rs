@@ -2,8 +2,9 @@
 //! objective, at most one open at a time, or a follow-up in a chat.
 
 use super::chats::insert_entry;
+use super::pane::insert_tap;
 use super::text_enum::text_enum;
-use super::{ChatId, ObjectiveId, Store, StoreError, UserId, seconds};
+use super::{ChatId, ObjectiveId, Store, StoreError, Tap, UserId, seconds};
 use agent::{CheckIn, Entry, NewEntry};
 use rusqlite::{OptionalExtension, Transaction, params};
 use serde::Serialize;
@@ -347,10 +348,11 @@ impl Store {
         owner: UserId,
         chat: ChatId,
         task: &NewTask,
+        at: u64,
     ) -> Result<TaskId, StoreError> {
         self.try_with(|db| {
             let tx = db.transaction()?;
-            let id = insert_task(&tx, owner, chat, None, task, 0)?;
+            let id = insert_task(&tx, owner, chat, None, task, at)?;
             tx.commit()?;
             Ok(id)
         })
@@ -361,17 +363,21 @@ impl Store {
         &self,
         owner: UserId,
         id: TaskId,
-        at: u64,
+        (at, tap): (u64, Tap),
     ) -> Result<CancelOutcome, StoreError> {
-        self.with(|db| {
-            let changed = db.execute(
+        self.try_with(|db| {
+            let tx = db.transaction()?;
+            let changed = tx.execute(
                 "UPDATE agent_tasks SET state = 'cancelled', version = version + 1, updated_at = ?3
                  WHERE id = ?1 AND user_id = ?2 AND state = 'scheduled'",
                 params![id.0, owner.0, seconds(at)],
             )?;
             if changed == 1 {
+                insert_tap(&tx, owner, tap, at)?;
+                tx.commit()?;
                 return Ok(CancelOutcome::Cancelled);
             }
+            let db = &tx;
             let state: Option<TaskState> = db
                 .query_row(
                     "SELECT state FROM agent_tasks WHERE id = ?1 AND user_id = ?2",
@@ -530,8 +536,11 @@ impl Store {
                     return Ok(Settlement::Stale(Stale::Objective));
                 }
             }
+            // A notice that a check was cut off is of no use once its objective is closed.
+            let cut_off = matches!(settled.outcome, RunOutcome::Failed | RunOutcome::Interrupted);
             let entry = settled
                 .entry
+                .filter(|_| !(closed && cut_off))
                 .map(|mut entry| {
                     entry.check = Some(CheckIn {
                         task: task.unsigned_abs(),
@@ -607,18 +616,22 @@ impl Store {
         owner: UserId,
         id: TaskId,
         (due_at, local_time, time_zone): (u64, &str, &str),
-        at: u64,
+        (at, tap): (u64, Tap),
     ) -> Result<Snoozed, StoreError> {
-        self.with(|db| {
-            let changed = db.execute(
+        self.try_with(|db| {
+            let tx = db.transaction()?;
+            let changed = tx.execute(
                 "UPDATE agent_tasks SET due_at = ?3, local_time = ?4, time_zone = ?5, set_by = 'user',
                  version = version + 1, updated_at = ?6
                  WHERE id = ?1 AND user_id = ?2 AND state = 'scheduled'",
                 params![id.0, owner.0, seconds(due_at), local_time, time_zone, seconds(at)],
             )?;
             if changed == 1 {
+                insert_tap(&tx, owner, tap, at)?;
+                tx.commit()?;
                 return Ok(Snoozed::Moved);
             }
+            let db = &tx;
             let state: Option<TaskState> = db
                 .query_row(
                     "SELECT state FROM agent_tasks WHERE id = ?1 AND user_id = ?2",
@@ -724,7 +737,7 @@ mod tests {
             time_zone: "UTC",
             set_by: SetBy::Jet,
         };
-        let id = store.add_follow_up(ada, chat, &follow_up).unwrap();
+        let id = store.add_follow_up(ada, chat, &follow_up, 1).unwrap();
         let claims: Vec<_> = (0..2)
             .map(|_| {
                 let store = store.clone();
@@ -841,6 +854,35 @@ mod tests {
     }
 
     #[test]
+    fn a_cut_off_check_of_a_closed_objective_posts_no_notice() {
+        let (_dir, store, ada, objective, _task, run) = running_check();
+        store
+            .close_objective(ada, objective, ObjectiveStatus::Done, None, 1001)
+            .unwrap();
+        let settled = Settled {
+            outcome: RunOutcome::Interrupted,
+            entry: Some(NewEntry {
+                role: agent::Role::Jet,
+                ..NewEntry::user_text("I couldn't finish my check. Want me to try again?")
+            }),
+            seen: None,
+            ..silent(
+                run,
+                Versions {
+                    task: 0,
+                    objective: None,
+                },
+                TaskEnd::Failed,
+            )
+        };
+        let settlement = store.settle(settled).unwrap();
+        assert!(
+            matches!(settlement, Settlement::Applied(None)),
+            "{settlement:?}"
+        );
+    }
+
+    #[test]
     fn one_open_check_per_objective() {
         let (_dir, store, ada, _) = test_store();
         let chat = store.main_chat(ada).unwrap().id;
@@ -885,10 +927,11 @@ mod tests {
                     kind: TaskKind::FollowUp,
                     ..check.clone()
                 },
+                1,
             )
             .unwrap();
         let open = store.agent_tasks(ada).unwrap();
-        store.cancel_task(ada, open[0].id, 2).unwrap();
+        store.cancel_task(ada, open[0].id, (2, None)).unwrap();
         let moved = store
             .schedule_check(ada, created.objective, &check, 3)
             .unwrap();

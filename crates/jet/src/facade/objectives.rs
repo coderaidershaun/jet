@@ -599,6 +599,10 @@ impl Handler {
                     .await
                     .map_err(super::handler::message)?
                     .map_err(failed)?;
+                // The task is cancelled even when declining its item fails below.
+                if let Some(chats) = self.0.chats() {
+                    chats.pane_changed(owner.user);
+                }
                 let posted = on_worker(move || declining.decline_item_of(owner.user, TaskId(id)))
                     .await
                     .map_err(super::handler::message)?

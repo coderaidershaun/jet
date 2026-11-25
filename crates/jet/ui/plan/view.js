@@ -208,7 +208,7 @@ function objectiveBlock(objective, ctx) {
   const note = latestNote(objective);
   const sharing = ctx.shares.get(objective.id);
   const priv = objective.private === true;
-  const tick = (s, done, el) => ctx.act.tick(objective, s, done, el);
+  const tick = isOpen(objective) ? (s, done, el) => ctx.act.tick(objective, s, done, el) : null;
   return h('div', { class: 'focus', 'data-id': objective.id },
     h('header', { class: 'focus-head' },
       h('h3', { class: 'focus-title', tabindex: '-1', 'data-key': 'heading-focus', text: stringOf(objective.title) }),

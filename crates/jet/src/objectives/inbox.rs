@@ -4,7 +4,7 @@
 use super::{Objectives, UTC};
 use crate::chat::TurnOwner;
 use crate::store::{
-    CardId, Close, Closed, Item, ItemId, ItemKind, ItemState, NewTask, ObjectiveId, Posted,
+    CardId, ChatId, Close, Closed, Item, ItemId, ItemKind, ItemState, NewTask, ObjectiveId, Posted,
     ReplyCard, ReplyCardId, ReplyOutcome, SendCard, SendTap, SetBy, StoreError, TaskId, TaskKind,
     UserId,
 };
@@ -139,16 +139,6 @@ impl Objectives {
             set_by: SetBy::Jet,
         };
         let limit = (self.day_ago(), SEND_LIMIT);
-        match self.write(|| self.store.send_item(sender, card, &task, limit))? {
-            SendTap::Sent => {}
-            SendTap::NoCard => return Err(InboxError::NoSuchCard { id: card.0 }),
-            SendTap::AlreadySent => return Err(InboxError::CardNotOpen { id: card.0 }),
-            SendTap::OverLimit => {
-                return Err(InboxError::SendLimit {
-                    name: shown.to.name,
-                });
-            }
-        }
         let chat = match shown.chat {
             Some(chat) => chat,
             None => self.store.main_chat(sender)?.id,
@@ -158,7 +148,17 @@ impl Objectives {
             shown.to.name,
             shown.kind.as_str()
         );
-        self.store.record_tap(sender, chat, &line, now)?;
+        let tap = Some((chat, line.as_str()));
+        match self.write(|| self.store.send_item(sender, card, &task, limit, tap))? {
+            SendTap::Sent => {}
+            SendTap::NoCard => return Err(InboxError::NoSuchCard { id: card.0 }),
+            SendTap::AlreadySent => return Err(InboxError::CardNotOpen { id: card.0 }),
+            SendTap::OverLimit => {
+                return Err(InboxError::SendLimit {
+                    name: shown.to.name,
+                });
+            }
+        }
         self.send_card(sender, card)
     }
 
@@ -212,9 +212,6 @@ impl Objectives {
         if card.sent_at.is_some() {
             return Err(InboxError::CardNotOpen { id: id.0 });
         }
-        let posted = self.reply(user, card.item_id, card.outcome, &card.text)?;
-        let now = self.now();
-        self.write(|| self.store.mark_reply_sent(user, id, now))?;
         let chat = match card.chat {
             Some(chat) => chat,
             None => self.store.main_chat(user)?.id,
@@ -224,7 +221,8 @@ impl Objectives {
             card.to.name,
             card.outcome.as_str()
         );
-        self.store.record_tap(user, chat, &line, now)?;
+        let sent = (id, chat, line.as_str());
+        let posted = self.reply_with(user, (card.item_id, card.outcome, &card.text), Some(sent))?;
         Ok((self.reply_card(user, id)?, posted))
     }
 
@@ -277,6 +275,17 @@ impl Objectives {
         outcome: ReplyOutcome,
         words: &str,
     ) -> Result<Vec<Posted>, InboxError> {
+        self.reply_with(user, (id, outcome, words), None)
+    }
+
+    /// Sends the reply. With `card`, the reply card it came from is marked sent, and the line Jet is
+    /// told of the tap is kept, in the same write that closes the item.
+    fn reply_with(
+        &self,
+        user: UserId,
+        (id, outcome, words): (ItemId, ReplyOutcome, &str),
+        card: Option<(ReplyCardId, ChatId, &str)>,
+    ) -> Result<Vec<Posted>, InboxError> {
         let (item, words) = self.replyable(user, id, outcome, words)?;
         let name = self.name(user)?;
         let (said, colleague) = match outcome {
@@ -306,6 +315,7 @@ impl Objectives {
                     ..NewEntry::user_text(&format!("{name} {said}."))
                 },
                 to_recipient: None,
+                reply_card: card,
             })
         })?;
         match closed {
@@ -380,6 +390,7 @@ impl Objectives {
                     format!("{answered}'s Jet answered from the objectives they share with you."),
                     &reply,
                 ),
+                reply_card: None,
                 to_recipient: Some(line(
                     format!("{asked} sent a {kind}, and I answered it from what you share with them: {answer}"),
                     &quote,

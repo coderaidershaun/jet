@@ -2,7 +2,7 @@
 use super::{Binding, Facade, HEADER, handoff, marks, tools};
 use crate::chat::RunningCall;
 use crate::files::{ExportRequest, Range, Reading};
-use crate::store::ObjectiveId;
+use crate::store::{ObjectiveId, UserId};
 use crate::{lock, on_worker};
 use agent::{
     apps::{AppId, RegistryCommand},
@@ -404,7 +404,15 @@ impl Handler {
                 result
             }
             "people_list" => self.people_list().await,
-            "people_update" => self.people_update(&arguments, &binding).await,
+            "people_update" => {
+                let result = self.people_update(&arguments, &binding).await;
+                // A team's members decide who sees what is shared with it.
+                let member = arguments["command"]["user"].as_i64();
+                if let (Ok(_), Some(member), Some(chats)) = (&result, member, self.0.chats()) {
+                    chats.pane_changed(UserId(member));
+                }
+                result
+            }
             "chats_read" => self.chats_read(&arguments, &binding).await,
             _ => Err(message("unknown facade tool")),
         }

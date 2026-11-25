@@ -89,6 +89,30 @@ fn review_schedules_unscheduled_promise_once() {
 }
 
 #[test]
+fn a_colleagues_waiting_message_does_not_cover_a_promise() {
+    let host = quiet_host("1");
+    let owner = host.owner();
+    // The task that brings a colleague's question to the owner waits in the main chat.
+    rusqlite::Connection::open(host.dir.path().join("jet.sqlite3"))
+        .unwrap()
+        .execute_batch(
+            "INSERT INTO agent_tasks (user_id, chat_id, kind, why, due_at, local_time, time_zone, set_by, created_at, updated_at)
+               SELECT u.id, c.id, 'follow_up', 'Bring a question to your user', 3792322800, '2090-03-04T10:00', 'UTC', 'jet', 1, 1
+               FROM users u JOIN chats c ON c.user_id = u.id AND c.kind = 'main' WHERE u.email = 'shaunsurfing@gmail.com';
+             INSERT INTO inbox_items (from_user, to_user, kind, body, sent_at, task_id)
+               SELECT (SELECT id FROM users WHERE email <> 'shaunsurfing@gmail.com' LIMIT 1), u.id, 'question', 'Is Friday good?', strftime('%s', 'now'), t.id
+               FROM users u JOIN agent_tasks t ON t.user_id = u.id WHERE u.email = 'shaunsurfing@gmail.com';",
+        )
+        .unwrap();
+    assert_eq!(tasks(&owner).len(), 1, "the seeded task is there");
+    let (_, found) = say_and_review(&host, &owner, "a", "promiseme about the kite");
+    assert!(
+        found.iter().any(|task| task["setBy"] == "review"),
+        "the promise got its follow-up: {found:?}"
+    );
+}
+
+#[test]
 fn review_ignores_user_and_quoted_promises() {
     let host = quiet_host("1");
     let owner = host.owner();

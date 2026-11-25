@@ -48,6 +48,8 @@ impl Chats {
         let mut covered: HashSet<ChatId> = tasks
             .iter()
             .filter(|task| matches!(task.state, TaskState::Scheduled | TaskState::Running))
+            // A colleague's message waiting to be brought up says nothing of what Jet promised.
+            .filter(|task| matches!(self.store.item_of_task(task.id), Ok(None)))
             .map(|task| task.chat_id)
             .collect();
         let zone = self.store.time_zone(user).ok().flatten();
@@ -66,7 +68,7 @@ impl Chats {
                 time_zone: &due.zone,
                 set_by: SetBy::Review,
             };
-            match self.store.add_follow_up(user, chat, &task) {
+            match self.store.add_follow_up(user, chat, &task, now_ms / 1000) {
                 Ok(_) => {
                     covered.insert(chat);
                     added = true;

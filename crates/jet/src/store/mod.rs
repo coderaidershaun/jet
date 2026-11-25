@@ -29,6 +29,7 @@ pub(crate) use inbox::{
     ReplyOutcome, SendCard, SendTap, Sent,
 };
 pub(crate) use objectives::{Edit, NewObjective, Objective, ObjectiveId, ObjectiveStatus};
+pub(crate) use pane::Tap;
 pub(crate) use shares::{
     Applied, CardPerson, CardTeam, ProposalId, ShareCard, Shared, SharedNote, Sharing, Tapped,
 };

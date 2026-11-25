@@ -2,7 +2,7 @@
 //! each chat, the record of its provider session and how far the user has read it.
 
 use super::text_enum::text_enum;
-use super::{Store, StoreError, UserId, from_json, seconds, to_json};
+use super::{ObjectiveId, Store, StoreError, UserId, from_json, seconds, to_json};
 use agent::{Entry, NewEntry, Session};
 use rusqlite::{OptionalExtension, Transaction, params};
 use serde::Serialize;
@@ -151,13 +151,14 @@ impl Store {
 
     /// Deletes the chat with its thread. Its objectives that are still open are dropped and their
     /// waiting checks cancelled, as of `at`. The objectives, agent-tasks and share cards then move
-    /// to the user's main chat in the same transaction, so their history stays.
+    /// to the user's main chat in the same transaction, so their history stays. Gives the
+    /// objectives it dropped. The runs of the moved tasks lose their entry, which went with the chat.
     pub(crate) fn delete_chat(
         &self,
         user: UserId,
         chat: ChatId,
         at: u64,
-    ) -> Result<(), StoreError> {
+    ) -> Result<Vec<ObjectiveId>, StoreError> {
         self.try_with(|db| {
             let transaction = db.transaction()?;
             let kind: Option<ChatKind> = transaction
@@ -176,6 +177,17 @@ impl Store {
                 "SELECT id FROM chats WHERE user_id = ?1 AND kind = 'main'",
                 [user.0],
                 |row| row.get(0),
+            )?;
+            let dropped = transaction
+                .prepare(
+                    "SELECT id FROM objectives WHERE chat_id = ?1 AND status IN ('active', 'paused')",
+                )?
+                .query_map([chat.0], |row| row.get(0).map(ObjectiveId))?
+                .collect::<Result<Vec<_>, _>>()?;
+            transaction.execute(
+                "UPDATE task_runs SET entry_id = NULL
+                 WHERE task_id IN (SELECT id FROM agent_tasks WHERE chat_id = ?1)",
+                [chat.0],
             )?;
             transaction.execute(
                 "UPDATE agent_tasks SET state = 'cancelled', version = version + 1, updated_at = ?2
@@ -197,7 +209,7 @@ impl Store {
             super::files::rehome_files(&transaction, chat)?;
             transaction.execute("DELETE FROM chats WHERE id = ?1", [chat.0])?;
             transaction.commit()?;
-            Ok(())
+            Ok(dropped)
         })
     }
 

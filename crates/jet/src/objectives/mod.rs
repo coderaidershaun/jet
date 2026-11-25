@@ -12,7 +12,7 @@ use crate::scheduler::Signals;
 use crate::store::{
     AgentTask, CancelOutcome, Edit, NewNote, NewObjective, NewSource, NewStep, NewTask, Note,
     NoteStatus, Objective, ObjectiveId, ObjectiveStatus, Person, Run, Scheduled, SetBy, Source,
-    Step, StepId, Store, StoreError, TaskId, TaskKind, TaskState, Team, UserId,
+    Step, StepId, Store, StoreError, Tap, TaskId, TaskKind, TaskState, Team, UserId,
 };
 pub(crate) use inbox::InboxError;
 pub(crate) use pane::Pane;
@@ -343,16 +343,24 @@ impl Objectives {
         self.show(owner.user, created.objective)
     }
 
+    /// Refuses a change to an objective that is done or dropped, so its history stays as closed.
+    fn refuse_closed(&self, user: UserId, id: ObjectiveId) -> Result<(), ObjectiveError> {
+        let status = self.store.objective(user, id)?.map(|found| found.status);
+        match status {
+            Some(ObjectiveStatus::Done | ObjectiveStatus::Dropped) => {
+                Err(ObjectiveError::Closed { id: id.0 })
+            }
+            _ => Ok(()),
+        }
+    }
+
     pub(crate) fn edit(
         &self,
         user: UserId,
         id: ObjectiveId,
         edit: &Edit,
     ) -> Result<ObjectiveView, ObjectiveError> {
-        let open = self.store.objective(user, id)?.map(|found| found.status);
-        if matches!(open, Some(ObjectiveStatus::Done | ObjectiveStatus::Dropped)) {
-            return Err(ObjectiveError::Closed { id: id.0 });
-        }
+        self.refuse_closed(user, id)?;
         self.write(|| self.store.edit_objective(user, id, edit, self.now()))?
             .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
         self.show(user, id)
@@ -364,6 +372,7 @@ impl Objectives {
         id: ObjectiveId,
         step: NewStep,
     ) -> Result<ObjectiveView, ObjectiveError> {
+        self.refuse_closed(user, id)?;
         let step = checked_steps(vec![step])?.remove(0);
         self.write(|| self.store.add_step(user, id, &step, self.now()))?
             .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
@@ -377,11 +386,27 @@ impl Objectives {
         step: StepId,
         is_done: bool,
     ) -> Result<ObjectiveView, ObjectiveError> {
-        self.write(|| self.store.tick_step(user, id, step, is_done, self.now()))?
-            .ok_or(ObjectiveError::NoSuchStep {
-                objective: id.0,
-                step: step.0,
-            })?;
+        self.tick_step_told(user, id, step, is_done, None)
+    }
+
+    /// Ticks the step and keeps `tap`, the line Jet is told of it, in the same write.
+    pub(crate) fn tick_step_told(
+        &self,
+        user: UserId,
+        id: ObjectiveId,
+        step: StepId,
+        is_done: bool,
+        tap: Tap,
+    ) -> Result<ObjectiveView, ObjectiveError> {
+        self.refuse_closed(user, id)?;
+        self.write(|| {
+            self.store
+                .tick_step(user, id, step, is_done, (self.now(), tap))
+        })?
+        .ok_or(ObjectiveError::NoSuchStep {
+            objective: id.0,
+            step: step.0,
+        })?;
         self.show(user, id)
     }
 
@@ -396,10 +421,7 @@ impl Objectives {
         if change.title.is_none() && change.due.is_none() {
             return Err(ObjectiveError::NothingToChange);
         }
-        let open = self.store.objective(user, id)?.map(|found| found.status);
-        if matches!(open, Some(ObjectiveStatus::Done | ObjectiveStatus::Dropped)) {
-            return Err(ObjectiveError::Closed { id: id.0 });
-        }
+        self.refuse_closed(user, id)?;
         let due = change
             .due
             .map(|due| time::date(&due).map(|date| date.to_string()))
@@ -426,6 +448,7 @@ impl Objectives {
         due: Option<&str>,
         reason: &str,
     ) -> Result<ObjectiveView, ObjectiveError> {
+        self.refuse_closed(user, id)?;
         let objective = self
             .store
             .objective(user, id)?
@@ -493,6 +516,7 @@ impl Objectives {
         status: ObjectiveStatus,
         summary: Option<String>,
     ) -> Result<ObjectiveView, ObjectiveError> {
+        self.refuse_closed(user, id)?;
         let note = summary.map(|moved| NewNote {
             status: (status == ObjectiveStatus::Done).then_some(NoteStatus::Done),
             moved,
@@ -551,7 +575,8 @@ impl Objectives {
             }
             None => {
                 let new = task(TaskKind::FollowUp);
-                let id = self.write(|| self.store.add_follow_up(owner.user, owner.chat, &new))?;
+                let id =
+                    self.write(|| self.store.add_follow_up(owner.user, owner.chat, &new, now))?;
                 (id, false)
             }
         };
@@ -559,7 +584,17 @@ impl Objectives {
     }
 
     pub(crate) fn cancel(&self, user: UserId, id: TaskId) -> Result<AgentTask, ObjectiveError> {
-        match self.write(|| self.store.cancel_task(user, id, self.now()))? {
+        self.cancel_told(user, id, None)
+    }
+
+    /// Cancels the task and keeps `tap`, the line Jet is told of it, in the same write.
+    pub(crate) fn cancel_told(
+        &self,
+        user: UserId,
+        id: TaskId,
+        tap: Tap,
+    ) -> Result<AgentTask, ObjectiveError> {
+        match self.write(|| self.store.cancel_task(user, id, (self.now(), tap)))? {
             CancelOutcome::Cancelled => self.task(user, id),
             CancelOutcome::NotWaiting(state) => Err(ObjectiveError::TaskNotWaiting {
                 id: id.0,
@@ -1156,6 +1191,57 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             "badTimeZone"
+        );
+    }
+
+    #[test]
+    fn a_follow_up_is_stamped_with_the_time_it_was_set() {
+        let w = world();
+        let check = Check {
+            at: "2026-02-20T09:00".into(),
+            why: "again".into(),
+        };
+        let (task, _) = w.objectives.schedule(w.ada, None, check).unwrap();
+        assert!(task.created_at >= START, "created at {}", task.created_at);
+    }
+
+    #[test]
+    fn a_closed_objective_keeps_its_steps_dates_and_status() {
+        let w = world();
+        let ada = w.ada.user;
+        let made = w.objectives.create(w.ada, kite()).unwrap();
+        let id = made.objective.id;
+        let step = made.steps[0].id;
+        let closed = w
+            .objectives
+            .close(ada, id, ObjectiveStatus::Done, None)
+            .unwrap();
+        let refused = [
+            w.objectives
+                .add_step(
+                    ada,
+                    id,
+                    NewStep {
+                        title: "late".into(),
+                        due: None,
+                    },
+                )
+                .map(drop),
+            w.objectives.tick_step(ada, id, step, true).map(drop),
+            w.objectives
+                .change_dates(ada, id, None, Some("2027-01-01"), "late")
+                .map(drop),
+            w.objectives
+                .close(ada, id, ObjectiveStatus::Dropped, None)
+                .map(drop),
+        ];
+        for result in refused {
+            assert_eq!(result.unwrap_err().kind(), "objectiveClosed");
+        }
+        let after = w.objectives.show(ada, id).unwrap();
+        assert_eq!(
+            (after.objective.status, after.objective.closed_at),
+            (ObjectiveStatus::Done, closed.objective.closed_at)
         );
     }
 }

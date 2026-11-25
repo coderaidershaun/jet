@@ -382,6 +382,23 @@ fn deleting_chats_drops_their_objectives_and_moves_follow_ups_to_the_main_chat()
             .starts_with("Ship the kite\n\nDeliverable: A kite that flies")
     );
 
+    // Renaming the objective renames the chat that still carries its title.
+    run_turn(
+        &host,
+        &user,
+        main,
+        "rename",
+        json!([tool(
+            "objectives_update",
+            json!({"command": {"action":"edit","id":objective["id"],"title":"Fly the kite"}}),
+        )]),
+    );
+    let renamed = chats(&user)
+        .into_iter()
+        .find(|chat| chat["id"] == kite_chat)
+        .unwrap();
+    assert_eq!(renamed["title"], "Fly the kite");
+
     // The first message of a provider session in that chat carries the summary.
     send_in(&user, kite_chat, "k1", &say_words("hello"));
     settled(&user, kite_chat, 3);
@@ -417,6 +434,10 @@ fn deleting_chats_drops_their_objectives_and_moves_follow_ups_to_the_main_chat()
         (&objective["status"], &objective["chatId"]),
         (&json!("dropped"), &json!(main)),
         "the objective is dropped, its history kept in the main chat"
+    );
+    assert!(
+        objective["closedAt"].as_u64().unwrap() < 10_000_000_000,
+        "closedAt is in seconds, not milliseconds"
     );
     assert_eq!(
         objective["tasks"],

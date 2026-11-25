@@ -1,6 +1,8 @@
 //! The update notes Jet writes about an objective as the user tells it how things are going.
 
+use super::Tap;
 use super::objectives::touch;
+use super::pane::insert_tap;
 use super::text_enum::text_enum;
 use super::{ObjectiveId, Store, StoreError, UserId, seconds};
 use rusqlite::{Transaction, params};
@@ -117,7 +119,7 @@ impl Store {
         objective: ObjectiveId,
         note: i64,
         is_private: bool,
-        at: u64,
+        (at, tap): (u64, Tap),
     ) -> Result<Option<()>, StoreError> {
         self.try_with(|db| {
             let tx = db.transaction()?;
@@ -128,6 +130,7 @@ impl Store {
             if changed != 1 || !touch(&tx, owner, objective, at)? {
                 return Ok(None);
             }
+            insert_tap(&tx, owner, tap, at)?;
             tx.commit()?;
             Ok(Some(()))
         })

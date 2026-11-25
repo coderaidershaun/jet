@@ -30,6 +30,8 @@ export function createChats({ agent, attending = () => true, onChange = () => {}
   /** @type {import('../../bridge/agent.js').ChatSummary[]} */
   let items = [];
   let openId = null;
+  let asked = 0;
+  let shown = 0;
   const find = (id) => items.find((chat) => chat.id === id);
   const watching = (id) => id === openId && attending();
   const markRead = (id, through) => agent.markRead(id, through).catch((error) => console.warn('the read mark could not be moved:', error));
@@ -49,7 +51,12 @@ export function createChats({ agent, attending = () => true, onChange = () => {}
     },
 
     async refresh() {
-      items = await agent.chats();
+      const read = ++asked;
+      const fresh = await agent.chats();
+      // Replies can arrive out of order: an answer older than one already shown is dropped.
+      if (read < shown) return;
+      shown = read;
+      items = fresh;
       onChange();
       if (openId !== null && !find(openId)) onGone();
     },

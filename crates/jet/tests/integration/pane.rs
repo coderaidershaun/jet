@@ -538,3 +538,57 @@ fn the_event_stream_carries_a_change_for_each_tap_and_each_objectives_update() {
         "the viewer's stream sent no paneChanged"
     );
 }
+
+#[test]
+fn deleting_an_objectives_chat_detaches_its_runs_and_tells_the_colleagues_who_see_it() {
+    let host = host();
+    let owner = host.owner();
+    owner_plans(&host, &owner);
+    seed_run(&host);
+    share_with_manager(&host, &owner);
+    rusqlite::Connection::open(host.dir.path().join("jet.sqlite3"))
+        .unwrap()
+        .execute("UPDATE task_runs SET entry_id = 1", [])
+        .unwrap();
+    let chat = owner.get("/api/pane")["objectives"][0]["chatId"]
+        .as_i64()
+        .unwrap();
+    let viewer = host.sign_in_as(MANAGER);
+    let events = listen(&viewer);
+
+    assert_eq!(host.delete(&format!("/api/chats/{chat}")), 200);
+
+    let run = &owner.get("/api/pane")["runs"][0];
+    assert_eq!(
+        (&run["entryId"], &run["reaction"]),
+        (&Value::Null, &Value::Null),
+        "the check-in went with the chat, so the run points at no entry of the main chat"
+    );
+    assert!(pane_changed(&events), "the colleague was not told");
+}
+
+#[test]
+fn taking_a_colleague_off_a_share_tells_their_pane() {
+    let host = host();
+    let owner = host.owner();
+    owner_plans(&host, &owner);
+    share_with_manager(&host, &owner);
+    let viewer = host.sign_in_as(MANAGER);
+    let events = listen(&viewer);
+
+    let (status, card) = owner.post(
+        "/api/objectives/1/share-proposals",
+        json!({"people":[],"teams":[]}),
+    );
+    assert_eq!(status, 200, "{card}");
+    let (status, applied) = owner.post(
+        &format!("/api/shares/proposals/{}/apply", card["id"]),
+        json!({"people":[],"teams":[]}),
+    );
+    assert_eq!(status, 200, "{applied}");
+
+    assert!(
+        pane_changed(&events),
+        "the colleague who was removed was not told"
+    );
+}

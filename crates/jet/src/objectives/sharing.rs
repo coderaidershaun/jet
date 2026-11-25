@@ -5,7 +5,7 @@ use super::{ObjectiveError, Objectives, TEAM_NAME_LIMIT, UTC, time};
 use crate::chat::TurnOwner;
 use crate::store::{
     Applied, CardPerson, CardTeam, ObjectiveId, Person, ProposalId, ShareCard, Shared, Sharing,
-    Team, UserId,
+    Tap, Team, UserId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -210,10 +210,11 @@ impl Objectives {
         objective: ObjectiveId,
         note: i64,
         is_private: bool,
+        tap: Tap,
     ) -> Result<(), ObjectiveError> {
         self.write(|| {
             self.store
-                .set_note_private(owner, objective, note, is_private, self.now())
+                .set_note_private(owner, objective, note, is_private, (self.now(), tap))
         })?
         .ok_or(ObjectiveError::NoSuchNote { id: note })
     }
