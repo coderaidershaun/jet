@@ -1,19 +1,27 @@
-//! Refresh metadata without the SDK's silent stale-cache fallback.
+//! Refresh metadata without the SDK's silent stale-cache fallback, renew credentials that a server
+//! refused once, and report what each fresh listing found.
 use super::{
-    HttpMcpClient, McpError, ServerMetadata, ToolCatalogue,
-    http::{Connection, DEADLINE, MAX_BYTES, failure, protocol},
+    Endpoint, HttpMcpClient, McpError, Renewal, ServerMetadata, ToolCatalogue,
+    http::{AppState, Connection, DEADLINE, MAX_BYTES, failure, protocol},
 };
 use crate::apps::AppId;
 use rmcp::model::*;
 use std::collections::HashSet;
 impl HttpMcpClient {
     pub(super) async fn load(&self, id: &AppId, refresh: bool) -> Result<ToolCatalogue, McpError> {
+        let renewed = self.endpoints.renew(id, Renewal::BeforeUse).await;
         let endpoint = self.endpoint(id)?;
         let state = self.state(id).await;
         let mut state = state.lock().await;
-        let reconnect = state.connection.as_ref().is_none_or(|connection| {
-            connection.endpoint != endpoint || connection.running.is_closed()
-        });
+        // A sign-in found ended before use is what this listing found: the server's state says so,
+        // and its tools are no longer offered.
+        if let Err(error) = renewed {
+            self.endpoints.observed(id, Err(&error));
+            state.connection = None;
+            state.catalogue = None;
+            return Err(error);
+        }
+        let reconnect = needs_connection(&state, &endpoint);
         let changed = state.connection.as_ref().is_some_and(|connection| {
             connection.generation != connection.running.service().tool_list_generation()
         });
@@ -24,22 +32,19 @@ impl HttpMcpClient {
         {
             return Ok(catalogue.clone());
         }
-        let result = async {
-            if reconnect {
-                state.connection = Some(Self::connect(endpoint).await?);
-            }
-            let connection = state
-                .connection
-                .as_mut()
-                .ok_or_else(|| failure("connection missing"))?;
-            let generation = connection.running.service().tool_list_generation();
-            let catalogue = tokio::time::timeout(DEADLINE, read(connection))
-                .await
-                .map_err(failure)??;
-            connection.generation = generation;
-            Ok::<_, McpError>(catalogue)
+        let mut result = fetch(&mut state, endpoint.clone()).await;
+        if matches!(result, Err(McpError::Unauthorized)) {
+            // A server refuses an access token that ran out; a renewed one is tried once.
+            result = match self.endpoints.renew(id, Renewal::Refused(&endpoint)).await {
+                Ok(true) => match self.endpoint(id) {
+                    Ok(renewed) => fetch(&mut state, renewed).await,
+                    Err(error) => Err(error),
+                },
+                Ok(false) => result,
+                Err(error) => Err(error),
+            };
         }
-        .await;
+        self.endpoints.observed(id, result.as_ref());
         match result {
             Ok(catalogue) => {
                 state.catalogue = Some(catalogue.clone());
@@ -47,10 +52,10 @@ impl HttpMcpClient {
             }
             // Tools of a server that refuses the credentials cannot be called, so they are not
             // offered as stale ones.
-            Err(McpError::Unauthorized) => {
+            Err(error @ (McpError::Unauthorized | McpError::SignInEnded { .. })) => {
                 state.connection = None;
                 state.catalogue = None;
-                Err(McpError::Unauthorized)
+                Err(error)
             }
             Err(error) => {
                 state.connection = None;
@@ -65,6 +70,32 @@ impl HttpMcpClient {
         }
     }
 }
+
+fn needs_connection(state: &AppState, endpoint: &Endpoint) -> bool {
+    state
+        .connection
+        .as_ref()
+        .is_none_or(|connection| connection.endpoint != *endpoint || connection.running.is_closed())
+}
+
+/// Connects when the kept connection is gone or was made with other headers, then lists the tools.
+async fn fetch(state: &mut AppState, endpoint: Endpoint) -> Result<ToolCatalogue, McpError> {
+    if needs_connection(state, &endpoint) {
+        state.connection = None;
+        state.connection = Some(HttpMcpClient::connect(endpoint).await?);
+    }
+    let connection = state
+        .connection
+        .as_mut()
+        .ok_or_else(|| failure("connection missing"))?;
+    let generation = connection.running.service().tool_list_generation();
+    let catalogue = tokio::time::timeout(DEADLINE, read(connection))
+        .await
+        .map_err(failure)??;
+    connection.generation = generation;
+    Ok(catalogue)
+}
+
 async fn read(connection: &Connection) -> Result<ToolCatalogue, McpError> {
     let info = connection
         .running

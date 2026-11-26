@@ -135,6 +135,20 @@
 .mcp-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 0 12px; }
 .mcp-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0 12px; }
 .mcp-key-fields { display: contents; }
+/* The one filled button of a row: the sign-in a server is waiting for. */
+.mcp-server .action.mcp-primary { background: var(--fill); border-color: var(--fill); color: var(--on-fill); }
+.mcp-server .action.mcp-primary:hover:not(:disabled) { background: var(--fill-hover); }
+.mcp-state[data-state="waiting"]::before { background: var(--warning); }
+.mcp-reopen { display: inline-block; margin-top: 8px; color: var(--link-jet); font-size: 13px; line-height: 18px; }
+.mcp-client-words { margin: 0 0 12px; font-size: 13px; line-height: 18px; }
+/* The redirect address is long and must be copied exactly, so it wraps anywhere and sits beside its Copy button. */
+.mcp-redirect { margin-bottom: 12px; }
+.mcp-redirect-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.mcp-redirect-address {
+  flex: 1; min-width: 0; padding: 11px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-s);
+  font: 12px/20px var(--mono); overflow-wrap: anywhere; user-select: all;
+}
+.mcp-redirect-row .action { flex: none; }
 @media (max-width: 639.98px) {
   .mcp-pair { grid-template-columns: minmax(0, 1fr); }
 }

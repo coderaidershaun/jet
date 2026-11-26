@@ -1,24 +1,29 @@
-//! The MCP servers each user adds, such as Gmail or Jira: kept with sealed keys, checked when they
-//! change or are used, called through the apps' tool client, and told to Jet at each turn.
+//! The MCP servers each user adds, such as Gmail or Jira: kept with sealed keys or an OAuth sign-in,
+//! checked when they change or are used, called through the apps' tool client, and told to Jet at each turn.
 
+mod endpoints;
+mod oauth;
 mod provider;
 mod routes;
+mod sign_in;
 
 pub(crate) use routes::router;
 
 use crate::{
-    WorkerFailed, on_worker,
+    WorkerFailed,
+    objectives::Clock,
+    on_worker,
     seal::Sealer,
-    store::{
-        McpProvider, McpServer, McpState, McpTool, NewMcpServer, SealedKey, Store, StoreError,
-        UserId,
-    },
+    store::{McpProvider, McpServer, McpState, NewMcpServer, SealedKey, Store, StoreError, UserId},
 };
 use agent::{
     McpServerFacts,
     apps::{AppId, Registry, reaches_server_side},
-    mcp::{Endpoint, Endpoints, HttpMcpClient, McpError, ToolCatalogue},
+    mcp::{HttpMcpClient, McpError},
 };
+use endpoints::{Credential, ToolEndpoints, outcome};
+use oauth::SignInError;
+use sign_in::Credentials;
 use std::sync::{Arc, Mutex};
 use url::Url;
 
@@ -26,8 +31,6 @@ use url::Url;
 const NAME_LIMIT: usize = 60;
 /// A key or header value longer than this is a pasted page, not a key.
 const KEY_LIMIT: usize = 8192;
-/// The longest reason a failed connection keeps, in characters.
-const REASON_LIMIT: usize = 300;
 /// Headers the MCP protocol sets itself, so a key may not take their place.
 const RESERVED_HEADERS: [&str; 9] = [
     "accept",
@@ -67,6 +70,8 @@ pub(crate) enum McpServerError {
     Store(#[from] StoreError),
     #[error("the MCP server worker failed")]
     Worker(#[from] WorkerFailed),
+    #[error(transparent)]
+    SignIn(#[from] SignInError),
 }
 
 /// The key the user gives for a server. It has no `Debug` print, so it cannot reach a log line.
@@ -148,6 +153,8 @@ pub(crate) struct AddServer {
 pub(crate) struct McpServers {
     store: Store,
     sealer: Sealer,
+    credentials: Credentials,
+    public_origin: Option<String>,
     mcp: Arc<HttpMcpClient>,
 }
 
@@ -157,16 +164,22 @@ impl McpServers {
         store: Store,
         sealer: Sealer,
         registry: Arc<Mutex<Registry>>,
+        public_origin: Option<String>,
+        clock: Clock,
     ) -> (Self, Arc<HttpMcpClient>) {
+        let credentials = Credentials::new(store.clone(), sealer.clone(), clock);
         let endpoints = ToolEndpoints {
             registry,
             store: store.clone(),
             sealer: sealer.clone(),
+            credentials: credentials.clone(),
         };
         let mcp = Arc::new(HttpMcpClient::new(Arc::new(endpoints)));
         let servers = Self {
             store,
             sealer,
+            credentials,
+            public_origin,
             mcp: mcp.clone(),
         };
         (servers, mcp)
@@ -256,7 +269,7 @@ impl McpServers {
         }
         self.mcp.forget(id).await;
         let found = self.mcp.refresh(id).await;
-        let (state, reason, tools) = outcome(found, server.key_header.is_some());
+        let (state, reason, tools) = outcome(found.as_ref(), Credential::of(&server));
         let store = self.store.clone();
         let saved = id.clone();
         on_worker(move || {
@@ -276,12 +289,14 @@ impl McpServers {
         let found = match used {
             Ok(()) if server.state == McpState::Connected => return,
             Ok(()) => self.mcp.catalogue(id).await,
-            Err(error @ (McpError::Unauthorized | McpError::Transport { .. })) => {
-                Err(error.clone())
-            }
+            Err(
+                error @ (McpError::Unauthorized
+                | McpError::SignInEnded { .. }
+                | McpError::Transport { .. }),
+            ) => Err(error.clone()),
             Err(_) => return,
         };
-        let (state, reason, tools) = outcome(found, server.key_header.is_some());
+        let (state, reason, tools) = outcome(found.as_ref(), Credential::of(&server));
         let (store, saved) = (self.store.clone(), id.clone());
         let recorded = on_worker(move || {
             store.set_mcp_state(user, &saved, state, reason.as_deref(), tools.as_deref())
@@ -366,40 +381,6 @@ fn owner(user: UserId, id: &AppId) -> Vec<u8> {
     format!("mcp-server:{}:{id}", user.0).into_bytes()
 }
 
-/// The state, the reason it failed and the tools, from what a fresh connection found.
-fn outcome(
-    found: Result<ToolCatalogue, McpError>,
-    has_key: bool,
-) -> (McpState, Option<String>, Option<Vec<McpTool>>) {
-    let failed = |reason: String| {
-        let reason: String = reason.chars().take(REASON_LIMIT).collect();
-        (McpState::Failed, Some(reason), None)
-    };
-    match found {
-        Ok(catalogue) if !catalogue.is_stale => {
-            let tools = catalogue
-                .tools
-                .iter()
-                .map(|tool| McpTool {
-                    name: tool.name.clone(),
-                    read_only: tool
-                        .annotations
-                        .as_ref()
-                        .is_some_and(|annotations| annotations["readOnlyHint"] == true),
-                })
-                .collect();
-            (McpState::Connected, None, Some(tools))
-        }
-        Ok(catalogue) => failed(catalogue.last_error.unwrap_or_default()),
-        Err(McpError::Unauthorized) if has_key => {
-            failed("the server refused the key; check it, then save it again".into())
-        }
-        Err(McpError::Unauthorized) => (McpState::NeedsKey, None, None),
-        Err(McpError::Transport { message }) => failed(format!("could not connect: {message}")),
-        Err(error) => failed(error.to_string()),
-    }
-}
-
 /// The server as Jet is told of it. Only the user's own words and Jet's go in: the tool names are
 /// kept only when they are plain names, so a server cannot write into Jet's instructions.
 fn facts(server: McpServer) -> McpServerFacts {
@@ -410,7 +391,8 @@ fn facts(server: McpServer) -> McpServerFacts {
     let problem = match server.state {
         McpState::Connected => None,
         McpState::NeedsKey => Some(
-            "it needs a sign-in or a key, which the user adds in Settings, under MCP.".to_owned(),
+            "the user must sign in to it first, with its Sign in button in Settings, under MCP, or give it a key there."
+                .to_owned(),
         ),
         McpState::Failed => Some(
             "the last connection failed; the user can see why and test it again in Settings, under MCP."
@@ -473,47 +455,4 @@ fn name(input: &str) -> Result<String, McpServerError> {
         return Err(McpServerError::InvalidName);
     }
     Ok(name.to_owned())
-}
-
-/// Finds each tool server for the one tool client: a registered app first, else a server a user
-/// added, with its key opened for the request.
-struct ToolEndpoints {
-    registry: Arc<Mutex<Registry>>,
-    store: Store,
-    sealer: Sealer,
-}
-
-impl Endpoints for ToolEndpoints {
-    fn endpoint(&self, id: &AppId) -> Result<Endpoint, McpError> {
-        match self.registry.endpoint(id) {
-            Err(McpError::Unavailable { .. }) => {}
-            app => return app,
-        }
-        let unavailable = || McpError::Unavailable { app_id: id.clone() };
-        let stored = self
-            .store
-            .mcp_endpoint(id)
-            .map_err(|error| McpError::Transport {
-                message: format!("could not read the server: {error}"),
-            })?
-            .filter(|stored| stored.enabled)
-            .ok_or_else(unavailable)?;
-        let headers = match stored.key {
-            None => Vec::new(),
-            Some(key) => {
-                let value = self
-                    .sealer
-                    .unseal(&owner(stored.user, id), &key.sealed)
-                    .and_then(|value| String::from_utf8(value).ok())
-                    .ok_or_else(|| McpError::Transport {
-                        message: "the saved key can no longer be read, because the server's token key changed; save the key again".into(),
-                    })?;
-                vec![(key.header, value)]
-            }
-        };
-        Ok(Endpoint {
-            url: stored.url,
-            headers,
-        })
-    }
 }

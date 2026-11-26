@@ -122,12 +122,18 @@ impl Server {
         let registry = Arc::new(Mutex::new(Registry::open(Box::new(store.clone()))?));
         let sealer = Sealer::open(&config.data_dir)?;
         let github_tokens = GithubTokens::new(store.clone(), sealer.clone());
-        let (mcp_servers, mcp) = McpServers::open(store.clone(), sealer, registry.clone());
+        let test_clock = objectives::test_clock();
+        let clock = test_clock.clone().unwrap_or_else(objectives::system_clock);
+        let (mcp_servers, mcp) = McpServers::open(
+            store.clone(),
+            sealer,
+            registry.clone(),
+            config.public_origin.clone(),
+            clock.clone(),
+        );
         let files = Files::new(store.clone());
         let apps = Apps::new(registry, mcp, mcp_servers.clone(), proxy, store.clone());
         let signals = Signals::default();
-        let test_clock = objectives::test_clock();
-        let clock = test_clock.clone().unwrap_or_else(objectives::system_clock);
         let objectives = Objectives::new(store.clone(), clock).with_signals(signals.clone());
         let facade = Facade::new(
             apps.clone(),

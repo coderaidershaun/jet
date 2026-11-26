@@ -1,6 +1,6 @@
-//! Where the client finds each tool server it is asked about, and the headers that its requests
-//! carry, so that registered apps and servers that need a key share one client.
-use super::{McpError, http::failure};
+//! Where the client finds each tool server it is asked about, the headers that its requests carry,
+//! and who renews a sign-in and hears what each connection found, so apps and servers share one client.
+use super::{McpError, ToolCatalogue, http::failure};
 use crate::apps::{AppId, Registry};
 use std::sync::Mutex;
 
@@ -23,11 +23,32 @@ impl std::fmt::Debug for Endpoint {
     }
 }
 
+/// What [`Endpoints::renew`] is asked to do.
+pub enum Renewal<'a> {
+    /// Jet is about to use the server: renew credentials that have run out.
+    BeforeUse,
+    /// The server refused the credentials of this endpoint.
+    Refused(&'a Endpoint),
+}
+
+pub type RenewFuture<'a> =
+    std::pin::Pin<Box<dyn Future<Output = Result<bool, McpError>> + Send + 'a>>;
+
 /// Finds the endpoint of a tool server each time the client needs it, so a server that is turned
 /// off, removed or given a new key is seen at once.
 pub trait Endpoints: Send + Sync {
     /// The endpoint, or [`McpError::Unavailable`] when the server is off, removed or has no tools.
     fn endpoint(&self, id: &AppId) -> Result<Endpoint, McpError>;
+
+    /// Renews the server's credentials. True when there are new ones to try; an error says why the
+    /// server cannot be used until the user signs in again.
+    fn renew<'a>(&'a self, _id: &'a AppId, _renewal: Renewal<'a>) -> RenewFuture<'a> {
+        Box::pin(async { Ok(false) })
+    }
+
+    /// Hears what each fresh connection or tool listing found, so a server that stopped working
+    /// shows as soon as Jet sees it.
+    fn observed(&self, _id: &AppId, _found: Result<&ToolCatalogue, &McpError>) {}
 }
 
 /// A registered app is reached at its tool address with no extra header.

@@ -8,6 +8,6 @@ mod metadata;
 mod service;
 
 pub use catalogue::{ServerMetadata, ToolDefinition, ToolTarget};
-pub use endpoint::{Endpoint, Endpoints};
+pub use endpoint::{Endpoint, Endpoints, RenewFuture, Renewal};
 pub use http::HttpMcpClient;
 pub use service::{McpError, Progress, ToolCatalogue, ToolRequest, ToolResult};

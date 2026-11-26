@@ -64,6 +64,8 @@ pub enum McpError {
     Unavailable { app_id: AppId },
     #[error("the server asked for credentials, or refused the ones Jet sent")]
     Unauthorized,
+    #[error("the sign-in to the server ended: {message}")]
+    SignInEnded { message: String },
     #[error("tool {tool} is not listed by app {app_id}")]
     UnknownTool { app_id: AppId, tool: String },
     #[error("invalid tool arguments: {message}")]

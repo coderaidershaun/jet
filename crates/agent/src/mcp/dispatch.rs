@@ -1,6 +1,6 @@
 //! Validate current schemas without replaying calls whose outcomes are uncertain.
 use super::{
-    HttpMcpClient, McpError, Progress, ToolDefinition, ToolRequest, ToolResult,
+    Endpoint, HttpMcpClient, McpError, Progress, Renewal, ToolDefinition, ToolRequest, ToolResult,
     http::{DEADLINE, MAX_BYTES, Notifications, ProgressListeners, failure, protocol},
 };
 use rmcp::{
@@ -81,6 +81,8 @@ impl HttpMcpClient {
         };
         Box::pin(self.dispatch(request, receiver, guard, progress))
     }
+    /// Sends the call once and, when the server refused credentials that could then be renewed,
+    /// once more: a refusal of credentials comes before the server runs anything.
     async fn dispatch(
         &self,
         request: ToolRequest,
@@ -88,9 +90,52 @@ impl HttpMcpClient {
         mut guard: PendingCall,
         progress: Option<mpsc::Sender<Progress>>,
     ) -> Result<ToolResult, McpError> {
+        let (result, used) = self
+            .send(&request, &mut cancelled, &mut guard, progress.clone())
+            .await;
+        let (Err(McpError::Unauthorized), Some(used)) = (&result, used) else {
+            return result;
+        };
+        let renewal = self
+            .endpoints
+            .renew(&request.target.app_id, Renewal::Refused(&used));
+        let renewed = tokio::select! {
+            renewed = renewal => renewed?,
+            _ = &mut cancelled => return Err(McpError::Cancelled { request_id: request.request_id }),
+        };
+        if !renewed {
+            return result;
+        }
+        self.send(&request, &mut cancelled, &mut guard, progress)
+            .await
+            .0
+    }
+    /// Sends the call, and says which endpoint it reached, if any.
+    async fn send(
+        &self,
+        request: &ToolRequest,
+        cancelled: &mut oneshot::Receiver<()>,
+        guard: &mut PendingCall,
+        progress: Option<mpsc::Sender<Progress>>,
+    ) -> (Result<ToolResult, McpError>, Option<Endpoint>) {
+        let mut used = None;
+        let result = self
+            .send_on(request, cancelled, guard, progress, &mut used)
+            .await;
+        (result, used)
+    }
+    async fn send_on(
+        &self,
+        request: &ToolRequest,
+        cancelled: &mut oneshot::Receiver<()>,
+        guard: &mut PendingCall,
+        progress: Option<mpsc::Sender<Progress>>,
+        used: &mut Option<Endpoint>,
+    ) -> Result<ToolResult, McpError> {
+        let request_id = || request.request_id.clone();
         let catalogue = tokio::select! {
             result = self.catalogue(&request.target.app_id) => result?,
-            _ = &mut cancelled => return Err(McpError::Cancelled { request_id:request.request_id }),
+            _ = &mut *cancelled => return Err(McpError::Cancelled { request_id: request_id() }),
         };
         if catalogue.is_stale {
             return Err(failure(
@@ -137,21 +182,23 @@ impl HttpMcpClient {
         }
         if cancelled.try_recv().is_ok() {
             return Err(McpError::Cancelled {
-                request_id: request.request_id,
+                request_id: request_id(),
             });
         }
+        *used = Some(connection.endpoint.clone());
         let running = connection.running.clone();
         let peer = running.peer().clone();
         drop(state);
         let call = ClientRequest::CallToolRequest(CallToolRequest::new(
-            CallToolRequestParams::new(request.target.tool).with_arguments(request.arguments),
+            CallToolRequestParams::new(request.target.tool.clone())
+                .with_arguments(request.arguments.clone()),
         ));
         let (handle, _listening) =
             send_and_listen(&peer, running.service(), call, progress).await?;
         guard.wire = Some((peer, handle.id.clone()));
         let response = tokio::select! {
             response = handle.await_response() => { guard.wire = None; response.map_err(protocol) },
-            _ = cancelled => Err(McpError::Cancelled { request_id:request.request_id.clone() }),
+            _ = &mut *cancelled => Err(McpError::Cancelled { request_id: request_id() }),
         };
         if matches!(
             response,
@@ -174,7 +221,7 @@ impl HttpMcpClient {
             return Err(failure("tool result exceeds size limit"));
         }
         Ok(ToolResult {
-            request_id: request.request_id,
+            request_id: request_id(),
             content: result
                 .content
                 .into_iter()

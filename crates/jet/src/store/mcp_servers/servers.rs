@@ -1,7 +1,8 @@
-//! The MCP servers each user added, each with its sealed key and what Jet found the last time it
-//! connected. The store keeps only sealed key bytes; it never sees a key in clear.
+//! The servers themselves: where each one is, whether it is on, its sealed key and what Jet found
+//! the last time it connected.
 
-use super::{Store, StoreError, UserId, text_enum::text_enum, to_json};
+use super::sign_in::forget_tokens;
+use crate::store::{Store, StoreError, UserId, text_enum::text_enum, to_json};
 use agent::apps::AppId;
 use rusqlite::{OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
@@ -48,8 +49,13 @@ pub(crate) struct McpServer {
     pub enabled: bool,
     /// The header the key is sent in, or `None` when the server has no key.
     pub key_header: Option<String>,
+    /// Whether Jet holds an OAuth access token for the server.
+    pub signed_in: bool,
+    /// The client id the user pasted for the server's sign-in, so the page can offer to change it.
+    /// A client Jet registered itself is not shown.
+    pub pasted_client_id: Option<String>,
     pub state: McpState,
-    /// Why the last connection failed, only when `state` is `Failed`.
+    /// Why the last connection failed, or why the server needs a sign-in when Jet knows.
     pub reason: Option<String>,
     pub tools: Vec<McpTool>,
 }
@@ -68,15 +74,19 @@ pub(crate) struct NewMcpServer<'a> {
     pub key: Option<SealedKey>,
 }
 
-/// What the tool client needs to reach a server: whose it is, where, whether it is on, and its key.
+/// What the tool client needs to reach a server: whose it is, where, whether it is on, its key and
+/// its OAuth access token.
 pub(crate) struct StoredEndpoint {
     pub user: UserId,
     pub url: String,
     pub enabled: bool,
     pub key: Option<SealedKey>,
+    pub sealed_access: Option<Vec<u8>>,
 }
 
-const COLUMNS: &str = "id, provider, name, url, enabled, key_header, state, reason, tools";
+const COLUMNS: &str = "id, provider, name, url, enabled, key_header, state, reason, tools,
+    coalesce((SELECT sealed_access IS NOT NULL FROM mcp_sign_ins WHERE server_id = mcp_servers.id), 0),
+    (SELECT client_id FROM mcp_sign_ins WHERE server_id = mcp_servers.id AND registered = 0)";
 
 impl Store {
     /// Adds the server, not yet checked. False when the user already has a server at that address.
@@ -143,8 +153,9 @@ impl Store {
         })
     }
 
-    /// Saves, replaces or, with `None`, removes the server's key. What Jet found with the old key
-    /// no longer holds, so the server is not checked again until it is tested.
+    /// Saves, replaces or, with `None`, removes the server's key. A key takes the place of a sign-in,
+    /// so its tokens are forgotten. What Jet found before no longer holds, so the server is not
+    /// checked again until it is tested.
     pub(crate) fn set_mcp_key(
         &self,
         user: UserId,
@@ -156,17 +167,24 @@ impl Store {
             None => (None, None),
         };
         self.with(|db| {
-            let changed = db.execute(
+            let tx = db.transaction()?;
+            let changed = tx.execute(
                 "UPDATE mcp_servers SET key_header = ?3, sealed_key = ?4, state = 'unchecked', reason = NULL, tools = '[]'
                  WHERE id = ?1 AND user_id = ?2",
                 params![id.to_string(), user.0, header, sealed],
             )?;
+            // Only the owner's own change may forget the sign-in.
+            if key.is_some() && changed == 1 {
+                forget_tokens(&tx, id)?;
+            }
+            tx.commit()?;
             Ok(changed == 1)
         })
     }
 
-    /// Records what Jet found when it connected. A failed state carries its reason; the others
-    /// carry none. The tools are kept from the last connection that listed them.
+    /// Records what Jet found when it connected. A failed state carries its reason, and one that
+    /// needs a sign-in may say why; the others carry none. The tools are kept from the last
+    /// connection that listed them.
     pub(crate) fn set_mcp_state(
         &self,
         user: UserId,
@@ -202,7 +220,9 @@ impl Store {
     pub(crate) fn mcp_endpoint(&self, id: &AppId) -> Result<Option<StoredEndpoint>, StoreError> {
         self.with(|db| {
             db.query_row(
-                "SELECT user_id, url, enabled, key_header, sealed_key FROM mcp_servers WHERE id = ?1",
+                "SELECT user_id, url, enabled, key_header, sealed_key,
+                        (SELECT sealed_access FROM mcp_sign_ins WHERE server_id = mcp_servers.id)
+                 FROM mcp_servers WHERE id = ?1",
                 [id.to_string()],
                 |row| {
                     let header: Option<String> = row.get(3)?;
@@ -214,6 +234,7 @@ impl Store {
                         key: header
                             .zip(sealed)
                             .map(|(header, sealed)| SealedKey { header, sealed }),
+                        sealed_access: row.get(5)?,
                     })
                 },
             )
@@ -238,5 +259,7 @@ fn server(row: &Row<'_>) -> rusqlite::Result<McpServer> {
         state: row.get(6)?,
         reason: row.get(7)?,
         tools: serde_json::from_str(&tools).map_err(|error| invalid(8, Box::new(error)))?,
+        signed_in: row.get(9)?,
+        pasted_client_id: row.get(10)?,
     })
 }

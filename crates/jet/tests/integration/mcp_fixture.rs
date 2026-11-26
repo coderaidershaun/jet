@@ -1,4 +1,6 @@
-//! Run an independent free app with a real SDK MCP endpoint, open to all or guarded by a key.
+//! Run an independent free app with a real SDK MCP endpoint, open to all, guarded by a key, or
+//! guarded by OAuth with the fixture as its own authorization server.
+use super::mcp_oauth_fixture::OAuth;
 use axum::response::IntoResponse;
 use rmcp::{
     RoleServer, ServerHandler,
@@ -10,7 +12,7 @@ use rmcp::{
 };
 use serde_json::json;
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 #[derive(Clone, Default)]
@@ -164,27 +166,43 @@ impl App {
 pub struct Fixture {
     pub url: String,
     pub app: App,
+    /// The sign-in server of a fixture started with `oauth`.
+    pub oauth: Arc<OAuth>,
     /// The `Authorization` value a guarded fixture accepts.
-    authorization: Arc<std::sync::Mutex<String>>,
+    authorization: Arc<Mutex<String>>,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
+#[derive(Clone, Copy, PartialEq)]
+enum Guard {
+    Open,
+    Key,
+    OAuth,
+}
 impl Fixture {
     pub fn start() -> Self {
-        Self::serve(None)
+        Self::serve(Guard::Open, "")
     }
     /// Like `start`, with the MCP endpoint answering 401 to any request that does not carry
     /// `Authorization: Bearer <token>`, the way a server that needs a key does.
     pub fn guarded(token: &str) -> Self {
-        Self::serve(Some(format!("Bearer {token}")))
+        Self::serve(Guard::Key, token)
+    }
+    /// Like `start`, with the MCP endpoint answering 401 with an OAuth challenge to any request
+    /// without an access token its own sign-in server gave out, as the MCP authorization
+    /// specification describes.
+    pub fn oauth() -> Self {
+        Self::serve(Guard::OAuth, "")
     }
     /// From now on a guarded fixture accepts only this token, as when a key is revoked.
     pub fn require(&self, token: &str) {
         *self.authorization.lock().unwrap() = format!("Bearer {token}");
     }
-    fn serve(guard: Option<String>) -> Self {
-        let authorization = Arc::new(std::sync::Mutex::new(guard.clone().unwrap_or_default()));
+    fn serve(guard: Guard, token: &str) -> Self {
+        let authorization = Arc::new(Mutex::new(format!("Bearer {token}")));
         let expected = authorization.clone();
+        let oauth = Arc::new(OAuth::default());
+        let (kept, tokens) = (oauth.clone(), oauth.clone());
         let (address, receive) = std::sync::mpsc::channel();
         let (stop, stopped) = tokio::sync::oneshot::channel();
         let app = App::default();
@@ -192,21 +210,34 @@ impl Fixture {
         let thread = std::thread::spawn(move || {
             tokio::runtime::Runtime::new().unwrap().block_on(async move {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            address.send(format!("http://{}/",listener.local_addr().unwrap())).unwrap();
+            let base = format!("http://{}/",listener.local_addr().unwrap());
+            address.send(base.clone()).unwrap();
             let service = StreamableHttpService::new(move || Ok(App { discovered:Default::default(), ..server.clone() }), Arc::new(LocalSessionManager::default()), Default::default());
             let router = axum::Router::new().nest_service("/mcp",service).route("/jet-app.json",axum::routing::get(|| async { axum::Json(json!({"version":1,"name":"Fixture","ui":"./","mcp":"mcp","embedding":"relative-paths"})) }));
+            let challenge = match guard {
+                Guard::OAuth => format!(r#"Bearer resource_metadata="{base}.well-known/oauth-protected-resource/mcp", scope="tools.read""#),
+                _ => r#"Bearer resource_metadata="http://127.0.0.1/.well-known/oauth-protected-resource""#.to_owned(),
+            };
             let router = match guard {
-                Some(_) => router.layer(axum::middleware::from_fn(move |request: axum::extract::Request, next: axum::middleware::Next| {
-                    let allowed = request.headers().get("authorization").is_some_and(|value| value == expected.lock().unwrap().as_str());
+                Guard::Open => router,
+                Guard::Key | Guard::OAuth => router.layer(axum::middleware::from_fn(move |request: axum::extract::Request, next: axum::middleware::Next| {
+                    let sent = request.headers().get("authorization").and_then(|value| value.to_str().ok()).unwrap_or_default().to_owned();
+                    let allowed = match guard {
+                        Guard::OAuth => sent.strip_prefix("Bearer ").is_some_and(|token| tokens.is_live(token)),
+                        _ => sent == *expected.lock().unwrap(),
+                    };
+                    let challenge = challenge.clone();
                     async move {
                         if allowed {
                             return next.run(request).await;
                         }
-                        let challenge = [("www-authenticate", r#"Bearer resource_metadata="http://127.0.0.1/.well-known/oauth-protected-resource""#)];
-                        (axum::http::StatusCode::UNAUTHORIZED, challenge).into_response()
+                        (axum::http::StatusCode::UNAUTHORIZED, [("www-authenticate", challenge)]).into_response()
                     }
                 })),
-                None => router,
+            };
+            let router = match guard {
+                Guard::OAuth => router.merge(oauth.router(&base)),
+                _ => router,
             };
             tokio::select! { _ = axum::serve(listener,router) => {}, _ = stopped => {} }
         })
@@ -214,6 +245,7 @@ impl Fixture {
         Self {
             url: receive.recv().unwrap(),
             app,
+            oauth: kept,
             authorization,
             stop: Some(stop),
             thread: Some(thread),

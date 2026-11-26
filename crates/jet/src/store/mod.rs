@@ -30,7 +30,10 @@ pub(crate) use inbox::{
     CardId, Close, Closed, Item, ItemId, ItemKind, ItemState, Posted, ReplyCard, ReplyCardId,
     ReplyOutcome, SendCard, SendTap, Sent,
 };
-pub(crate) use mcp_servers::{McpProvider, McpServer, McpState, McpTool, NewMcpServer, SealedKey};
+pub(crate) use mcp_servers::{
+    McpProvider, McpServer, McpState, McpTool, NewMcpServer, SealedKey, SealedTokens, SignInSetup,
+    SignInStart,
+};
 pub(crate) use objectives::{Edit, NewObjective, Objective, ObjectiveId, ObjectiveStatus};
 pub(crate) use pane::{Tap, Told};
 pub(crate) use shares::{
@@ -94,6 +97,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0013_artifacts.sql"),
     include_str!("migrations/0014_task_list.sql"),
     include_str!("migrations/0015_mcp_servers.sql"),
+    include_str!("migrations/0016_mcp_sign_in.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]

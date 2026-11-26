@@ -27,6 +27,7 @@ jiff = { workspace = true }
 jsonschema = { workspace = true }
 jsonwebtoken = { workspace = true }
 pdf-extract = { workspace = true }
+reqwest = { workspace = true }
 ring = { workspace = true }
 rlimit = { workspace = true }
 rmcp = { workspace = true }

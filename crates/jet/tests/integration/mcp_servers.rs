@@ -179,7 +179,10 @@ fn a_wrong_key_fails_with_its_reason_and_no_key_needs_a_sign_in() {
         (&json!("needs_key"), &Value::Null),
         "{keyless}"
     );
-    assert!(system_prompt_after_a_turn(&host).contains("it needs a sign-in or a key"));
+    assert!(
+        system_prompt_after_a_turn(&host)
+            .contains("Not callable now: the user must sign in to it first")
+    );
 
     let id = wrong["id"].as_str().unwrap();
     let mended = owner

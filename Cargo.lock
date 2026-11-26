@@ -1945,6 +1945,7 @@ dependencies = [
  "jsonschema",
  "jsonwebtoken",
  "pdf-extract",
+ "reqwest",
  "ring",
  "rlimit",
  "rmcp",

@@ -1,10 +1,10 @@
 //! The providers whose MCP servers Jet knows: each one's published address (from its own docs,
-//! November 2026), what it is for, and how it signs in.
+//! November 2026), what it is for, and what signing in to it asks of the user.
 
 use crate::store::McpProvider;
 use serde::Serialize;
 
-/// How the page asks for a provider's key by default.
+/// Which key the page offers first when the user gives a key instead of signing in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum KeyKind {
@@ -23,6 +23,9 @@ pub(crate) struct ProviderFacts {
     /// How the server signs in, in a sentence or two.
     note: &'static str,
     key_kind: KeyKind,
+    /// Whether the provider is known to let no client register itself, so the user makes one in
+    /// its console with Jet's redirect address.
+    needs_own_client: bool,
 }
 
 impl McpProvider {
@@ -88,25 +91,25 @@ impl McpProvider {
     fn note(self) -> &'static str {
         match self {
             McpProvider::Gmail => {
-                "Google signs in with OAuth. Until Jet can, a Google access token pasted as a bearer token works for about an hour."
+                "Signs in with your Google account. Google may ask for an OAuth client of your own: make one in Google Cloud with the Gmail API turned on, add the redirect address Jet shows, then paste its client id and secret."
             }
             McpProvider::Google => {
-                "Google has one server for each product; this one is Drive, and Calendar is at https://calendarmcp.googleapis.com/mcp/v1. A Google access token pasted as a bearer token works for about an hour."
+                "Google has one server for each product; this one is Drive, and Calendar is at https://calendarmcp.googleapis.com/mcp/v1. It signs in as Gmail does, with the Drive API turned on."
             }
             McpProvider::Outlook => {
-                "Microsoft accepts only an OAuth sign-in for this server, so it cannot connect yet."
+                "Signs in with your work account, through an app your organisation registers in Microsoft Entra with the redirect address Jet shows. Paste that app's client id and secret when Jet asks."
             }
             McpProvider::Slack => {
-                "Slack accepts only an OAuth sign-in for this server, so it cannot connect yet."
+                "Slack does not let Jet register itself: make an internal Slack app with the redirect address Jet shows, then paste its client id and secret when Jet asks."
             }
             McpProvider::Notion => {
-                "On Business and Enterprise plans, a workspace owner can make an MCP token in Notion's developer portal. Paste it as a bearer token."
+                "Signs in with your Notion account. On Business and Enterprise plans, an MCP token from Notion's developer portal also works as a bearer token."
             }
             McpProvider::Jira => {
-                "If your Atlassian admin allows API tokens, give your Atlassian email and an API token."
+                "Signs in with your Atlassian account. If your admin allows API tokens, your Atlassian email and an API token also work."
             }
             McpProvider::Custom => {
-                "The address of the server's MCP endpoint, often ending in /mcp."
+                "The address of the server's MCP endpoint, often ending in /mcp. Jet signs in when the server asks it to."
             }
         }
     }
@@ -125,6 +128,13 @@ impl McpProvider {
             address: self.address(),
             note: self.note(),
             key_kind: self.key_kind(),
+            needs_own_client: matches!(
+                self,
+                McpProvider::Gmail
+                    | McpProvider::Google
+                    | McpProvider::Outlook
+                    | McpProvider::Slack
+            ),
         }
     }
 }
