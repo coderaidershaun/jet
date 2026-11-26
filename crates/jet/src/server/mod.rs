@@ -7,6 +7,7 @@ mod inbox;
 mod pane;
 mod routes;
 mod shares;
+mod task_list;
 
 use crate::account::{self, AccountError, Accounts};
 use crate::apps::{Apps, Proxy};

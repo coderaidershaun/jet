@@ -5,6 +5,7 @@
 mod inbox;
 mod pane;
 mod sharing;
+mod task_list;
 mod time;
 
 use crate::chat::TurnOwner;
@@ -19,6 +20,10 @@ pub(crate) use pane::Pane;
 use serde::Serialize;
 pub(crate) use sharing::{Directory, DirectoryChange};
 use std::sync::Arc;
+use task_list::TaskEdit;
+pub(crate) use task_list::{
+    DONE_KEPT_DAYS, DonePage, GoalPatch, Mark, TaskAdd, TaskList, TaskListError, TaskPatch, Written,
+};
 pub(crate) use time::TimeError;
 
 /// How many of an objective's newest notes `list` shows.
@@ -79,8 +84,8 @@ pub(crate) enum ObjectiveError {
     DatesBackwards { start: String, due: String },
     #[error("the user has no objective {id}; objectives_list shows their ids")]
     NoSuchObjective { id: i64 },
-    #[error("objective {objective} has no step {step}; objectives_list shows the step ids")]
-    NoSuchStep { objective: i64, step: i64 },
+    #[error("the user has no step {step}; objectives_list shows the step ids")]
+    NoSuchStep { step: i64 },
     #[error("objective {id} is closed and cannot be edited; create a new objective instead")]
     Closed { id: i64 },
     #[error(
@@ -226,6 +231,14 @@ pub(crate) struct ObjectiveView {
     tasks: Vec<AgentTask>,
 }
 
+/// What Jet is answered after a step command.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum StepAnswer {
+    Objective(ObjectiveView),
+    Step(Step),
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct TasksView {
     tasks: Vec<AgentTask>,
@@ -366,76 +379,105 @@ impl Objectives {
         self.show(user, id)
     }
 
+    /// Adds a step last in the user's order: under the objective `id`, or under none.
     pub(crate) fn add_step(
         &self,
         user: UserId,
-        id: ObjectiveId,
+        id: Option<ObjectiveId>,
         step: NewStep,
-    ) -> Result<ObjectiveView, ObjectiveError> {
-        self.refuse_closed(user, id)?;
+    ) -> Result<StepAnswer, ObjectiveError> {
+        if let Some(id) = id {
+            self.refuse_closed(user, id)?;
+        }
         let step = checked_steps(vec![step])?.remove(0);
-        self.write(|| self.store.add_step(user, id, &step, self.now()))?
-            .ok_or(ObjectiveError::NoSuchObjective { id: id.0 })?;
-        self.show(user, id)
-    }
-
-    pub(crate) fn tick_step(
-        &self,
-        user: UserId,
-        id: ObjectiveId,
-        step: StepId,
-        is_done: bool,
-    ) -> Result<ObjectiveView, ObjectiveError> {
-        self.tick_step_told(user, id, step, is_done, None)
-    }
-
-    /// Ticks the step and keeps `tap`, the line Jet is told of it, in the same write.
-    pub(crate) fn tick_step_told(
-        &self,
-        user: UserId,
-        id: ObjectiveId,
-        step: StepId,
-        is_done: bool,
-        tap: Tap,
-    ) -> Result<ObjectiveView, ObjectiveError> {
-        self.refuse_closed(user, id)?;
-        self.write(|| {
+        let added = self.write(|| {
             self.store
-                .tick_step(user, id, step, is_done, (self.now(), tap))
-        })?
-        .ok_or(ObjectiveError::NoSuchStep {
-            objective: id.0,
-            step: step.0,
+                .add_list_task(user, (&step, id), None, self.now())
         })?;
-        self.show(user, id)
+        let added = added.map_err(|refused| TaskListError::from(refused).for_jet(id, StepId(0)))?;
+        self.step_answer(user, id, added)
+    }
+
+    /// Marks one of the user's steps started, done, not done or not started.
+    pub(crate) fn mark_step(
+        &self,
+        user: UserId,
+        id: Option<ObjectiveId>,
+        step: StepId,
+        mark: Mark,
+    ) -> Result<StepAnswer, ObjectiveError> {
+        let goal = self.step_goal(user, id, step)?;
+        let edit = TaskEdit {
+            mark: Some(mark),
+            ..TaskEdit::default()
+        };
+        self.edit_step_for_jet(user, (goal, step), &edit)?;
+        self.step_answer(user, goal, step)
     }
 
     /// Gives one step a new title, a new due date, or both, as when a step slips.
     pub(crate) fn edit_step(
         &self,
         user: UserId,
-        id: ObjectiveId,
+        id: Option<ObjectiveId>,
         step: StepId,
         change: StepChange,
-    ) -> Result<ObjectiveView, ObjectiveError> {
+    ) -> Result<StepAnswer, ObjectiveError> {
         if change.title.is_none() && change.due.is_none() {
             return Err(ObjectiveError::NothingToChange);
         }
-        self.refuse_closed(user, id)?;
-        let due = change
-            .due
-            .map(|due| time::date(&due).map(|date| date.to_string()))
-            .transpose()?;
-        let title = change.title.as_deref();
-        self.write(|| {
-            self.store
-                .edit_step(user, (id, step), (title, due.as_deref()), self.now())
-        })?
-        .ok_or(ObjectiveError::NoSuchStep {
-            objective: id.0,
-            step: step.0,
-        })?;
-        self.show(user, id)
+        let goal = self.step_goal(user, id, step)?;
+        let edit = TaskEdit {
+            title: change.title,
+            date: change
+                .due
+                .map(|due| time::date(&due).map(|date| date.to_string()))
+                .transpose()?,
+            ..TaskEdit::default()
+        };
+        self.edit_step_for_jet(user, (goal, step), &edit)?;
+        self.step_answer(user, goal, step)
+    }
+
+    /// The objective the user's step is under, or `None` for a task under none. A step that is
+    /// not the user's, or not under `id` when Jet named one, is refused, and so is a closed one.
+    fn step_goal(
+        &self,
+        user: UserId,
+        id: Option<ObjectiveId>,
+        step: StepId,
+    ) -> Result<Option<ObjectiveId>, ObjectiveError> {
+        let no_step = ObjectiveError::NoSuchStep { step: step.0 };
+        let goal = self.store.step_objective(user, step)?.ok_or(no_step)?;
+        if id.is_some_and(|id| goal != Some(id)) {
+            return Err(ObjectiveError::NoSuchStep { step: step.0 });
+        }
+        if let Some(goal) = goal {
+            self.refuse_closed(user, goal)?;
+        }
+        Ok(goal)
+    }
+
+    /// What Jet is answered after a step changed: its objective, or the step under no objective.
+    fn step_answer(
+        &self,
+        user: UserId,
+        goal: Option<ObjectiveId>,
+        step: StepId,
+    ) -> Result<StepAnswer, ObjectiveError> {
+        match goal {
+            Some(goal) => Ok(StepAnswer::Objective(self.show(user, goal)?)),
+            None => self
+                .store
+                .step(user, step)?
+                .map(StepAnswer::Step)
+                .ok_or(ObjectiveError::NoSuchStep { step: step.0 }),
+        }
+    }
+
+    /// The user's tasks under no objective: the open ones, and those the done pile keeps.
+    pub(crate) fn loose_steps(&self, user: UserId) -> Result<Vec<Step>, ObjectiveError> {
+        Ok(self.store.loose_steps(user, self.done_kept_since())?)
     }
 
     /// Moves the start date, the due date or both, and notes in words what moved and why. The
@@ -865,7 +907,7 @@ mod tests {
         seen.push(version());
         o.add_step(
             ada,
-            id,
+            Some(id),
             NewStep {
                 title: "Photograph it".into(),
                 due: Some("2026-02-27".into()),
@@ -873,7 +915,7 @@ mod tests {
         )
         .unwrap();
         seen.push(version());
-        o.tick_step(ada, id, step, true).unwrap();
+        o.mark_step(ada, Some(id), step, Mark::Done).unwrap();
         seen.push(version());
         o.change_dates(ada, id, None, Some("2026-03-08"), "the wind")
             .unwrap();
@@ -937,9 +979,12 @@ mod tests {
             title: Some("Build the red frame".into()),
             due: Some("2026-02-20".into()),
         };
-        let edited = o
-            .edit_step(world.ada.user, id, step, change.clone())
-            .unwrap();
+        let StepAnswer::Objective(edited) = o
+            .edit_step(world.ada.user, Some(id), step, change.clone())
+            .unwrap()
+        else {
+            panic!("a step of an objective is answered with its objective");
+        };
         assert_eq!(
             (
                 edited.steps[0].title.as_str(),
@@ -953,13 +998,17 @@ mod tests {
             "the other step is as it was"
         );
 
-        let refused = o.edit_step(world.bob.user, id, step, change).unwrap_err();
+        let refused = o
+            .edit_step(world.bob.user, Some(id), step, change)
+            .unwrap_err();
         assert_eq!(refused.kind(), "noSuchStep");
         let nothing = StepChange {
             title: None,
             due: None,
         };
-        let empty = o.edit_step(world.ada.user, id, step, nothing).unwrap_err();
+        let empty = o
+            .edit_step(world.ada.user, Some(id), step, nothing)
+            .unwrap_err();
         assert_eq!(empty.kind(), "nothingToChange");
         assert_eq!(
             o.show(world.ada.user, id).unwrap().objective.version,
@@ -1069,7 +1118,7 @@ mod tests {
         // Nor can another user change any of it.
         let o = &world.objectives;
         assert_eq!(
-            o.tick_step(bob, id, made.steps[0].id, true)
+            o.mark_step(bob, Some(id), made.steps[0].id, Mark::Done)
                 .unwrap_err()
                 .kind(),
             "noSuchStep"
@@ -1220,14 +1269,16 @@ mod tests {
             w.objectives
                 .add_step(
                     ada,
-                    id,
+                    Some(id),
                     NewStep {
                         title: "late".into(),
                         due: None,
                     },
                 )
                 .map(drop),
-            w.objectives.tick_step(ada, id, step, true).map(drop),
+            w.objectives
+                .mark_step(ada, Some(id), step, Mark::Done)
+                .map(drop),
             w.objectives
                 .change_dates(ada, id, None, Some("2027-01-01"), "late")
                 .map(drop),

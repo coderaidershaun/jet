@@ -259,6 +259,22 @@ impl User {
             .unwrap();
         answer(response)
     }
+    pub fn patch(&self, path: &str, value: Value) -> (u16, Value) {
+        let response = self
+            .signed(Self::agent().patch(format!("{}{path}", self.url)))
+            .header("content-type", "application/json")
+            .send(value.to_string())
+            .unwrap();
+        answer(response)
+    }
+    /// Deletes and gives the status and the body.
+    pub fn delete(&self, path: &str) -> (u16, Value) {
+        let response = self
+            .signed(Self::agent().delete(format!("{}{path}", self.url)))
+            .call()
+            .unwrap();
+        answer(response)
+    }
     /// Uploads a file as the raw request body, the way the page does. The name travels in the
     /// query, percent-encoded.
     pub fn upload(&self, name: &str, bytes: &[u8]) -> (u16, Value) {

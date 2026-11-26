@@ -51,6 +51,7 @@
           "due": null,
           "id": 1,
           "position": 1,
+          "startedAt": null,
           "title": "First step"
         }
       ],
@@ -99,7 +100,8 @@
           "doneAt": null,
           "due": null,
           "id": 3,
-          "position": 1,
+          "position": 2,
+          "startedAt": null,
           "title": "First step"
         }
       ],
@@ -169,6 +171,7 @@
           "due": null,
           "id": 2,
           "position": 1,
+          "startedAt": null,
           "title": "First step"
         }
       ],

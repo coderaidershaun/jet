@@ -3,10 +3,11 @@
 //! nothing and changes nothing.
 
 use super::chats::insert_entry;
+use super::pane::insert_tap;
 use super::tasks::{NewTask, insert_task};
 use super::text_enum::text_enum;
 use super::{
-    ChatId, NewNote, NewSource, NewStep, Store, StoreError, UserId, seconds, sources, steps,
+    ChatId, NewNote, NewSource, NewStep, Store, StoreError, Tap, UserId, seconds, sources, steps,
     update_notes,
 };
 use agent::{EntryStatus, NewEntry, Role};
@@ -160,7 +161,7 @@ impl Store {
                  ORDER BY o.id",
             )?;
             let mut steps = db.prepare(
-                "SELECT title FROM objective_steps WHERE objective_id = ?1 ORDER BY position",
+                "SELECT title FROM objective_steps WHERE objective_id = ?1 ORDER BY position, id",
             )?;
             let mut texts = Vec::new();
             let rows = objectives.query_map([chat.0], |row| {
@@ -206,7 +207,9 @@ impl Store {
                 ],
             )?;
             let objective = ObjectiveId(tx.last_insert_rowid());
-            steps::insert_all(&tx, objective, 1, new.steps)?;
+            if !new.steps.is_empty() {
+                steps::insert_all(&tx, new.user, Some(objective), new.steps)?;
+            }
             sources::insert_all(&tx, objective, new.sources)?;
             insert_task(&tx, new.user, chat, Some(objective), &new.check, new.at)?;
             tx.commit()?;
@@ -224,26 +227,8 @@ impl Store {
     ) -> Result<Option<()>, StoreError> {
         self.try_with(|db| {
             let tx = db.transaction()?;
-            if !touch(&tx, owner, id, at)? {
+            if !edit_in(&tx, owner, id, (edit, None), at)? {
                 return Ok(None);
-            }
-            tx.execute(
-                "UPDATE chats SET title = ?2 WHERE ?2 IS NOT NULL
-                 AND id = (SELECT chat_id FROM objectives WHERE id = ?1)
-                 AND title = (SELECT title FROM objectives WHERE id = ?1)",
-                params![id.0, edit.title],
-            )?;
-            tx.execute(
-                "UPDATE objectives SET title = coalesce(?2, title), deliverable = coalesce(?3, deliverable),
-                 status = coalesce(?4, status) WHERE id = ?1",
-                params![id.0, edit.title, edit.deliverable, edit.status],
-            )?;
-            if let Some(list) = edit.sources {
-                tx.execute(
-                    "DELETE FROM objective_sources WHERE objective_id = ?1",
-                    [id.0],
-                )?;
-                sources::insert_all(&tx, id, list)?;
             }
             tx.commit()?;
             Ok(Some(()))
@@ -287,25 +272,104 @@ impl Store {
     ) -> Result<Option<()>, StoreError> {
         self.try_with(|db| {
             let tx = db.transaction()?;
-            if !touch(&tx, owner, id, at)? {
+            if !close_in(&tx, owner, id, (status, note, None), at)? {
                 return Ok(None);
-            }
-            tx.execute(
-                "UPDATE objectives SET status = ?2, closed_at = ?3 WHERE id = ?1",
-                params![id.0, status, seconds(at)],
-            )?;
-            tx.execute(
-                "UPDATE agent_tasks SET state = 'cancelled', version = version + 1, updated_at = ?2
-                 WHERE objective_id = ?1 AND state = 'scheduled'",
-                params![id.0, seconds(at)],
-            )?;
-            if let Some(note) = note {
-                update_notes::insert(&tx, id, note, at)?;
             }
             tx.commit()?;
             Ok(Some(()))
         })
     }
+
+    /// Renames the objective, closes it as done, or both, in one write, each with the line Jet is
+    /// told of it. `None` when the user has no such objective.
+    pub(crate) fn rename_and_close(
+        &self,
+        owner: UserId,
+        id: ObjectiveId,
+        (rename, close): (Option<(&str, Tap)>, Option<Tap>),
+        at: u64,
+    ) -> Result<Option<()>, StoreError> {
+        self.try_with(|db| {
+            let tx = db.transaction()?;
+            if let Some((title, tap)) = rename {
+                let edit = Edit {
+                    title: Some(title),
+                    ..Edit::default()
+                };
+                if !edit_in(&tx, owner, id, (&edit, tap), at)? {
+                    return Ok(None);
+                }
+            }
+            if let Some(tap) = close
+                && !close_in(&tx, owner, id, (ObjectiveStatus::Done, None, tap), at)?
+            {
+                return Ok(None);
+            }
+            tx.commit()?;
+            Ok(Some(()))
+        })
+    }
+}
+
+/// Changes the owner's objective inside `tx`, with the line of `tap`. False when it is not theirs.
+fn edit_in(
+    tx: &Transaction,
+    owner: UserId,
+    id: ObjectiveId,
+    (edit, tap): (&Edit, Tap),
+    at: u64,
+) -> rusqlite::Result<bool> {
+    if !touch(tx, owner, id, at)? {
+        return Ok(false);
+    }
+    tx.execute(
+        "UPDATE chats SET title = ?2 WHERE ?2 IS NOT NULL
+         AND id = (SELECT chat_id FROM objectives WHERE id = ?1)
+         AND title = (SELECT title FROM objectives WHERE id = ?1)",
+        params![id.0, edit.title],
+    )?;
+    tx.execute(
+        "UPDATE objectives SET title = coalesce(?2, title), deliverable = coalesce(?3, deliverable),
+         status = coalesce(?4, status) WHERE id = ?1",
+        params![id.0, edit.title, edit.deliverable, edit.status],
+    )?;
+    if let Some(list) = edit.sources {
+        tx.execute(
+            "DELETE FROM objective_sources WHERE objective_id = ?1",
+            [id.0],
+        )?;
+        sources::insert_all(tx, id, list)?;
+    }
+    insert_tap(tx, owner, tap, at)?;
+    Ok(true)
+}
+
+/// Closes the owner's objective inside `tx`, cancels its waiting checks, and keeps the note and
+/// the line of `tap`. False when it is not theirs.
+fn close_in(
+    tx: &Transaction,
+    owner: UserId,
+    id: ObjectiveId,
+    (status, note, tap): (ObjectiveStatus, Option<&NewNote>, Tap),
+    at: u64,
+) -> rusqlite::Result<bool> {
+    if !touch(tx, owner, id, at)? {
+        return Ok(false);
+    }
+    tx.execute(
+        "UPDATE objectives SET status = ?2, closed_at = ?3 WHERE id = ?1",
+        params![id.0, status, seconds(at)],
+    )?;
+    tx.execute(
+        "UPDATE agent_tasks SET state = 'cancelled', version = version + 1, updated_at = ?2
+         WHERE objective_id = ?1 AND state = 'scheduled'",
+        params![id.0, seconds(at)],
+    )?;
+    if let Some(note) = note {
+        update_notes::insert(tx, id, note, at)?;
+    }
+    insert_tap(tx, owner, tap, at)?;
+    Ok(true)
 }
 
 fn jet_text(text: &str) -> NewEntry {

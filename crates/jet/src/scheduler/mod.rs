@@ -1,6 +1,7 @@
 //! Wakes Jet when an agent-task it set for itself falls due. One thread sleeps until the earliest
 //! due task, wakes early when a task changes, and runs one check at a time, the task that fell due
-//! first before the others.
+//! first before the others. Each pass also lets go of what has expired: colleagues' items nobody
+//! answered and the task list's old done tasks.
 
 mod brief;
 mod check;
@@ -9,7 +10,7 @@ mod inbox;
 use crate::chat::Chats;
 use crate::facade::Facade;
 use crate::lock;
-use crate::objectives::{Clock, Objectives};
+use crate::objectives::{Clock, DONE_KEPT_DAYS, Objectives};
 use crate::store::{AgentTask, ChatId, Store, StoreError};
 use agent::Stopper;
 use std::collections::HashSet;
@@ -115,6 +116,36 @@ impl Signals {
     }
 }
 
+/// Deletes the done tasks the task list keeps no longer, and tells the pages that showed them. A
+/// failure is reported and never stops the loop, whose next pass tries again.
+fn purge_task_list(store: &Store, chats: &Weak<Chats>, now: u64) {
+    let cutoff = now.saturating_sub(DONE_KEPT_DAYS * 24 * 60 * 60);
+    let purged = match store.purge_task_list(cutoff) {
+        Ok(purged) => purged,
+        Err(error) => {
+            eprintln!("jet: the task list could not be purged: {}", reason(&error));
+            return;
+        }
+    };
+    if purged.users.is_empty() {
+        return;
+    }
+    eprintln!(
+        "jet: deleted the tasks done more than {DONE_KEPT_DAYS} days ago of {} users",
+        purged.users.len()
+    );
+    if let Some(chats) = chats.upgrade() {
+        purged
+            .users
+            .iter()
+            .for_each(|user| chats.pane_changed(*user));
+        purged
+            .goals
+            .iter()
+            .for_each(|goal| chats.viewers_pane_changed(*goal));
+    }
+}
+
 /// What the scheduler needs to run a check.
 pub(crate) struct Scheduler {
     store: Store,
@@ -213,6 +244,7 @@ impl Scheduler {
         while !self.stopping.load(Ordering::SeqCst) {
             let now = (self.clock)();
             self.expire_items(now).map_err(Paused)?;
+            purge_task_list(&self.store, &self.chats, now);
             let ran = self.run_oldest_due(now).map_err(Paused)?;
             if !ran {
                 self.signals.wait(self.sleep(now).map_err(Paused)?);
@@ -270,5 +302,40 @@ impl Scheduler {
             .upgrade()
             .and_then(|chats| chats.open_chat(task.chat_id))
             .is_some_and(|chat| chat.is_replying())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::test_store;
+
+    // 2026-11-25 10:00 UTC.
+    const NOW: u64 = 1_764_064_800;
+
+    #[test]
+    fn a_failed_purge_leaves_the_scheduler_running() {
+        let (dir, store, ada, _) = test_store();
+        let db = rusqlite::Connection::open(dir.path().join("jet.sqlite3")).unwrap();
+        let old = NOW - 100 * 24 * 60 * 60;
+        db.execute(
+            "INSERT INTO objective_steps (user_id, position, title, done_at) VALUES (?1, 1, 'Call the bank', ?2)",
+            rusqlite::params![ada.0, old as i64],
+        )
+        .unwrap();
+        db.execute_batch(
+            "CREATE TRIGGER no_purge BEFORE DELETE ON objective_steps BEGIN SELECT RAISE(ABORT, 'locked'); END",
+        )
+        .unwrap();
+        let left = || -> i64 {
+            db.query_row("SELECT count(*) FROM objective_steps", [], |row| row.get(0))
+                .unwrap()
+        };
+        // The pass reports the failure and returns, so the loop goes on to its checks.
+        purge_task_list(&store, &Weak::new(), NOW);
+        assert_eq!(left(), 1);
+        db.execute_batch("DROP TRIGGER no_purge").unwrap();
+        purge_task_list(&store, &Weak::new(), NOW);
+        assert_eq!(left(), 0, "the next pass purges");
     }
 }

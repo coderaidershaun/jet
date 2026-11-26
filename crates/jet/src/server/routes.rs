@@ -1,5 +1,5 @@
 //! Adapt browser requests to the conversation, and join the routes of accounts, apps, files,
-//! voice and chats with them into the one router the server runs, behind the sign-in guard. A route
+//! voice, chats and the task list with them into the one router the server runs, behind the sign-in guard. A route
 //! that acts on a chat takes its id from the `chat` query field, and acts on the main chat without
 //! one.
 
@@ -52,6 +52,7 @@ pub(super) fn router(host: Server) -> Router {
         .merge(evidence::router())
         .merge(super::shares::router())
         .merge(super::pane::router())
+        .merge(super::task_list::router())
         .merge(super::inbox::router())
         .merge(chats::router())
         .route("/api/status", get(status))

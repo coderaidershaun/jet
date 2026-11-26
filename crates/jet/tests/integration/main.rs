@@ -20,6 +20,7 @@ mod reactions;
 mod sharing;
 mod shutdown;
 mod support;
+mod task_list;
 mod tool_calls;
 mod users;
 mod web;

@@ -3,8 +3,8 @@
 //! and answers another user's thing as a thing that does not exist.
 
 use super::{
-    ObjectiveError, ObjectiveId, ObjectiveStatus, ObjectiveView, Objectives, Run, Step, StepId,
-    TaskId, TaskKind, TaskState, UserId, time,
+    ObjectiveError, ObjectiveId, ObjectiveStatus, ObjectiveView, Objectives, Run, Step, TaskId,
+    TaskKind, TaskState, UserId, time,
 };
 use crate::store::{AgentTask, ChatId, Sent, SetBy, SharedNote, Sharing, Snoozed};
 
@@ -189,29 +189,6 @@ impl Objectives {
         Ok(found)
     }
 
-    /// Ticks or unticks one of the user's steps by a tap.
-    pub(crate) fn tap_step(
-        &self,
-        user: UserId,
-        objective: ObjectiveId,
-        step: StepId,
-        is_done: bool,
-    ) -> Result<ObjectiveView, ObjectiveError> {
-        let before = self.show(user, objective)?;
-        let title = before
-            .steps
-            .iter()
-            .find(|found| found.id == step)
-            .map_or("", |found| found.title.as_str());
-        let how = if is_done { "done" } else { "not done" };
-        let line = format!(
-            "[The user tapped step \"{title}\" of \"{}\" in the pane: it is now marked {how}.]",
-            before.objective.title
-        );
-        let tap = Some((before.objective.chat_id, line.as_str()));
-        self.tick_step_told(user, objective, step, is_done, tap)
-    }
-
     /// A snooze lands on the next 08:00 after the task's own time, or after now when that has
     /// passed, so it never brings a check forward.
     fn snooze_to(&self, task: &AgentTask, zone: &str) -> Result<(u64, String), ObjectiveError> {
@@ -336,23 +313,6 @@ mod tests {
                 },
             )
             .unwrap()
-    }
-
-    #[test]
-    fn a_tap_and_its_line_commit_together() {
-        let (dir, store, ada, _) = test_store();
-        let objectives = objectives(&store);
-        let made = create(&store, &objectives, ada, "Ship the kite");
-        let (id, step) = (made.objective.id, made.steps[0].id);
-        rusqlite::Connection::open(dir.path().join("jet.sqlite3"))
-            .unwrap()
-            .execute_batch(
-                "CREATE TRIGGER no_taps BEFORE INSERT ON pane_taps BEGIN SELECT RAISE(ABORT, 'full'); END",
-            )
-            .unwrap();
-        assert!(objectives.tap_step(ada, id, step, true).is_err());
-        let after = objectives.show(ada, id).unwrap();
-        assert_eq!(after.steps[0].done_at, None, "the step was not ticked");
     }
 
     #[test]

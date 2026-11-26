@@ -6,19 +6,18 @@ use crate::account::SignedIn;
 use crate::chat::BridgeError;
 use crate::objectives::{ObjectiveError, Pane};
 use crate::on_worker;
-use crate::store::{ObjectiveId, StepId, TaskId};
+use crate::store::TaskId;
 use axum::{
     Json, Router,
     extract::{Path, State},
     response::{IntoResponse, Response},
-    routing::{get, post, put},
+    routing::{get, post},
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub(super) fn router() -> Router<Server> {
     Router::new()
         .route("/api/pane", get(read))
-        .route("/api/objectives/{id}/steps/{step}", put(tick))
         .route("/api/tasks/{id}/snooze", post(snooze))
         .route("/api/tasks/{id}/cancel", post(cancel))
 }
@@ -49,27 +48,6 @@ async fn read(State(host): State<Server>, signed_in: SignedIn) -> Result<Json<Pa
     } else {
         pane.without_admin_detail()
     }))
-}
-
-#[derive(Deserialize)]
-struct Done {
-    done: bool,
-}
-
-async fn tick(
-    State(host): State<Server>,
-    signed_in: SignedIn,
-    Path((id, step)): Path<(i64, i64)>,
-    Json(done): Json<Done>,
-) -> Result<Json<impl Serialize + use<>>, Response> {
-    let user = signed_in.user.id;
-    let chats = host.chats.clone();
-    let ticked = run(host, true, user, move |objectives| {
-        objectives.tap_step(user, ObjectiveId(id), StepId(step), done.done)
-    })
-    .await?;
-    chats.viewers_pane_changed(ObjectiveId(id));
-    Ok(ticked)
 }
 
 async fn snooze(

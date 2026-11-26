@@ -125,7 +125,7 @@ try {
   await page.route('**/api/events**', async (route) => { reached(); await gate; await route.continue(); });
   await api('POST', `/api/chat/forget?chat=${main}`, {});
   await asked;
-  await api('PUT', '/api/objectives/1/steps/2', { done: true });
+  await api('PATCH', '/api/task-list/tasks/2', { state: 'done' });
   letThrough();
   await both((p) => until(async () => (await progress(p)) === '2/2', 'a change made while the stream was starting again shows'));
   await page.unroute('**/api/events**');

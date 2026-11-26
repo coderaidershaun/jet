@@ -386,10 +386,12 @@ impl Handler {
             "objectives_update" => {
                 let result = self.objectives_update(&arguments, &binding).await;
                 // The command may have made the objective a chat of its own.
-                if let (Ok(_), Some(chats)) = (&result, self.0.chats()) {
+                if let (Ok(answer), Some(chats)) = (&result, self.0.chats()) {
                     chats.chats_changed(user, None);
                     chats.pane_changed(user);
-                    if let Some(id) = arguments["command"]["id"].as_i64() {
+                    // A step command may leave out the objective's id; its answer names it.
+                    let goal = answer["objective"]["id"].as_i64();
+                    if let Some(id) = goal.or(arguments["command"]["id"].as_i64()) {
                         chats.viewers_pane_changed(ObjectiveId(id));
                     }
                 }

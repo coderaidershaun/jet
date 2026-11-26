@@ -15,7 +15,7 @@ This plan was revised once after a design and UX critique. The critic's findings
 | D3 | A task's day is its date (`due_date`). Today, Tomorrow and Later are worked out from that date whenever the list is read. Nothing is written when a day passes. | Things moves a dated to-do into Today by itself when its date comes ([Things: start dates](https://culturedcode.com/things/support/articles/2803579/)). With no midnight job there is no idle wake-up to pay for (priority 4). |
 | D4 | Each user's tasks have one order, kept in `position`, and every day list shows its tasks in that order. Only a move changes `position`. A change of status never does. | A paper list has one order. Integer positions with no gaps and no float keys keep it simple, and a personal list is short. |
 | D5 | Status is two timestamps: `started_at` makes a task yellow and `done_at` makes it green; with neither set it is gray. A tap on the box moves it one step forward, gray to yellow to green. The open row's three words set any status directly. | This is how the person marks paper. The tri-state checkbox has `aria-checked="mixed"` ([APG checkbox](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/)). The existing code reads `done_at` and does not change. The words are how the person undoes a stray mark. |
-| D6 | A done task leaves its day list for a folded done pile, which holds 90 days of history. The server deletes a done task 90 days after it was done, and the open tasks of a goal 90 days after the goal closed. One task is cleaned up by its Delete. | Things' Logbook keeps finished items ([Things: Logbook](https://culturedcode.com/things/support/articles/4001304/)). Linear archives closed issues after a set time, but not while the parent is open ([Linear: archive](https://linear.app/docs/archive-issues)). A goal keeps counting the tasks done under it. |
+| D6 | A done task leaves its day list for a folded done pile, which holds 90 days of history. The server deletes a done task 90 days after it was done, once it is under no goal or under a goal closed more than 90 days ago. A task that is not done is never purged. One task is cleaned up by its Delete. | Things' Logbook keeps finished items ([Things: Logbook](https://culturedcode.com/things/support/articles/4001304/)). Linear archives closed issues after a set time, but not while the parent is open ([Linear: archive](https://linear.app/docs/archive-issues)). A goal keeps counting the tasks done under it. |
 | D7 | The list opens in the main area, as Files does, at `#tasks`. It does not draw inside the 260 px drawer. Its order is Today, Tomorrow, Goals, Later, then Done. | This follows the repo; see "Where the request and the repo differ" below. The order is the charter's own: "what should be done today, what should be done tomorrow, what are the overarching goals". Later comes after the goals because it is the long tail. |
 | D8 | Jet learns of a change made outside a chat through the existing pane taps. Each task has at most one waiting line, which states its latest state. The line is told before the user's next message in the chat of the task's goal, or in the main chat when the task has no goal. | That path already exists, is told exactly once, runs no model turn and never reaches another user (`src/store/pane.rs`, `src/chat/mod.rs:277-309`). Keeping one line per task means a reversed tap never leaves a false fact behind. |
 | D9 | The plan pane's step box becomes the same three-state mark and makes the same call. The old tick route is deleted. In the pane's step and goal rows, amber then means "in progress" only. | One box should behave the same everywhere. One write path for each change means fewer of the bugs the charter fears. |
@@ -24,7 +24,7 @@ This plan was revised once after a design and UX critique. The critic's findings
 
 - **The path.** The request names `crates/jet/web`, which does not exist. The page lives in `crates/jet/ui/`.
 - **What "the left pane" is.** The request calls Files a "tab" of the left pane and asks for the layout "at the left pane's real width". In the repo, Files is one row in the drawer, `nav.files-nav`, which `workspace/shell.js:23-25` puts above the chats. A tap on it opens the library in the main area: `mode = 'files'`, the address `#files`, and the plan pane hidden (`workspace/shell.js:129-136`, `chat/library/library.css:62-76`). The task list follows the same pattern. Its row sits beside Files in the 260 px drawer, or the 64 px rail, and its page fills the main column. Inside 260 px, a task title would get about 150 px after the box and the goal name, which is roughly 18 characters, and the chat list would have to leave the drawer.
-- **The word "tasks".** The page already uses it for Jet's own agent-tasks: the `agent_tasks` table, `TaskId`, `/api/tasks/{id}/snooze` and the heading "Jet's tasks" (`src/store/migrations/0005_objectives.sql:60`, `ui/plan/view.js:192`). In this plan, a **task** is the user's task, which is a row of `objective_steps`, and code calls it a step. New names avoid the clash: `ListTask`, `Progress`, and the routes under `/api/task-list`.
+- **The word "tasks".** The page already uses it for Jet's own agent-tasks: the `agent_tasks` table, `TaskId`, `/api/tasks/{id}/snooze` and the heading "Jet's tasks" (`src/store/migrations/0005_objectives.sql:60`, `ui/plan/view.js:192`). In this plan, a **task** is the user's task, which is a row of `objective_steps`, and code calls it a step. New names avoid the clash: `ListTask`, `ListState`, and the routes under `/api/task-list`.
 
 ---
 
@@ -314,7 +314,7 @@ The drag follows [NN/g: drag and drop](https://www.nngroup.com/articles/drag-dro
   - the deliverable, 13 px / 19 px, `--muted`, cut to two lines;
   - "Due Fri 4 Dec · 3 days left · 2 of 5 done";
   - the strip, with "Open chat" and "Mark done". "Mark done" arms as **"Done? Its 3 open tasks leave the list."** (or "Done?" when none is open), and a second click within 4 s confirms.
-- **Marking a goal done** closes it, and its waiting checks are cancelled (`src/objectives/mod.rs:489-511`). Its open tasks leave the day lists without being done. They stay on the closed objective, which Jet still lists, and the server deletes them 90 days after the goal closed (§4.6). Its done tasks stay in the pile.
+- **Marking a goal done** closes it, and its waiting checks are cancelled (`src/objectives/mod.rs:489-511`). Its open tasks leave the day lists without being done. They stay on the closed objective as part of its record, which Jet still lists, and leave only with the objective; the purge never deletes a task that is not done (§4.6). Its done tasks stay in the pile until the purge takes them, 90 days after the goal closed. A task of a closed goal can no longer be changed (409 `goalClosed`), only deleted.
 - **Deleting a goal's chat** takes the goal's open tasks off the list in the same way, because that drops the goal (`src/store/chats.rs:180-189`). So does Jet's `close`.
 - **There is no "Add a goal".** A goal is an objective. The server makes an objective only with a deliverable, a due date and a first check, which Jet agrees with the user in conversation (`src/objectives/mod.rs:297-344`, `facade/objectives.rs:17`).
 - **With no goals**, the Goals section shows the plan pane's invitation (`ui/plan/view.js:179-183`): "Tell Jet what you are working on, for example 'I need to ship the kite page by Friday.'" The example puts that sentence in the open chat's message box through the existing `jet:draft` event (`ui/chat/main.js:274-280`).
@@ -349,7 +349,7 @@ The drag follows [NN/g: drag and drop](https://www.nngroup.com/articles/drag-dro
 | `objectives::task_list` (`src/objectives/task_list.rs`) | The rules: today in the user's zone, the day rule, ownership, the version rule, and the one line per task that Jet is told | none | new |
 | `server::task_list` (`src/server/task_list.rs`) | The HTTP routes: read and change the list, then tell the user's pages | none | new |
 | `pane_taps` (`src/store/pane.rs`, `src/chat/mod.rs:277-309`) | Tell Jet each line once, before the user's next message in its chat | `pane_taps` rows, which gain `step_id` and `step_added` | changed: one column pair and one replace rule |
-| `scheduler` (`src/scheduler/mod.rs`) | Delete old done tasks, and the open tasks of long-closed goals, on each pass of its loop | none | changed: one call beside `expire_items` |
+| `scheduler` (`src/scheduler/mod.rs`) | Delete old done tasks on each pass of its loop | none | changed: one call beside `expire_items` |
 | page `ui/tasklist/` | Draw the list and turn gestures into calls | the open row and its draft, the armed delete, the lingering done rows, the drag | new |
 | `workspace/shell.js` | Show one place at a time: a chat, an app, tools, files or the task list | `mode` | changed (§4.8) |
 
@@ -532,19 +532,19 @@ Todoist also keeps overdue tasks in Today ([Todoist: plan your day](https://todo
 | Write | Position |
 | --- | --- |
 | A new task (from the page, or Jet's `step_add` and `create`) | `max(position) + 1` over the user's rows. Every new task comes last in its day |
-| A move to another day with no `after` (the strip's buttons) | `max(position) + 1`, so the task is last in its new day |
+| A move to another day with no `after` (the strip's buttons) | last in the user's order, so the task is last in its new day |
 | `after: null` | just before the first open task of the target day, or `max + 1` when that day is empty |
 | `after: <id>` | just after that task, if it is an open task in the target day once the day rule has run. Otherwise last in the target day. This is lenient on purpose: a stale `after` never fails |
 | `after` with no `day` | the target day is the task's current day |
 | A change of title, goal or **status** (put back included) | unchanged. A task put back returns to where it was |
 
-An explicit placement reads the user's rows in order, takes the task out, puts it in at its new index, and writes `position = 1..n` for the rows whose number changed. All of this is one transaction (`Store::try_with` plus `db.transaction()`, as `src/store/steps.rs:77-91` does). SQLite runs one writer at a time, so a concurrent `step_add` from Jet lands before or after the move, never in its middle.
+Every placement, a move to the end included, reads the user's rows in order, takes the task out, puts it in at its new index, and writes `position = 1..n` for the rows whose number changed. A new task alone takes `max(position) + 1`. All of this is one transaction (`Store::try_with` plus `db.transaction()`). SQLite runs one writer at a time, so a concurrent `step_add` from Jet lands before or after the move, never in its middle.
 
 **The version rule.** A check whose objective changes while it runs drops its result and runs again (`src/scheduler/check.rs:534-563`). So which writes raise `objectives.version` matters (priorities 1 and 4):
 
 | Write | Raises the version of |
 | --- | --- |
-| A change of title, goal, day, status, or an add or delete of a task with a goal | that goal (`touch`, `src/store/objectives.rs:97-108`), as step writes do now. On a change of goal, the old goal too |
+| A change of title, goal, date, status, or an add or delete of a task with a goal | that goal (`touch`, `src/store/objectives.rs`), as step writes do now. On a change of goal, the old goal too. A carried date rewritten within Today is a change of date, so it raises the version though it keeps no line |
 | A change of `position` alone, including the renumbering of other rows | nothing |
 | Any write to a task with no goal | nothing |
 
@@ -562,21 +562,21 @@ Setting a task to the state it already has writes nothing and keeps no line.
 
 - **The pile** holds done tasks with `done_at > now − 90 days`, newest first. The constant `DONE_KEPT_DAYS = 90` lives in `objectives::task_list`. The read carries the newest 100 and the full `doneCount`. `GET /api/task-list/done?before=<doneAt>&beforeId=<id>` answers the next 100 (§4.11).
 - **One item** is cleaned up with its Delete.
-- **The purge.** The scheduler loop calls `store.purge_task_list(now, DONE_KEPT_DAYS * 86400)` beside `expire_items` (`src/scheduler/mod.rs:211-233`). That loop already runs at least once a minute, so no new timer is needed:
+- **The purge.** The scheduler loop calls `purge_task_list(&store, &chats, now)` beside `expire_items` on each pass (`src/scheduler/mod.rs`), which calls `store.purge_task_list(now - DONE_KEPT_DAYS * 86400)`. That loop already runs at least once a minute, so no new timer is needed:
 
   ```sql
   DELETE FROM objective_steps
-  WHERE (objective_id IS NULL AND done_at IS NOT NULL AND done_at < :cutoff)
-     OR objective_id IN (SELECT id FROM objectives
-                         WHERE status IN ('done', 'dropped') AND closed_at < :cutoff)
-  RETURNING user_id;
+  WHERE done_at IS NOT NULL AND done_at < :cutoff
+    AND (objective_id IS NULL OR objective_id IN (
+         SELECT id FROM objectives WHERE status IN ('done', 'dropped') AND closed_at < :cutoff))
+  RETURNING user_id, objective_id;
   ```
 
-  - **What goes:** a done task with no goal, 90 days after it was done; and every task of a goal, done or not, 90 days after the goal closed.
-  - **What never goes:** a task of a goal that is still open, because it is part of that goal's record. Linear does not archive while "the parent issue is not closed" ([Linear: archive](https://linear.app/docs/archive-issues)).
-  - **Hidden tasks:** the open tasks a closed goal took off the list (§3.6) are not kept for ever. They go with the goal's record.
-  - **Who is told:** each distinct `user_id` returned gets `chats.pane_changed(user)`.
-- **A purge failure never stops the scheduler.** `run()` would end the scheduler thread on an error (`src/scheduler/mod.rs:192-198, 211-222`). So the loop calls the purge as `if let Err(error) = self.purge_task_list(now) { eprintln!("jet: the task list could not be purged: {error}"); }`, with no `?`. The next pass of the loop tries again, at most a minute later. That makes the class RETRY, driven by the loop.
+  - **What goes:** a done task under no goal, 90 days after it was done; and a done task of a goal closed more than 90 days ago, 90 days after it was done.
+  - **What never goes:** a task that is not done, and a task of a goal that is still open, because it is part of that goal's record. Linear does not archive while "the parent issue is not closed" ([Linear: archive](https://linear.app/docs/archive-issues)).
+  - **Hidden tasks:** the open tasks a closed goal took off the list (§3.6) stay as rows of the closed objective, which Jet still lists. They leave only with the objective.
+  - **Who is told:** each distinct `user_id` returned gets `chats.pane_changed(user)`, and the viewers of each distinct `objective_id` get `viewers_pane_changed`. A purge that deletes rows is logged.
+- **A purge failure never stops the scheduler.** `run()` would end the scheduler thread on an error. So `purge_task_list` returns nothing: it logs `jet: the task list could not be purged: …` and returns, and the loop goes on to its checks. The next pass of the loop tries again, at most a minute later. That makes the class RETRY, driven by the loop.
 
 ### 4.7 How objectives and objective_steps map onto goals and tasks
 
@@ -603,13 +603,14 @@ Setting a task to the state it already has writes nothing and keeps no line.
 
 | File | Change |
 | --- | --- |
-| `src/store/steps.rs` | `Step` gains `started_at: Option<u64>`, serialised as `startedAt`. `steps()` filters `WHERE s.objective_id = ?1 AND s.user_id = ?2 ORDER BY s.position, s.id`. `insert_all` takes the user and numbers from `max(position) + 1` over that user's rows. `add_step` does the same. `tick_step` keeps `started_at` as it is |
+| `src/store/steps.rs` | `Step` gains `started_at: Option<u64>`, serialised as `startedAt`. `steps()` filters `WHERE s.objective_id = ?1 AND s.user_id = ?2 ORDER BY s.position, s.id`. `insert_all` takes the user and numbers from `max(position) + 1` over that user's rows. `add_step`, `edit_step` and `tick_step` are deleted: Jet's step commands and the page write through the same `store::task_list` calls. New reads for Jet: `loose_steps`, `step`, `step_objective` |
 | `src/store/objectives.rs:163` | Orders a goal's steps `BY position`. Add `, id` |
-| `src/store/pane.rs` | `record_tap` gains a sibling, `record_task_line(user, chat, step, line, added, at)`. In one transaction it reads and deletes the step's unannounced rows (in any chat), then inserts per §5.3 |
+| `src/store/pane.rs` | `insert_tap` gains a sibling, `record_task_line(db, user, step, &Told, at)`, run inside the transaction of the task's write. `Told` is `Kept { chat, line, is_add, left }` or `Deleted { chat, line }`; `line` is given the task's id, which an add knows only once it is inserted. It reads and deletes the step's unannounced rows (in any chat), then inserts per §5.3 |
 | `src/store/mod.rs` | the migration; `pub(crate) mod task_list;` |
 | `src/objectives/mod.rs` | `mod task_list;` beside `mod pane;`. Re-export `TaskList` |
 | `src/server/routes.rs` | Merge `task_list::router()`, as the pane's router is merged |
-| `src/scheduler/mod.rs` | `purge_task_list(now)` beside `expire_items(now)`, logged and never `?` (§4.6) |
+| `src/scheduler/mod.rs` | `purge_task_list(&store, &chats, now)` beside `expire_items(now)`, logged and returning nothing (§4.6) |
+| `src/store/objectives.rs` | `rename_and_close` renames a goal, closes it as done, or both, in one transaction, with the goal lines of §5.3 |
 | `src/server/pane.rs`, `src/objectives/pane.rs` | Delete the route `PUT /api/objectives/{id}/steps/{step}` and `Objectives::tap_step`. The pane's box calls `PATCH /api/task-list/tasks/{id}` (D9). Their tests in `tests/integration/pane.rs` move to `tests/integration/task_list.rs` |
 | `src/facade/objectives.rs`, `src/facade/handler.rs` | §4.9 |
 
@@ -665,7 +666,7 @@ The changes are in `src/facade/objectives.rs` and `src/facade/handler.rs`, and t
    | `started: true` | the `in_progress` effect |
    | `started: false` | the `not_started` effect |
 
-5. **Viewers of the goal.** `handler.rs:392` tells a goal's viewers only when `arguments.command.id` is given. With `id` optional, a colleague viewing the goal would miss the change. Take the goal id from the command's answer instead: the objective view's `id`, or the `step.goalId` of a step answer.
+5. **Viewers of the goal.** `handler.rs` told a goal's viewers only when `arguments.command.id` was given. With `id` optional, a colleague viewing the goal would miss the change. The handler takes the goal id from the command's answer, the objective view's `id`, and falls back to the command's `id`. A step of a goal is always answered with its objective view, so the `{"step": Step}` answer is only for a task under no goal, which has no viewers, and `Step` carries no `goalId`.
 
 Jet's own writes are not told back to it. They reach the page through the `pane_changed` that `facade/handler.rs:385-397` already sends.
 
@@ -767,14 +768,14 @@ After a successful write, the server calls `chats.pane_changed(user)`. When the 
 
 | Status | `kind` | When | `message`, which the page shows |
 | --- | --- | --- | --- |
-| 400 | `badBody` | the body or the query is not of the right shape | "The page sent a change Jet cannot read" |
+| 400 | `badBody` | the body, the query or the id in the path is not of the right shape | "The page sent a change Jet cannot read" |
 | 400 | `badTitle` | the trimmed title is empty, or longer than 300 characters for a task or 200 for a goal | "A title needs 1 to 300 characters" (200 for a goal) |
 | 400 | `badDay` | `day` is not `today`, `tomorrow` or `later` | "That is not a day of the list" |
 | 400 | `badState` | `state` is not one of the three, or a goal's `state` is not `done` | "That is not a state of a task" |
 | 400 | `nothingToChange` | a `PATCH` with no field | "Nothing to change" |
 | 404 | `taskGone` | this user has no task with this id. Another user's task gets the same answer | "That task is no longer in your list" |
 | 404 | `goalGone` | the goal in the path or in `goalId` is not one of this user's | "That goal is no longer in your list" |
-| 409 | `goalClosed` | the goal is done or dropped: a task moved to it, a rename, or closing it again | "That goal is closed" |
+| 409 | `goalClosed` | the goal is done or dropped: a task moved to it or added to it, a change of a task under it (only a delete is allowed), a rename, or closing it again | "That goal is closed" |
 | 500 | `store` | the database failed after `Objectives::write`'s three tries (`src/objectives/mod.rs:648-662`) | "The database failed" |
 
 Every refusal is checked before the first write and changes nothing.
@@ -834,6 +835,7 @@ Why reuse it, against `src/lib.rs:3-6`:
 
 - A line waits for ever in a goal chat the person never writes in again. That chat's Jet still reads the truth through its tools.
 - A change Jet makes in one chat to a goal that lives in another chat is not told in that other chat. This is what happens today. It is accepted, because every chat's Jet reads the one table.
+- Jet's own change does not touch a line of the user's that still waits. If the user marks a task done and Jet then marks it not done before the user writes, Jet is still told the user's line. Its `objectives_list` shows the task as it is.
 
 ### 5.2 Flow
 
@@ -873,10 +875,10 @@ Titles are the user's own words, inside quotes. Dates are written with `time::in
 | Line | Text |
 | --- | --- |
 | Task line | `[The user {added / changed} the task "{title}" (step {id}){of} in their task list: {not started / in progress / done}, for {date in words / later, with no day}.]` |
-| Left line | `[The user moved the task "{title}" (step {id}) out of the goal "{A}", to {the goal "B" / no goal}.]` |
+| Left line | `[The user moved the task "{title}" (step {id}) from {the goal "A" / no goal} to {the goal "B" / no goal}.]` It has no `step_id`, so a later change of the task never takes it out of the old chat |
 | Delete line | `[The user deleted the task "{title}" (step {id}){of}.]` |
 | Goal renamed | `[The user renamed the goal "{old}" to "{new}".]` |
-| Goal done | `[The user marked the goal "{title}" done. Its waiting checks are cancelled.]`, plus ` {n} of its tasks were still open and left the list.` when n is above 0 |
+| Goal done | `[The user marked the goal "{title}" done. Its waiting checks are cancelled.]`, with ` {n} of its tasks were still open and left the list.` before the closing bracket when n is above 0 |
 
 For example: `[The user changed the task "Draft the spec" (step 31) of the goal "Ship the kite page" in their task list: done, for Wed 25 Nov 2026.]`
 
@@ -964,7 +966,7 @@ Each rule is from the anti-UI-slop skill (`SKILL.md`, `reference/anti-slop-craft
 | V4 | A day passes | time: the user's midnight | integration (test clock) | `tomorrows_task_is_todays_after_midnight_with_no_write` |
 | V5 | A task is deleted elsewhere, and its id is not reused, while this window drags it | interleave: two writers | integration | `moving_a_deleted_task_is_refused_as_gone_and_tells_jet_nothing` |
 | V6 | Deleting a goal's chat takes its open tasks off the list | flow: chat delete → store → page | integration | `deleting_a_goals_chat_takes_its_open_tasks_off_the_list` |
-| V7 | The purge spares open goals and takes the hidden tasks of long-closed ones | time: the scheduler loop | integration (test clock) | `the_purge_spares_open_goals_and_takes_long_closed_ones` |
+| V7 | The purge spares open goals and open tasks, and takes the old done tasks of no goal and of long-closed goals | time: the scheduler loop | integration (test clock) | `the_purge_spares_open_goals_and_takes_long_closed_ones` |
 | V8 | Two quick moves land in order | interleave: the write queue | browser | `two_quick_moves_land_in_the_order_made` |
 | V9 | Another user's tasks and goals | Never 3 | integration | `another_users_tasks_and_goals_are_gone` |
 | V10 | An open row keeps its typed text and focus while Jet changes another task | interleave: a re-read during an edit | browser (live) | `an_open_row_keeps_its_text_and_focus_while_jet_ticks_another_task` |
@@ -1065,7 +1067,7 @@ Start: the clock at 2026-11-25.
 
 Trigger: one pass of the scheduler loop.
 
-1. store: 60, 62 and 64 are deleted. 61 and 63 stay.
+1. store: 60 and 62 are deleted. 61, 63 and 64 stay: 64 is not done, so it stays with goal 8's record.
 2. feed: `paneChanged`, once for A.
 
 End: no row with a later `done_at`, or of a goal closed later, is touched. No line.
@@ -1138,7 +1140,7 @@ End: Jet is never told that the task was in progress.
 1. Spikes U2 and U3.
 2. Migration 0014, and `store/steps.rs` (§4.8). The existing tests stay green.
 3. `store/task_list.rs`: the reads of the views, the pile's pages, add, change, place, delete and purge. `store/pane.rs`: `record_task_line`.
-4. `objectives/task_list.rs`: `Progress`, `Day`, the day rule, the version rule, `TaskChange` and its `line()`, and `TaskListError` with `kind()`.
+4. `objectives/task_list.rs`: `ListState`, `Day`, the day rule, the version rule, `TaskChange` and its `line()`, and `TaskListError` with `kind()`.
 5. `server/task_list.rs`: the routes and errors of §4.11. Join them in `server/routes.rs`.
 6. The scheduler's purge, logged and never `?`.
 7. The facade changes of §4.9.
@@ -1231,7 +1233,7 @@ The critique (`.rex/plans/0gx675mh9i/critic.md`) gave 22 findings: 5 must, 10 sh
 | F1 | must | The page has no rule that keeps local state through a re-read, so a write's answer removes the lingering row, and a `paneChanged` redraws over an open row or a drag | Applied. §4.12 adds the overlay rules: lingering rows drawn from the view's own record; a held read while a row is open, as `chats-view.js:113-115` does, with the row closing and an alert if its task is gone; add fields kept; reads held during a drag. §3.4 and §3.5 point to them. New trace V10, and a new state row in §3.7 |
 | F2 | must | Putting a task back sends it to the end of its day, which breaks the in-place linger | Applied. D4 and §4.5 say that a change of status never changes `position`. The put-back row is gone from the order table, and a task put back returns to its place (§2, §3.4) |
 | F3 | must | Nothing in the page leads from yellow back to gray, and a stray tap tells Jet something false | Applied. The open row gains the status words "Not started · In progress · Done" (D5, §2, §3.1, §3.3, §1.4). With F9, Jet hears only the latest state. New trace V11 |
-| F4 | must | The open tasks of a closed goal disappear, are never purged, and the copy misstates what happens | Applied. The purge in §4.6 also takes every task of a goal closed more than 90 days ago. The confirm reads "Done? Its 3 open tasks leave the list." §3.6 says deleting a goal's chat, or Jet's `close`, does the same. New trace V6, the old Clear scenario's slot, and V7 extended with task 64. The goal-done line now says the tasks "left the list" |
+| F4 | must | The open tasks of a closed goal disappear, are never purged, and the copy misstates what happens | Applied, then changed in the build: the request's acceptance says the purge removes only done tasks older than 90 days, so the open tasks of a closed goal stay with its record (§3.6, §4.6, V7). Before that change, the purge in §4.6 also took every task of a goal closed more than 90 days ago. The confirm reads "Done? Its 3 open tasks leave the list." §3.6 says deleting a goal's chat, or Jet's `close`, does the same. New trace V6, the old Clear scenario's slot, and V7 extended with task 64. The goal-done line now says the tasks "left the list" |
 | F5 | must | A deleted task's id can be reused, so a stale write hits a different task | Applied. The rebuild uses `id INTEGER PRIMARY KEY AUTOINCREMENT` (D1, §4.4), with a note on `sqlite_sequence` and U3 extended to check it. V5 now adds a task between the delete and the stale drop, and still expects 404. The SQLite AUTOINCREMENT page was read and added to §9 |
 | F6 | should | Which writes raise the goal's `version` is not stated, and a renumber that raises it would make running checks stale | Applied. §4.5 adds the version rule, citing `src/scheduler/check.rs:534-563`: field changes touch the goal, position alone touches nothing, a task with no goal touches nothing. V2 gains step 5 |
 | F7 | should | Goals come before Today, on a misread of the charter | Applied, in part. The quote is corrected. The order is now Today, Tomorrow, Goals, Later, Done (D7, §1.3): the charter's own order, with Later after the goals because it is the long tail. This differs from the critic's first option of putting Goals after Later |
@@ -1250,3 +1252,25 @@ The critique (`.rex/plans/0gx675mh9i/critic.md`) gave 22 findings: 5 must, 10 sh
 | F20 | nit | Jet's tool changes leave two gaps: viewers not told when `id` is left out, and `step_add` without `id` | Applied. The handler takes the goal from the command's answer for `viewers_pane_changed`, and the tool text gains "Leave out `id` on `step_add` only for a task under no objective" (§4.9) |
 | F21 | nit | The first run is a red wall of "late", and Later gets long | Applied, in part. Carried tasks show a muted "from 24 Nov" (§1.5, §4.5, part 6 item 4), and the pane keeps its own "late". Not done: folding Later. That choice and the reason (a fold hides where a dragged task lands) are named in §1.3 |
 | F22 | nit | The finish gate is missing details: the 390 px iframe, the contract lines, the critique round, two Tab stops per row | Applied. Part 6 gains the design contract, the iframe render and the separate-context critique round, and §8 step 9 points to them. §3.2 now uses one roving Tab stop per list, with ↑/↓ and ←/→ inside it |
+
+## 11. What the build changed
+
+The server was built from this plan. Where the build differs, the sections above now say what was built; this list names each difference.
+
+| # | Where | Planned | Built, and why |
+| --- | --- | --- | --- |
+| B1 | §3.6, §4.6, D6, V7 | The purge also deleted the open tasks of a goal closed more than 90 days ago | It deletes only done tasks done more than 90 days ago, under no goal or under a goal closed more than 90 days ago. The request's acceptance says "the purge removes only done tasks older than 90 days". Open tasks of a closed goal stay as rows of its record. In V7, 60 and 62 go; 61, 63 and 64 stay |
+| B2 | §0, §4.1, §8 | `Progress` | `ListState`, because Clippy refuses a variant `InProgress` of an enum `Progress` |
+| B3 | §4.8, §5.3 | `record_task_line(user, chat, step, line, added, at)` | `record_task_line(db, user, step, &Told, at)`, inside the write's own transaction. The line is made from the task's id, which an add knows only after its insert |
+| B4 | §5.3 | Left line `out of the goal "A", to …` | `from {the goal "A" / no goal} to {the goal "B" / no goal}`, because a task can also leave no goal. It has no `step_id`, so a later change of the task never deletes it from the old chat |
+| B5 | §5.3 | Goal done line with ` {n} of its tasks …` after it | The sentence goes inside the brackets |
+| B6 | §4.11 | `goalClosed` only for a move to, a rename or a close | Also for a change of a task under a closed goal, as `refuse_closed` does for Jet. Delete stays allowed, so the pile can be cleaned up |
+| B7 | §4.5 | A version is raised by a change of title, goal, day or status | By a change of any stored field but `position`: title, goal, date, started, done. A carried date rewritten within Today raises it, and keeps no line |
+| B8 | §4.5 | A move to the end of a day takes `max(position) + 1` | Every placement numbers the user's tasks 1..n again in one transaction; only an add takes `max + 1` |
+| B9 | §4.8 | `tick_step` keeps `started_at` | `add_step`, `edit_step` and `tick_step` of the store are gone. Jet's step commands go through the same write as the page, with no line. A write reads the task, works out the change, and writes in one transaction only if the task is still as read; else it reads again, at most three times, then answers `store` |
+| B10 | §4.9 | `step.goalId` in a step answer | See item 5 of §4.9. `NoSuchStep` now names only the step |
+| B11 | §4.11 | Goal writes tell the pages `paneChanged` | They also send `chatsChanged`, because a rename can rename the goal's chat |
+| B12 | §4.11 | `timeZone` null means UTC | A stored zone the server cannot read is also shown in UTC, with `timeZone` null |
+| B13 | §4.8, D9 | `ui/plan/view.js` `act.tick` | The call is in `ui/plan/pane.js`. It sends `PATCH /api/task-list/tasks/{id}` with `{state}`: `done`, or back to `in_progress` when the step was started and `not_started` when not. The three-state mark is the page job's |
+| B14 | §4.6 | The purge tells each user | It also tells the viewers of each goal whose tasks it deleted |
+| B15 | §5.1 | — | A line of the user's that still waits is not changed by Jet's own later change of the task (an accepted limit, §5.1) |

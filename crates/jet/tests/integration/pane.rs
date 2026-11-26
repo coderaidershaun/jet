@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-const OUTSIDER: &str = "admin3@gmail.com";
+pub(super) const OUTSIDER: &str = "admin3@gmail.com";
 const PRIVATE_NOTE: &str = "I think this will fail";
 const PUBLIC_NOTE: &str = "The frame is built";
 const SECRET_TITLE: &str = "Secret plan";
@@ -62,7 +62,7 @@ fn seed_run(host: &Host) {
 
 /// Shares the first objective with the manager and with a team the owner belongs to, through
 /// the pane's own routes.
-fn share_with_manager(host: &Host, owner: &User) {
+pub(super) fn share_with_manager(host: &Host, owner: &User) {
     let manager = user_id(host, MANAGER);
     let db = rusqlite::Connection::open(host.dir.path().join("jet.sqlite3")).unwrap();
     db.execute(
@@ -223,13 +223,7 @@ fn another_user_reads_nothing_and_every_tap_answers_not_found() {
     // Each row: the request on a thing of the owner's, and on one that does not exist, where the
     // missing ids 9001 and 9002 stand in the answer for the real ones.
     type Request = fn(&User, i64, i64) -> (u16, Value);
-    let rows: [(&str, Request); 4] = [
-        ("tick", |user, o, s| {
-            user.put(
-                &format!("/api/objectives/{o}/steps/{s}"),
-                json!({"done":true}),
-            )
-        }),
+    let rows: [(&str, Request); 3] = [
         ("snooze", |user, _, t| {
             user.post(&format!("/api/tasks/{t}/snooze"), json!({}))
         }),
@@ -283,19 +277,15 @@ fn next_eight(due: i64) -> (i64, String) {
 }
 
 #[test]
-fn a_tick_a_snooze_and_a_cancel_change_what_the_pane_says_and_raise_the_version() {
+fn a_snooze_and_a_cancel_change_what_the_pane_says_and_raise_the_version() {
     let host = host();
     let owner = host.owner();
     owner_plans(&host, &owner);
     let before = owner.get("/api/pane");
-    let (kite, check) = (&before["objectives"][0], &before["tasks"][0]);
-    let (second_check, step) = (
-        before["tasks"][1]["id"].as_i64().unwrap(),
-        kite["steps"][0]["id"].as_i64().unwrap(),
-    );
-    let (kite_id, check_id) = (kite["id"].as_i64().unwrap(), check["id"].as_i64().unwrap());
-    let (kite_version, check_version) = (
-        kite["version"].as_u64().unwrap(),
+    let check = &before["tasks"][0];
+    let second_check = before["tasks"][1]["id"].as_i64().unwrap();
+    let (check_id, check_version) = (
+        check["id"].as_i64().unwrap(),
         check["version"].as_u64().unwrap(),
     );
     let (eight, local) = next_eight(check["dueAt"].as_i64().unwrap());
@@ -304,15 +294,6 @@ fn a_tick_a_snooze_and_a_cancel_change_what_the_pane_says_and_raise_the_version(
         "the read names where a snooze lands"
     );
 
-    let (status, ticked) = owner.put(
-        &format!("/api/objectives/{kite_id}/steps/{step}"),
-        json!({"done":true}),
-    );
-    assert_eq!(
-        (status, &ticked["version"]),
-        (200, &json!(kite_version + 1)),
-        "{ticked}"
-    );
     let (status, snoozed) = owner.post(&format!("/api/tasks/{check_id}/snooze"), json!({}));
     assert_eq!(
         (status, &snoozed["version"]),
@@ -324,10 +305,6 @@ fn a_tick_a_snooze_and_a_cancel_change_what_the_pane_says_and_raise_the_version(
     assert_eq!(cancelled["state"], "cancelled");
 
     let after = owner.get("/api/pane");
-    assert!(
-        after["objectives"][0]["steps"][0]["doneAt"].is_u64(),
-        "the step is ticked"
-    );
     let moved = after["tasks"]
         .as_array()
         .unwrap()
@@ -362,29 +339,13 @@ fn a_tick_a_snooze_and_a_cancel_change_what_the_pane_says_and_raise_the_version(
         )
         .unwrap();
     assert_eq!(version, before["tasks"][1]["version"].as_i64().unwrap() + 1);
-
-    let (status, unticked) = owner.put(
-        &format!("/api/objectives/{kite_id}/steps/{step}"),
-        json!({"done":false}),
-    );
-    assert_eq!(
-        (status, &unticked["steps"][0]["doneAt"]),
-        (200, &Value::Null)
-    );
 }
 
 type Tap = fn(&User, &Value) -> (u16, Value);
 
-/// The taps of the pane on the first objective, its first task and its second note.
-fn taps() -> [(&'static str, Tap); 4] {
+/// The taps of the pane on the first objective's first task and its first note.
+fn taps() -> [(&'static str, Tap); 3] {
     [
-        ("tick", |user, pane| {
-            let step = &pane["objectives"][0]["steps"][0]["id"];
-            user.put(
-                &format!("/api/objectives/1/steps/{step}"),
-                json!({"done":true}),
-            )
-        }),
         ("snooze", |user, pane| {
             user.post(
                 &format!("/api/tasks/{}/snooze", pane["tasks"][0]["id"]),
@@ -409,11 +370,7 @@ fn taps() -> [(&'static str, Tap); 4] {
 
 #[test]
 fn tap_is_told_to_jet_on_next_turn() {
-    let rows: [(&str, &str); 4] = [
-        (
-            "tick",
-            "tapped step \"Build the frame\" of \"Ship the kite\" in the pane: it is now marked done",
-        ),
+    let rows: [(&str, &str); 3] = [
         (
             "snooze",
             "tapped Snooze in the pane on your task \"see whether the frame is built\"",
@@ -527,16 +484,6 @@ fn the_event_stream_carries_a_change_for_each_tap_and_each_objectives_update() {
         act();
         assert!(pane_changed(&events), "{name} sent no paneChanged");
     }
-    // A colleague the objective is shared with hears of a tap on it too.
-    share_with_manager(&host, &owner);
-    let viewer = host.sign_in_as(MANAGER);
-    let events = listen(&viewer);
-    let (_, tick) = taps().into_iter().next().unwrap();
-    assert_eq!(tick(&owner, &pane).0, 200);
-    assert!(
-        pane_changed(&events),
-        "the viewer's stream sent no paneChanged"
-    );
 }
 
 #[test]

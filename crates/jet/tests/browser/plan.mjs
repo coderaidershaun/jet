@@ -54,7 +54,7 @@ if (/^facade:/m.test(input)) {
       assert.ok(response.ok, `${method} ${route}: ${text}`);
       return text ? JSON.parse(text) : null;
     };
-    return { get: (route) => call('GET', route), post: (route, body) => call('POST', route, body), put: (route, body) => call('PUT', route, body) };
+    return { get: (route) => call('GET', route), post: (route, body) => call('POST', route, body), put: (route, body) => call('PUT', route, body), patch: (route, body) => call('PATCH', route, body) };
   };
   const clock = (days, time) => {
     const day = new Date(Date.now() + days * 86400000).toLocaleDateString('en-CA', { timeZone: ZONE });
@@ -190,7 +190,7 @@ if (/^facade:/m.test(input)) {
     await p.locator('.task[data-id="2"]').getByRole('button', { name: /^Snooze/ }).click();
     const alert = p.locator('.pane-alert');
     await until(async () => (await alert.innerText()) === 'The check could not be snoozed. The store is busy. Try again.', 'a failed tap says so in plain words');
-    await owner.put('/api/objectives/2/steps/5', { done: width === 1440 });
+    await owner.patch('/api/task-list/tasks/5', { state: width === 1440 ? 'done' : 'not_started' });
     await until(async () => (await p.locator('.objective[data-id="2"] .progress').innerText()) === `${width === 1440 ? 1 : 0}/2`, 'the pane is read again');
     assert.equal(await alert.isVisible(), true, 'the notice stays through the re-read');
     await shoot(p, `${width}-03-tap-failed`);
@@ -247,7 +247,7 @@ if (/^facade:/m.test(input)) {
     const person = width === 1440 ? 'Admin 1' : 'Admin 2';
     await card.locator('.share-row', { hasText: new RegExp(`^${person}$`, 'm') }).first().locator('.share-box').focus();
     await p.keyboard.press('Space');
-    await owner.put('/api/objectives/2/steps/5', { done: width !== 1440 });
+    await owner.patch('/api/task-list/tasks/5', { state: width !== 1440 ? 'done' : 'not_started' });
     await delay(800);
     assert.equal(await p.evaluate(() => document.activeElement.classList.contains('share-box')), true, 'the focus stays on the tick through a redraw');
     assert.equal(await card.locator('.share-go').innerText(), 'Share');

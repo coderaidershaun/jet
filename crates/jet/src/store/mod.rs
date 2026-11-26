@@ -16,6 +16,7 @@ mod shares;
 mod signins;
 mod sources;
 mod steps;
+mod task_list;
 mod tasks;
 mod text_enum;
 mod update_notes;
@@ -29,13 +30,14 @@ pub(crate) use inbox::{
     ReplyOutcome, SendCard, SendTap, Sent,
 };
 pub(crate) use objectives::{Edit, NewObjective, Objective, ObjectiveId, ObjectiveStatus};
-pub(crate) use pane::Tap;
+pub(crate) use pane::{Tap, Told};
 pub(crate) use shares::{
     Applied, CardPerson, CardTeam, ProposalId, ShareCard, Shared, SharedNote, Sharing, Tapped,
 };
 pub(crate) use signins::{Rotation, SigninId};
 pub(crate) use sources::{NewSource, Source, SourceKind};
 pub(crate) use steps::{NewStep, Step, StepId};
+pub(crate) use task_list::{Day, Days, ListGoal, ListState, ListTask, Place, Refused, TaskWrite};
 pub(crate) use tasks::{
     AgentTask, CancelOutcome, NewTask, Run, RunId, RunOutcome, Scheduled, SetBy, Settled,
     Settlement, Snoozed, Stale, TaskEnd, TaskId, TaskKind, TaskState, Versions,
@@ -88,6 +90,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0011_inbox.sql"),
     include_str!("migrations/0012_closed_and_reply_cards.sql"),
     include_str!("migrations/0013_artifacts.sql"),
+    include_str!("migrations/0014_task_list.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -120,6 +123,8 @@ pub enum StoreError {
     MainChat,
     #[error("no such chat")]
     NoSuchChat,
+    #[error("the task changed each time it was about to be written; try again")]
+    Contended,
     #[error("{what} in the database is not valid JSON of its kind")]
     Json {
         what: &'static str,
