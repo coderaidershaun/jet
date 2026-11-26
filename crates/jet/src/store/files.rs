@@ -168,6 +168,26 @@ impl Store {
         })
     }
 
+    /// Takes the files back to unsent after the send that attached them failed.
+    pub(crate) fn unattach_files(
+        &self,
+        user: UserId,
+        chat: ChatId,
+        ids: &[String],
+    ) -> Result<(), StoreError> {
+        self.with(|db| {
+            let transaction = db.transaction()?;
+            for id in ids {
+                transaction.execute(
+                    "UPDATE files SET attached = 0, chat_id = NULL
+                     WHERE id = ?1 AND user_id = ?2 AND chat_id = ?3",
+                    params![id, user.0, chat.0],
+                )?;
+            }
+            transaction.commit()
+        })
+    }
+
     /// Deletes the user's file, sent or not, with its earlier versions and its place in every
     /// chat, and says whether there was one.
     pub(crate) fn delete_file(&self, user: UserId, id: &str) -> Result<bool, StoreError> {

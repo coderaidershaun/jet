@@ -12,7 +12,7 @@ use std::time::SystemTime;
 
 use serde_json::json;
 
-use super::process::launch;
+use super::process::{launch, spawn};
 use super::{Lines, Request, SessionMode, Transport, TransportError};
 use crate::chat::Model;
 use args::args;
@@ -182,11 +182,11 @@ impl Transport for AgyCli {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let child = command.spawn().map_err(|source| TransportError::Spawn {
+        let child = spawn(&mut command).map_err(|source| TransportError::Spawn {
             program: self.program.clone(),
             source,
         })?;
-        let lines = launch(child, &message);
+        let lines = launch(child, &message, ());
         let (sender, receiver) = mpsc::channel();
         let stopper = lines.stopper.clone();
         let watcher = stopper.clone();

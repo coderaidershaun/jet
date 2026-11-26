@@ -61,6 +61,9 @@ pub(crate) struct Saved {
     /// Held while a reaction is read and written back, so the user and Jet reacting at the same
     /// moment cannot undo each other's change.
     reacting: Arc<Mutex<()>>,
+    /// Held while the session is read and written back, so the review and a reply saving their own
+    /// parts of it cannot undo each other.
+    session_writing: Arc<Mutex<()>>,
 }
 
 impl Saved {
@@ -68,6 +71,7 @@ impl Saved {
         Saved {
             storage,
             reacting: Arc::new(Mutex::new(())),
+            session_writing: Arc::new(Mutex::new(())),
         }
     }
 
@@ -115,6 +119,7 @@ impl Saved {
     }
 
     pub(crate) fn forget(&self, at: u64) -> Result<(), MemoryError> {
+        let _held = self.hold_session();
         self.storage.forget_entries(at)?;
         self.storage.save_session(None)
     }
@@ -125,6 +130,25 @@ impl Saved {
 
     pub(crate) fn save_session(&self, session: &Session) -> Result<(), MemoryError> {
         self.storage.save_session(Some(session))
+    }
+
+    /// Holds off every `update_session` while a caller reads the session and writes it back itself.
+    pub(crate) fn hold_session(&self) -> std::sync::MutexGuard<'_, ()> {
+        crate::lock(&self.session_writing)
+    }
+
+    /// Changes the saved session with `change`, which sees the newest one. Does nothing when the
+    /// chat has no session.
+    pub(crate) fn update_session(
+        &self,
+        change: impl FnOnce(&mut Session),
+    ) -> Result<(), MemoryError> {
+        let _held = self.hold_session();
+        let Some(mut session) = self.storage.session()? else {
+            return Ok(());
+        };
+        change(&mut session);
+        self.storage.save_session(Some(&session))
     }
 
     pub(crate) fn objective_summary(&self) -> Result<Option<String>, MemoryError> {

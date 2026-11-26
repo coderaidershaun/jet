@@ -2,7 +2,8 @@
 //! that fails each reply when it is missing, and the status the page checks.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
+use std::thread;
 
 use agent::{
     AgyCli, ClaudeCli, CodexCli, ContextStatus, Lines, Model, Request, Transport, TransportError,
@@ -129,7 +130,8 @@ pub(super) fn transport_for(
 /// What a reply that could not start says instead of the places of the program on the server.
 const PLACES_HIDDEN: &str = "the places set on this server";
 
-/// A provider whose start failures name no place on the server, for a user who is not an admin.
+/// A provider whose failures name no place on the server, for a user who is not an admin: neither a
+/// failed start nor the error output of a run that exits badly.
 pub(super) struct PlacesHidden(pub Arc<dyn Transport>);
 
 impl Transport for PlacesHidden {
@@ -138,30 +140,55 @@ impl Transport for PlacesHidden {
     }
 
     fn start(&self, request: &Request) -> Result<Lines, TransportError> {
-        let hidden = || vec![PLACES_HIDDEN.to_owned()];
-        self.0.start(request).map_err(|error| match error {
-            TransportError::ClaudeMissing { .. } => {
-                TransportError::ClaudeMissing { searched: hidden() }
+        let lines = self.0.start(request).map_err(hide_places)?;
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            for line in lines.receiver {
+                if sender.send(line.map_err(hide_places)).is_err() {
+                    break;
+                }
             }
-            TransportError::CodexMissing { .. } => {
-                TransportError::CodexMissing { searched: hidden() }
-            }
-            TransportError::AgyMissing { .. } => TransportError::AgyMissing { searched: hidden() },
-            TransportError::AgyVersion { found, .. } => TransportError::AgyVersion {
-                program: PathBuf::from(PLACES_HIDDEN),
-                found,
-            },
-            // The folder of an agy turn is named after the data folder.
-            TransportError::AgyFolder(_) => TransportError::Spawn {
-                program: PathBuf::from(PLACES_HIDDEN),
-                source: std::io::Error::other("the folder for its turns cannot be used"),
-            },
-            TransportError::Spawn { source, .. } => TransportError::Spawn {
-                program: PathBuf::from(PLACES_HIDDEN),
-                source,
-            },
-            other => other,
+        });
+        Ok(Lines {
+            receiver,
+            stopper: lines.stopper,
         })
+    }
+}
+
+fn hide_places(error: TransportError) -> TransportError {
+    let hidden = || vec![PLACES_HIDDEN.to_owned()];
+    match error {
+        TransportError::ClaudeMissing { .. } => {
+            TransportError::ClaudeMissing { searched: hidden() }
+        }
+        TransportError::CodexMissing { .. } => TransportError::CodexMissing { searched: hidden() },
+        TransportError::AgyMissing { .. } => TransportError::AgyMissing { searched: hidden() },
+        TransportError::AgyVersion { found, .. } => TransportError::AgyVersion {
+            program: PathBuf::from(PLACES_HIDDEN),
+            found,
+        },
+        // The folder of an agy turn is named after the data folder.
+        TransportError::AgyFolder(_) => TransportError::Spawn {
+            program: PathBuf::from(PLACES_HIDDEN),
+            source: std::io::Error::other("the folder for its turns cannot be used"),
+        },
+        TransportError::Spawn { source, .. } => TransportError::Spawn {
+            program: PathBuf::from(PLACES_HIDDEN),
+            source,
+        },
+        // The tail of the program's error output stays in the server's log, where an admin reads it.
+        TransportError::Exited { code, stderr } => {
+            eprintln!(
+                "jet: a provider run exited with {code:?}: {}",
+                stderr.trim()
+            );
+            TransportError::Exited {
+                code,
+                stderr: String::new(),
+            }
+        }
+        other => other,
     }
 }
 

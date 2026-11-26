@@ -143,14 +143,15 @@ impl Conversation {
         let mut user = NewEntry::user_text(&message.text);
         user.turn = identity.clone();
         user.attachments = message.attachments.clone();
-        let user_entry = self.saved.append(user, now_ms())?;
         let words = persona::reaction_words(&recent) + &persona::message_words(&message);
         let answer = Answer {
             words,
-            react_on: Some(user_entry.id),
+            react_on: None,
             answers_reaction: false,
         };
-        let reply = self.answer(claim, transport, message, identity, answer)?;
+        let (user_entry, reply) =
+            self.answer(claim, transport, message, identity, answer, Some(user))?;
+        let user_entry = user_entry.expect("a send saves the user's entry");
         Ok((shown(user_entry), reply))
     }
 
@@ -212,9 +213,13 @@ impl Conversation {
                 .map(|entry| entry.id),
             answers_reaction: true,
         };
-        self.answer(claim, transport, message, identity, answer)
+        Ok(self
+            .answer(claim, transport, message, identity, answer, None)?
+            .1)
     }
 
+    /// Every read that can fail comes before the user's entry is saved, so a failed answer leaves
+    /// no message that has no reply.
     fn answer(
         &self,
         claim: Claim,
@@ -222,7 +227,8 @@ impl Conversation {
         message: Message,
         identity: Option<TurnIdentity>,
         answer: Answer,
-    ) -> Result<Reply, ConversationError> {
+        user: Option<NewEntry>,
+    ) -> Result<(Option<Entry>, Reply), ConversationError> {
         let Answer {
             words,
             react_on,
@@ -243,7 +249,20 @@ impl Conversation {
             SessionMode::New => reply::first_message(&message.local_time, &opening),
             _ => words,
         };
-        let entries = self.saved.entries()?;
+        let mut entries = self.saved.entries()?;
+        let page_hosts = self.saved.page_hosts()?;
+        if decision.mode == SessionMode::New
+            && let Some(session) = &saved
+        {
+            let _held = self.saved.hold_session();
+            self.saved
+                .save_session(&session.clone().without_conversation())?;
+        }
+        let user_entry = user
+            .map(|user| self.saved.append(user, now_ms()))
+            .transpose()?;
+        let react_on = user_entry.as_ref().map(|entry| entry.id).or(react_on);
+        entries.extend(user_entry.clone());
         let request = Request {
             prompt,
             system_prompt: persona::compose(
@@ -258,14 +277,8 @@ impl Conversation {
             session: decision.mode,
             schema: None,
             mcp: message.mcp,
-            hosts: hosts::linked_hosts(&entries, &self.saved.page_hosts()?),
+            hosts: hosts::linked_hosts(&entries, &page_hosts),
         };
-        if request.session == SessionMode::New
-            && let Some(session) = &saved
-        {
-            self.saved
-                .save_session(&session.clone().without_conversation())?;
-        }
         let started = Turn::start(&*transport, &request);
         let context = reply::Context {
             identity,
@@ -286,7 +299,7 @@ impl Conversation {
             react_on,
             answers_reaction,
         };
-        Ok(Reply::new(context, claim, started))
+        Ok((user_entry, Reply::new(context, claim, started)))
     }
 
     /// The newest `limit` entries of the thread, oldest first.
@@ -315,10 +328,8 @@ impl Conversation {
     /// Claude sees them.
     pub fn save_notes(&self, notes: Notes) -> Result<Notes, MemoryError> {
         let saved = self.saved.save_notes(&notes)?;
-        if let Some(mut session) = self.saved.session()? {
-            session.prompt_hash.clear();
-            self.saved.save_session(&session)?;
-        }
+        self.saved
+            .update_session(|session| session.prompt_hash.clear())?;
         Ok(saved)
     }
 
@@ -429,5 +440,61 @@ mod test_support {
             change(&mut session);
             self.storage.save_session(Some(&session)).unwrap();
         }
+    }
+}
+
+// A send that fails before its turn starts must leave no user entry behind.
+#[cfg(test)]
+mod failed_send {
+    use super::test_support::message;
+    use super::*;
+    use crate::turn::scripted::Scripted;
+
+    struct NotesFail(InMemory);
+    impl Storage for NotesFail {
+        fn entries(&self) -> Result<Vec<Entry>, MemoryError> {
+            self.0.entries()
+        }
+        fn last_entries(&self, limit: usize) -> Result<Vec<Entry>, MemoryError> {
+            self.0.last_entries(limit)
+        }
+        fn add_entry(&self, entry: NewEntry, at: u64) -> Result<Entry, MemoryError> {
+            self.0.add_entry(entry, at)
+        }
+        fn replace_entry(&self, entry: &Entry) -> Result<(), MemoryError> {
+            self.0.replace_entry(entry)
+        }
+        fn forget_entries(&self, at: u64) -> Result<(), MemoryError> {
+            self.0.forget_entries(at)
+        }
+        fn session(&self) -> Result<Option<Session>, MemoryError> {
+            self.0.session()
+        }
+        fn save_session(&self, session: Option<&Session>) -> Result<(), MemoryError> {
+            self.0.save_session(session)
+        }
+        fn notes(&self) -> Result<Notes, MemoryError> {
+            Err(MemoryError::Storage("the database is locked".into()))
+        }
+        fn save_notes(&self, notes: &Notes) -> Result<(), MemoryError> {
+            self.0.save_notes(notes)
+        }
+    }
+
+    #[test]
+    fn a_send_that_fails_before_its_turn_leaves_no_user_entry() {
+        let storage = Arc::new(NotesFail(InMemory::default()));
+        let conversation = Conversation::new(storage.clone());
+        let sent = conversation.send(Arc::new(Scripted::new()), message("hello"), None);
+        assert!(sent.is_err(), "the send fails");
+        let entries = storage.entries().unwrap();
+        let texts: Vec<_> = entries
+            .iter()
+            .map(|entry| (entry.role, entry.text.clone()))
+            .collect();
+        assert!(
+            entries.is_empty(),
+            "the failed send left entries: {texts:?}"
+        );
     }
 }

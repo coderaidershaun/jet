@@ -1,5 +1,7 @@
 //! Recover accepted requests without repeating uncertain provider work.
 
+use std::collections::HashSet;
+
 use super::memory::{MemoryError, NewEntry, now_ms};
 use super::{Conversation, shown};
 use crate::chat::{EntryStatus, Role, ShownEntry};
@@ -24,19 +26,16 @@ impl Conversation {
     /// Marks orphaned requests interrupted at server startup, without calling a provider.
     pub fn recover_interrupted(&self) -> Result<(), MemoryError> {
         let entries = self.saved.entries()?;
+        let answered: HashSet<&str> = entries
+            .iter()
+            .filter(|entry| entry.role == Role::Jet)
+            .filter_map(|entry| entry.turn.as_ref().map(|turn| turn.turn_id.as_str()))
+            .collect();
         for user in entries.iter().filter(|entry| entry.role == Role::User) {
             let Some(identity) = &user.turn else { continue };
             // A turn in which Jet only reacted leaves its reaction and no Jet entry.
             let reacted = user.reaction_by(Role::Jet).is_some();
-            if reacted
-                || entries.iter().any(|entry| {
-                    entry.role == Role::Jet
-                        && entry
-                            .turn
-                            .as_ref()
-                            .is_some_and(|turn| turn.turn_id == identity.turn_id)
-                })
-            {
+            if reacted || answered.contains(identity.turn_id.as_str()) {
                 continue;
             }
             self.saved.append(

@@ -7,6 +7,10 @@ use serde_json::{Value, json};
 use super::super::{Request, SessionMode};
 use crate::chat::{FACADE_TOOLS, TURN_HEADER};
 
+/// The variable that carries the turn's token to Codex. The command line is readable by every
+/// account on the machine; the environment of a process is not.
+pub(super) const TURN_TOKEN_ENV: &str = "JET_TURN_TOKEN";
+
 fn push_config_value(args: &mut Vec<String>, key: &str, value: impl Into<Value>) {
     args.extend(["-c".into(), format!("{key}={}", value.into())]);
 }
@@ -42,8 +46,8 @@ pub(super) fn args(request: &Request, schema: Option<&Path>) -> Vec<String> {
     }
     if let Some(mcp) = &request.mcp {
         push_config_value(&mut args, "mcp_servers.jet.url", mcp.url.as_str());
-        let header = format!("mcp_servers.jet.http_headers.{TURN_HEADER}");
-        push_config_value(&mut args, &header, mcp.token.as_str());
+        let header = format!("mcp_servers.jet.env_http_headers.{TURN_HEADER}");
+        push_config_value(&mut args, &header, TURN_TOKEN_ENV);
         push_config_value(
             &mut args,
             "mcp_servers.jet.enabled_tools",

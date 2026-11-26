@@ -791,7 +791,7 @@ fn a_task_cannot_move_to_a_closed_goal() {
         ),
         w.owner.patch(
             &format!("/api/task-list/tasks/{}", w.spec),
-            json!({"state":"not_started"}),
+            json!({"title":"Renamed"}),
         ),
         w.owner.patch(
             &format!("/api/task-list/goals/{}", w.goal),
@@ -1028,4 +1028,28 @@ fn every_change_shows_in_the_list_and_the_pane_and_tells_only_its_users_pages() 
     });
     assert_eq!(ids(&list, "tasks"), [w.spec]);
     assert_eq!(titles(), [json!(SPEC)]);
+}
+
+/// The done pile offers to put back a done task of a closed goal, so the server does it: the task
+/// comes back open and leaves the goal.
+#[test]
+fn a_done_task_of_a_closed_goal_can_be_put_back() {
+    let w = world();
+    w.patch(w.spec, json!({"state":"done"}));
+    let (status, closed) = w.owner.patch(
+        &format!("/api/task-list/goals/{}", w.goal),
+        json!({"state":"done"}),
+    );
+    assert_eq!(status, 200, "{closed}");
+    let (status, list) = w.owner.patch(
+        &format!("/api/task-list/tasks/{}", w.spec),
+        json!({"state":"not_started"}),
+    );
+    assert_eq!(status, 200, "{list}");
+    assert_eq!(ids(&list, "tasks"), [w.spec]);
+    assert!(
+        list["tasks"][0]["goalId"].is_null(),
+        "it left the closed goal"
+    );
+    assert!(ids(&list, "done").is_empty());
 }

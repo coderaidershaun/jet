@@ -12,6 +12,14 @@ use crate::store::{AgentTask, ChatId, Sent, SetBy, SharedNote, Sharing, Snoozed}
 const SENT_SHOWN: usize = 50;
 use serde::Serialize;
 
+/// The line Jet is told when the user taps Cancel on a task.
+pub(super) fn cancel_line(task: &AgentTask) -> String {
+    format!(
+        "[The user tapped Cancel in the pane on your task \"{}\": it is cancelled.]",
+        task.why
+    )
+}
+
 /// An objective as its owner sees it in the pane.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -227,10 +235,7 @@ impl Objectives {
     /// Cancels a waiting task of the user's by a tap.
     pub(crate) fn tap_cancel(&self, user: UserId, id: TaskId) -> Result<AgentTask, ObjectiveError> {
         let task = self.task(user, id)?;
-        let line = format!(
-            "[The user tapped Cancel in the pane on your task \"{}\": it is cancelled.]",
-            task.why
-        );
+        let line = cancel_line(&task);
         self.cancel_told(user, id, Some((task.chat_id, line.as_str())))
     }
 

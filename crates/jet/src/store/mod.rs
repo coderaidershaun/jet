@@ -98,6 +98,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0014_task_list.sql"),
     include_str!("migrations/0015_mcp_servers.sql"),
     include_str!("migrations/0016_mcp_sign_in.sql"),
+    include_str!("migrations/0017_chat_ids.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]

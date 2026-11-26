@@ -276,3 +276,18 @@ test('a chat deleted while the stream was down is dropped, and the stream starts
   assert.equal(sources[1].url, '/api/events', 'no chat and no epoch: the server answers with the main chat');
   assert.equal(agent.chatId(), null);
 });
+
+test('a refusal with a text body ends the send instead of being retried forever', async () => {
+  class Source { close() {} }
+  let posts = 0;
+  const agent = createBrowserAgent({ EventSource: Source, storage: null, uuid: () => 'id', delay: async () => {}, fetch: async (path) => {
+    if (!path.startsWith('/api/chat/send')) return new Response('{}', { status: 200 });
+    posts += 1;
+    if (posts >= 10) return new Response(JSON.stringify({ user: { id: 1 } }), { status: 200 });
+    return new Response('Failed to buffer the request body: length limit exceeded', { status: 413 });
+  } });
+  const outcome = await agent.send({ text: 'x' }, () => {}).then(() => 'sent', (error) => error);
+  assert.equal(posts, 1);
+  assert.equal(outcome.kind, 'http');
+  assert.equal(outcome.status, 413);
+});

@@ -1258,3 +1258,118 @@ fn three_interrupted_bring_ups_keep_the_item() {
         "a colleague's item is never given up with a notice"
     );
 }
+
+#[test]
+fn an_expiry_tells_the_recipients_pane() {
+    let host = host();
+    let (owner, manager) = (host.owner(), host.sign_in_as(MANAGER));
+    let start: u64 = 4_084_606_800;
+    host.set_clock(start);
+    let card = propose(&host, &manager, "ask", "question", "Can we meet on Friday?");
+    // A check script that is not JSON makes the stand-in fail, so the item's task waits again.
+    std::fs::write(host.dir.path().join("check-script.json"), "not json").unwrap();
+    assert_eq!(tap(&manager, &card).0, 200);
+    until("the failed bring-up to wait again", || {
+        (one::<i64>(
+            &host,
+            "SELECT count(*) FROM task_runs WHERE outcome IS NOT NULL",
+        ) == 1
+            && one::<String>(&host, "SELECT state FROM agent_tasks") == "scheduled")
+            .then_some(())
+    });
+    let events = listen(&owner);
+    std::thread::sleep(Duration::from_millis(300));
+    while events.try_recv().is_ok() {}
+    host.set_clock(start + 14 * 24 * 3600 + 60);
+    wait_for_state(&host, "expired");
+    assert_eq!(
+        one::<String>(&host, "SELECT state FROM agent_tasks"),
+        "cancelled"
+    );
+    let mut kinds = Vec::new();
+    while let Ok(event) = events.recv_timeout(Duration::from_secs(3)) {
+        kinds.push(event["data"]["event"]["kind"].clone());
+    }
+    assert!(
+        kinds.contains(&json!("paneChanged")),
+        "the recipient's pane was not told: {kinds:?}"
+    );
+}
+
+#[test]
+fn a_tap_after_the_share_ended_is_refused() {
+    let host = host();
+    let (owner, manager) = (host.owner(), host.sign_in_as(MANAGER));
+    let (owner_id, manager_id) = (user_id(&host, OWNER), user_id(&host, MANAGER));
+    owner_shares_a_kite(&host, &owner, manager_id);
+    let asked = run_turn(
+        &host,
+        &manager,
+        "ask",
+        "Ask Shaun about the kite.",
+        json!([tasks(
+            json!({"action":"send","to":owner_id,"kind":"question","objectiveId":1,"text":"How is the kite?"})
+        )]),
+    );
+    let card = data(&asked[0])["send"].clone();
+    assert_eq!(card["objectiveId"], 1, "{card}");
+    let made = run_turn(
+        &host,
+        &owner,
+        "unshare",
+        "Stop sharing the kite.",
+        json!([objectives(
+            json!({"action":"propose_share","id":1,"people":[]})
+        )]),
+    );
+    let proposal = data(&made[0])["proposal"].clone();
+    let (status, applied) = owner.post(
+        &format!("/api/shares/proposals/{}/apply", proposal["id"]),
+        json!({"people":[],"teams":[]}),
+    );
+    assert_eq!(
+        (status, &applied["state"]),
+        (200, &json!("applied")),
+        "{applied}"
+    );
+    let (status, body) = tap(&manager, &card);
+    assert_ne!(
+        status, 200,
+        "the tap must be refused once the share ended: {body}"
+    );
+    assert_eq!(count(&host, "inbox_items"), 0, "no item was stored");
+}
+
+#[test]
+fn a_cancel_whose_decline_fails_leaves_the_task_waiting() {
+    let host = host();
+    let (owner, manager) = (host.owner(), host.sign_in_as(MANAGER));
+    let start: u64 = 4_084_606_800;
+    host.set_clock(start);
+    let card = propose(&host, &manager, "ask", "question", "Can we meet on Friday?");
+    std::fs::write(host.dir.path().join("check-script.json"), "not json").unwrap();
+    assert_eq!(tap(&manager, &card).0, 200);
+    until("the failed bring-up to wait again", || {
+        (one::<i64>(
+            &host,
+            "SELECT count(*) FROM task_runs WHERE outcome IS NOT NULL",
+        ) == 1
+            && one::<String>(&host, "SELECT state FROM agent_tasks") == "scheduled")
+            .then_some(())
+    });
+    let task: i64 = one(&host, "SELECT id FROM agent_tasks");
+    rusqlite::Connection::open(host.dir.path().join("jet.sqlite3"))
+        .unwrap()
+        .execute_batch(
+            "CREATE TRIGGER no_close BEFORE UPDATE ON inbox_items BEGIN SELECT RAISE(ABORT, 'full'); END",
+        )
+        .unwrap();
+    let (status, body) = owner.post(&format!("/api/tasks/{task}/cancel"), json!({}));
+    assert_ne!(status, 200, "{body}");
+    assert_eq!(
+        one::<String>(&host, "SELECT state FROM agent_tasks"),
+        "scheduled",
+        "a failed cancel leaves the task waiting"
+    );
+    assert_eq!(item_state(&host), "sent");
+}

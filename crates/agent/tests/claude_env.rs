@@ -96,6 +96,10 @@ fn claude_runs_with_only_jets_tools_and_a_scrubbed_environment() {
         "abc-123",
     ];
     assert_eq!(recorded_args(cwd.path()), expected);
+    // The two configs hold the turn's token, so Claude Code gets them as files, not on the
+    // command line, where every account on the machine can read them.
+    let argv = std::fs::read_to_string(cwd.path().join("fake-claude-argv.json")).unwrap();
+    assert!(!argv.contains("x-jet-turn"), "{argv}");
 
     let env = std::fs::read_to_string(cwd.path().join("fake-claude-env.json")).unwrap();
     assert_eq!(

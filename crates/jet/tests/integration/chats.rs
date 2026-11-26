@@ -699,3 +699,68 @@ fn forgetting_or_deleting_a_chat_leaves_the_files_of_the_others() {
     );
     assert_eq!(status(&files[0]), 200);
 }
+
+// A task line that waits for Jet in a goal's chat is told in the main chat after that chat is
+// deleted, where the goal now lives.
+#[test]
+fn a_deleted_chats_waiting_task_line_reaches_the_main_chat() {
+    use super::objectives::{database, objectives, run_turn, run_turn_in, tool};
+    let host = host();
+    let wednesday = "2026-11-25T15:00:00Z"
+        .parse::<jiff::Timestamp>()
+        .unwrap()
+        .as_second()
+        .unsigned_abs();
+    host.set_clock(wednesday);
+    let owner = host.owner();
+    let goal = json!({
+        "action":"create","title":"Ship the kite page","deliverable":"The kite page live at /kite",
+        "start":"2026-11-20","due":"2026-11-28","steps":[{"title":"Draft the spec","due":"2026-11-25"}],
+        "sources":[{"kind":"jet"}],"check":{"at":"2026-11-27T09:00","why":"see how the page goes"}
+    });
+    run_turn(
+        &host,
+        &owner,
+        "plan",
+        "I am shipping the kite page.",
+        json!([objectives(goal)]),
+    );
+    let list = owner.get("/api/task-list");
+    let goal_chat = list["goals"][0]["chatId"].as_i64().unwrap();
+    let main = list["mainChatId"].as_i64().unwrap();
+    let spec = list["tasks"][0]["id"].as_i64().unwrap();
+    let (status, body) = owner.patch(
+        &format!("/api/task-list/tasks/{spec}"),
+        json!({"state":"done"}),
+    );
+    assert_eq!(status, 200, "{body}");
+    let waiting = || -> Vec<(i64, String)> {
+        database(&host)
+            .prepare("SELECT chat_id, line FROM pane_taps WHERE announced = 0 ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    };
+    let before = waiting();
+    assert_eq!(before.len(), 1, "{before:?}");
+    assert_eq!(before[0].0, goal_chat, "the line waits in the goal's chat");
+    let line = before[0].1.clone();
+
+    assert_eq!(host.delete(&format!("/api/chats/{goal_chat}")), 200);
+    let after = waiting();
+    run_turn_in(
+        &host,
+        &owner,
+        Some(main),
+        "hi",
+        "Thanks.",
+        json!([tool("people_list")]),
+    );
+    let prompt = std::fs::read_to_string(host.dir.path().join("facade-prompt.txt")).unwrap();
+    assert!(
+        prompt.contains(&line),
+        "Jet in the main chat is told {line:?}; lines waiting after the delete: {after:?}"
+    );
+}

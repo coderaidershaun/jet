@@ -20,13 +20,13 @@ struct BuiltIn {
 impl Provider for BuiltIn {
     fn connection(&self, args: &[String]) -> (String, String) {
         if self.codex {
-            let value = |key: &str| -> String {
-                serde_json::from_str(args.iter().find_map(|arg| arg.strip_prefix(key)).unwrap())
-                    .unwrap()
-            };
+            let url = args
+                .iter()
+                .find_map(|arg| arg.strip_prefix("mcp_servers.jet.url="))
+                .unwrap();
             return (
-                value("mcp_servers.jet.url="),
-                value(&format!("mcp_servers.jet.http_headers.{TURN_HEADER}=")),
+                serde_json::from_str(url).unwrap(),
+                std::env::var("JET_TURN_TOKEN").unwrap(),
             );
         }
         let at = args.iter().position(|arg| arg == "--mcp-config").unwrap();

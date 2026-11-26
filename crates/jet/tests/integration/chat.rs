@@ -284,15 +284,15 @@ fn markdown_over_its_limit_is_refused() {
 }
 
 /// How many renders hold the host's one worker in the stall test.
-const RENDERS: usize = 3;
+const RENDERS: usize = 4;
 
 #[test]
 fn slow_renders_do_not_stall_other_requests() {
     use std::time::{Duration, Instant};
     let host = Host::start_env(&[], &[("TOKIO_WORKER_THREADS", "1")]);
-    // Ordinary markdown, as long as the host takes: a debug build needs seconds for one render.
-    let unit = "```rust\nfn main() { println!(\"hi\"); }\n```\n\n";
-    let text = unit.repeat(MARKDOWN_LIMIT / unit.len() * 3 / 5);
+    // Ordinary markdown, as long as the host takes: tables are what a debug build renders slowest per byte.
+    let unit = "| a | b |\n|--|--|\n| 1 | 2 |\n\n";
+    let text = unit.repeat(MARKDOWN_LIMIT / unit.len());
     let user = host.owner();
     std::thread::scope(|scope| {
         for _ in 0..RENDERS {
@@ -307,4 +307,47 @@ fn slow_renders_do_not_stall_other_requests() {
             started.elapsed()
         );
     });
+}
+
+#[test]
+fn a_providers_error_output_shows_no_server_place_to_a_user_who_is_not_an_admin() {
+    use std::time::{Duration, Instant};
+    let host = Host::start();
+    let place = host.dir.path().join("secret-place").display().to_string();
+    let program = host.dir.path().join("failing-claude.sh");
+    std::fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\ncat >/dev/null\necho \"could not open {place}/settings.json\" >&2\nexit 1\n"
+        ),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    host.set_programs(serde_json::json!({"claudePath": program}));
+    let second = host.sign_in_as("admin1@gmail.com");
+    let mut message = request("second-fails");
+    message["text"] = serde_json::json!("hello");
+    let (status, body) = second.post("/api/chat/send", message);
+    assert_eq!(status, 200, "{body}");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let shown = loop {
+        let snapshot = second.get("/api/snapshot");
+        if snapshot["active"].is_null() && snapshot["history"].as_array().unwrap().len() == 2 {
+            break snapshot;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the reply did not end: {snapshot}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let jet = &shown["history"][1];
+    assert_eq!(jet["status"], "failed", "{jet}");
+    assert!(
+        !jet.to_string().contains(&place),
+        "a user who is not an admin is shown a place on the server: {jet}"
+    );
 }

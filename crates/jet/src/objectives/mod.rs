@@ -670,7 +670,7 @@ impl Objectives {
         (self.clock)()
     }
 
-    fn task(&self, user: UserId, id: TaskId) -> Result<AgentTask, ObjectiveError> {
+    pub(crate) fn task(&self, user: UserId, id: TaskId) -> Result<AgentTask, ObjectiveError> {
         self.store
             .agent_tasks(user)?
             .into_iter()

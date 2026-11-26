@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { closedWords, clockWords, costWords, daysLeftWords, groupObjectives, heldReason, keysOf, dueWords, newCount, nextCheck, noteTone, outcomeOf, readPane, relativeWords, runTitle, sharedWithWords, stepDueWords, stepsEndWords, stepProgress, isEmpty, dueDayWords, tokensWords, needsFirst, scopeOf, dayWords, timeWords, progressWords } from './model.js';
+import { closedWords, clockWords, costWords, daysLeftWords, groupObjectives, heldReason, keysOf, dueWords, newCount, nextCheck, noteTone, outcomeOf, readPane, relativeWords, runTitle, sharedWithWords, stepDueWords, stepsEndWords, stepProgress, isEmpty, dueDayWords, tokensWords, needsFirst, scopeOf, dayWords, timeWords, progressWords, latestRecord } from './model.js';
 
 const pane = readPane(JSON.parse(readFileSync(new URL('../../tests/fixtures/pane.json', import.meta.url), 'utf8')));
 
@@ -92,4 +92,12 @@ test("an objective's own chat holds that objective, its tasks and the follow-ups
   assert.deepEqual(scope.tasks.map((t) => t.id), [...pane.tasks.filter((t) => t.objectiveId === kite.id).map((t) => t.id), 50]);
   assert.equal(scopeOf(all, 1000, 1000), null);
   assert.equal(scopeOf(all, 12345, 1000), null, 'a chat nothing belongs to shows the main view');
+});
+
+test('a step or note is read from the latest pane, so a queued tap works from what the tap before it left', () => {
+  const stale = { id: 4, startedAt: null, doneAt: null };
+  const pane = { objectives: [{ steps: [{ id: 4, startedAt: 1, doneAt: null }], notes: [{ id: 9, isPrivate: true }] }] };
+  assert.equal(latestRecord(pane, 'steps', stale).startedAt, 1);
+  assert.equal(latestRecord(pane, 'notes', { id: 9, isPrivate: false }).isPrivate, true);
+  assert.equal(latestRecord(null, 'steps', stale), stale);
 });

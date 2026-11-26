@@ -5,8 +5,8 @@ use super::{Objectives, UTC};
 use crate::chat::TurnOwner;
 use crate::store::{
     CardId, ChatId, Close, Closed, Item, ItemId, ItemKind, ItemState, NewTask, ObjectiveId, Posted,
-    ReplyCard, ReplyCardId, ReplyOutcome, SendCard, SendTap, SetBy, StoreError, TaskId, TaskKind,
-    UserId,
+    ReplyCard, ReplyCardId, ReplyOutcome, SendCard, SendTap, SetBy, StoreError, Tap, TaskId,
+    TaskKind, TaskState, UserId,
 };
 use agent::{Colleague, ColleagueOutcome, NewEntry, Role};
 
@@ -95,16 +95,7 @@ impl Objectives {
             .ok_or(InboxError::NoSuchUser { id: to.0 })?
             .display_name;
         if let Some(id) = objective {
-            let shared = |viewer, owner| -> Result<bool, StoreError> {
-                Ok(self
-                    .store
-                    .shared_objectives(viewer, owner)?
-                    .iter()
-                    .any(|shared| shared.id == id))
-            };
-            if !shared(to, sender.user)? && !shared(sender.user, to)? {
-                return Err(InboxError::ObjectiveNotShared { id: id.0, name });
-            }
+            self.require_shared(id, (sender.user, to), &name)?;
         }
         if self.store.sent_since(sender.user, to, self.day_ago())? >= SEND_LIMIT {
             return Err(InboxError::SendLimit { name });
@@ -119,10 +110,37 @@ impl Objectives {
         self.send_card(sender.user, id)
     }
 
+    /// Whether the objective is shared one way or the other between the two users.
+    fn require_shared(
+        &self,
+        id: ObjectiveId,
+        (sender, to): (UserId, UserId),
+        name: &str,
+    ) -> Result<(), InboxError> {
+        let shared = |viewer, owner| -> Result<bool, StoreError> {
+            Ok(self
+                .store
+                .shared_objectives(viewer, owner)?
+                .iter()
+                .any(|shared| shared.id == id))
+        };
+        if shared(to, sender)? || shared(sender, to)? {
+            return Ok(());
+        }
+        Err(InboxError::ObjectiveNotShared {
+            id: id.0,
+            name: name.to_owned(),
+        })
+    }
+
     /// The sender's tap on a card: the item is stored and the recipient's Jet is told to bring it
     /// up. Gives the card as it is after.
     pub(crate) fn tap_send(&self, sender: UserId, card: CardId) -> Result<SendCard, InboxError> {
         let shown = self.send_card(sender, card)?;
+        // The share may have ended since the card was proposed.
+        if let Some(objective) = shown.objective_id {
+            self.require_shared(objective, (sender, shown.to.id), &shown.to.name)?;
+        }
         let who = self.name(sender)?;
         let now = self.now();
         let zone = self
@@ -222,7 +240,11 @@ impl Objectives {
             card.outcome.as_str()
         );
         let sent = (id, chat, line.as_str());
-        let posted = self.reply_with(user, (card.item_id, card.outcome, &card.text), Some(sent))?;
+        let posted = self.reply_with(
+            user,
+            (card.item_id, card.outcome, &card.text),
+            (Some(sent), None),
+        )?;
         Ok((self.reply_card(user, id)?, posted))
     }
 
@@ -267,24 +289,14 @@ impl Objectives {
     }
 
     /// The recipient's own words end an item: an answer, a decline or a done. The sender gets one
-    /// entry in the chat where they asked, with the words as the recipient's own.
-    pub(crate) fn reply(
-        &self,
-        user: UserId,
-        id: ItemId,
-        outcome: ReplyOutcome,
-        words: &str,
-    ) -> Result<Vec<Posted>, InboxError> {
-        self.reply_with(user, (id, outcome, words), None)
-    }
-
-    /// Sends the reply. With `card`, the reply card it came from is marked sent, and the line Jet is
-    /// told of the tap is kept, in the same write that closes the item.
+    /// entry in the chat where they asked, with the words as the recipient's own. With a card, the
+    /// reply card it came from is marked sent, and the line Jet is told of the tap is kept, in the
+    /// same write that closes the item. A `tap` alone keeps the line of a Cancel tap.
     fn reply_with(
         &self,
         user: UserId,
         (id, outcome, words): (ItemId, ReplyOutcome, &str),
-        card: Option<(ReplyCardId, ChatId, &str)>,
+        (card, tap): (Option<(ReplyCardId, ChatId, &str)>, Tap),
     ) -> Result<Vec<Posted>, InboxError> {
         let (item, words) = self.replyable(user, id, outcome, words)?;
         let name = self.name(user)?;
@@ -316,6 +328,7 @@ impl Objectives {
                 },
                 to_recipient: None,
                 reply_card: card,
+                tap,
             })
         })?;
         match closed {
@@ -335,10 +348,39 @@ impl Objectives {
         user: UserId,
         task: TaskId,
     ) -> Result<Vec<Posted>, InboxError> {
+        self.decline_item_with(user, task, None)
+    }
+
+    /// The pane's Cancel on a task that waits to bring an item up: the item ends as declined, the
+    /// task is cancelled and Jet's line of the tap is kept, all in one write. Nothing is done and
+    /// nothing is given when the task brings no item.
+    pub(crate) fn tap_cancel_item(
+        &self,
+        user: UserId,
+        task: TaskId,
+    ) -> Result<Vec<Posted>, InboxError> {
+        let Some(task) = self
+            .store
+            .agent_tasks(user)?
+            .into_iter()
+            .find(|found| found.id == task && found.state == TaskState::Scheduled)
+        else {
+            return Ok(Vec::new());
+        };
+        let line = super::pane::cancel_line(&task);
+        self.decline_item_with(user, task.id, Some((task.chat_id, line.as_str())))
+    }
+
+    fn decline_item_with(
+        &self,
+        user: UserId,
+        task: TaskId,
+        tap: Tap,
+    ) -> Result<Vec<Posted>, InboxError> {
         let Some(item) = self.store.item_of_task(task)? else {
             return Ok(Vec::new());
         };
-        match self.reply(user, item.id, ReplyOutcome::Declined, "") {
+        match self.reply_with(user, (item.id, ReplyOutcome::Declined, ""), (None, tap)) {
             Err(InboxError::ItemClosed { .. }) => Ok(Vec::new()),
             done => done,
         }
@@ -391,6 +433,7 @@ impl Objectives {
                     &reply,
                 ),
                 reply_card: None,
+                tap: None,
                 to_recipient: Some(line(
                     format!("{asked} sent a {kind}, and I answered it from what you share with them: {answer}"),
                     &quote,

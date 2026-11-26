@@ -43,6 +43,8 @@ pub enum CheckInState {
 pub struct StepFacts {
     pub title: String,
     pub done: bool,
+    /// The user marked the step in progress and has not finished it.
+    pub started: bool,
     pub due: Option<String>,
 }
 
@@ -146,8 +148,15 @@ fn objective(facts: &CheckFacts) -> String {
         o.title, o.deliverable, o.start, o.due, o.days_left
     );
     for step in &o.steps {
-        let tick = if step.done { "x" } else { " " };
+        let tick = match (step.done, step.started) {
+            (true, _) => "x",
+            (false, true) => "~",
+            (false, false) => " ",
+        };
         text.push_str(&format!("\n- [{tick}] {}", step.title));
+        if step.started && !step.done {
+            text.push_str(" (started)");
+        }
         if let Some(due) = &step.due {
             text.push_str(&format!(" (due {due})"));
         }
@@ -339,11 +348,13 @@ mod tests {
                     StepFacts {
                         title: "Write the outline".into(),
                         done: true,
+                        started: false,
                         due: None,
                     },
                     StepFacts {
                         title: "Open the PR".into(),
                         done: false,
+                        started: false,
                         due: Some("2026-11-26".into()),
                     },
                 ],

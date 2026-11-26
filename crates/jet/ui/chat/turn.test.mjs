@@ -22,7 +22,7 @@ async function setup(t, options = {}) {
   const chips = [];
   const live = { feel: () => ({ revealAt: 1000 }), measure: () => ({}), send: noop, mood: () => ({ revealAt: 1650 }), replying: noop, done: () => { settled++; }, failed: noop, stopped: noop, showInLane: () => { relaunched++; } };
   const turn = createTurn({
-    agent: { serverEvents: options.serverEvents, chatId: () => 7, feel: options.feel ?? (async () => ({ mood: 'neutral' })), send: (request, receive) => { requests.push(request); event = receive; return Promise.resolve({}); }, react: (request) => { reacts.push(request); return Promise.resolve({}); }, stop: () => { stopped++; return Promise.resolve(); }, renderMarkdown: async (text) => '<p>' + text + '</p>' },
+    agent: { serverEvents: options.serverEvents, chatId: () => options.chatId?.() ?? 7, feel: options.feel ?? (async () => ({ mood: 'neutral' })), send: (request, receive) => { requests.push(request); event = receive; return options.send ? options.send() : Promise.resolve({}); }, react: (request) => { reacts.push(request); return Promise.resolve({}); }, stop: () => { stopped++; return Promise.resolve(); }, renderMarkdown: async (text) => '<p>' + text + '</p>' },
     settings: { persona: { name: 'Jet' } }, thread, composer, page,
     view: { render: noop, liveLane: noop }, follow: { onSend: noop },
     composerView: { refresh: noop, setLayout: noop, setHeld: (held) => { chips.push(held); } },
@@ -430,4 +430,35 @@ test('a reaction unlocks sound, as a sent message does', async (t) => {
   const before = voice.unlocked;
   await s.turn.react(2, '👍');
   assert.equal(voice.unlocked, before + 1);
+});
+
+test("a message whose post is already out is held when the server refuses it because another page's message was accepted first", async (t) => {
+  let refuse;
+  const send = () => new Promise((resolve, reject) => { refuse = () => reject({ kind: 'busy', message: 'Jet is already replying.' }); });
+  const s = await setup(t, { serverEvents: true, send, pending: true });
+  await s.advance(0);
+  await s.advance(0);
+  assert.equal(s.requests.length, 1, 'the post is out');
+  const theirs = { identity: { requestId: 'other', turnId: 't2' }, user: { id: 1, role: 'user', text: 'theirs', at: 1 }, text: '', tools: [] };
+  s.turn.observe({ turn: { requestId: 'other', turnId: 't2' }, event: { kind: 'accepted', snapshot: { history: [], active: theirs } } });
+  refuse();
+  await s.advance(0);
+  await s.sending;
+  assert.equal(s.thread.held?.text, 'hi', 'the words are kept in the hold and go out when the other reply ends');
+});
+
+test('a refused message whose chat is no longer open is shown as a warning with its words', async (t) => {
+  let refuse, open = 7;
+  const send = () => new Promise((resolve, reject) => { refuse = () => reject({ kind: 'busy', message: 'Jet is already replying.' }); });
+  const s = await setup(t, { serverEvents: true, send, pending: true, chatId: () => open });
+  await s.advance(0);
+  await s.advance(0);
+  const theirs = { identity: { requestId: 'other', turnId: 't2' }, user: { id: 1, role: 'user', text: 'theirs', at: 1 }, text: '', tools: [] };
+  s.turn.observe({ turn: { requestId: 'other', turnId: 't2' }, event: { kind: 'accepted', snapshot: { history: [], active: theirs } } });
+  open = 8;
+  refuse();
+  await s.advance(0);
+  await s.sending;
+  assert.ok(s.thread.rows().some((row) => JSON.stringify(row).includes('A message to another chat was not sent')), 'the words are shown');
+  assert.equal(s.thread.held, null);
 });

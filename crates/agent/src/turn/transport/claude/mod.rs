@@ -8,7 +8,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use super::process::launch;
+use super::process::{launch, spawn};
 use super::{Lines, Request, Transport, TransportError};
 use args::{CACHE_TTL_ENV, ISOLATION_ENV, args};
 
@@ -54,16 +54,26 @@ impl Transport for ClaudeCli {
         for (name, _) in std::env::vars_os().filter(|(name, _)| is_session_variable(name)) {
             command.env_remove(name);
         }
-        let child = command
-            .args(args(request).into_iter().map(OsString::from))
+        // The configs hold the turn's token, so they go in files that only this user can open
+        // instead of on the command line, where every account on the machine can read them.
+        let mut args = args(request);
+        let configs = tempfile::tempdir().map_err(spawn_failed)?;
+        for flag in ["--mcp-config", "--settings"] {
+            if let Some(at) = args.iter().position(|arg| arg == flag) {
+                let file = configs.path().join(format!("{}.json", &flag[2..]));
+                std::fs::write(&file, &args[at + 1]).map_err(spawn_failed)?;
+                args[at + 1] = file.display().to_string();
+            }
+        }
+        command
+            .args(args.into_iter().map(OsString::from))
             .env(CACHE_TTL_ENV.0, CACHE_TTL_ENV.1)
             .envs(ISOLATION_ENV)
             .current_dir(&self.cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(spawn_failed)?;
-        Ok(launch(child, &request.prompt))
+            .stderr(Stdio::piped());
+        let child = spawn(&mut command).map_err(spawn_failed)?;
+        Ok(launch(child, &request.prompt, configs))
     }
 }

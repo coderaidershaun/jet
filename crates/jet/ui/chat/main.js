@@ -43,6 +43,16 @@ import { createWarning } from './warning.js';
 const $ = (id) => document.getElementById(id);
 const warn = (what) => (error) => console.warn(what + ':', error);
 
+/** The chat that was open, kept for this tab so a reload comes back to it. A blocked store reads as empty and loses the write. */
+const openChatKept = {
+  read() {
+    try { return Number(sessionStorage.getItem('jet.openChat')); } catch (error) { console.warn('the open chat could not be read:', error); return NaN; }
+  },
+  write(id) {
+    try { sessionStorage.setItem('jet.openChat', String(id)); } catch (error) { console.warn('the open chat could not be kept:', error); }
+  },
+};
+
 async function start() {
   const session = createSession({ fetch: globalThis.fetch });
   // Every request of the page goes through the renewal, also those of modules that call fetch themselves.
@@ -256,6 +266,7 @@ async function start() {
         view.scrollToBottom();
         refreshStatus();
       });
+      openChatKept.write(id);
       return true;
     } catch (error) {
       console.warn('the chat could not be opened:', error);
@@ -495,7 +506,11 @@ async function start() {
     live.showInLane(view.liveLane());
   }
   live.start();
-  chats.refresh().then(() => chats.opened(opening.chatId), warn('the chat list could not be read'));
+  chats.refresh().then(() => {
+    chats.opened(opening.chatId);
+    const kept = openChatKept.read();
+    if (kept !== opening.chatId && chats.items.some((chat) => chat.id === kept)) showChat(kept);
+  }, warn('the chat list could not be read'));
   agent.watch?.((snapshot) => {
     turn.restore(snapshot);
     workspace.refresh();

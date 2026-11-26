@@ -352,72 +352,89 @@ impl Store {
         })
     }
 
-    /// The taps in the chat that no message has told Jet of yet, oldest first.
-    pub(crate) fn unannounced_taps(&self, chat: ChatId) -> Result<Vec<Tapped>, StoreError> {
+    /// The taps in the chat that no message has told Jet of yet, oldest first, marked as told in
+    /// the same transaction. A change that lands after this call finds them told, so it is told
+    /// again in its own line. The caller puts them back with `put_taps_back` if its send fails.
+    pub(crate) fn take_taps(&self, chat: ChatId) -> Result<Vec<Tapped>, StoreError> {
         self.with(|db| {
-            let mut query = db.prepare(
-                "SELECT p.id, p.user_id, o.title FROM share_proposals p JOIN objectives o ON o.id = p.objective_id
-                 WHERE p.chat_id = ?1 AND p.state = 'applied' AND p.announced = 0 ORDER BY p.applied_at, p.id",
-            )?;
-            let taps = query
-                .query_map([chat.0], |row| {
-                    Ok((ProposalId(row.get(0)?), UserId(row.get(1)?), row.get::<_, String>(2)?))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            let mut told = taps
-                .into_iter()
-                .map(|(id, owner, title)| {
-                    let card = card(db, owner, id)?.expect("a proposal of its own owner exists");
-                    let people = card.people.into_iter().filter(|person| person.ticked).map(|person| person.name);
-                    let teams = card
-                        .teams
-                        .into_iter()
-                        .filter(|team| team.ticked)
-                        .map(|team| format!("the {} team", team.name));
-                    let names: Vec<_> = people.chain(teams).collect();
-                    let who = match names.as_slice() {
-                        [] => "nobody".to_owned(),
-                        names => names.join(" and "),
-                    };
-                    Ok(Tapped {
-                        id: TapId::Share(id),
-                        notice: format!(
-                            "[The user tapped Share on the card for \"{title}\": it is now shared with {who}.]"
-                        ),
-                    })
-                })
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            let mut pane = db.prepare(
-                "SELECT id, line FROM pane_taps WHERE chat_id = ?1 AND announced = 0 ORDER BY at, id",
-            )?;
-            let lines = pane.query_map([chat.0], |row| {
-                Ok(Tapped {
-                    id: TapId::Pane(row.get(0)?),
-                    notice: row.get(1)?,
-                })
-            })?;
-            for line in lines {
-                told.push(line?);
-            }
+            let tx = db.transaction()?;
+            let told = unannounced(&tx, chat)?;
+            set_announced(&tx, &told, 1)?;
+            tx.commit()?;
             Ok(told)
         })
     }
 
-    pub(crate) fn mark_taps_announced(&self, ids: &[TapId]) -> Result<(), StoreError> {
-        self.with(|db| {
-            for id in ids {
-                let (table, id) = match id {
-                    TapId::Share(id) => ("share_proposals", id.0),
-                    TapId::Pane(id) => ("pane_taps", *id),
-                };
-                db.execute(
-                    &format!("UPDATE {table} SET announced = 1 WHERE id = ?1"),
-                    [id],
-                )?;
-            }
-            Ok(())
-        })
+    /// Makes the taps wait again after the send that took them failed.
+    pub(crate) fn put_taps_back(&self, taps: &[Tapped]) -> Result<(), StoreError> {
+        self.with(|db| set_announced(db, taps, 0))
     }
+}
+
+fn unannounced(db: &Connection, chat: ChatId) -> rusqlite::Result<Vec<Tapped>> {
+    let mut query = db.prepare(
+        "SELECT p.id, p.user_id, o.title FROM share_proposals p JOIN objectives o ON o.id = p.objective_id
+         WHERE p.chat_id = ?1 AND p.state = 'applied' AND p.announced = 0 ORDER BY p.applied_at, p.id",
+    )?;
+    let taps = query
+        .query_map([chat.0], |row| {
+            Ok((
+                ProposalId(row.get(0)?),
+                UserId(row.get(1)?),
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut told = taps
+        .into_iter()
+        .map(|(id, owner, title)| {
+            let card = card(db, owner, id)?.expect("a proposal of its own owner exists");
+            let people = card.people.into_iter().filter(|person| person.ticked).map(|person| person.name);
+            let teams = card
+                .teams
+                .into_iter()
+                .filter(|team| team.ticked)
+                .map(|team| format!("the {} team", team.name));
+            let names: Vec<_> = people.chain(teams).collect();
+            let who = match names.as_slice() {
+                [] => "nobody".to_owned(),
+                names => names.join(" and "),
+            };
+            Ok(Tapped {
+                id: TapId::Share(id),
+                notice: format!(
+                    "[The user tapped Share on the card for \"{title}\": it is now shared with {who}.]"
+                ),
+            })
+        })
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut pane = db.prepare(
+        "SELECT id, line FROM pane_taps WHERE chat_id = ?1 AND announced = 0 ORDER BY at, id",
+    )?;
+    let lines = pane.query_map([chat.0], |row| {
+        Ok(Tapped {
+            id: TapId::Pane(row.get(0)?),
+            notice: row.get(1)?,
+        })
+    })?;
+    for line in lines {
+        told.push(line?);
+    }
+    Ok(told)
+}
+
+fn set_announced(db: &Connection, taps: &[Tapped], announced: i64) -> rusqlite::Result<()> {
+    for tap in taps {
+        let (table, id) = match tap.id {
+            TapId::Share(id) => ("share_proposals", id.0),
+            TapId::Pane(id) => ("pane_taps", id),
+        };
+        db.execute(
+            &format!("UPDATE {table} SET announced = ?2 WHERE id = ?1"),
+            params![id, announced],
+        )?;
+    }
+    Ok(())
 }
 
 fn owns(db: &Connection, owner: UserId, objective: ObjectiveId) -> rusqlite::Result<bool> {

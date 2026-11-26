@@ -39,6 +39,8 @@ pub(crate) struct Chats {
 #[derive(Default)]
 struct Open {
     chats: HashMap<ChatId, Arc<ChatState>>,
+    /// Held by the request that opens a chat, so two requests never recover the same chat twice.
+    opening: HashMap<ChatId, Arc<Mutex<()>>>,
     /// One feed of events for each user, for all of the user's chats.
     feeds: HashMap<UserId, Arc<Mutex<Feed>>>,
     /// Held while a user's notes review runs, so that only one review of the notes runs at a time.
@@ -183,7 +185,11 @@ impl Chats {
                 return Err(error.into());
             }
         };
-        lock(&self.open).chats.remove(&id);
+        {
+            let mut open = lock(&self.open);
+            open.chats.remove(&id);
+            open.opening.remove(&id);
+        }
         self.chats_changed(user, Some(id));
         // Its objectives are dropped and in the main chat now, which the pane shows differently,
         // and the files only that chat held went with it.
@@ -352,13 +358,21 @@ impl Chats {
     }
 
     /// The runtime of the chat, opened the first time it is asked for. Opening marks the replies
-    /// that a stopped server left unfinished.
+    /// that a stopped server left unfinished, which takes a while for a long thread, so it runs
+    /// while only the requests for this chat wait.
     pub(crate) fn runtime(self: &Arc<Self>, chat: Chat) -> Result<Arc<ChatState>, BridgeError> {
-        let mut open = lock(&self.open);
-        if open.closing {
-            return Err(BridgeError::ShuttingDown);
-        }
-        if let Some(runtime) = open.chats.get(&chat.id) {
+        let gate = {
+            let mut open = lock(&self.open);
+            if open.closing {
+                return Err(BridgeError::ShuttingDown);
+            }
+            if let Some(runtime) = open.chats.get(&chat.id) {
+                return Ok(runtime.clone());
+            }
+            open.opening.entry(chat.id).or_default().clone()
+        };
+        let _opening = lock(&gate);
+        if let Some(runtime) = lock(&self.open).chats.get(&chat.id) {
             return Ok(runtime.clone());
         }
         let memory = ChatMemory {
@@ -367,6 +381,14 @@ impl Chats {
         };
         let conversation = Conversation::new(Arc::new(memory));
         conversation.recover_interrupted()?;
+        let mut open = lock(&self.open);
+        if open.closing {
+            return Err(BridgeError::ShuttingDown);
+        }
+        // A request that read the chat before it was deleted must not open it again.
+        if self.store.chat(chat.user, chat.id)?.is_none() {
+            return Err(no_such_chat());
+        }
         let feed = open.feeds.entry(chat.user).or_default().clone();
         let runtime = ChatState::new(self, chat, conversation, feed);
         open.chats.insert(runtime.chat.id, runtime.clone());
@@ -433,6 +455,7 @@ mod tests {
     use super::*;
     use crate::store::test_store;
     use agent::{McpConnection, NewEntry, Role, TurnIdentity};
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::super::TurnOwner;
 
@@ -444,6 +467,17 @@ mod tests {
         fn colleague_text_read(&self, _: TurnOwner, _: &str, _: bool) {}
         fn revoke(&self, _: TurnOwner, _: &str) {}
         fn shutdown(&self) {}
+    }
+
+    fn test_chats(dir: &tempfile::TempDir, store: &Store) -> Arc<Chats> {
+        Chats::new(
+            store.clone(),
+            Arc::new(NoTools),
+            Files::new(store.clone()),
+            dir.path().into(),
+            Duration::ZERO,
+            Signals::default(),
+        )
     }
 
     #[test]
@@ -493,5 +527,46 @@ mod tests {
             0,
             "and never passes the newest entry"
         );
+    }
+
+    /// A request that read its chat row just before the delete committed gets no runtime for it.
+    #[test]
+    fn a_deleted_chat_gets_no_runtime_from_a_late_request() {
+        let (dir, store, ada, _) = test_store();
+        let chats = test_chats(&dir, &store);
+        let topic = chats.add(ada, None).unwrap();
+        let found = store.chat(ada, topic.id).unwrap().unwrap();
+        chats.delete(ada, topic.id).unwrap();
+        assert!(
+            chats.runtime(found).is_err(),
+            "a deleted chat gets no runtime"
+        );
+        assert!(chats.open_chat(topic.id).is_none());
+    }
+
+    /// While ada's chat is being opened, bob's lookup is not held up.
+    #[test]
+    fn opening_a_chat_does_not_hold_up_another_users_lookup() {
+        let (dir, store, ada, bob) = test_store();
+        let chats = test_chats(&dir, &store);
+        let topic = chats.add(ada, None).unwrap().id;
+        // Holding the chat's opening gate is what a slow recovery of its thread looks like.
+        let gate = lock(&chats.open).opening.entry(topic).or_default().clone();
+        let opening = lock(&gate);
+        let opened = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                chats.chat(ada, Some(topic)).unwrap();
+                opened.store(true, Ordering::SeqCst);
+            });
+            chats.main(bob).unwrap();
+            assert!(
+                !opened.load(Ordering::SeqCst),
+                "ada's chat is still opening"
+            );
+            drop(opening);
+        });
+        assert!(opened.load(Ordering::SeqCst));
+        assert!(chats.open_chat(topic).is_some());
     }
 }

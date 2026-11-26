@@ -269,44 +269,36 @@ impl ChatState {
         // One fewer than a snapshot shows, because the new user entry is added to these.
         let history = self.conversation.history(SHOWN_HISTORY - 1)?;
         let transport = transport?;
-        let attachments = self.attach(&request.attachments)?;
         let target = ReviewTarget {
             transport: transport.clone(),
             name: request.persona.name.clone(),
         };
-        let taps = self.store.unannounced_taps(self.chat.id)?;
-        let sent_files = !attachments.is_empty();
-        let (identity, mut message) = self.bind_new_turn(request, payload, attachments);
-        message.notices.extend(taps.iter().map(Tapped::notice));
-        // The user's message stops a running check and holds the chat's checks back before the
-        // check-ins are read, so a check-in is either read here or never posted.
+        let fresh_files = self.unsent_files(&request.attachments)?;
+        // Taken here, before the send, so a change that lands meanwhile is told in a line of its own.
+        let taps = self.store.take_taps(self.chat.id)?;
+        let sent_files = !request.attachments.is_empty();
+        let request_id = request.request_id.clone();
         let hub = self.hub.upgrade();
+        let sent = self.start_send(transport, request, payload, &taps, hub.as_ref());
+        let (identity, user, reply) = match sent {
+            Ok(sent) => sent,
+            Err(error) => {
+                self.tools.revoke(self.owner(), &request_id);
+                if let Some(hub) = &hub {
+                    hub.signals.reply_ended(self.chat.id);
+                }
+                // The failed send left no message, so its taps wait again and its files are unsent.
+                let taps_back = self.store.put_taps_back(&taps);
+                let files_back = self
+                    .store
+                    .unattach_files(self.user(), self.chat.id, &fresh_files);
+                taps_back.and(files_back)?;
+                return Err(error);
+            }
+        };
         if let (true, Some(hub)) = (sent_files, &hub) {
             hub.pane_changed(self.user());
         }
-        let stop_holding = || {
-            if let Some(hub) = &hub {
-                hub.signals.reply_ended(self.chat.id);
-            }
-        };
-        if let Some(hub) = &hub {
-            hub.signals.user_wrote(self.chat.id);
-        }
-        let (unseen, heard_colleague) = self.unseen_check_ins().inspect_err(|_| stop_holding())?;
-        message.notices.extend(unseen);
-        if let Some(item) = heard_colleague {
-            self.tools
-                .colleague_text_read(self.owner(), &identity.request_id, item);
-        }
-        let (user, reply) = self
-            .conversation
-            .send(transport, message, Some(identity.clone()))
-            .inspect_err(|_| {
-                self.tools.revoke(self.owner(), &identity.request_id);
-                stop_holding();
-            })?;
-        let told: Vec<_> = taps.iter().map(|tap| tap.id).collect();
-        self.store.mark_taps_announced(&told)?;
         let identity = TurnContext::from(&identity);
         let accepted = Accepted {
             turn_id: identity.turn_id.clone(),
@@ -317,6 +309,36 @@ impl ChatState {
         self.begin(&mut runtime, active, reply, history, target);
         self.title_from(&text);
         Ok(accepted)
+    }
+
+    /// Attaches the files, binds the turn and starts the conversation's send. Any error means no
+    /// user message was saved.
+    fn start_send(
+        &self,
+        transport: Arc<dyn Transport>,
+        request: SendRequest,
+        payload: Value,
+        taps: &[Tapped],
+        hub: Option<&Arc<Chats>>,
+    ) -> Result<(TurnIdentity, ShownEntry, Reply), BridgeError> {
+        let attachments = self.attach(&request.attachments)?;
+        let (identity, mut message) = self.bind_new_turn(request, payload, attachments);
+        message.notices.extend(taps.iter().map(Tapped::notice));
+        // The user's message stops a running check and holds the chat's checks back before the
+        // check-ins are read, so a check-in is either read here or never posted.
+        if let Some(hub) = hub {
+            hub.signals.user_wrote(self.chat.id);
+        }
+        let (unseen, heard_colleague) = self.unseen_check_ins()?;
+        message.notices.extend(unseen);
+        if let Some(item) = heard_colleague {
+            self.tools
+                .colleague_text_read(self.owner(), &identity.request_id, item);
+        }
+        let (user, reply) = self
+            .conversation
+            .send(transport, message, Some(identity.clone()))?;
+        Ok((identity, user, reply))
     }
 
     /// One line for each check-in, and each entry of a colleague's words, that the provider
@@ -584,6 +606,18 @@ impl ChatState {
         if let Some(hub) = self.hub.upgrade() {
             hub.signals.reply_ended(self.chat.id);
         }
+    }
+
+    /// The ids among `ids` whose files this send would be the first to send.
+    fn unsent_files(&self, ids: &[String]) -> Result<Vec<String>, BridgeError> {
+        let mut unsent: Vec<String> = Vec::new();
+        for id in ids {
+            let about = self.store.file_about(self.user(), id)?;
+            if !unsent.contains(id) && about.is_some_and(|about| !about.attached) {
+                unsent.push(id.clone());
+            }
+        }
+        Ok(unsent)
     }
 
     /// Makes the uploads visible to Jet and gives their details for the message. A bad id leaves

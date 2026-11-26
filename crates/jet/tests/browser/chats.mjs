@@ -150,9 +150,17 @@ if (/^facade:/m.test(input)) {
   await target.getByRole('button', { name: 'Rename Taxes' }).click();
   await target.locator('.chat-rename').fill('Tax return 2026');
   await shoot('1280-3-rename.png');
+  // Escape in the field only ends the rename: the page's own Escape (which stops a reply) never sees it, and the focus returns to the row.
+  await page.evaluate(() => { window.escapes = 0; document.addEventListener('keydown', event => { if (event.key === 'Escape') window.escapes += 1; }); });
+  await target.locator('.chat-rename').press('Escape');
+  assert.equal(await page.evaluate(() => window.escapes), 0, 'Escape in the rename field must not reach the page');
+  assert.equal(await page.evaluate(() => document.activeElement?.closest('.chat-row')?.dataset.chatId), String(taxes.id), 'the focus stays on the row after Escape');
+  await target.getByRole('button', { name: 'Rename Taxes' }).click();
+  await target.locator('.chat-rename').fill('Tax return 2026');
   await target.locator('.chat-rename').press('Enter');
   await until(async () => (await get('/api/chats')).some(chat => chat.title === 'Tax return 2026'), 'the new title must be saved');
   await until(async () => (await row('Tax return 2026').count()) === 1, 'the row must show the new title');
+  assert.equal(await page.evaluate(() => document.activeElement?.closest('.chat-row')?.dataset.chatId), String(taxes.id), 'the focus stays on the row after Enter');
 
   // Delete asks a second tap on the same row.
   const doomed = page.locator(`.chat-row[data-chat-id="${taxes.id}"]`);
@@ -163,6 +171,14 @@ if (/^facade:/m.test(input)) {
   await doomed.getByRole('button', { name: /for good/ }).click();
   await until(async () => (await row('Tax return 2026').count()) === 0, 'the second tap must delete the chat');
   assert.equal((await get('/api/chats')).length, 4);
+  assert.equal(await page.evaluate(() => document.activeElement?.closest('.chat-row')?.dataset.kind), 'main', 'the focus goes to the main chat after a delete');
+
+  // A reload comes back to the chat that was open.
+  await row('Which sails do I need').locator('.chat-open').click();
+  await until(async () => await row('Which sails do I need').locator('.chat-open').getAttribute('aria-current') === 'true', 'the chat must open');
+  await page.reload();
+  await page.locator('#loading').waitFor({ state: 'detached' });
+  await until(async () => await row('Which sails do I need').locator('.chat-open').getAttribute('aria-current') === 'true', 'a reload must reopen the chat that was open');
 
   // Deleting the open chat shows the main chat.
   await row('Which sails do I need').locator('.chat-delete').click();

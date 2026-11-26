@@ -15,6 +15,8 @@ use std::time::Duration;
 use serde_json::json;
 
 const ARGS_FILE: &str = "fake-claude-args.json";
+/// The command line as the program received it, before the config files are read.
+const ARGV_FILE: &str = "fake-claude-argv.json";
 const ENV_FILE: &str = "fake-claude-env.json";
 const PID_FILE: &str = "fake-claude-pid";
 /// One line for each run, the way the Python stand-in counts them.
@@ -33,7 +35,17 @@ fn main() -> ExitCode {
 }
 
 fn run() -> io::Result<ExitCode> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    std::fs::write(ARGV_FILE, json!(argv).to_string())?;
+    // Claude Code takes these two configs as files. The tests read what the files held.
+    let mut args = argv;
+    for at in 1..args.len() {
+        if matches!(args[at - 1].as_str(), "--mcp-config" | "--settings")
+            && let Ok(content) = std::fs::read_to_string(&args[at])
+        {
+            args[at] = content;
+        }
+    }
     std::fs::write(ARGS_FILE, json!(args).to_string())?;
     let claude_vars: BTreeMap<String, String> = std::env::vars_os()
         .map(|(name, value)| {

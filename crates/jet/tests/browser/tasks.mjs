@@ -522,6 +522,42 @@ try {
   await until(async () => (await titles(tp, 'today')).at(-1) === phoneToday[0], 'a long press and a drag moves the task down');
   assert.equal(await tp.locator('#tasks-content').evaluate((el) => el.scrollTop), scrolled, 'the list did not scroll under the finger');
   assert.equal(await tp.locator('#tasks-content .tl-field').count(), 0, 'and the drop opened nothing');
+  // A list long enough to scroll: a swipe on a row scrolls it and moves no task, a hold and a drag moves one with no scroll
+  // (above), and a second finger touching and lifting during a drag does not end it.
+  const fillers = [];
+  for (let i = 0; i < 40; i++) fillers.push((await api('POST', '/api/task-list/tasks', { title: `Filler ${i}`, day: 'later' })).changed);
+  await tp.reload();
+  await tp.locator('#loading').waitFor({ state: 'detached' });
+  await tp.locator('#tasks-content[aria-busy="false"]').waitFor();
+  const scroller = tp.locator('#tasks-content');
+  const sizes = await scroller.evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }));
+  assert.ok(sizes.scrollHeight > sizes.clientHeight, 'the list must overflow so a scroll can be seen');
+  const touchAt = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+  const swipeOrder = await titles(tp, 'today');
+  const swipeFrom = await boxOf(row(tp, swipeOrder.at(-1)).locator('.tl-title'));
+  const swipeStart = await scroller.evaluate((el) => el.scrollTop);
+  let swipeY = swipeFrom.y + swipeFrom.height / 2;
+  await touchAt('touchStart', [{ x: swipeFrom.x + 60, y: swipeY, id: 1 }]);
+  for (let step = 0; step < 25; step++) { swipeY -= 10; await touchAt('touchMove', [{ x: swipeFrom.x + 60, y: swipeY, id: 1 }]); await delay(16); }
+  await touchAt('touchEnd', []);
+  await until(async () => (await scroller.evaluate((el) => el.scrollTop)) > swipeStart, 'a swipe on a row scrolls the list');
+  assert.deepEqual(await titles(tp, 'today'), swipeOrder, 'and moves no task');
+  await scroller.evaluate((el) => { el.scrollTop = 0; });
+  await delay(300);
+  const heldRow = await boxOf(row(tp, swipeOrder[0]).locator('.tl-title'));
+  let heldY = heldRow.y + heldRow.height / 2;
+  const heldX = heldRow.x + 60;
+  await touchAt('touchStart', [{ x: heldX, y: heldY, id: 1 }]);
+  await delay(500);
+  for (let step = 0; step < 6; step++) { heldY += 8; await touchAt('touchMove', [{ x: heldX, y: heldY, id: 1 }]); await delay(16); }
+  assert.equal(await tp.locator('#tasks-content .tl-task.is-lifted').count(), 1, 'the row is lifted');
+  await touchAt('touchStart', [{ x: heldX, y: heldY, id: 1 }, { x: heldX + 120, y: heldY + 200, id: 2 }]);
+  await touchAt('touchEnd', [{ x: heldX + 120, y: heldY + 200, id: 2 }]);
+  await delay(300);
+  assert.equal(await tp.locator('#tasks-content .tl-task.is-lifted').count(), 1, 'a second finger lifted during a drag does not end it');
+  await touchAt('touchEnd', [{ x: heldX, y: heldY, id: 1 }]);
+  await until(async () => (await tp.locator('#tasks-content .tl-task.is-lifted').count()) === 0, 'the first finger lifting ends the drag');
+  for (const id of fillers) await api('DELETE', `/api/task-list/tasks/${id}`);
   await phone.context.close();
 
   // ---- The pile pages back: Show older loads the next hundred, with its loading and error states.

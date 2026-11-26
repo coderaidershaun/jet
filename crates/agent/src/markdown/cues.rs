@@ -70,7 +70,7 @@ pub(super) fn is_cue(raw: &str) -> bool {
 /// after it. With no later line, or when the next one is code, it joins the one before; a text of
 /// nothing but a cue stays as it is. Lines of code, fenced or indented, never change.
 pub(super) fn inline_cues(text: &str) -> String {
-    let mut lines: Vec<Line> = text
+    let lines: Vec<Line> = text
         .split('\n')
         .zip(code_lines(text))
         .map(|(text, is_code)| Line {
@@ -78,33 +78,67 @@ pub(super) fn inline_cues(text: &str) -> String {
             is_code,
         })
         .collect();
-    let mut at = 0;
-    while at < lines.len() {
-        if !lines[at].is_code && only_cues(&lines[at].text) {
-            if let Some(next) = next_words(&lines, at) {
-                lines[next].text = format!(
-                    "{} {}",
-                    lines[at].text.trim(),
-                    lines[next].text.trim_start()
-                );
-                lines.drain(at..next);
-                continue;
+    let mut done: Vec<Line> = Vec::with_capacity(lines.len());
+    // The lines of only cues waiting for the next line with words, joined as they come, and the
+    // blank lines after them, which go if the cues join forward and stay if they join back.
+    let mut cues: Option<String> = None;
+    let mut blanks: Vec<Line> = Vec::new();
+    for line in lines {
+        match cues.take() {
+            None if !line.is_code && only_cues(&line.text) => cues = Some(line.text),
+            None => done.push(line),
+            Some(waiting) if line.text.trim().is_empty() => {
+                cues = Some(waiting);
+                blanks.push(line);
             }
-            if let Some(before) = previous_words(&lines, at) {
-                lines[before].text = format!(
-                    "{} {}",
-                    lines[before].text.trim_end(),
-                    lines[at].text.trim()
-                );
-                lines.drain(before + 1..=at);
-                at = before + 1;
-                continue;
+            Some(mut waiting) if !line.is_code && only_cues(&line.text) => {
+                join_cues(&mut waiting, &line.text);
+                cues = Some(waiting);
+            }
+            Some(waiting) if !line.is_code => {
+                blanks.clear();
+                done.push(Line {
+                    text: format!("{} {}", waiting.trim(), line.text.trim_start()),
+                    is_code: false,
+                });
+            }
+            Some(waiting) => {
+                place_cues(&mut done, waiting);
+                done.append(&mut blanks);
+                done.push(line);
             }
         }
-        at += 1;
     }
-    let texts: Vec<String> = lines.into_iter().map(|line| line.text).collect();
+    if let Some(waiting) = cues {
+        place_cues(&mut done, waiting);
+        done.append(&mut blanks);
+    }
+    let texts: Vec<String> = done.into_iter().map(|line| line.text).collect();
     texts.join("\n")
+}
+
+/// Adds one more line of cues to the cues that wait, with one space between.
+fn join_cues(waiting: &mut String, next: &str) {
+    let kept = waiting.trim_end().len();
+    waiting.truncate(kept);
+    waiting.push(' ');
+    waiting.push_str(next.trim_start());
+}
+
+/// Joins cues that have no line with words after them onto the last line with words before them,
+/// dropping the blank lines between. With none, or when that line is code, they stay a line.
+fn place_cues(done: &mut Vec<Line>, cues: String) {
+    let before = done.iter().rposition(|line| !line.text.trim().is_empty());
+    match before {
+        Some(before) if !done[before].is_code => {
+            done[before].text = format!("{} {}", done[before].text.trim_end(), cues.trim());
+            done.truncate(before + 1);
+        }
+        _ => done.push(Line {
+            text: cues,
+            is_code: false,
+        }),
+    }
 }
 
 struct Line {
@@ -135,8 +169,13 @@ fn code_lines(text: &str) -> Vec<bool> {
     let mut is_code = vec![false; spans.len()];
     for (event, block) in Parser::new(&plain.join("\n")).into_offset_iter() {
         if let Event::Start(Tag::CodeBlock(_)) = event {
-            for (line, span) in spans.iter().enumerate() {
-                is_code[line] |= span.start < block.end && block.start < span.end;
+            // Lines are in order, so a block finds its first line by search instead of walking them all.
+            let first = spans.partition_point(|span| span.end <= block.start);
+            for line in first..spans.len() {
+                if spans[line].start >= block.end {
+                    break;
+                }
+                is_code[line] = true;
             }
         }
     }
@@ -156,18 +195,6 @@ pub(super) fn only_cues(line: &str) -> bool {
         rest = rest[cue.tag.len()..].trim_start();
     }
     true
-}
-
-/// The first line after `at` that is not blank, unless that line is code.
-fn next_words(lines: &[Line], at: usize) -> Option<usize> {
-    let next = (at + 1..lines.len()).find(|&i| !lines[i].text.trim().is_empty())?;
-    (!lines[next].is_code).then_some(next)
-}
-
-/// The last line before `at` that is not blank, unless that line is code.
-fn previous_words(lines: &[Line], at: usize) -> Option<usize> {
-    let before = (0..at).rev().find(|&i| !lines[i].text.trim().is_empty())?;
-    (!lines[before].is_code).then_some(before)
 }
 
 #[cfg(test)]
@@ -206,6 +233,24 @@ mod tests {
         ];
         for (text, joined) in cases {
             assert_eq!(inline_cues(text), joined, "{text:?}");
+        }
+    }
+
+    /// Each of these took seconds or minutes in a debug build when the work grew with the square of the input.
+    #[test]
+    fn long_replies_are_read_in_time_proportional_to_their_size() {
+        let fences = "```rust\nfn main() { println!(\"hi\"); }\n```\n\n".repeat(8000);
+        let cue_lines = "<sigh>\n\n".repeat(20000) + "End.";
+        for (name, text) in [("fences", fences), ("cue lines", cue_lines)] {
+            let started = std::time::Instant::now();
+            let read = inline_cues(&text);
+            assert!(!read.is_empty());
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(1),
+                "{name}: {} KB took {:?}",
+                text.len() / 1024,
+                started.elapsed()
+            );
         }
     }
 }

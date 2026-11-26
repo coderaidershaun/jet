@@ -400,7 +400,15 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
       try {
         await agent.send({ ...message, chatId: mine.chatId }, receive);
       } catch (error) {
-        if (active !== mine) return;
+        if (active !== mine) {
+          // Another page's message was accepted first and replaced this one on screen; the words wait in the hold rather than vanish.
+          if (mine.chatId === (agent.chatId?.() ?? null)) turn.hold(mine.text, mine.appId, mine.attachments);
+          else {
+            thread.addWarning(`A message to another chat was not sent: "${mine.text}"`);
+            paint();
+          }
+          return;
+        }
         const failure = {
           kind: error && error.kind ? error.kind : 'io',
           message: error && error.message ? error.message : 'The message could not be sent.',

@@ -532,17 +532,24 @@ impl Objectives {
                 .store
                 .list_task(user, id, &days)?
                 .ok_or(TaskListError::TaskGone)?;
+            let was = (before.started_at, before.done_at);
+            let (started_at, done_at) = edit.mark.map_or(was, |mark| mark.apply(was, self.now()));
+            let mut goal = edit.goal.unwrap_or(before.goal_id);
             if before.goal_id.is_some() {
-                self.told_in(user, before.goal_id)?;
+                match self.told_in(user, before.goal_id) {
+                    Ok(_) => {}
+                    // A done task of a closed goal can still be put back: it leaves the goal.
+                    Err(TaskListError::GoalClosed) if was.1.is_some() && done_at.is_none() => {
+                        goal = edit.goal.unwrap_or(None);
+                    }
+                    Err(error) => return Err(error),
+                }
             }
-            let goal = edit.goal.unwrap_or(before.goal_id);
             let (goal_title, chat) = match goal == before.goal_id {
                 true => (before.goal_title.clone(), before.chat_id),
                 false => self.told_in(user, goal)?,
             };
             let title = edit.title.as_deref().unwrap_or(&before.title);
-            let was = (before.started_at, before.done_at);
-            let (started_at, done_at) = edit.mark.map_or(was, |mark| mark.apply(was, self.now()));
             let now_in = Day::of(before.date.as_deref(), &days);
             let to = edit.day.unwrap_or(now_in);
             let is_move = edit.day.is_some() || edit.after.is_some();
@@ -733,6 +740,36 @@ mod tests {
     use super::*;
     use crate::store::test_store;
     use std::sync::Arc;
+
+    /// A send takes the waiting lines before it sends, so a task deleted while the send runs is
+    /// still told as deleted, and a failed send gives the lines back.
+    #[test]
+    fn a_delete_during_a_send_is_told_to_the_next_one() {
+        let (_dir, store, ada, _) = test_store();
+        let objectives = Objectives::new(store.clone(), Arc::new(|| 1_767_225_600));
+        let main = store.main_chat(ada).unwrap().id;
+        let add = TaskAdd {
+            title: "Call the bank".into(),
+            day: "today".into(),
+            goal_id: None,
+        };
+        let id = objectives.add_task(ada, add).unwrap().list.tasks[0].id;
+        let taken = store.take_taps(main).unwrap();
+        assert_eq!(taken.len(), 1, "the add is taken by the send");
+        objectives.delete_task(ada, id).unwrap();
+        let waiting = store.take_taps(main).unwrap();
+        assert_eq!(
+            waiting.len(),
+            1,
+            "the delete of a task Jet heard of waits for the next message"
+        );
+        store.put_taps_back(&waiting).unwrap();
+        assert_eq!(
+            store.take_taps(main).unwrap(),
+            waiting,
+            "a failed send gives its lines back"
+        );
+    }
 
     #[test]
     fn a_change_and_its_line_commit_together() {

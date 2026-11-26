@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 
-use super::process::launch;
+use super::process::{launch, spawn};
 use super::{Lines, Request, Transport, TransportError};
 use crate::chat::{Effort, Model};
-use args::args;
+use args::{TURN_TOKEN_ENV, args};
 
 #[derive(Debug, Clone)]
 pub struct CodexCli {
@@ -92,8 +92,11 @@ impl Transport for CodexCli {
                 command.env_remove(name);
             }
         }
-        let child = command.spawn().map_err(spawn_failed)?;
-        let lines = launch(child, &request.prompt);
+        if let Some(mcp) = &request.mcp {
+            command.env(TURN_TOKEN_ENV, &mcp.token);
+        }
+        let child = spawn(&mut command).map_err(spawn_failed)?;
+        let lines = launch(child, &request.prompt, ());
         let (sender, receiver) = mpsc::channel();
         let stopper = lines.stopper.clone();
         let watcher = stopper.clone();

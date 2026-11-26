@@ -8,8 +8,8 @@ import { numberOrNull } from '../chat/thread/cards/guard.js';
 import { directoryView, shareOf } from '../chat/thread/cards/share.js';
 import { shareCard } from '../chat/thread/cards/share-view.js';
 import { svgIcon } from './icons.js';
-import { dueWords, isoDay, keysOf, newCount, readPane, scopeOf } from './model.js';
-import { CONFIRM_MS, disarm, idleTaps, pressCancel, tapEnded } from './taps.js';
+import { dueWords, isoDay, keysOf, latestRecord, newCount, readPane, scopeOf } from './model.js';
+import { CONFIRM_MS, disarm, idleTaps, inOrder, pressCancel, tapEnded } from './taps.js';
 import { planNodes } from './view.js';
 import { STATE_NAMES, nextState, stepState } from '../tasklist/model.js';
 import { files } from '../chat/library/store.js';
@@ -49,7 +49,8 @@ export function createPlanPane({ shell, host, openChat, showFiles, titleOf }) {
   const overlay = matchMedia('(max-width: 1023px)');
   let desktopOpen = stored.read(OPEN_KEY) !== 'closed';
   let overlayOpen = false, wasModal = false;
-  let pane = null, problem = null, refreshNumber = 0, busy = false, armTimer = 0;
+  let pane = null, problem = null, refreshNumber = 0, armTimer = 0;
+  const inTurn = inOrder();
   // The chat that is open, and the main chat; in a chat that holds an objective the pane shows only that, unless the user swaps.
   let chatId = null, mainId = null, swapped = false, chatChanged = false;
   let taps = idleTaps;
@@ -157,17 +158,18 @@ export function createPlanPane({ shell, host, openChat, showFiles, titleOf }) {
    * One tap: the control stays where it is and keeps the focus while the call runs, then the whole pane is read
    * again. A failure stays on screen until a later tap works; a success is said aloud.
    */
-  async function tap(failure, call, el, done, focusAfter = el?.dataset.key) {
-    if (busy) return;
-    busy = true;
+  function tap(failure, call, el, done, focusAfter = el?.dataset.key) {
+    return inTurn(() => runTap(failure, call, el, done, focusAfter));
+  }
+
+  async function runTap(failure, call, el, done, focusAfter) {
     el?.setAttribute('aria-disabled', 'true');
     let error = null;
     try { await call(); } catch (caught) { error = caught ?? {}; }
     taps = tapEnded(failure, error);
-    said.textContent = error === null ? done : '';
+    said.textContent = error === null ? (typeof done === 'function' ? done() : done) : '';
     // Emptied first, so a second failure with the same words is announced again by the redraw.
     if (error !== null) alert.textContent = '';
-    busy = false;
     await refresh();
     if (!focusKey(error === null ? focusAfter : el?.dataset.key)) focusKey('heading-will');
   }
@@ -216,11 +218,24 @@ export function createPlanPane({ shell, host, openChat, showFiles, titleOf }) {
 
   const act = {
     // The box moves one step forward, gray to yellow to green, and a green one goes back to where it was, as in the task list.
+    // The target is worked out when the tap's turn comes, from the pane as the tap before it left it, so two quick taps move the box two steps.
     mark(step, el) {
-      const state = nextState({ state: stepState(step), startedAt: step.startedAt });
-      tap('The step could not be changed', () => requestJson(`/api/task-list/tasks/${step.id}`, { state }, 'PATCH'), el, `${step.title} is ${STATE_NAMES[state].toLowerCase()}`);
+      let words = '';
+      tap('The step could not be changed', async () => {
+        const now = latestRecord(pane, 'steps', step);
+        const state = nextState({ state: stepState(now), startedAt: now.startedAt });
+        await requestJson(`/api/task-list/tasks/${step.id}`, { state }, 'PATCH');
+        words = `${step.title} is ${STATE_NAMES[state].toLowerCase()}`;
+      }, el, () => words);
     },
-    flip: (objective, note, el) => tap('The note could not be changed', () => requestJson(`/api/objectives/${objective.id}/notes/${note.id}`, { private: !note.isPrivate }, 'PUT'), el, note.isPrivate ? 'The note is shared now' : 'The note is private now'),
+    flip(objective, note, el) {
+      let words = '';
+      tap('The note could not be changed', async () => {
+        const nowPrivate = !latestRecord(pane, 'notes', note).isPrivate;
+        await requestJson(`/api/objectives/${objective.id}/notes/${note.id}`, { private: nowPrivate }, 'PUT');
+        words = nowPrivate ? 'The note is private now' : 'The note is shared now';
+      }, el, () => words);
+    },
     snooze: (task, el) => tap('The check could not be snoozed', () => requestJson(`/api/tasks/${task.id}/snooze`, {}, 'POST'), el, numberOrNull(task.snoozeAt) === null ? 'Snoozed' : `Snoozed to ${dueWords(task.snoozeAt, pane?.timeZone ?? task.timeZone, new Date().getFullYear())}`),
     cancel(task, el) {
       const pressed = pressCancel(taps, task.id);

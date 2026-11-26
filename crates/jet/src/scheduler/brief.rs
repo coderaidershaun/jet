@@ -88,6 +88,7 @@ impl Scheduler {
                         .map(|step| StepFacts {
                             title: step.title.clone(),
                             done: step.done_at.is_some(),
+                            started: step.started_at.is_some(),
                             due: step.due.clone(),
                         })
                         .collect(),

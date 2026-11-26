@@ -83,7 +83,7 @@ fn codex_stream_resume_schema_usage_tool_results_and_terminal_errors() {
     }
     for setting in [
         "mcp_servers.jet.url=\"http://127.0.0.1:4321/mcp\"".to_owned(),
-        "mcp_servers.jet.http_headers.x-jet-turn=\"turn-token\"".to_owned(),
+        "mcp_servers.jet.env_http_headers.x-jet-turn=\"JET_TURN_TOKEN\"".to_owned(),
         format!(
             "mcp_servers.jet.enabled_tools={}",
             json!(agent::FACADE_TOOLS)
@@ -106,6 +106,10 @@ fn codex_stream_resume_schema_usage_tool_results_and_terminal_errors() {
         .map(String::from),
     );
     assert_eq!(args, expected);
+    assert!(
+        args.iter().all(|arg| !arg.contains("turn-token")),
+        "every account on the machine can read the command line"
+    );
     for (prompt, expected) in [("context-usage", 42), ("context-overflow", u64::MAX)] {
         let Step::Finished(summary) = Turn::start(&cli, &request(prompt)).unwrap().last().unwrap()
         else {

@@ -18,13 +18,15 @@ use std::sync::{
     Arc, Condvar, Mutex, PoisonError, Weak,
     atomic::{AtomicBool, Ordering},
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// How long a colleague's item waits for an answer before it expires.
 const ITEM_LIFETIME: Duration = Duration::from_secs(14 * 24 * 60 * 60);
 
 /// The longest the scheduler sleeps when no task is due sooner.
 const LONGEST_SLEEP: Duration = Duration::from_secs(60);
+/// How long the database may stay locked by another process before the checks pause.
+const BUSY_LIMIT: Duration = Duration::from_secs(5 * 60);
 
 /// What tells the scheduler that something changed, and what lets a user's message stop the check
 /// that runs in the same chat.
@@ -241,25 +243,41 @@ impl Scheduler {
 
     fn run(&self) -> Result<(), Paused> {
         self.recover().map_err(Paused)?;
+        let mut busy_since = None;
         while !self.stopping.load(Ordering::SeqCst) {
-            let now = (self.clock)();
-            self.expire_items(now).map_err(Paused)?;
-            purge_task_list(&self.store, &self.chats, now);
-            let ran = self.run_oldest_due(now).map_err(Paused)?;
-            if !ran {
-                self.signals.wait(self.sleep(now).map_err(Paused)?);
+            match self.pass() {
+                Ok(()) => busy_since = None,
+                // Another process holds the database's write lock. It lets go in time, so the
+                // pass is tried again; a lock that never ends pauses the checks.
+                Err(error)
+                    if error.is_busy()
+                        && busy_since.get_or_insert_with(Instant::now).elapsed() < BUSY_LIMIT =>
+                {
+                    self.signals.wait(self.poll);
+                }
+                Err(error) => return Err(Paused(error)),
             }
         }
         Ok(())
     }
 
-    /// Ends the colleague items nobody answered in two weeks, and tells their senders' panes.
+    /// One look at the work: expiries, purges, the oldest due check, and a sleep when none ran.
+    fn pass(&self) -> Result<(), StoreError> {
+        let now = (self.clock)();
+        self.expire_items(now)?;
+        purge_task_list(&self.store, &self.chats, now);
+        if !self.run_oldest_due(now)? {
+            self.signals.wait(self.sleep(now)?);
+        }
+        Ok(())
+    }
+
+    /// Ends the colleague items nobody answered in two weeks, and tells the panes of their senders
+    /// and recipients.
     fn expire_items(&self, now: u64) -> Result<(), StoreError> {
-        let senders = self.store.expire_items(now, ITEM_LIFETIME.as_secs())?;
+        let told = self.store.expire_items(now, ITEM_LIFETIME.as_secs())?;
         if let Some(chats) = self.chats.upgrade() {
-            senders
-                .into_iter()
-                .for_each(|user| chats.pane_changed(user));
+            told.into_iter().for_each(|user| chats.pane_changed(user));
         }
         Ok(())
     }

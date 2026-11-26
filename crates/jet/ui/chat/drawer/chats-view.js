@@ -44,19 +44,24 @@ export function createChatsView({ list, titleEl, newButton, chats, open, announc
     input.select();
   }
 
-  function endRename(chat, input, save) {
+  /** A rename ended by the keyboard hands focus back to the row's title button (the actions are hidden until the row has focus or the pointer); one ended by a click elsewhere keeps the focus where the click put it. */
+  function endRename(chat, input, save, refocus = false) {
     if (renaming !== chat.id) return;
     renaming = null;
     const title = input.value.trim();
     if (save && title !== '' && title !== chat.title) chats.rename(chat.id, title).catch(problem('The chat could not be renamed'));
     paint();
+    if (refocus) list.querySelector(`[data-chat-id="${chat.id}"] .chat-open`)?.focus();
   }
 
   function renameInput(chat) {
     const input = h('input', { class: 'chat-rename', type: 'text', value: chat.title, maxlength: TITLE_LIMIT, 'aria-label': 'Chat title', enterkeyhint: 'done' });
     input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') endRename(chat, input, true);
-      else if (event.key === 'Escape') endRename(chat, input, false);
+      if (event.key !== 'Enter' && event.key !== 'Escape') return;
+      // The page's own Escape handler stops a running reply; this key belongs to the field.
+      event.preventDefault();
+      event.stopPropagation();
+      endRename(chat, input, event.key === 'Enter', true);
     });
     input.addEventListener('blur', () => endRename(chat, input, true));
     return input;
@@ -75,6 +80,7 @@ export function createChatsView({ list, titleEl, newButton, chats, open, announc
     confirming = null;
     chats.remove(chat.id).catch(problem('The chat could not be deleted'));
     paint();
+    list.querySelector('[data-kind="main"] .chat-open')?.focus();
   }
 
   function actions(chat) {
@@ -116,6 +122,7 @@ export function createChatsView({ list, titleEl, newButton, chats, open, announc
     titleEl.textContent = chats.items.find((chat) => chat.id === chats.openId)?.title ?? '';
     showUnread(chats.items.reduce((sum, chat) => sum + chat.unread, 0));
     repainting = true;
+    const focusedRow = list.contains(document.activeElement) ? document.activeElement.closest('.chat-row')?.dataset.chatId : undefined;
     const shown = chats.items.map((chat) => {
       const look = [chat.title, chat.unread, chat.kind, chat.id === chats.openId, renaming === chat.id, confirming === chat.id].join('|');
       const kept = rows.get(chat.id);
@@ -126,6 +133,8 @@ export function createChatsView({ list, titleEl, newButton, chats, open, announc
     });
     for (const id of rows.keys()) if (!shown.some((made) => rows.get(id) === made)) rows.delete(id);
     list.replaceChildren(...shown.map((made) => made.el));
+    // A row that is drawn again must not take the keyboard's place with it.
+    if (focusedRow !== undefined && !list.contains(document.activeElement)) list.querySelector(`[data-chat-id="${focusedRow}"] .chat-open`)?.focus();
     repainting = false;
   }
 

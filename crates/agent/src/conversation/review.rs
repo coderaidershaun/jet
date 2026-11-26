@@ -205,14 +205,14 @@ pub fn review_chats(
     let mut marks = Vec::new();
     for source in &sources {
         let saved = &source.chat.conversation.saved;
-        let Some(session) = saved.session()? else {
+        if saved.session()?.is_none() {
             return nothing(ReviewOutcome::Stale);
-        };
+        }
         let thread = saved.entries()?;
         let Some(last_read) = source.pending.last().filter(|last| thread.contains(last)) else {
             return nothing(ReviewOutcome::Stale);
         };
-        marks.push((session, last_read.id));
+        marks.push(last_read.id);
     }
     if lead.saved.notes()? != before {
         return nothing(ReviewOutcome::Stale);
@@ -222,10 +222,11 @@ pub fn review_chats(
     } else {
         ReviewOutcome::Unchanged
     };
-    for (source, (mut session, last_read)) in sources.iter().zip(marks) {
-        session.reviewed_through = last_read;
-        session.reviewed_at = now_ms();
-        source.chat.conversation.saved.save_session(&session)?;
+    for (source, last_read) in sources.iter().zip(marks) {
+        source.chat.conversation.saved.update_session(|session| {
+            session.reviewed_through = last_read;
+            session.reviewed_at = now_ms();
+        })?;
     }
     Ok(Review {
         outcome,
@@ -773,6 +774,116 @@ mod tests {
         assert!(
             text.contains("[chat: Quiet]\nuser: the newest talk"),
             "{text}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod session_writers {
+    use super::super::memory::{InMemory, NewEntry, Storage};
+    use super::*;
+    use crate::chat::{Entry, SessionId};
+    use crate::turn::scripted::{Script, Scripted, structured_result_line};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    /// Reads the session as usual, but holds the third read open for a moment, which is the
+    /// review's read just before it writes its marks back.
+    struct SlowThirdRead {
+        inner: InMemory,
+        reads: AtomicUsize,
+        reading: Arc<AtomicBool>,
+    }
+    impl Storage for SlowThirdRead {
+        fn entries(&self) -> Result<Vec<Entry>, MemoryError> {
+            self.inner.entries()
+        }
+        fn last_entries(&self, limit: usize) -> Result<Vec<Entry>, MemoryError> {
+            self.inner.last_entries(limit)
+        }
+        fn add_entry(&self, entry: NewEntry, at: u64) -> Result<Entry, MemoryError> {
+            self.inner.add_entry(entry, at)
+        }
+        fn replace_entry(&self, entry: &Entry) -> Result<(), MemoryError> {
+            self.inner.replace_entry(entry)
+        }
+        fn forget_entries(&self, at: u64) -> Result<(), MemoryError> {
+            self.inner.forget_entries(at)
+        }
+        fn session(&self) -> Result<Option<Session>, MemoryError> {
+            let read = self.inner.session();
+            if self.reads.fetch_add(1, Ordering::SeqCst) == 2 {
+                self.reading.store(true, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(150));
+            }
+            read
+        }
+        fn save_session(&self, session: Option<&Session>) -> Result<(), MemoryError> {
+            self.inner.save_session(session)
+        }
+        fn notes(&self) -> Result<Notes, MemoryError> {
+            self.inner.notes()
+        }
+        fn save_notes(&self, notes: &Notes) -> Result<(), MemoryError> {
+            self.inner.save_notes(notes)
+        }
+    }
+
+    #[test]
+    fn a_session_saved_by_a_reply_during_the_review_is_kept() {
+        let reading = Arc::new(AtomicBool::new(false));
+        let storage = Arc::new(SlowThirdRead {
+            inner: InMemory::default(),
+            reads: AtomicUsize::new(0),
+            reading: reading.clone(),
+        });
+        let kite = storage
+            .add_entry(NewEntry::user_text("kites fly"), 1000)
+            .unwrap();
+        storage
+            .save_session(Some(&Session {
+                session_id: SessionId("before".into()),
+                ..Session::default()
+            }))
+            .unwrap();
+        let output =
+            serde_json::json!({"changed": true, "memory": "- kites", "user": "", "recent": ""});
+        let scripted = Scripted::new().then(Script::lines(vec![structured_result_line(&output)]));
+        let conversation = Conversation::new(storage.clone());
+        let chats = [ReviewedChat {
+            title: "Kites",
+            conversation: &conversation,
+        }];
+        let saved = conversation.saved.clone();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                while !reading.load(Ordering::SeqCst) {
+                    std::thread::yield_now();
+                }
+                saved
+                    .update_session(|session| {
+                        session.session_id = SessionId("from-the-reply".into())
+                    })
+                    .unwrap();
+            });
+            review_chats(
+                &scripted,
+                "Jet",
+                "Tuesday 2026-11-24 10:00, time zone America/New_York",
+                &chats,
+            )
+            .unwrap();
+        });
+        let kept = storage.inner.session().unwrap().unwrap();
+        assert_eq!(
+            kept.session_id,
+            SessionId("from-the-reply".into()),
+            "the reply's session survives"
+        );
+        assert_eq!(
+            kept.reviewed_through, kite.id,
+            "and the review's mark is kept too"
         );
     }
 }

@@ -107,6 +107,8 @@ pub(crate) struct Close<'a> {
     pub(crate) to_recipient: Option<NewEntry>,
     /// The reply card this tap sends, and the line Jet is told of the tap: both commit with the close.
     pub(crate) reply_card: Option<(ReplyCardId, ChatId, &'a str)>,
+    /// The line Jet is told when the user closes the item by cancelling its task.
+    pub(crate) tap: Tap<'a>,
 }
 
 #[derive(Debug)]
@@ -361,15 +363,16 @@ impl Store {
     }
 
     /// Ends the items that waited longer than `lifetime` seconds with no answer, and cancels the
-    /// tasks that would bring them up. Gives the senders, whose panes changed.
+    /// tasks that would bring them up. Gives the senders and the recipients, whose panes changed.
     pub(crate) fn expire_items(&self, now: u64, lifetime: u64) -> Result<Vec<UserId>, StoreError> {
         self.try_with(|db| {
             let tx = db.transaction()?;
             let (at, before) = (seconds(now), seconds(now.saturating_sub(lifetime)));
-            let senders = tx
+            let told = tx
                 .prepare(
-                    "SELECT DISTINCT from_user FROM inbox_items
-                     WHERE state IN ('sent', 'seen') AND sent_at <= ?1",
+                    "SELECT from_user FROM inbox_items WHERE state IN ('sent', 'seen') AND sent_at <= ?1
+                     UNION
+                     SELECT to_user FROM inbox_items WHERE state IN ('sent', 'seen') AND sent_at <= ?1",
                 )?
                 .query_map([before], |row| Ok(UserId(row.get(0)?)))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -385,7 +388,7 @@ impl Store {
                 params![before, at],
             )?;
             tx.commit()?;
-            Ok(senders)
+            Ok(told)
         })
     }
 
@@ -536,6 +539,7 @@ impl Store {
                  WHERE state = 'scheduled' AND id = (SELECT task_id FROM inbox_items WHERE id = ?1)",
                 params![close.item.0, at],
             )?;
+            insert_tap(&tx, close.recipient, close.tap, close.at)?;
             if let Some((card, chat, line)) = close.reply_card {
                 tx.execute(
                     "UPDATE reply_cards SET sent_at = ?3 WHERE id = ?1 AND user_id = ?2 AND sent_at IS NULL",

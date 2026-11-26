@@ -200,6 +200,10 @@ impl Store {
                  WHERE chat_id = ?1 AND status IN ('active', 'paused')",
                 params![chat.0, super::seconds(at)],
             )?;
+            transaction.execute(
+                "UPDATE pane_taps SET chat_id = ?2 WHERE chat_id = ?1 AND announced = 0",
+                params![chat.0, main],
+            )?;
             for table in ["objectives", "agent_tasks", "share_proposals"] {
                 transaction.execute(
                     &format!("UPDATE {table} SET chat_id = ?2 WHERE chat_id = ?1"),
@@ -420,5 +424,87 @@ mod tests {
         assert_eq!((first.id.number(), second.id.number()), (1, 2));
         assert_eq!(store.entries(topic, None).unwrap(), [second]);
         assert!(store.entries(main.id, None).unwrap().is_empty());
+    }
+
+    fn count(db: &rusqlite::Connection, table: &str) -> i64 {
+        db.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    /// The migration that gives chats AUTOINCREMENT, run by the real runner over a database that
+    /// holds rows of every table that references chats, keeps all of them.
+    #[test]
+    fn rebuilding_chats_for_autoincrement_keeps_every_row_that_references_a_chat() {
+        use crate::store::{MIGRATIONS, apply, migrate};
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = rusqlite::Connection::open(dir.path().join("jet.sqlite3")).unwrap();
+        db.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")
+            .unwrap();
+        let before_17 = MIGRATIONS.len() - 1;
+        for (index, sql) in MIGRATIONS[..before_17].iter().enumerate() {
+            apply(&mut db, sql, index + 1).unwrap();
+        }
+        db.execute_batch(
+            "INSERT INTO users (email, display_name, password_hash) VALUES ('ada@example.com', 'Ada', 'x');
+             INSERT INTO chats (id, user_id, kind, created_at) VALUES (1, 1, 'main', 1), (2, 1, 'topic', 2), (3, 1, 'topic', 3);
+             INSERT INTO entries (chat_id, id, entry) VALUES (2, 1, '{\"role\":\"user\",\"text\":\"hi\"}'), (3, 1, '{\"role\":\"user\",\"text\":\"yo\"}');
+             INSERT INTO notes (user_id, memory, about_user, recent) VALUES (1, 'm', 'u', 'r');
+             INSERT INTO objectives (id, user_id, chat_id, title, deliverable, start_date, due_date, created_at, updated_at)
+                 VALUES (1, 1, 2, 'Kite', 'A kite', '2026-11-01', '2026-12-01', 1, 1);
+             INSERT INTO pane_taps (user_id, chat_id, line, at) VALUES (1, 3, 'a line', 1);",
+        )
+        .unwrap();
+        let tables = ["chats", "entries", "notes", "objectives", "pane_taps"];
+        let before: Vec<_> = tables.iter().map(|table| count(&db, table)).collect();
+
+        migrate(&mut db).unwrap();
+
+        let after: Vec<_> = tables.iter().map(|table| count(&db, table)).collect();
+        assert_eq!(after, before, "the rebuild lost rows of {tables:?}");
+        db.execute("DELETE FROM chats WHERE id = 3", []).unwrap();
+        db.execute(
+            "INSERT INTO chats (user_id, kind, created_at) VALUES (1, 'topic', 4)",
+            [],
+        )
+        .unwrap();
+        let newest: i64 = db
+            .query_row("SELECT max(id) FROM chats", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(newest, 4, "a deleted chat's id is not given again");
+    }
+
+    /// A send that fails after it attached its files gives them back as unsent, and leaves the
+    /// files that an earlier message sent.
+    #[test]
+    fn unattaching_takes_back_only_the_files_it_is_given() {
+        use crate::files::{About, FileKind, Origin};
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let ada = user(&store, "ada@example.com");
+        let main = store.main_chat(ada).unwrap().id;
+        let upload = |at| About::new("a.txt".into(), FileKind::Text, b"x", Origin::Upload, at);
+        let (earlier, fresh) = (upload(1), upload(2));
+        for about in [&earlier, &fresh] {
+            store
+                .add_file(ada, None, about, b"x", (u64::MAX, u64::MAX))
+                .unwrap();
+        }
+        let (earlier_id, fresh_id) = (earlier.id.to_string(), fresh.id.to_string());
+        store.attach_files(ada, main, &[&earlier_id]).unwrap();
+        store.attach_files(ada, main, &[&fresh_id]).unwrap();
+        store
+            .unattach_files(ada, main, std::slice::from_ref(&fresh_id))
+            .unwrap();
+        let attached = |id: &str| store.file_about(ada, id).unwrap().unwrap().attached;
+        assert!(
+            attached(&earlier_id),
+            "an earlier message's file stays sent"
+        );
+        assert!(
+            !attached(&fresh_id),
+            "the failed send's file is unsent again"
+        );
     }
 }

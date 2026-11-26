@@ -69,3 +69,63 @@ fn shutdown_bounds_provider_and_review_cleanup() {
         "shutdown and restart must not start another review"
     );
 }
+
+/// Whether a process with this id is still running.
+fn running(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+#[test]
+fn a_provider_turns_own_child_does_not_outlive_the_host() {
+    let host = Host::start();
+    let dir = host.dir.path();
+    let program = dir.join("with-child.sh");
+    let pid_file = dir.join("grandchild.pid");
+    std::fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\nsleep 120 &\necho $! > {pid}.tmp\nmv {pid}.tmp {pid}\nwait\n",
+            pid = pid_file.display()
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    host.set_programs(json!({"claudePath": program}));
+    host.post("/api/chat/send", request("child"));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let grandchild = loop {
+        if let Ok(pid) = std::fs::read_to_string(&pid_file) {
+            break pid.trim().to_owned();
+        }
+        assert!(Instant::now() < deadline, "the provider did not start");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(running(&grandchild));
+
+    let mut host = host;
+    host.stop();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while running(&grandchild) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let left = running(&grandchild);
+    if left {
+        std::process::Command::new("kill")
+            .args(["-KILL", &grandchild])
+            .status()
+            .unwrap();
+    }
+    assert!(
+        !left,
+        "the provider's own child kept running after the host stopped"
+    );
+}

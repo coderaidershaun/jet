@@ -241,21 +241,25 @@ impl Server {
 
 async fn shutdown_signal() {
     #[cfg(unix)]
-    {
-        let terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
-        match terminate {
-            Ok(mut terminate) => tokio::select! {
-                result = tokio::signal::ctrl_c() => { if let Err(error) = result { eprintln!("jet: signal: {error}"); } }
-                _ = terminate.recv() => {}
-            },
-            Err(error) => {
-                eprintln!("jet: termination signal: {error}");
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
+    match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        Ok(mut terminate) => tokio::select! {
+            () = interrupted() => {}
+            _ = terminate.recv() => {}
+        },
+        Err(error) => {
+            eprintln!("jet: termination signal: {error}");
+            interrupted().await;
         }
     }
     #[cfg(not(unix))]
+    interrupted().await;
+}
+
+/// Returns when the user presses Ctrl-C. When the signal cannot be watched, it never returns,
+/// because a host that cannot hear a stop must keep running, not stop.
+async fn interrupted() {
     if let Err(error) = tokio::signal::ctrl_c().await {
         eprintln!("jet: signal: {error}");
+        std::future::pending::<()>().await;
     }
 }

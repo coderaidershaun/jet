@@ -9,6 +9,9 @@ use std::{
 /// Longest a request to the host may take before the test fails instead of hanging.
 const REQUEST_LIMIT: Duration = Duration::from_secs(30);
 
+/// How long a host gets to exit after SIGTERM before it is killed.
+const STOP_LIMIT: Duration = Duration::from_secs(10);
+
 pub const OWNER: &str = "shaunsurfing@gmail.com";
 /// Where a host started with `Host::start_logged` writes its error output, in its data directory.
 pub const LOG_FILE: &str = "stderr.log";
@@ -137,9 +140,58 @@ impl Host {
     pub fn signed_lines(&self) -> String {
         format!("Cookie: {}\r\nOrigin: {}\r\n", self.cookie, self.origin)
     }
+    /// Stops the host the way a service manager does: SIGTERM, and SIGKILL only when it has not
+    /// exited after `STOP_LIMIT`. Its provider children are stopped by its own shutdown.
+    pub fn stop(&mut self) {
+        let _ = Command::new("kill")
+            .args(["-TERM", &self.child.id().to_string()])
+            .stderr(Stdio::null())
+            .status();
+        let deadline = Instant::now() + STOP_LIMIT;
+        while self.child.try_wait().unwrap().is_none() {
+            if Instant::now() >= deadline {
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    /// Ends the host as a crash does, with no shutdown of its own, and then ends the provider
+    /// programs it had started, which a crash leaves running.
+    fn kill(&mut self) {
+        let pid = self.child.id().to_string();
+        // A stopped host cannot start another provider between the look and the kill.
+        let _ = Command::new("kill")
+            .args(["-STOP", &pid])
+            .stderr(Stdio::null())
+            .status();
+        let children = Command::new("pgrep")
+            .args(["-P", &pid])
+            .output()
+            .map(|found| String::from_utf8_lossy(&found.stdout).into_owned())
+            .unwrap_or_default();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        for child in children.split_whitespace() {
+            // Each provider runs in a process group of its own, named by its id.
+            let _ = Command::new("kill")
+                .args(["-KILL", "--", &format!("-{child}")])
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+    /// Kills the host and starts it again on the same data, as after a crash.
     pub fn restart(mut self) -> Self {
-        self.child.kill().unwrap();
-        self.child.wait().unwrap();
+        self.kill();
+        let dir = std::mem::replace(&mut self.dir, tempfile::tempdir().unwrap());
+        Self::launch(dir)
+    }
+    /// Kills the host, sets the clock to `seconds` while no host runs, and starts it again, so
+    /// that the old host cannot act in the gap.
+    pub fn restart_at(mut self, seconds: u64) -> Self {
+        self.kill();
+        self.set_clock(seconds);
         let dir = std::mem::replace(&mut self.dir, tempfile::tempdir().unwrap());
         Self::launch(dir)
     }
@@ -226,8 +278,7 @@ impl Host {
 }
 impl Drop for Host {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.stop();
     }
 }
 

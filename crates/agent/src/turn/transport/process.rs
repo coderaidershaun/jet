@@ -1,14 +1,47 @@
 //! Every provider needs the same prompt delivery, output readers and process cleanup.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::process::{Child, ExitStatus};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+use std::process::{Child, Command, ExitStatus};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use super::{Lines, Stopper, TransportError};
 
-pub(super) fn launch(mut child: Child, prompt: &str) -> Lines {
+/// Starts the provider in a process group of its own, so that stopping it also stops whatever it
+/// started.
+pub(super) fn spawn(command: &mut Command) -> io::Result<Child> {
+    #[cfg(unix)]
+    command.process_group(0);
+    command.spawn()
+}
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn kill(pid: i32, signal: i32) -> i32;
+}
+
+/// The signal number of SIGKILL on Linux and macOS.
+#[cfg(unix)]
+const SIGKILL: i32 = 9;
+
+/// Ends the whole process group of a provider that `spawn` started and that still runs. A
+/// provider that has finished is left alone: the stop at the end of every turn must stay quick,
+/// and a finished provider's group number may already belong to something else.
+fn kill_group(child: &mut Child) {
+    #[cfg(unix)]
+    if let Ok(group) = i32::try_from(child.id()) {
+        // SAFETY: `kill` only sends a signal. A negative id names the process group that `spawn`
+        // made for this child, and the caller has just seen the child still running.
+        unsafe { kill(-group, SIGKILL) };
+    }
+    child.kill().ok();
+}
+
+/// `keep` is dropped when the provider's output has ended; it holds what the run needs on disk.
+pub(super) fn launch(mut child: Child, prompt: &str, keep: impl Send + 'static) -> Lines {
     let mut stdin = child.stdin.take().expect("stdin was piped");
     let stdout = child.stdout.take().expect("stdout was piped");
     let stderr = child.stderr.take().expect("stderr was piped");
@@ -17,9 +50,10 @@ pub(super) fn launch(mut child: Child, prompt: &str) -> Lines {
     let stopper = Stopper::new({
         let child = Arc::clone(&child);
         move || {
-            if let Ok(mut child) = child.lock() {
-                // A process that already exited cannot be killed, and that is fine.
-                child.kill().ok();
+            if let Ok(mut child) = child.lock()
+                && matches!(child.try_wait(), Ok(None))
+            {
+                kill_group(&mut child);
             }
         }
     });
@@ -43,7 +77,12 @@ pub(super) fn launch(mut child: Child, prompt: &str) -> Lines {
         }
     });
     let watcher = stopper.clone();
-    thread::spawn(move || pump(stdout, &sender, &child, stderr_tail, &watcher));
+    thread::spawn(move || {
+        pump(stdout, &sender, &child, stderr_tail, &watcher);
+        // The turn ends when the channel closes, so nothing it waits for comes before that.
+        drop(sender);
+        drop(keep);
+    });
     Lines { receiver, stopper }
 }
 

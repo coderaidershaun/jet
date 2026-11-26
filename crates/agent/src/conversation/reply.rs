@@ -142,6 +142,7 @@ impl Reply {
             (SessionMode::Resume(_), Some(saved)) => Some(saved),
             _ => None,
         };
+        let _held = storage.hold_session();
         let stored = storage.session()?;
         // The user's save clears the mark of the stored session, or finds none to clear. Notes the
         // review saves meanwhile leave the mark, as they do outside a send.
@@ -220,10 +221,7 @@ impl Reply {
     /// this retry fails too.
     fn drop_vanished_session(&self) -> Result<(), MemoryError> {
         let saved = &self.context.memory;
-        match saved.session()? {
-            Some(session) => saved.save_session(&session.without_conversation()),
-            None => Ok(()),
-        }
+        saved.update_session(|session| *session = std::mem::take(session).without_conversation())
     }
 
     /// Makes the reply's stopper control the new turn, even if a stop came in meanwhile.
@@ -320,13 +318,11 @@ impl Reply {
 
     fn save_context(&self, summary: &Summary) -> Result<(), MemoryError> {
         let saved = &self.context.memory;
-        let Some(mut session) = saved.session()? else {
-            return Ok(());
-        };
-        session.context_tokens = summary.context_tokens;
-        session.context = summary.context.clone();
-        session.context.model = Some(self.context.request.model);
-        saved.save_session(&session)
+        saved.update_session(|session| {
+            session.context_tokens = summary.context_tokens;
+            session.context = summary.context.clone();
+            session.context.model = Some(self.context.request.model);
+        })
     }
 }
 

@@ -40,6 +40,15 @@ export function readPane(raw) {
   };
 }
 
+/** The step or note as the last read of the pane has it, or `item` itself when the pane no longer holds it. A tap that waited its turn reads this, not the object it was drawn from. */
+export function latestRecord(pane, key, item) {
+  for (const objective of pane?.objectives ?? []) {
+    const found = listOf(objective[key]).find((record) => isRecord(record) && record.id === item.id);
+    if (found) return found;
+  }
+  return item;
+}
+
 export const isEmpty = (pane) => !pane.objectives.length && !pane.tasks.length && !pane.runs.length && !pane.sharedWithMe.length && !pane.sent.length;
 
 /** Objectives still being worked on, then those that are finished or dropped. */

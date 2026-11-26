@@ -641,10 +641,13 @@ fn tasks_due_during_downtime_run_once_each_and_are_told_how_late() {
     let owner = host.owner();
     let (_, first) = objective_with(&host, &owner, "first", json!([{"kind":"jet"}]));
     let (_, second) = objective_with(&host, &owner, "second", json!([{"kind":"jet"}]));
-    script(&host, json!([say("I was away, sorry")]));
-    // Both were due on 8 June 2099, 09:00 New York; the server is stopped until July.
-    host.set_clock(DUE + 30 * DAY);
-    let host = host.restart();
+    // The check waits for a file, so that a host that could claim it before it is stopped would
+    // be held inside it, as a loaded machine holds it.
+    script(&host, json!([{"wait": "go"}, say("I was away, sorry")]));
+    // Both were due on 8 June 2099, 09:00 New York; the server is stopped until July. The clock
+    // moves while no host runs, so the old host cannot claim a check in the gap.
+    let host = host.restart_at(DUE + 30 * DAY);
+    std::fs::write(host.dir.path().join("go"), "").unwrap();
     wait_for_runs(&host, 2);
     assert_eq!(outcomes(&host), ["spoke", "spoke"]);
     assert_eq!(check_ins(&host, first).len(), 1);
@@ -889,5 +892,47 @@ fn a_change_to_the_objective_during_a_check_drops_its_result_and_the_check_runs_
     host.set_clock(DUE + MINUTE);
     wait_for_runs(&host, 2);
     assert_eq!(outcomes(&host), ["stale", "spoke"]);
+    assert_eq!(check_ins(&host, chat).len(), 1);
+}
+
+#[test]
+fn a_started_step_is_started_in_the_brief() {
+    let host = host();
+    let owner = host.owner();
+    let (objective, _) = objective_with(&host, &owner, "made", json!([{"kind":"jet"}]));
+    let step: i64 = query::<i64>(
+        &host,
+        &format!(
+            "SELECT id FROM objective_steps WHERE objective_id = {objective} AND title = 'Build the frame'"
+        ),
+    )[0];
+    let (status, body) = owner.patch(
+        &format!("/api/task-list/tasks/{step}"),
+        json!({"state":"in_progress"}),
+    );
+    assert_eq!(status, 200, "{body}");
+    script(&host, json!([say("Checking in")]));
+    host.set_clock(DUE);
+    wait_for_runs(&host, 1);
+    let brief = std::fs::read_to_string(host.dir.path().join("facade-prompt.txt")).unwrap();
+    assert!(
+        brief.contains("- [~] Build the frame (started)"),
+        "the brief has no word for a started step: {brief}"
+    );
+}
+
+#[test]
+fn a_lock_held_past_the_busy_timeout_does_not_pause_checks_for_good() {
+    let host = host();
+    let owner = host.owner();
+    let (_, chat) = objective_with(&host, &owner, "made", json!([{"kind":"jet"}]));
+    script(&host, json!([say("Checking in")]));
+    let other = rusqlite::Connection::open(host.dir.path().join("jet.sqlite3")).unwrap();
+    other.execute_batch("BEGIN IMMEDIATE").unwrap();
+    // Longer than the store's busy timeout of 5 seconds.
+    std::thread::sleep(Duration::from_millis(6500));
+    other.execute_batch("COMMIT").unwrap();
+    host.set_clock(DUE);
+    wait_for_runs(&host, 1);
     assert_eq!(check_ins(&host, chat).len(), 1);
 }

@@ -16,7 +16,11 @@ export async function requestJson(path, body, method = body === undefined ? 'GET
   }
   let value;
   try { value = await response.json(); }
-  catch (error) { throw { kind: 'network', message: error.message ?? String(error) }; }
+  catch (error) {
+    // A refusal with a text or HTML body is an answer, not a lost connection; only a gateway that is down is worth another try.
+    if (!response.ok && ![502, 503, 504].includes(response.status)) throw { kind: 'http', status: response.status, message: `Jet refused the request (${response.status}).` };
+    throw { kind: 'network', message: error.message ?? String(error) };
+  }
   if (!response.ok) throw value;
   return value;
 }

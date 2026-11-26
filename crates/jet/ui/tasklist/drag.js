@@ -133,8 +133,9 @@ export function createDrag({ root, scroller, top, onStart, onDrop }) {
   });
   // Once a touch drag has started the list must not scroll under the finger.
   root.addEventListener('touchmove', (event) => { if (drag) event.preventDefault(); }, { passive: false });
-  root.addEventListener('pointerup', () => finish(true));
-  root.addEventListener('pointercancel', () => finish(false));
+  // Another finger lifting or being cancelled is not the end of the dragging finger's drag.
+  root.addEventListener('pointerup', (event) => { if (event.pointerId === press?.pointerId) finish(true); });
+  root.addEventListener('pointercancel', (event) => { if (event.pointerId === press?.pointerId) finish(false); });
   // Taking the pointer from the row it touched makes the row lose it first, which is not the end of the drag.
   root.addEventListener('lostpointercapture', (event) => { if (drag && event.target === root) finish(false); });
   root.addEventListener('contextmenu', (event) => { if (press?.touch) event.preventDefault(); });
