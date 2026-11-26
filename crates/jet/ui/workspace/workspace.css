@@ -41,3 +41,13 @@
   }
 }
 @media (max-height: 560px) { :root { --empty-scale: .32; } .context-capacity { padding-top: 2px; padding-bottom: 4px; } }
+/* While the task list or the library is open it is the current place, not the chat that was open before it. */
+.workspace-shell:is([data-mode="files"], [data-mode="tasks"]) .chat-row:has(.chat-open[aria-current="true"]) { background: none; }
+.workspace-shell:is([data-mode="files"], [data-mode="tasks"]) .chat-row:has(.chat-open[aria-current="true"]) .nav-icon { color: var(--muted); }
+.workspace-shell:is([data-mode="files"], [data-mode="tasks"]) .chat-row:not(:hover, :focus-within) .chat-actions { display: none; }
+/* A place takes the whole width; the plan of the chat comes back with the chat. */
+.workspace-shell:is([data-mode="files"], [data-mode="tasks"])[data-pane] { --pane-w: 0px; }
+.workspace-shell:is([data-mode="files"], [data-mode="tasks"]) :is(.side-pane, .pane-toggle, .pane-scrim) { display: none !important; }
+/* The number of today's open tasks beside the Task list row. It is not a badge: nothing here is unread. */
+.nav-count { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.workspace-shell[data-expanded="false"] .nav-count { display: none; }

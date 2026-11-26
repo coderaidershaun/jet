@@ -59,7 +59,7 @@ label.file-row-open { padding-block: 6px; }
 /* The pane is narrower and its words smaller, so its rows take the pane's own sizes. */
 .side-pane .file-row-name { font-size: 13px; }
 
-/* The drawer's row that opens the library: a chat row's look, current while the library is open. */
+/* The drawer's rows that open the task list and the library: a chat row's look, current while its place is open. */
 .files-nav { flex: none; padding: 0 8px 4px; }
 .files-row { display: flex; border-radius: var(--r-s); }
 .files-row:hover { background: rgba(255, 255, 255, .04); }
@@ -67,13 +67,6 @@ label.file-row-open { padding-block: 6px; }
 .files-row .nav-icon { color: var(--muted); }
 .files-row:has(.chat-open[aria-current="page"]) .nav-icon { color: var(--fg); }
 .files-row .nav-icon .icon { width: 18px; height: 18px; }
-/* While the library is open it is the current place, not the chat that was open before it. */
-.workspace-shell[data-mode="files"] .chat-row:has(.chat-open[aria-current="true"]) { background: none; }
-.workspace-shell[data-mode="files"] .chat-row:has(.chat-open[aria-current="true"]) .nav-icon { color: var(--muted); }
-.workspace-shell[data-mode="files"] .chat-row:not(:hover, :focus-within) .chat-actions { display: none; }
-/* The library takes the whole width; the plan of the chat comes back with the chat. */
-.workspace-shell[data-mode="files"][data-pane] { --pane-w: 0px; }
-.workspace-shell[data-mode="files"] :is(.side-pane, .pane-toggle, .pane-scrim) { display: none !important; }
 
 @media (max-width: 759.98px) {
   /* The choice bar puts its count on a line of its own, so the actions keep their full words. */

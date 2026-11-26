@@ -11,6 +11,7 @@ import { svgIcon } from './icons.js';
 import { dueWords, isoDay, keysOf, newCount, readPane, scopeOf } from './model.js';
 import { CONFIRM_MS, disarm, idleTaps, pressCancel, tapEnded } from './taps.js';
 import { planNodes } from './view.js';
+import { STATE_NAMES, nextState, stepState } from '../tasklist/model.js';
 import { files } from '../chat/library/store.js';
 
 const OPEN_KEY = 'jet.pane';
@@ -214,8 +215,11 @@ export function createPlanPane({ shell, host, openChat, showFiles, titleOf }) {
   }
 
   const act = {
-    // An untick puts the step back to started when it had been, as the task list does.
-    tick: (objective, step, done, el) => tap('The step could not be changed', () => requestJson(`/api/task-list/tasks/${step.id}`, { state: done ? 'done' : step.startedAt != null ? 'in_progress' : 'not_started' }, 'PATCH'), el, `${done ? 'Ticked' : 'Unticked'} ${step.title}`),
+    // The box moves one step forward, gray to yellow to green, and a green one goes back to where it was, as in the task list.
+    mark(step, el) {
+      const state = nextState({ state: stepState(step), startedAt: step.startedAt });
+      tap('The step could not be changed', () => requestJson(`/api/task-list/tasks/${step.id}`, { state }, 'PATCH'), el, `${step.title} is ${STATE_NAMES[state].toLowerCase()}`);
+    },
     flip: (objective, note, el) => tap('The note could not be changed', () => requestJson(`/api/objectives/${objective.id}/notes/${note.id}`, { private: !note.isPrivate }, 'PUT'), el, note.isPrivate ? 'The note is shared now' : 'The note is private now'),
     snooze: (task, el) => tap('The check could not be snoozed', () => requestJson(`/api/tasks/${task.id}/snooze`, {}, 'POST'), el, numberOrNull(task.snoozeAt) === null ? 'Snoozed' : `Snoozed to ${dueWords(task.snoozeAt, pane?.timeZone ?? task.timeZone, new Date().getFullYear())}`),
     cancel(task, el) {

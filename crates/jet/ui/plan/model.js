@@ -67,14 +67,17 @@ export function dateWords(iso, year) {
   return Number(match[1]) === year ? day : `${day} ${match[1]}`;
 }
 
-/** The words for the days left, and a tone: 'bad' when overdue, 'warn' in the last 3 days. */
+/**
+ * The words for the days left, and a tone: 'bad' when overdue, else 'quiet'. Amber beside a step's box means in
+ * progress, so a close deadline is not amber.
+ */
 export function daysLeftWords(daysLeft) {
   const days = numberOrNull(daysLeft);
   if (days === null) return { words: '', tone: 'quiet' };
   const plural = (n) => `${n} day${n === 1 ? '' : 's'}`;
   if (days < 0) return { words: `${plural(-days)} overdue`, tone: 'bad' };
-  if (days === 0) return { words: 'Due today', tone: 'warn' };
-  return { words: `${plural(days)} left`, tone: days <= 3 ? 'warn' : 'quiet' };
+  if (days === 0) return { words: 'Due today', tone: 'quiet' };
+  return { words: `${plural(days)} left`, tone: 'quiet' };
 }
 
 /** 'Sun 1 Feb' for '2026-02-01', the way an objective's due date reads; the year is added when it is not `year`. */
@@ -99,15 +102,15 @@ export function isoDay(seconds, timeZone) {
 }
 
 /**
- * A step's due day, said late in the danger tone once it has passed unticked, in amber on the day, and in amber
- * when it lies after `due`, the day its objective is due.
+ * A step's due day, said late in the danger tone once it has passed unticked. On the day, and when it lies after
+ * `due`, the day its objective is due, the words say so in the quiet tone, because amber is the in-progress box.
  */
 export function stepDueWords(step, today, year, due) {
   const words = dateWords(step.due, year);
   if (!words || step.doneAt != null || !today) return { words, tone: 'quiet' };
   if (step.due < today) return { words: `${words}, late`, tone: 'bad' };
-  if (due && step.due > due) return { words: `${words}, after the due date`, tone: 'warn' };
-  if (step.due === today) return { words: 'Today', tone: 'warn' };
+  if (due && step.due > due) return { words: `${words}, after the due date`, tone: 'quiet' };
+  if (step.due === today) return { words: 'Today', tone: 'quiet' };
   return { words, tone: 'quiet' };
 }
 

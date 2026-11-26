@@ -12,7 +12,7 @@
  */
 @media (min-width: 760px) and (max-width: 1023px) {
   .workspace-shell[data-pane="open"][data-expanded="true"] { grid-template-columns: 64px minmax(0, 1fr) var(--pane-w); }
-  .workspace-shell[data-pane="open"] :is(.drawer-persona, .context-capacity, .context-toggle, .nav-label, .settings-label, .nav-heading, .new-chat-label, .chat-actions, .account-who) { display: none !important; }
+  .workspace-shell[data-pane="open"] :is(.drawer-persona, .context-capacity, .context-toggle, .nav-label, .nav-count, .settings-label, .nav-heading, .new-chat-label, .chat-actions, .account-who) { display: none !important; }
   .workspace-shell[data-pane="open"] :is(.nav-head, .chat-open, .gear) { justify-content: center; padding: 0; }
   .workspace-shell[data-pane="open"] .new-chat { width: 44px; height: 44px; padding: 0; justify-content: center; }
   .workspace-shell[data-pane="open"] .account { flex-direction: column; gap: 6px; padding: 10px 0 4px; }
@@ -61,7 +61,8 @@ button.row-summary:hover .row-title { text-decoration: underline; text-decoratio
 .row-facts { display: inline-flex; flex: none; flex-wrap: wrap; gap: 0 10px; margin-left: auto; font-variant-numeric: tabular-nums; }
 .fact, .note-when, .task-meta, .sent-when { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .fact[data-tone="bad"], .run-outcome[data-tone="bad"], .step-due[data-tone="bad"] { color: var(--danger); }
-.fact[data-tone="warn"], .step-due[data-tone="warn"], .row-warn { color: var(--warning); }
+/* Amber beside a step's box means in progress, so a note's "at risk" stays in the quiet colour; only the notice line is amber. */
+.row-warn { color: var(--warning); }
 .row-warn { margin: -4px 0 6px; font-size: 12px; line-height: 17px; }
 /* A body is plain blocks, 6 px apart; its text buttons stand side by side, their words on the body's left edge. */
 .row-body { padding: 0 0 10px; }
@@ -121,10 +122,12 @@ button.row-summary:hover .row-title { text-decoration: underline; text-decoratio
 .step { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 36px; padding: 6px; background: none; border: 0; border-radius: var(--r-s); text-align: left; font-size: 13px; line-height: 22px; }
 button.step:hover { background: rgba(255, 255, 255, .05); }
 .step-box { display: grid; place-items: center; flex: none; width: 20px; height: 20px; margin-top: 1px; border: 2px solid var(--muted); border-radius: var(--r-s); color: var(--ground); }
-.step[data-done="true"] .step-box { background: var(--ok); border-color: var(--ok); }
+/* The same three-state box as the task list: gray not started, yellow in progress, green done. */
+.step[data-state="in_progress"] .step-box { background: var(--warning); border-color: var(--warning); }
+.step[data-state="done"] .step-box { background: var(--ok); border-color: var(--ok); }
 .step-box .icon { width: 14px; height: 14px; stroke-width: 3; }
 .step-title { flex: 1; min-width: 0; }
-.step[data-done="true"] .step-title { color: var(--muted); text-decoration: line-through; }
+.step[data-state="done"] .step-title { color: var(--muted); text-decoration: line-through; }
 .step-due { flex: none; color: var(--muted); font-size: 12px; line-height: 22px; }
 .step-read { display: flex; align-items: flex-start; gap: 10px; padding: 2px 6px; font-size: 13px; line-height: 22px; }
 .step-read > .icon { flex: none; width: 16px; height: 16px; margin-top: 3px; color: var(--ok); stroke-width: 3; }

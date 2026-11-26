@@ -137,7 +137,7 @@ if (/^facade:/m.test(input)) {
   await until(async () => (await row('New chat').count()) === 1 && await row('New chat').locator('.chat-open').getAttribute('aria-current') === 'true', 'a new chat must open at once');
   assert.equal(await page.locator('#jump').isVisible(), false, 'an empty chat has nothing to jump to');
   assert.equal(await page.locator('.empty').evaluate(element => getComputedStyle(element).visibility), 'visible', 'an empty chat shows the greeting');
-  assert.equal(await page.locator('dialog[open], form').count(), 0, 'a new chat asks for nothing');
+  assert.equal(await page.locator('dialog[open], form:visible').count(), 0, 'a new chat asks for nothing');
   await shoot('1280-2-new-chat.png');
   await page.locator('#field').fill('Which sails do I need for a gusty day');
   await page.locator('#send').click();

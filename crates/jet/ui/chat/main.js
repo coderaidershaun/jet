@@ -22,6 +22,8 @@ import { createDrawerView } from './drawer/view.js';
 import { connectFileView } from './file-view.js';
 import { files } from './library/store.js';
 import { createLibrary } from './library/view.js';
+import { createTaskStore } from '../tasklist/store.js';
+import { createTaskList } from '../tasklist/view.js';
 import { connectHearing } from './hear/connect.js';
 import { createSettingsWindow } from './settings/window.js';
 import { createLive } from './stage/live.js';
@@ -64,7 +66,9 @@ async function start() {
   // The chat list is made further down; nothing asks for a title before the first files arrive.
   const titleOf = (chatId) => chats.items.find((chat) => chat.id === chatId)?.title ?? 'A chat';
   const library = createLibrary({ titleOf, announce });
-  const workspace = createWorkspace({ agent, page, library, titleOf, onTools: appId => toolBrowser.open(appId), openChat: (id, entryId) => { workspace.showChat(); showChat(id, entryId); } });
+  const tasks = createTaskStore();
+  const taskList = createTaskList({ store: tasks, announce, openChat: (id) => { workspace.showChat(); showChat(id); } });
+  const workspace = createWorkspace({ agent, page, library, taskList, titleOf, onTools: appId => toolBrowser.open(appId), openChat: (id, entryId) => { workspace.showChat(); showChat(id, entryId); } });
   // The shell puts itself first in the page, so the skip link moves back in front of it to stay the first Tab stop.
   const skip = $('skip');
   document.body.prepend(skip);
@@ -225,6 +229,8 @@ async function start() {
   document.addEventListener('visibilitychange', () => chats.attend());
   connectFileView({ chats: () => chats.items, openChat: (id) => { workspace.showChat(); showChat(id); }, announce });
   files.start();
+  // The list loads with the page, so the drawer's count is right before it is first opened.
+  tasks.start();
 
   /**
    * Opens a chat: its history and running reply replace the thread, and every later call carries its id.

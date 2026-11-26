@@ -1,0 +1,121 @@
+/* The task list: a paper list in one 640 px column. Rows sit on a 40 px rhythm with no rule between them, and the
+   only colour in a row is its box: gray not started, yellow in progress, green done. Every corner is --r-s. */
+.tasklist { display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: auto; background: var(--ground); scrollbar-width: thin; }
+.tl-head { position: sticky; top: 0; z-index: 3; flex: none; height: 52px; padding: 0 calc(var(--gutter) + 52px); background: var(--ground); border-bottom: 1px solid var(--line); }
+.tl-title-head { margin: 0; overflow: hidden; color: var(--fg); font-size: 14px; font-weight: 600; line-height: 52px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+/* The title takes the focus only so a phone's keyboard stays down; it is not a control, so it shows no ring. */
+.tl-title-head:focus { outline: none; }
+.tl-column { width: min(100%, 640px); margin: 0 auto; padding: 0 var(--gutter) max(32px, env(safe-area-inset-bottom)); container-type: inline-size; }
+.tasklist .text-button { min-height: 36px; padding: 0 8px; font-size: 13px; }
+
+.tl-alert { margin: 12px 0 0; padding: 8px 12px; border-radius: var(--r-s); background: rgba(255, 123, 114, .12); color: var(--danger); font-size: 12px; line-height: 17px; }
+.tl-alert:empty, .tl-notice:empty { display: none; }
+.tl-notice { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 18px; }
+.tl-notice .text-button { min-height: 0; padding: 0 4px; font-size: 12px; }
+.tl-state { padding: 72px 16px; text-align: center; }
+.tl-state-head { margin: 0 0 10px; font-size: 15px; font-weight: 600; line-height: 22px; }
+
+.tl-section { margin-top: 28px; }
+.tl-column > .tl-section:first-of-type { margin-top: 20px; }
+.tl-heading { display: flex; align-items: baseline; gap: 8px; min-height: 28px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.tl-heading h2 { margin: 0; color: var(--fg); font-size: 13px; font-weight: 650; line-height: 20px; }
+.tl-date { color: var(--muted); font-size: 12px; }
+.tl-list { margin: 0; padding: 0; list-style: none; }
+
+.tl-row { min-width: 0; border-radius: var(--r-s); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
+.tl-line { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 40px; }
+@media (hover: hover) { .tl-row[data-open="false"]:hover { background: rgba(255, 255, 255, .04); } }
+.tl-row input, .tl-row select { user-select: text; -webkit-user-select: text; }
+
+/* The box sits on the column's left edge; the gap after it is part of what a tap hits. */
+.tl-mark, .tl-slot { display: grid; align-items: center; justify-items: start; flex: none; width: 30px; height: 40px; padding: 0; background: none; border: 0; }
+.tl-box { display: grid; place-items: center; width: 20px; height: 20px; border: 2px solid var(--muted); border-radius: var(--r-s); color: var(--ground); }
+.tl-box .icon { width: 14px; height: 14px; stroke-width: 3; }
+.tl-row[data-state="in_progress"] > .tl-line .tl-box { background: var(--warning); border-color: var(--warning); }
+.tl-row[data-state="done"] > .tl-line .tl-box { background: var(--ok); border-color: var(--ok); }
+/* With a mouse the box shows what a click will do. */
+@media (hover: hover) and (pointer: fine) {
+  .tl-row[data-state="not_started"] .tl-mark:hover .tl-box { border-color: var(--warning); }
+  .tl-row[data-state="in_progress"] .tl-mark:hover .tl-box { border-color: var(--ok); }
+  .tl-task[data-drag-id][data-open="false"], .tl-task[data-drag-id][data-open="false"] .tl-title { cursor: grab; }
+}
+.tl-mark:focus-visible { outline: none; }
+.tl-mark:focus-visible .tl-box { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.tl-title { flex: 1; min-width: 0; min-height: 40px; overflow: hidden; padding: 0; background: none; border: 0; color: var(--fg); font-size: var(--text-size); line-height: 20px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.tl-title:focus-visible { outline-offset: -2px; }
+.tl-row[data-state="done"].tl-task .tl-title { color: var(--muted); text-decoration: line-through; }
+.tl-meta { display: flex; flex: 0 1 auto; justify-content: flex-end; min-width: 0; max-width: 45%; padding-right: 4px; color: var(--muted); font-size: 12px; line-height: 16px; white-space: nowrap; }
+.tl-meta-goal { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tl-sep, .tl-fact { flex: none; }
+.tl-sep { padding: 0 4px; }
+
+.tl-slot .icon { width: 16px; height: 16px; color: var(--muted); }
+.tl-dot { width: 10px; height: 10px; margin-left: 5px; border-radius: 50%; background: var(--muted); }
+.tl-dot[data-state="in_progress"] { background: var(--warning); }
+.tl-dot[data-state="done"] { background: var(--ok); }
+.tl-facts { flex: none; padding-right: 4px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tl-facts[data-tone="bad"] { color: var(--danger); }
+.tl-invite { margin: 10px 0 0; color: var(--muted); font-size: 13px; line-height: 20px; }
+.tl-invite-example { display: inline; padding: 0; background: none; border: 0; color: var(--link-jet); font: italic 13px/20px var(--font); text-align: left; cursor: pointer; }
+.tl-invite-example:hover { text-decoration: underline; }
+
+.tl-add { display: flex; align-items: center; gap: 8px; }
+.tl-add-field, .tl-field {
+  flex: 1; min-width: 0; height: 32px; margin: 4px 0 4px -8px; padding: 0 8px; border-radius: var(--r-s); color: var(--fg); font-size: var(--text-size);
+}
+.tl-add-field { background: none; border: 1px solid transparent; }
+.tl-add-field::placeholder { color: var(--muted); }
+.tl-add-field:focus { border-color: var(--edge); background: var(--surface); }
+.tl-field { background: var(--ground); border: 1px solid var(--edge); outline-offset: 0; }
+
+.tl-row[data-open="true"] { background: var(--surface); }
+.tl-strip { display: flex; flex-direction: column; gap: 2px; padding: 0 6px 8px 30px; }
+.tl-strip-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; }
+.tasklist .text-button[aria-disabled="true"] { color: var(--muted); cursor: default; }
+.tasklist .text-button[aria-disabled="true"]:hover { background: none; }
+.tl-title-text { display: block; line-height: 40px; color: var(--muted); text-decoration: line-through; }
+.tl-word[aria-pressed="true"] { background: var(--surface-2); color: var(--fg); }
+.tl-word-quiet { padding: 0 4px 0 8px; color: var(--muted); font-size: 12px; }
+.tl-pick { display: flex; align-items: center; gap: 4px; max-width: 100%; }
+.tl-goal-pick { min-width: 0; max-width: 100%; height: 36px; padding: 0 6px; background: var(--surface-2); border: 1px solid var(--edge); border-radius: var(--r-s); color: var(--fg); font-size: 13px; }
+.tasklist .tl-delete { margin-left: auto; color: var(--muted); }
+.tasklist .tl-delete.is-armed { background: rgba(255, 123, 114, .18); color: var(--danger); }
+.tl-deliverable { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font-size: 13px; line-height: 19px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.tl-goal-facts { margin: 0 0 2px; color: var(--muted); font-size: 12px; line-height: 18px; font-variant-numeric: tabular-nums; }
+
+.tl-done { margin-top: 28px; }
+.tl-fold .heading-count:empty { display: none; }
+.tl-day-label { margin: 10px 0 2px; color: var(--muted); font-size: 12px; font-weight: 600; line-height: 18px; }
+.tl-quiet { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 18px; }
+.tasklist .tl-older { margin-left: -8px; }
+
+.tl-skeleton { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+.tl-skeleton .tl-box { border: 0; background: var(--surface-2); }
+.tl-bar { display: block; width: 44%; height: 12px; border-radius: var(--r-s); background: var(--surface-2); }
+
+/* A drag: a copy of the row follows the pointer up and down, its own place stays faint, and one line shows where it lands. */
+.tl-ghost { position: fixed; z-index: 30; margin: 0; list-style: none; background: var(--surface-2); box-shadow: 0 6px 20px rgba(0, 0, 0, .45); pointer-events: none; }
+.tl-row.is-lifted { opacity: .35; }
+.tl-drop-line { position: fixed; z-index: 31; height: 2px; background: var(--accent); pointer-events: none; }
+.is-dragging, .is-dragging * { cursor: grabbing !important; }
+.tl-row.is-leaving { overflow: hidden; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not(.reduced) .tl-row.is-leaving { transition: height 150ms cubic-bezier(.23, 1, .32, 1); }
+  :root:not(.reduced) .tl-row.is-settling { transition: transform 120ms cubic-bezier(.23, 1, .32, 1); }
+}
+
+/* A narrow column puts a row's goal and day on a second line, so the title keeps its width. */
+@container (max-width: 479px) {
+  .tl-task > .tl-line:has(.tl-meta) { flex-wrap: wrap; min-height: 52px; }
+  .tl-task .tl-meta { flex-basis: 100%; justify-content: flex-start; max-width: none; margin-top: -8px; padding: 0 0 6px 38px; }
+}
+
+/* A finger needs 44 px: the box's target grows into the gutter while the box stays on the edge. */
+@media (pointer: coarse) {
+  .tl-mark { width: 44px; height: 44px; margin-left: -12px; padding-left: 12px; }
+  .tl-line, .tl-title { min-height: 44px; }
+  .tl-add-field, .tl-field { height: 44px; }
+  .tasklist .text-button, .tl-goal-pick { min-height: 44px; }
+}
+@media (max-width: 759.98px) { .tl-field, .tl-add-field { height: 44px; } }

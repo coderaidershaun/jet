@@ -209,20 +209,26 @@ if (/^facade:/m.test(input)) {
     assert.match(await p.locator('.objective[data-id="6"] .row-warn').innerText(), /No check is set/, 'an objective with no check says so');
     await shoot(p, `${width}-05-no-check`);
 
-    // Steps: a late step and today's step say so; Space ticks and keeps the focus.
+    // Steps: a late step and today's step say so, today's in the quiet tone; Space moves the box gray, yellow, green,
+    // and back to yellow, and keeps the focus.
     await unfold(p, '.objective[data-id="5"]');
     assert.match(await p.locator('.objective[data-id="5"] .step-due[data-tone="bad"]').innerText(), /late$/, 'a passed step is late');
     await unfold(p, '.objective[data-id="6"]');
-    assert.equal(await p.locator('.objective[data-id="6"] .step-due[data-tone="warn"]').innerText(), 'Today');
+    assert.equal(await p.locator('.objective[data-id="6"] .step-due[data-tone="quiet"]').innerText(), 'Today');
     const step = p.locator('.objective[data-id="6"] .step').first();
     const stepKey = await step.getAttribute('data-key');
+    const checked = () => p.locator(`[data-key="${stepKey}"]`).getAttribute('aria-checked');
     await step.focus();
     await p.keyboard.press('Space');
-    await until(async () => (await p.locator(`[data-key="${stepKey}"]`).getAttribute('aria-checked')) === 'true', 'Space ticks the step');
+    await until(async () => (await checked()) === 'mixed', 'Space starts the step');
     await delay(300);
     assert.equal(await focusKey(p), stepKey, 'after Space the focus is still on the step');
     await p.keyboard.press('Space');
-    await until(async () => (await p.locator(`[data-key="${stepKey}"]`).getAttribute('aria-checked')) === 'false', 'Space unticks it');
+    await until(async () => (await checked()) === 'true', 'Space again ticks it');
+    await p.keyboard.press('Space');
+    await until(async () => (await checked()) === 'mixed', 'Space on a ticked step puts it back to started');
+    await owner.patch(`/api/task-list/tasks/${stepKey.replace('step-', '')}`, { state: 'not_started' });
+    await until(async () => (await checked()) === 'false', 'the next width starts from gray');
 
     // The pane follows the open chat: the kite's own chat holds the kite and what belongs to it, and nothing of the party.
     await unfold(p, '.objective[data-id="1"]');

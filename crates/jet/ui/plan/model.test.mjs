@@ -13,10 +13,10 @@ test('each way a check can end has its plain words, and a run that has not ended
   assert.deepEqual(['on track', 'at risk', 'blocked', 'hmm'].map(noteTone), ['good', 'warn', 'bad', 'quiet']);
 });
 
-test('days left read as words, overdue and close ones in a loud tone', () => {
+test('days left read as words, only overdue ones in a loud tone', () => {
   assert.deepEqual(daysLeftWords(31), { words: '31 days left', tone: 'quiet' });
-  assert.deepEqual(daysLeftWords(1), { words: '1 day left', tone: 'warn' });
-  assert.deepEqual(daysLeftWords(0), { words: 'Due today', tone: 'warn' });
+  assert.deepEqual(daysLeftWords(1), { words: '1 day left', tone: 'quiet' });
+  assert.deepEqual(daysLeftWords(0), { words: 'Due today', tone: 'quiet' });
   assert.deepEqual(daysLeftWords(-2), { words: '2 days overdue', tone: 'bad' });
 });
 
@@ -59,9 +59,9 @@ test('a check names its objective, or says it is a follow-up and why', () => {
 test('a passed step is late, today is amber, and a done objective shows the day it closed', () => {
   const step = { due: '2026-01-05', doneAt: null };
   assert.deepEqual(stepDueWords(step, '2026-01-06', 2026), { words: '5 Jan, late', tone: 'bad' });
-  assert.deepEqual(stepDueWords(step, '2026-01-05', 2026), { words: 'Today', tone: 'warn' });
+  assert.deepEqual(stepDueWords(step, '2026-01-05', 2026), { words: 'Today', tone: 'quiet' });
   assert.deepEqual(stepDueWords({ ...step, doneAt: 1 }, '2026-01-06', 2026), { words: '5 Jan', tone: 'quiet' });
-  assert.deepEqual(stepDueWords(step, '2026-01-02', 2026, '2026-01-04'), { words: '5 Jan, after the due date', tone: 'warn' });
+  assert.deepEqual(stepDueWords(step, '2026-01-02', 2026, '2026-01-04'), { words: '5 Jan, after the due date', tone: 'quiet' });
   // The due date moved to the 9th and the steps stayed: the pane says so until a step reaches it or a newer note comes.
   const moved = { due: '2026-01-09', steps: [step, { due: '2026-01-07', doneAt: 1 }], notes: [{ newDates: 'due Fri 9 Jan (was Mon 5 Jan)' }] };
   assert.equal(stepsEndWords(moved, 2026), 'Steps end 5 Jan, before the new due date.');

@@ -12,10 +12,11 @@ import {
   latestNote, needsFirst, noteTone, outcomeOf, progressWords, relativeWords, runTitle, setByWords, sharedWithWords,
   stepDueWords, stepsEndWords, timeWords, tokensWords, waitingItems,
 } from './model.js';
+import { markWords, stepState } from '../tasklist/model.js';
 
 const TASKS_SHOWN_DAYS = 2;
 const EXAMPLE = 'I need to ship the kite page by Friday.';
-/** A text button: the one kind of control the pane has, apart from the rows that unfold and the step ticks. */
+/** A text button: the one kind of control the pane has, apart from the rows that unfold and the step boxes. */
 const textButton = (label, onClick, props = {}) => h('button', { type: 'button', class: 'text-button', onClick: (event) => onClick(event.currentTarget), ...props }, label);
 const line = (className, text) => (text ? h('p', { class: className, text }) : null);
 /** A fact in plain text, in a colour only when it needs the user: 'bad' or 'warn'. */
@@ -48,17 +49,20 @@ function foldRow(kind, id, ctx, head, body, aside = null, under = null) {
     h('div', { class: 'row-body', id: bodyId, hidden: !open }, ...body));
 }
 
-function stepRow(step, ctx, tick, objectiveDue) {
-  const done = step.doneAt != null;
+/** A step: in the user's own objective the same three-state box as the task list, one step forward per tap. */
+function stepRow(step, ctx, mark, objectiveDue) {
+  const state = stepState(step);
+  const done = state === 'done';
   const due = stepDueWords(step, ctx.today, ctx.year, objectiveDue);
   const dueSpan = due.words ? h('span', { class: 'step-due', 'data-tone': due.tone, text: due.words }) : null;
-  if (!tick) return h('li', { class: 'step-read', 'data-done': String(done) }, done ? svgIcon('check') : h('span', { class: 'step-dot', 'aria-hidden': 'true' }), h('span', { class: 'step-title', text: stringOf(step.title) }), done ? h('span', { class: 'sr-only', text: ', done' }) : null, dueSpan);
-  return h('li', {}, h('button', { type: 'button', class: 'step', role: 'checkbox', 'aria-checked': String(done), 'data-done': String(done), 'data-key': `step-${step.id}`, onClick: (event) => tick(step, !done, event.currentTarget) },
-    h('span', { class: 'step-box' }, done ? svgIcon('check') : null), h('span', { class: 'step-title', text: stringOf(step.title) }), dueSpan));
+  if (!mark) return h('li', { class: 'step-read', 'data-done': String(done) }, done ? svgIcon('check') : h('span', { class: 'step-dot', 'aria-hidden': 'true' }), h('span', { class: 'step-title', text: stringOf(step.title) }), done ? h('span', { class: 'sr-only', text: ', done' }) : null, dueSpan);
+  const words = markWords({ state, title: stringOf(step.title) });
+  return h('li', {}, h('button', { type: 'button', class: 'step', role: 'checkbox', 'aria-checked': words.checked, 'aria-label': words.label, title: words.tip, 'data-state': state, 'data-key': `step-${step.id}`, onClick: (event) => mark(step, event.currentTarget) },
+    h('span', { class: 'step-box' }, done ? svgIcon('check') : state === 'in_progress' ? svgIcon('dash') : null), h('span', { class: 'step-title', text: stringOf(step.title) }), dueSpan));
 }
 
 /** The steps of an objective that is due on `due`. */
-const stepsList = (steps, ctx, tick, due) => (listOf(steps).length ? h('ul', { class: 'steps' }, ...listOf(steps).map((step) => stepRow(recordOf(step), ctx, tick, due))) : null);
+const stepsList = (steps, ctx, mark, due) => (listOf(steps).length ? h('ul', { class: 'steps' }, ...listOf(steps).map((step) => stepRow(recordOf(step), ctx, mark, due))) : null);
 
 /** The state word of an objective: a paused one, else its latest note's status, coloured when it needs the user. */
 function stateFact(objective) {
@@ -88,13 +92,13 @@ const isOpen = (objective) => objective.status === 'active' || objective.status 
 
 /** The overview's line for an objective; it unfolds to its steps, its latest note and its chat. */
 function objectiveRow(objective, ctx) {
-  const tick = (s, done, el) => ctx.act.tick(objective, s, done, el);
+  const mark = (s, el) => ctx.act.mark(s, el);
   const note = latestNote(objective);
   const ownChat = objective.chatId != null && objective.chatId !== ctx.mainId;
   const noCheck = objective.hasOpenCheck === false && isOpen(objective);
   return foldRow('objective', objective.id, ctx,
     [h('span', { class: 'row-title', text: stringOf(objective.title) }), h('span', { class: 'row-facts' }, stateFact(objective), leftFact(objective.daysLeft), fact(progressWords(objective.steps), 'quiet', 'fact progress'))],
-    [stepsList(objective.steps, ctx, tick, objective.due), note ? ownNote(objective, note, ctx) : null, ownChat ? textButton('Open chat', () => ctx.act.openChat(objective), { 'data-key': `chat-${objective.id}` }) : null],
+    [stepsList(objective.steps, ctx, mark, objective.due), note ? ownNote(objective, note, ctx) : null, ownChat ? textButton('Open chat', () => ctx.act.openChat(objective), { 'data-key': `chat-${objective.id}` }) : null],
     null,
     noCheck ? h('p', { class: 'row-warn', text: 'No check is set. Tell Jet when to look in.' }) : null);
 }
@@ -208,13 +212,13 @@ function objectiveBlock(objective, ctx) {
   const note = latestNote(objective);
   const sharing = ctx.shares.get(objective.id);
   const priv = objective.private === true;
-  const tick = isOpen(objective) ? (s, done, el) => ctx.act.tick(objective, s, done, el) : null;
+  const mark = isOpen(objective) ? (s, el) => ctx.act.mark(s, el) : null;
   return h('div', { class: 'focus', 'data-id': objective.id },
     h('header', { class: 'focus-head' },
       h('h3', { class: 'focus-title', tabindex: '-1', 'data-key': 'heading-focus', text: stringOf(objective.title) }),
       h('p', { class: 'row-facts' }, fact(`Due ${dueDayWords(objective.due, ctx.year)}`, 'quiet', 'fact focus-due'), stateFact(objective), leftFact(objective.daysLeft), fact(progressWords(objective.steps), 'quiet', 'fact progress'), fact(`from ${dateWords(objective.start, ctx.year)}`)),
       line('focus-deliverable', stringOf(objective.deliverable))),
-    stepsList(objective.steps, ctx, tick, objective.due),
+    stepsList(objective.steps, ctx, mark, objective.due),
     line('row-warn', stepsEndWords(objective, ctx.year)),
     note ? ownNote(objective, note, ctx) : null,
     h('p', { class: 'who' }, h('span', { text: priv ? 'Private, only you' : 'Shared with ' + sharedWithWords(objective) }),

@@ -147,7 +147,7 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
     const side = dialog.locator('.file-view-side');
     const showLibrary = async () => {
       if (phone) await drawerOpen();
-      await tap(page.locator('.files-nav .chat-open'));
+      await tap(page.locator('.files-nav [data-place="files"]'));
       await lib.waitFor({ state: 'visible' });
       await until(async () => (await rows.count()) > 0, 'the library lists the files');
     };
@@ -161,7 +161,7 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
       await shoot('drawer-files');
       await page.locator('#jet-toggle').click();
       await until(async () => (await page.locator('.workspace-shell').getAttribute('data-expanded')) === 'false', 'the drawer folds to its rail');
-      await page.locator('.files-nav .chat-open').hover();
+      await page.locator('.files-nav [data-place="files"]').hover();
     }
     await shoot(phone ? 'drawer-files' : 'drawer-files-rail');
     if (!phone) { await page.locator('#jet-toggle').click(); await page.mouse.move(700, 450); }
@@ -169,7 +169,7 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
     // 2. The library: every file across the chats, newest change first, a shared one with its chats in words.
     await showLibrary();
     assert.equal(new URL(page.url()).hash, '#files', 'the library has its own address');
-    assert.equal(await page.locator('.files-nav .chat-open').getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('.files-nav [data-place="files"]').getAttribute('aria-current'), 'page');
     const names = (await library()).map((file) => file.name);
     await until(async () => (await rows.locator('.file-row-name').allInnerTexts()).join('|') === names.join('|'), 'the rows are the server\'s files in its order');
     assert.match(await row('kite-summary.html').innerText(), /HTML page · \d+ K?B · .* · Kite budget and 3 more/, 'a shared file names its keeper and counts the rest');
