@@ -1,3 +1,4 @@
+// Tests that each voice engine works alone and that the chosen one goes first.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { HEARING, SPEAKING, buttonStatus, engineInUse, enginesOf } from './engines.js';

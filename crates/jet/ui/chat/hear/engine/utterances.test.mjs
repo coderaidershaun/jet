@@ -1,3 +1,4 @@
+// Tests that transcribed words come out in order, with one retry, a deadline and a single report of a refused key.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createUtterances } from './utterances.js';

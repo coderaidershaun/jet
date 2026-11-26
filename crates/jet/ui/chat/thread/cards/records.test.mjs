@@ -1,3 +1,4 @@
+// Tests that the objectives and tasks cards read each command as plain words.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardOf } from './model.js';

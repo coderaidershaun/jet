@@ -1,3 +1,4 @@
+// Tests that saved model and thinking choices load as a supported pair.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSettings } from './settings.js';

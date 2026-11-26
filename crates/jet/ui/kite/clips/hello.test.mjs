@@ -1,3 +1,4 @@
+// Tests that the played wave matches its reference drawing frame for frame.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

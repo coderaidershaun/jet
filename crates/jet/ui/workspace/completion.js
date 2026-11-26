@@ -1,3 +1,4 @@
+// The slash-command menu under the composer.
 import { h } from '../dom.js';
 
 export function createCommandMenu({ field, container, commands, setText }) {

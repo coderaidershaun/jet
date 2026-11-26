@@ -1,5 +1,6 @@
-import { createPlayer } from '../../jet/player.js';
-import { mountJet } from '../../jet/draw/view.js';
+// The chat drawer: Jet's picture, name and job title, the connection status, the model in use with its context meter, and the settings button.
+import { createPlayer } from '../../kite/player.js';
+import { mountJet } from '../../kite/draw/view.js';
 import { MODELS } from '../../bridge/models.js';
 
 export function createDrawerView({ jetSvg, nameEl, titleEl, statusEl, drawerEl, contextEl, contextToggle, modelEl, tokensEl, barEl, percentEl, noteEl, gearButton, handlers }) {

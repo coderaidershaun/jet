@@ -1,3 +1,4 @@
+// A small test app: its page, its descriptor at /jet-app.json and an MCP tool server, started by Jet's commands browser drive.
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { createDiscoveryFixture } from "./discovery.mjs";

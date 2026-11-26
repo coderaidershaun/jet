@@ -1,3 +1,4 @@
+// Tests the chat list: order, unread badges and the read mark.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chatIcon, createChats } from './chats.js';

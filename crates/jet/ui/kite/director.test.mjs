@@ -1,3 +1,4 @@
+// Tests that every way a reply ends returns Jet to rest, and that idle drifting and landing behave.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDirector, MOODS } from './director.js';

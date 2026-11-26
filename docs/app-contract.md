@@ -166,7 +166,7 @@ not a durable replay log; reconnecting consumers fetch a fresh list.
 
 ## One MCP service
 
-`agent::mcp::HttpMcpClient` is the one shared client: `catalogue(app_id)`,
+`agent::mcp_client::HttpMcpClient` is the one shared client: `catalogue(app_id)`,
 `refresh(app_id)`, `call(ToolRequest)`, `discover(ToolRequest)`, `status(ToolRequest)`, `call_with_progress(ToolRequest, sender)` and
 `cancel_request(request_id)`. Catalogue preserves
 server metadata, full schemas, annotations and `_meta`, plus stale/error state.

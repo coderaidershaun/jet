@@ -1,3 +1,4 @@
+// Checks that the app WebSocket proxy passes the fixture protocol, rejects a forged origin and drops forwarded headers.
 import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 const [jet,id,upstream]=process.argv.slice(2);

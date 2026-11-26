@@ -1,3 +1,4 @@
+// Tests that the ending of the spoken words decides how long the send waits.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { judge } from './complete.js';

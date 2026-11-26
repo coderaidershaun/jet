@@ -1,3 +1,4 @@
+// Tests that a web card names the page or search and says when a read is refused.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardOf } from './model.js';

@@ -3,7 +3,7 @@
 use super::BridgeError;
 use crate::lock;
 use crate::store::ChatId;
-use agent::{EntryId, Event, ShownEntry, TurnIdentity, mcp::ToolTarget};
+use agent::{EntryId, Event, ShownEntry, TurnIdentity, mcp_client::ToolTarget};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};

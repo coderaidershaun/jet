@@ -9,7 +9,6 @@ mod account;
 mod apps;
 mod chat;
 mod evidence;
-mod facade;
 mod files;
 mod mcp_servers;
 mod objectives;
@@ -18,6 +17,7 @@ mod seal;
 mod server;
 mod settings;
 mod store;
+mod tool_facade;
 mod voice;
 
 pub use files::{READ_FILE_ARGUMENT, run_file_reader};

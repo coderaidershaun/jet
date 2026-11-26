@@ -1,3 +1,4 @@
+// Tests the thread store: reply slots, held and spoken messages, and reactions.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createThread } from './store.js';

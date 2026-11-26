@@ -1,9 +1,9 @@
 //! Phonon 31m, Gradium's text-to-speech model run by the server itself, so Jet can speak without a
 //! Google key. The model loads in a moment and is kept loaded, and it speaks one piece at a time.
 
-use super::local::{self, Attempt};
-use super::{SAMPLE_RATE, VoiceError, words_to_speak};
 use crate::env_file;
+use crate::voice::local::{self, Attempt};
+use crate::voice::{SAMPLE_RATE, VoiceError, words_to_speak};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
@@ -51,7 +51,7 @@ impl Phonon {
         }
     }
 
-    /// The words of a piece of a reply as raw 24 kHz PCM, as [`super::speak`] gives them. The voice
+    /// The words of a piece of a reply as raw 24 kHz PCM, as [`crate::voice::speak`] gives them. The voice
     /// is `PHONON_TTS_VOICE`, or the model's own when that is not set.
     /// # Errors
     /// Returns [`VoiceError::TooLong`] past 2,000 characters, the errors of [`Phonon::status`],

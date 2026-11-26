@@ -1,3 +1,4 @@
+// Tests that library cards read their results into blocks and mark a cut text.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardOf } from './model.js';

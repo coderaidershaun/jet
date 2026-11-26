@@ -12,7 +12,7 @@ mod turn_tools;
 
 use agent::{
     Conversation, ConversationError, Effort, EntryId, Event, Message, Model, Persona, Reaction,
-    Reply, ShownEntry, Transport, TurnIdentity, mcp::Progress,
+    Reply, ShownEntry, Transport, TurnIdentity, mcp_client::Progress,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -908,7 +908,7 @@ mod tests {
 
     #[test]
     fn every_mood_word_is_handled_by_the_director() {
-        let director = include_str!("../../ui/jet/director.js");
+        let director = include_str!("../../ui/kite/director.js");
         let mood_lines: Vec<&str> = director
             .lines()
             .filter(|line| line.starts_with("export const MOODS = ["))

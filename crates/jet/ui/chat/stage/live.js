@@ -1,6 +1,7 @@
-import { createDirector } from '../../jet/director.js';
-import { createPlayer } from '../../jet/player.js';
-import { mountJet } from '../../jet/draw/view.js';
+// The live stage: Jet's drawing, its flight and its moods, driven by the director.
+import { createDirector } from '../../kite/director.js';
+import { createPlayer } from '../../kite/player.js';
+import { mountJet } from '../../kite/draw/view.js';
 import { createFlight, cruiseMsFor } from './flight.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';

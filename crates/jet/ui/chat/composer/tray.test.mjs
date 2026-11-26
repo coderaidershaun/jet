@@ -1,3 +1,4 @@
+// Tests the attachment tray: which files it takes, and that send waits for every upload.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MOST_BYTES, createTray } from './tray.js';

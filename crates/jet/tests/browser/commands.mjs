@@ -1,3 +1,4 @@
+// Browser drive for slash commands and the tool browser of a registered app.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises';
 import path from 'node:path';

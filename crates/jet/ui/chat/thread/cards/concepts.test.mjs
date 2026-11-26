@@ -1,3 +1,4 @@
+// Tests that concept cards read their results into facts and lists.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardOf } from './model.js';

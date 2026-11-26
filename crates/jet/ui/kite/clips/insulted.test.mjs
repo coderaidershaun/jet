@@ -1,3 +1,4 @@
+// Tests that the played flip matches its reference roll, height, eyes and string.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

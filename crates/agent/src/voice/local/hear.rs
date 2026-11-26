@@ -2,9 +2,9 @@
 //! Opening the model takes a moment and close to a gigabyte, so one session is kept open and hears
 //! one clip at a time.
 
-use super::local::{self, Attempt};
-use super::{VoiceError, checked_clip};
 use crate::env_file;
+use crate::voice::local::{self, Attempt};
+use crate::voice::{VoiceError, checked_clip};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
@@ -57,7 +57,7 @@ impl Phonon2 {
         }
     }
 
-    /// The words in a clip of raw 16 kHz 16-bit little-endian mono audio, as [`super::hear`] takes
+    /// The words in a clip of raw 16 kHz 16-bit little-endian mono audio, as [`crate::voice::hear`] takes
     /// it. The session opens on the first clip, and again when the file or the CPU only mode changes.
     /// An empty clip only opens it, so the page can open it before the user speaks.
     /// # Errors

@@ -20,7 +20,7 @@ const SIGNIN_PAGE: &str = "/signin/";
 const OPEN_PATHS: [&str; 8] = [
     "/signin",
     "/signin/",
-    "/jet/",
+    "/kite/",
     "/dom.js",
     "/chat.css",
     "/api/auth/signin",

@@ -19,7 +19,7 @@ use crate::{
 use agent::{
     McpServerFacts,
     apps::{AppId, Registry, reaches_server_side},
-    mcp::{HttpMcpClient, McpError},
+    mcp_client::{HttpMcpClient, McpError},
 };
 use endpoints::{Credential, ToolEndpoints, outcome};
 use oauth::SignInError;

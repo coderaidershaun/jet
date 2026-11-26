@@ -1,3 +1,4 @@
+// The tool browser's safe discovery view of an app's tools.
 import { h } from '../dom.js';
 import { requestJson, randomId } from '../bridge/browser-agent.js';
 

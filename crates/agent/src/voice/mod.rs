@@ -1,21 +1,17 @@
-//! Jet's voice, both ways: the words of a reply as speech, made by Gemini or by Phonon on the
-//! server, and a clip of the user's speech as words, heard by Gemini or by Phonon-2 on the server. The key, the voice and the models are
-//! read from the environment or the nearest `.env` on every call, never from the settings.
+//! Jet's voice, both ways: a reply as speech and a clip as words, by Gemini or by a model on the server.
+//! The key, the voice and the models are read from the environment or the nearest `.env` on every call, never the settings.
 
 mod configuration;
 mod error;
 mod gemini;
 mod local;
-mod phonon;
-mod phonon2;
 mod wav;
 
 use crate::markdown::spoken_words;
 use configuration::{Hearing, Speaking};
 pub use error::VoiceError;
 use gemini::Gemini;
-pub use phonon::Phonon;
-pub use phonon2::{Phonon2, PhononMode};
+pub use local::{Phonon, Phonon2, PhononMode};
 
 /// The most characters of Markdown one call speaks.
 const MAX_CHARACTERS: usize = 2_000;

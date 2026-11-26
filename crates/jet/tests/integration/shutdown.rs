@@ -1,3 +1,4 @@
+//! Proves that stopping the host closes a running provider and its notes review within a bound.
 use super::support::{Host, request};
 use serde_json::json;
 use std::time::{Duration, Instant};

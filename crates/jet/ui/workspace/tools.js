@@ -1,3 +1,4 @@
+// The tool browser of an app: lists its tools and drafts a message that asks Jet to use one.
 import { h } from '../dom.js';
 import { requestJson } from '../bridge/browser-agent.js';
 import { createDiscovery, discoveryMarker, rawResult } from './discovery.js';

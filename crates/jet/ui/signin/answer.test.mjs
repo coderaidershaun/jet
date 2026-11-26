@@ -1,3 +1,4 @@
+// Tests that each sign-in refusal says what to do next and that sign-in returns to the page first asked for.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { nextAddress, refusalMessage } from './answer.js';

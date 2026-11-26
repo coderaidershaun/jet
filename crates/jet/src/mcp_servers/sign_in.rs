@@ -13,7 +13,7 @@ use crate::{
 };
 use agent::{
     apps::AppId,
-    mcp::{McpError, Renewal},
+    mcp_client::{McpError, Renewal},
 };
 use std::{
     collections::HashMap,

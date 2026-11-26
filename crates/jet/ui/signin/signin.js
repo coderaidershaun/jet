@@ -2,9 +2,9 @@
 // silently and goes straight back to Jet.
 
 import { icon } from '/dom.js';
-import { createDirector } from '/jet/director.js';
-import { mountJet } from '/jet/draw/view.js';
-import { createPlayer } from '/jet/player.js';
+import { createDirector } from '/kite/director.js';
+import { mountJet } from '/kite/draw/view.js';
+import { createPlayer } from '/kite/player.js';
 import { nextAddress, refusalMessage } from './answer.js';
 import { createSession } from './session.js';
 

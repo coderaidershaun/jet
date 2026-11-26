@@ -1,3 +1,4 @@
+// Helper for the commands drive: checks an app's tool catalogue and that safe discovery reads only what it should.
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 

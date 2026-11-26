@@ -11,7 +11,7 @@ import { svgIcon } from './icons.js';
 import { dueWords, isoDay, keysOf, latestRecord, newCount, readPane, scopeOf } from './model.js';
 import { CONFIRM_MS, disarm, idleTaps, inOrder, pressCancel, tapEnded } from './taps.js';
 import { planNodes } from './view.js';
-import { STATE_NAMES, nextState, stepState } from '../tasklist/model.js';
+import { STATE_NAMES, nextState, stepState } from '../task-list/model.js';
 import { files } from '../chat/library/store.js';
 
 const OPEN_KEY = 'jet.pane';

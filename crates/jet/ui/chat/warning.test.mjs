@@ -1,3 +1,4 @@
+// Tests that a voice problem is said once and marks the button until it clears.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWarning } from './warning.js';

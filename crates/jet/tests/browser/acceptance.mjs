@@ -1,3 +1,4 @@
+// The joined acceptance drive with a real Quanty app: two apps in frames, the tool browser, a cited app picture, refused picture addresses and a hanging reply.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, chmod, rm } from 'node:fs/promises';
 import path from 'node:path';

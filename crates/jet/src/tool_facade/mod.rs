@@ -18,7 +18,7 @@ use crate::files::Files;
 use crate::lock;
 use crate::objectives::Objectives;
 use crate::store::UserId;
-use agent::{McpConnection, McpServerFacts, TurnIdentity, mcp::HttpMcpClient};
+use agent::{McpConnection, McpServerFacts, TurnIdentity, mcp_client::HttpMcpClient};
 use axum::{
     Json, Router,
     body::Bytes,

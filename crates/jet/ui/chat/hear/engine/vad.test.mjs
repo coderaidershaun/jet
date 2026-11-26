@@ -1,3 +1,4 @@
+// Tests that the voice detector hears speech in a sentence and mostly nothing in quiet noise.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

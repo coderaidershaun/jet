@@ -6,7 +6,7 @@ use crate::store::{ObjectiveId, UserId};
 use crate::{lock, on_worker};
 use agent::{
     apps::{AppId, RegistryCommand},
-    mcp::{ToolRequest, ToolTarget},
+    mcp_client::{ToolRequest, ToolTarget},
 };
 use rmcp::{RoleServer, ServerHandler, model::*, service::RequestContext};
 use serde_json::to_value;

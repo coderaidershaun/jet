@@ -5,7 +5,7 @@ use super::{
     Binding,
     handler::{Handler, message},
 };
-use agent::{apps::AppId, mcp::ToolTarget};
+use agent::{apps::AppId, mcp_client::ToolTarget};
 use rmcp::{RoleServer, service::RequestContext};
 use serde_json::Value;
 

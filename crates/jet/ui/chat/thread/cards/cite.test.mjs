@@ -1,3 +1,4 @@
+// Tests that citation marks in a reply link to their sources.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { findSource, splitCitations } from './cite.js';

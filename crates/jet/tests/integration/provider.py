@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Stand-in for the model provider: answers a reply or a notes review, records each call, and hangs on request.
 import json, re, sys, time
 prompt = sys.stdin.read()
 review = '--json-schema' in sys.argv

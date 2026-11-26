@@ -1,3 +1,4 @@
+// Tests that an older render never overwrites newer text and that held text is revealed in order.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createReveal } from './throttle.js';

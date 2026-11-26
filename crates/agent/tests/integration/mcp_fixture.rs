@@ -4,7 +4,7 @@ use agent::{
         AddApp, App, AppOverrides, AppOwner, AppsInMemory, McpOverride, Reach, Registry,
         RegistryCommand,
     },
-    mcp::{HttpMcpClient, ToolRequest, ToolTarget},
+    mcp_client::{HttpMcpClient, ToolRequest, ToolTarget},
 };
 use rmcp::{
     RoleServer, ServerHandler,

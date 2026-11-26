@@ -1,3 +1,4 @@
+// Tests that words appear as their audio plays, and that a failed clip still shows its words.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSpokenReveal } from './spoken.js';

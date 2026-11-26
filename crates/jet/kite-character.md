@@ -1,6 +1,6 @@
 # Character policy: Jet the kite
 
-Read this before changing `ui/jet/` or adding an emotion. [CONTEXT.md](../../CONTEXT.md) defines the vocabulary; [README.md](README.md) covers the host, commands and checks.
+Read this before changing `ui/kite/` or adding an emotion. [CONTEXT.md](../../CONTEXT.md) defines the vocabulary; [README.md](README.md) covers the host, commands and checks.
 
 ## What Jet is
 
@@ -57,7 +57,7 @@ The player composes a frame from authored state plus derived roll, lift speed/st
 
 ## Motion grammar and authored references
 
-Shaun's motion scripts are the authority for new gestures. The current references are `jet-wave-motion.py`, `jet-wave.svg`/`.html`, `jet-flip-motion.py`, `jet-flip.svg`/`.html`, `character-kite.svg` and `jet-eyes-A/B/C.svg`, supplied in `/Users/shaun/Downloads/`. They are source references, not files shipped with the app. `dev/golden.mjs` extracts compact wave/flip fixtures into `ui/jet/fixtures/`.
+Shaun's motion scripts are the authority for new gestures. The current references are `jet-wave-motion.py`, `jet-wave.svg`/`.html`, `jet-flip-motion.py`, `jet-flip.svg`/`.html`, `character-kite.svg` and `jet-eyes-A/B/C.svg`, supplied in `/Users/shaun/Downloads/`. They are source references, not files shipped with the app. `dev/golden.mjs` extracts compact wave/flip fixtures into `ui/kite/fixtures/`.
 
 The wave anticipates with a dip, lifts past the target, settles, wags three times, drops past rest, recovers and holds. Its folded hand leads the body; delayed roll, stretch and trailing lines answer the lift. The wink shuts faster than it opens. The string lags while wind and hover bob continue.
 

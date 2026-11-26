@@ -8,7 +8,7 @@ use crate::{
 };
 use agent::{
     apps::{AppId, Reach, Registry},
-    mcp::{Endpoint, Endpoints, McpError, RenewFuture, Renewal, ToolCatalogue},
+    mcp_client::{Endpoint, Endpoints, McpError, RenewFuture, Renewal, ToolCatalogue},
 };
 use std::sync::{Arc, Mutex};
 

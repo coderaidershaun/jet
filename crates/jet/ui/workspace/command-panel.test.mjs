@@ -1,3 +1,4 @@
+// Tests the help panel rows and that it clears and returns focus when closed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createCommands } from './commands.js';

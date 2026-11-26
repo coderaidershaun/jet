@@ -1,3 +1,4 @@
+// Tests that the plan pane's states, dates, distances and groups read as plain words.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';

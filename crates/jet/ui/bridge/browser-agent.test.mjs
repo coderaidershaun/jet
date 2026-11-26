@@ -1,3 +1,4 @@
+// Tests the browser bridge: reconnecting, event de-duplication, app images, hearing and speech requests.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserAgent } from './browser-agent.js';

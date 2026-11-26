@@ -1,9 +1,9 @@
 //! What users send to a colleague's Jet: the send card that waits for the sender's tap, the item
 //! that the tap stores, and the states the item moves through until it ends.
 
+use super::agent_tasks::insert_task;
 use super::chats::insert_entry;
 use super::pane::insert_tap;
-use super::tasks::insert_task;
 use super::text_enum::text_enum;
 use super::{ChatId, NewTask, ObjectiveId, Store, StoreError, Tap, TaskId, UserId, seconds};
 use agent::{Entry, NewEntry};

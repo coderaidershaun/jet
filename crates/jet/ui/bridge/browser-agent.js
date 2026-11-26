@@ -1,7 +1,7 @@
+// The page's client for the server: JSON requests, uploads, app pictures and the reconnecting event stream.
+// Browser connections observe server-owned turns; reconnecting never starts another reply.
 import { readAppImage } from './images.js';
 import { uploadFile } from './uploads.js';
-
-// Browser connections observe server-owned turns; reconnecting never starts another reply.
 
 const TERMINAL = new Set(['finished', 'failed', 'stopped', 'noReply']);
 /** Events about the chat list rather than a turn: the page's chat list reads them for every chat, not only the open one. */

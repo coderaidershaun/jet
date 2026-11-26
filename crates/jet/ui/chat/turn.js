@@ -1,5 +1,5 @@
 // The chat turn: sends a message, follows Jet's reply and reactions, and keeps a held message until the reply ends.
-import { MOODS } from '../jet/director.js';
+import { MOODS } from '../kite/director.js';
 import { displayName } from '../bridge/settings.js';
 import { randomId } from '../bridge/browser-agent.js';
 import { localTimeLabel } from './clock.js';

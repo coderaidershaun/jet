@@ -1,6 +1,7 @@
 //! The one SQLite database of the data directory. Every SQL statement of the server lives in this
 //! module: each table module adds typed calls to `Store`, and each migration adds its tables.
 
+mod agent_tasks;
 mod apps;
 mod chats;
 mod directory;
@@ -18,10 +19,13 @@ mod signins;
 mod sources;
 mod steps;
 mod task_list;
-mod tasks;
 mod text_enum;
 mod update_notes;
 
+pub(crate) use agent_tasks::{
+    AgentTask, CancelOutcome, NewTask, Run, RunId, RunOutcome, Scheduled, SetBy, Settled,
+    Settlement, Snoozed, Stale, TaskEnd, TaskId, TaskKind, TaskState, Versions,
+};
 pub(crate) use chats::{Chat, ChatId, ChatKind, ChatSummary};
 pub(crate) use directory::{Email, NewUser, Person, Team, User, UserId};
 pub(crate) use files::{Added, Changed, Held};
@@ -43,10 +47,6 @@ pub(crate) use signins::{Rotation, SigninId};
 pub(crate) use sources::{NewSource, Source, SourceKind};
 pub(crate) use steps::{NewStep, Step, StepId};
 pub(crate) use task_list::{Day, Days, ListGoal, ListState, ListTask, Place, Refused, TaskWrite};
-pub(crate) use tasks::{
-    AgentTask, CancelOutcome, NewTask, Run, RunId, RunOutcome, Scheduled, SetBy, Settled,
-    Settlement, Snoozed, Stale, TaskEnd, TaskId, TaskKind, TaskState, Versions,
-};
 pub(crate) use update_notes::{NewNote, Note, NoteStatus};
 
 use crate::lock;

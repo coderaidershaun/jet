@@ -12,7 +12,7 @@ import {
   latestNote, needsFirst, noteTone, outcomeOf, progressWords, relativeWords, runTitle, setByWords, sharedWithWords,
   stepDueWords, stepsEndWords, timeWords, tokensWords, waitingItems,
 } from './model.js';
-import { markWords, stepState } from '../tasklist/model.js';
+import { markWords, stepState } from '../task-list/model.js';
 
 const TASKS_SHOWN_DAYS = 2;
 const EXAMPLE = 'I need to ship the kite page by Friday.';

@@ -1,3 +1,4 @@
+// Tests job cards: both result shapes, status polling and live progress.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardOf } from './model.js';

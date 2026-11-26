@@ -1,3 +1,4 @@
+// Tests that every clip in the catalogue is valid and playable.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPlayer } from '../player.js';

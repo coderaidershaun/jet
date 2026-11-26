@@ -8,10 +8,10 @@ mod check;
 mod inbox;
 
 use crate::chat::Chats;
-use crate::facade::Facade;
 use crate::lock;
 use crate::objectives::{Clock, DONE_KEPT_DAYS, Objectives};
 use crate::store::{AgentTask, ChatId, Store, StoreError};
+use crate::tool_facade::Facade;
 use agent::Stopper;
 use std::collections::HashSet;
 use std::sync::{

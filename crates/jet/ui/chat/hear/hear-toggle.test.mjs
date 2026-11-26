@@ -1,3 +1,4 @@
+// Tests the microphone button: its states, tooltips and the saved choice.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHearToggle } from './hear-toggle.js';

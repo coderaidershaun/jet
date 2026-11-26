@@ -1,3 +1,4 @@
+// Tests that Send, Enter and the end of a spoken turn send the forming message at the right time.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createComposerView } from './view.js';

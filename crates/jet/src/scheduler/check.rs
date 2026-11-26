@@ -2,13 +2,13 @@
 //! evidence rule, and settles the run, the entry and the next task in one transaction.
 
 use super::{Scheduler, brief::Gathered, inbox::Before};
-use crate::facade::{CheckSpec, Checked, read_label};
 use crate::lock;
 use crate::objectives::ObjectiveError;
 use crate::store::{
     AgentTask, ChatId, NewTask, RunId, RunOutcome, SetBy, Settled, Settlement, Source, SourceKind,
     Stale, StoreError, TaskEnd, TaskKind, Versions,
 };
+use crate::tool_facade::{CheckSpec, Checked, read_label};
 use agent::{CheckDone, NewEntry, Role, ToolCall, WakeError};
 use std::collections::HashSet;
 

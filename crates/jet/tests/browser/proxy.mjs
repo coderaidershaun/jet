@@ -1,3 +1,4 @@
+// Browser drive for the proxy path: reaching apps through the host over http and https.
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';

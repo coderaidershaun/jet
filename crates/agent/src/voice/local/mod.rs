@@ -1,6 +1,11 @@
-//! What the two models that run on the server share: the quick check of their weights, and the last
-//! attempt to load them, which is kept even when it failed so the settings can say why until the
-//! weights change.
+//! The two models that run on the server, one to speak and one to hear. This file holds what they
+//! share: the quick check of their weights, and the last attempt to load them, kept even when it failed.
+
+mod hear;
+mod speak;
+
+pub use hear::{Phonon2, PhononMode};
+pub use speak::Phonon;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};

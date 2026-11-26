@@ -1,3 +1,4 @@
+// Helper for every drive: starts and stops the host, signs in, saves owner settings and waits for a condition.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';

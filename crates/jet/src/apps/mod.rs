@@ -10,7 +10,7 @@ use agent::{
         App, AppId, AppOwner, Reach, Registry, RegistryChange, RegistryCommand, RegistryError,
         RegistryResult, Step,
     },
-    mcp::HttpMcpClient,
+    mcp_client::HttpMcpClient,
 };
 use axum::{Router, extract::FromRef};
 use std::sync::{Arc, Mutex, OnceLock, Weak};

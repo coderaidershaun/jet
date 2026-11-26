@@ -3,7 +3,7 @@ use super::mcp_fixture::{World, calls, eventually, within_seconds};
 use agent::apps::Reach;
 use agent::{
     apps::{AppOverrides, McpOverride, RegistryCommand},
-    mcp::McpError,
+    mcp_client::McpError,
 };
 use rmcp::transport::streamable_http_server::session::SessionManager;
 use serde_json::json;
@@ -325,9 +325,9 @@ async fn a_redirect_from_an_apps_endpoint_is_not_followed() {
 
 /// One tool server at a fixed address, for an owner who may only reach public addresses.
 struct PublicOnly(String);
-impl agent::mcp::Endpoints for PublicOnly {
-    fn endpoint(&self, _: &agent::apps::AppId) -> Result<agent::mcp::Endpoint, McpError> {
-        Ok(agent::mcp::Endpoint {
+impl agent::mcp_client::Endpoints for PublicOnly {
+    fn endpoint(&self, _: &agent::apps::AppId) -> Result<agent::mcp_client::Endpoint, McpError> {
+        Ok(agent::mcp_client::Endpoint {
             url: self.0.clone(),
             headers: Vec::new(),
             reach: Reach::PublicOnly,
@@ -339,7 +339,7 @@ impl agent::mcp::Endpoints for PublicOnly {
 async fn a_server_on_the_server_itself_is_refused_when_used_by_an_owner_who_may_not_reach_it() {
     let world = World::new().await;
     let url = world.app.mcp_url.clone().unwrap().to_string();
-    let client = agent::mcp::HttpMcpClient::new(std::sync::Arc::new(PublicOnly(url)));
+    let client = agent::mcp_client::HttpMcpClient::new(std::sync::Arc::new(PublicOnly(url)));
     let refused = client.catalogue(&world.app.id).await.unwrap_err();
     assert!(refused.to_string().contains("private network"), "{refused}");
     assert_eq!(world.fixture.sessions_opened.load(Ordering::SeqCst), 0);

@@ -1,3 +1,4 @@
+// Tests that math drawings reach the page without style attributes and an unreadable formula keeps its TeX.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTypesetter } from './math.js';

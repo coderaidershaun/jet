@@ -1,5 +1,5 @@
 //! Read the group and cost marks an app may put in a tool's `_meta`, and match a search against a tool.
-use agent::mcp::ToolDefinition;
+use agent::mcp_client::ToolDefinition;
 use serde_json::Value;
 
 const GROUP_MARK: &str = "quanty/group";

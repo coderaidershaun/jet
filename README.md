@@ -9,7 +9,7 @@ crates/jet/                       the server program (axum) and the page it serv
   src/apps/                       app routes: registry (/api/apps), tool browser, proxy to running apps
   src/chat/                       one runtime per chat: commands, the streamed reply, reconnect snapshots, the notes review timer (it also sets a follow-up for each promise Jet made in its own lines, and rearms when it falls due too soon)
   src/evidence/                   outside evidence: a GitHub repository's activity, each user's sealed GitHub token
-  src/facade/                     the eighteen MCP tools the provider sees
+  src/tool_facade/                the eighteen MCP tools the provider sees
   src/objectives/                 objectives and agent-tasks: computed dates, local time to UTC
   src/scheduler/                  wakes Jet when an agent-task falls due and runs the check, and brings a colleague's item to its user
   src/files/                      uploads, files Jet writes, artifacts (a chat's files, their notes, versions and sharing), the sandboxed reader child, export, all kept in the store
@@ -19,7 +19,7 @@ crates/jet/                       the server program (axum) and the page it serv
   src/store/                      the SQLite store, its migrations, and the one-time import of an older Jet's files
   ui/bridge/                      the page's HTTP commands, event stream and default settings
   ui/chat/                        message box, thread, drawer, settings, speaker (voice/) and microphone (hear/)
-  ui/jet/                         the kite character: parts, clips, director, player
+  ui/kite/                        the kite character: parts, clips, director, player
   ui/workspace/                   app frames, slash commands, tool browser
   ui/vendor/                      KaTeX and the TEN VAD voice detector
 crates/agent/src/                 the library behind the server
@@ -27,7 +27,7 @@ crates/agent/src/                 the library behind the server
   chat/                           the data types of a conversation: events, model choices, context use
   conversation/                   send a message, the thread, notes, the persona prompt, session policy, the check brief and turn
   markdown/                       a reply as safe HTML, math, vocal cues and the words to speak
-  mcp/                            one HTTP client for app tools, with a shared catalogue
+  mcp_client/                     one HTTP client for app tools, with a shared catalogue
   turn/                           one exchange with Claude Code, Codex or agy: processes, stream, mood line
   voice/                          Gemini speaking and hearing, Phonon speaking and Phonon-2 hearing
   feeling.rs                      the optional JEV feeling classifier
@@ -726,7 +726,7 @@ for supported content URLs and deployment limits.
 - [App integration contract](docs/app-contract.md): descriptors, stable registry identity and forwarding rules.
 - [Host and UI notes](crates/jet/README.md).
 - [Browser acceptance commands](crates/jet/tests/browser/README.md).
-- [Character policy](crates/jet/character-policy.md).
+- [Character policy](crates/jet/kite-character.md).
 
 ```sh
 cargo build --workspace

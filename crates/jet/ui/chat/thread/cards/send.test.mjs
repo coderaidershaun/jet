@@ -1,3 +1,4 @@
+// Tests send cards: the proposal, a refused tap, the sent list and entry marks.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardOf } from './model.js';

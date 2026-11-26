@@ -4,7 +4,7 @@ use super::Apps;
 use crate::{account::SignedIn, chat::MAX_ID_BYTES};
 use agent::{
     apps::AppId,
-    mcp::{ToolCatalogue, ToolRequest, ToolTarget},
+    mcp_client::{ToolCatalogue, ToolRequest, ToolTarget},
 };
 use axum::{
     Json, Router,

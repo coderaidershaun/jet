@@ -1,3 +1,4 @@
+// Tests that the drawing mounts once and only sets attributes, never an inline style.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { restingFrame } from './paint.js';

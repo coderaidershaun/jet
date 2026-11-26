@@ -1,3 +1,4 @@
+// Extra tools and failure modes for the test app server, on only when DISCOVERY_TEST is 1.
 const schema = { type: 'object', properties: {}, additionalProperties: false };
 
 export function createDiscoveryFixture() {

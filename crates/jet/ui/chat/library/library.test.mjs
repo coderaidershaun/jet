@@ -1,3 +1,4 @@
+// Tests the file library rows, search, usage warning, delete and rename.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { attachmentName, chatsWords, deleteAsk, factsWords, matches, splitName, usageWords } from './words.js';

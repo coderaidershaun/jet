@@ -1,6 +1,6 @@
 # Jet glossary
 
-The domain words of Jet, each with one meaning. [The character policy](crates/jet/character-policy.md) holds the geometry and motion rules.
+The domain words of Jet, each with one meaning. [The character policy](crates/jet/kite-character.md) holds the geometry and motion rules.
 
 - **Kite** — Jet's blue body, bow, black eyes and pale string, drawn in a 200 × 240 reference frame.
 - **Form** — the body's 52 ordered outline points: kite or spinner, or a point-by-point blend between them.
@@ -8,8 +8,8 @@ The domain words of Jet, each with one meaning. [The character policy](crates/je
 - **Tip** — the bottom point of the kite, about which it turns while standing. The bow's bottom rests on ground y 238.
 - **Standing** — tip at (100, 231.8), height track `y = 0`, string lying left along the lane floor.
 - **Hovering** — reference centre (100, 88), tip (100, 173), height track `y = 58.8`, string hanging in the wind.
-- **Part** — geometry for a body form, eyes, folded corner or string, in `ui/jet/parts/`.
-- **Draw** — `ui/jet/draw/`: pure `paint(frame, { unitPx })` creates SVG nodes; `view.js` mounts once and updates attributes. _Avoid_: render (that means Markdown to HTML).
+- **Part** — geometry for a body form, eyes, folded corner or string, in `ui/kite/parts/`.
+- **Draw** — `ui/kite/draw/`: pure `paint(frame, { unitPx })` creates SVG nodes; `view.js` mounts once and updates attributes. _Avoid_: render (that means Markdown to HTML).
 - **State** — the thirteen authored values in `JetState`: y, roll, lift, squash, form, lids, eyeKind, anger, squint, payout, stringPose, written and drift. _Avoid_: using it for idle or working.
 - **Frame** — state composed with idle layers, delayed roll, corner speed/stretch, eyes, pivot and string points, ready to draw.
 - **Status** — the director's current activity: `idle`, `flying`, `reacting` or `working`. `flying` also covers settle. _Avoid_: mood, state.
@@ -31,7 +31,7 @@ The domain words of Jet, each with one meaning. [The character policy](crates/je
 - **Written route** — the local polyline the string's free end traces, with a length, scale and tremor.
 - **Settings** — each user's own saved reduced motion, persona (the name of their Jet), model, thinking effort and turn budget, a row of the Store. A new account reads the defaults. App registrations live separately. The **program paths** of the providers are not a user's setting: they are one server-wide row that only an admin reads or changes, because whoever sets them runs a program on the server.
 - **Reduced motion** — app setting combined with the system preference: always grounded, no flight, blink, idle oscillation or spinner rotation; the form still morphs.
-- **Animation catalogue** — `ui/jet/clips/catalogue.js`, the builders and hold flags for all seven clips.
+- **Animation catalogue** — `ui/kite/clips/catalogue.js`, the builders and hold flags for all seven clips.
 - **Director** — chooses and queues clips from chat events and feelings; reads only the time supplied by the host.
 - **Emotion** — a feeling with an authored animation: `hello` or `insulted`; `neutral` has none. `EMOTIONS` maps words to clips.
 - **Mood** — the supported word at the start of the provider's reply: `neutral`, `hello` or `insulted`. Unknown saved words read as neutral.

@@ -1,3 +1,4 @@
+// Tests where a spoken turn is cut, how long it waits for late words and which blips are dropped.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createEndpointer, SETTINGS, WORDS_LATE_MS } from './endpointer.js';

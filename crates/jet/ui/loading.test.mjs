@@ -1,3 +1,4 @@
+// Tests that the loading screen leaves only after the page is settled and painted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { finishLoading } from './loading.js';

@@ -1,3 +1,4 @@
+// Tests plan taps: the two-tap cancel, failure notices, queued taps and failed jobs.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { disarm, idleTaps, inOrder, pressCancel, tapEnded } from './taps.js';

@@ -93,7 +93,7 @@ The row goes into the same `nav.files-nav` that holds Files, **above** Files, be
 └───────────────────────────────────────────────────────────────┘
 ```
 
-The order is **Today, Tomorrow, Goals, Later, then Done**, the charter's own order: "what should be done today, what should be done tomorrow, what are the overarching goals" (D7). The first screen answers the daily question, "what do I do today". The goals stay above Later, which is the long tail. Jet can plan up to 30 steps for each goal (`src/facade/objectives.rs:102`), so Later can be long.
+The order is **Today, Tomorrow, Goals, Later, then Done**, the charter's own order: "what should be done today, what should be done tomorrow, what are the overarching goals" (D7). The first screen answers the daily question, "what do I do today". The goals stay above Later, which is the long tail. Jet can plan up to 30 steps for each goal (`src/tool_facade/objectives.rs:102`), so Later can be long.
 
 Later is **not** folded, because every task stays one look away, as on paper. Folding it after about 7 rows was considered and rejected: a fold hides where a dragged task lands, and that needs its own rules.
 
@@ -189,7 +189,7 @@ The box's accessible name states the state: `aria-label="Draft the spec, in prog
 
 - **A tap on the box moves the task one step forward:** gray to yellow, then yellow to green. This is how the person marks paper: colour it yellow when you start, green when you finish. Two taps to reach done is deliberate. A stray first tap never sends a task to the pile, and costs a quick task one extra tap.
 - **The three words in the open row set any status directly** (§3.3): "Not started", "In progress", "Done". This is how a stray yellow is undone, the way you rub out a mark on paper. Jet is told only the latest state (§5), so a corrected mark never reaches Jet as a false fact.
-- **Putting a task back** (a tap on a green box) returns it to the state it had before it was done: yellow if it had been started, gray if not. One function, `putBackState(task)` in `ui/tasklist/model.js`, decides this, and the plan pane imports it. The task keeps its place in the order (D4).
+- **Putting a task back** (a tap on a green box) returns it to the state it had before it was done: yellow if it had been started, gray if not. One function, `putBackState(task)` in `ui/task-list/model.js`, decides this, and the plan pane imports it. The task keeps its place in the order (D4).
 - **On hover with a fine pointer**, a gray box shows its border in `--warning` and a yellow box shows it in `--ok`. The box shows what a click will do, so nobody has to be taught the cycle.
 - **A goal's colour comes from its tasks**, through the view in §4.4. It is gray while no task has been started or done, and yellow once any task has been started or done. It turns green once every task is done, if it has at least one. A green goal stays in the list until it is closed, by "Mark done" in its open row (§3.6) or by Jet's `close`. The goal dot is `aria-hidden`. The goal row's name carries the colour in words (§3.6), and so does the visible "2/5".
 - **Jet changes status too.** `step_tick` marks a task done or not done, and its new `started` field marks it in progress (§4.9). The list draws whatever the rows say.
@@ -350,14 +350,14 @@ The drag follows [NN/g: drag and drop](https://www.nngroup.com/articles/drag-dro
 | `server::task_list` (`src/server/task_list.rs`) | The HTTP routes: read and change the list, then tell the user's pages | none | new |
 | `pane_taps` (`src/store/pane.rs`, `src/chat/mod.rs:277-309`) | Tell Jet each line once, before the user's next message in its chat | `pane_taps` rows, which gain `step_id` and `step_added` | changed: one column pair and one replace rule |
 | `scheduler` (`src/scheduler/mod.rs`) | Delete old done tasks on each pass of its loop | none | changed: one call beside `expire_items` |
-| page `ui/tasklist/` | Draw the list and turn gestures into calls | the open row and its draft, the armed delete, the lingering done rows, the drag | new |
+| page `ui/task-list/` | Draw the list and turn gestures into calls | the open row and its draft, the armed delete, the lingering done rows, the drag | new |
 | `workspace/shell.js` | Show one place at a time: a chat, an app, tools, files or the task list | `mode` | changed (§4.8) |
 
 ### 4.2 Diagram
 
 ```mermaid
 flowchart LR
-    page["ui/tasklist (page)"] -->|"GET, POST, PATCH, DELETE"| routes["server::task_list"]
+    page["ui/task-list (page)"] -->|"GET, POST, PATCH, DELETE"| routes["server::task_list"]
     routes -->|"change"| rules["objectives::task_list"]
     rules -->|"rows"| store["store::task_list + objective_steps"]
     rules -->|"one line per task"| taps[("pane_taps")]
@@ -612,7 +612,7 @@ Setting a task to the state it already has writes nothing and keeps no line.
 | `src/scheduler/mod.rs` | `purge_task_list(&store, &chats, now)` beside `expire_items(now)`, logged and returning nothing (§4.6) |
 | `src/store/objectives.rs` | `rename_and_close` renames a goal, closes it as done, or both, in one transaction, with the goal lines of §5.3 |
 | `src/server/pane.rs`, `src/objectives/pane.rs` | Delete the route `PUT /api/objectives/{id}/steps/{step}` and `Objectives::tap_step`. The pane's box calls `PATCH /api/task-list/tasks/{id}` (D9). Their tests in `tests/integration/pane.rs` move to `tests/integration/task_list.rs` |
-| `src/facade/objectives.rs`, `src/facade/handler.rs` | §4.9 |
+| `src/tool_facade/objectives.rs`, `src/tool_facade/handler.rs` | §4.9 |
 
 **Page.**
 
@@ -625,7 +625,7 @@ Setting a task to the state it already has writes nothing and keeps no line.
 | `ui/plan/model.js` | `daysLeftWords` and `stepDueWords` keep their words. Their `'warn'` tones become `'quiet'` (§1.4), and their tests in `model.test.mjs` follow |
 | `ui/plan/icons.js` | Add `dash` |
 | `ui/dom.js` | Add the `tasks` icon |
-| `ui/index.html` | `<link rel="stylesheet" href="./tasklist/tasklist.css">` after `library.css` |
+| `ui/index.html` | `<link rel="stylesheet" href="./task-list/task-list.css">` after `library.css` |
 | `ui/chat/main.js` | `createTaskList({ openChat, announce, titleOf })` beside `createLibrary`, passed to `createWorkspace` |
 
 **Tree after the work.** New files are marked +.
@@ -636,13 +636,13 @@ crates/jet/src/
   server/task_list.rs             + routes
   store/task_list.rs              + reads of the views, writes, order, purge
   store/migrations/0014_task_list.sql  +
-crates/jet/ui/tasklist/
+crates/jet/ui/task-list/
   model.js                        + pure: readTaskList, groups, words, nextState, putBackState, keyboardMove
   model.test.mjs                  +
   store.js                        + the page's copy of the list, the write queue, the day-change check
   view.js                         + draws the place over the local state (§4.12), the open row, focus
   drag.js                         + pointer and touch drag; answers { day, after } on drop, knows no server
-  tasklist.css                    +
+  task-list.css                   +
 crates/jet/tests/
   integration/task_list.rs        +
   browser/tasks.mjs               +
@@ -652,12 +652,12 @@ Each new file opens with a comment of one or two lines, as `AGENTS.md` asks.
 
 ### 4.9 Jet's tools: what changes so Jet sees the whole list
 
-The changes are in `src/facade/objectives.rs` and `src/facade/handler.rs`, and they are kept small.
+The changes are in `src/tool_facade/objectives.rs` and `src/tool_facade/handler.rs`, and they are kept small.
 
 1. **`objectives_list`** answers `{"objectives": [...], "looseSteps": [Step, ...]}`. `looseSteps` holds the user's tasks with no goal: the open ones, and the done ones from the last 90 days. Every step carries `startedAt`. Add this sentence to `OBJECTIVES_LIST`: "`looseSteps` are tasks the user keeps under no objective. A step's `due` is the day it is planned for, `startedAt` means the user has started it, and steps are in the user's own order."
 2. **`step_add`**: `id` becomes optional. Without it, the task has no goal. Add to `OBJECTIVES_UPDATE`: "Leave out `id` on `step_add` only for a task under no objective." The answer is the objective's view when there is an `id`, and `{"step": Step}` otherwise.
 3. **`step_tick` and `step_edit`**: `id` becomes optional. Without it, the step is found by its id among all of the user's tasks. A step id that is not the user's is `NoSuchStep`, as now.
-4. **`step_tick`** gains an optional `started: boolean`. Give one of `done` or `started`. With neither, `done` defaults to `true`, as now (`facade/objectives.rs:262-267`). With both, the command is refused with `nothingToChange`.
+4. **`step_tick`** gains an optional `started: boolean`. Give one of `done` or `started`. With neither, `done` defaults to `true`, as now (`tool_facade/objectives.rs:262-267`). With both, the command is refused with `nothingToChange`.
 
    | Given | Effect (the same as §4.5) |
    | --- | --- |
@@ -668,7 +668,7 @@ The changes are in `src/facade/objectives.rs` and `src/facade/handler.rs`, and t
 
 5. **Viewers of the goal.** `handler.rs` told a goal's viewers only when `arguments.command.id` was given. With `id` optional, a colleague viewing the goal would miss the change. The handler takes the goal id from the command's answer, the objective view's `id`, and falls back to the command's `id`. A step of a goal is always answered with its objective view, so the `{"step": Step}` answer is only for a task under no goal, which has no viewers, and `Step` carries no `goalId`.
 
-Jet's own writes are not told back to it. They reach the page through the `pane_changed` that `facade/handler.rs:385-397` already sends.
+Jet's own writes are not told back to it. They reach the page through the `pane_changed` that `tool_facade/handler.rs:385-397` already sends.
 
 ### 4.10 Unknowns (spike before building on them)
 
@@ -789,7 +789,7 @@ Every refusal is checked before the first write and changes nothing.
 | The event stream starting again | `agent.watch` calls `paneChanged()` (`main.js:490-499`), so the store reads again |
 | The day passing | every 60 s, and on `visibilitychange` to visible, the store compares `isoDay(now, timeZone)` (`ui/plan/model.js:96-99`) with the read's `today`, and reads again when they differ |
 
-**The store** (`ui/tasklist/store.js`):
+**The store** (`ui/task-list/store.js`):
 
 - Writes go out one at a time, in the order they were made, through a small queue.
 - Every request, read or write, takes a ticket. An answer is drawn only if it is newer than the one already drawn, as the plan pane's `refreshNumber` does (`pane.js:141-153`).
@@ -1153,14 +1153,14 @@ End: Jet is never told that the task was in progress.
 The page builder can work against the JSON of §4.11 from a fixture before the server lands.
 
 1. Spike U1.
-2. `ui/tasklist/model.js` and `model.test.mjs`:
+2. `ui/task-list/model.js` and `model.test.mjs`:
    - `readTaskList`, which never throws and reads any part of the wrong kind as empty, as `readPane` does (`ui/plan/model.js:30-41`);
    - grouping by day;
    - the words of §1.5;
    - `nextState` and `putBackState`;
    - `keyboardMove(list, id, ±1)`, which gives `{day, after}`.
 3. `store.js`: the queue, the tickets, the day-change check and the drawer count.
-4. `view.js` and `tasklist.css`: part 1, §3.1 to §3.4, §3.6, §3.7, and the overlay rules of §4.12.
+4. `view.js` and `task-list.css`: part 1, §3.1 to §3.4, §3.6, §3.7, and the overlay rules of §4.12.
 5. `drag.js`: §3.5.
 6. The shell changes, the drawer row and the `#tasks` address (§4.8).
 7. The plan pane's mark and its quiet date tones (D9, §1.4).
@@ -1210,7 +1210,7 @@ The page builder can work against the JSON of §4.11 from a fixture before the s
 - `src/store/{mod,steps,pane,shares,objectives,chats,directory}.rs`
 - `src/objectives/{mod,pane,time}.rs`
 - `src/server/{pane,shares}.rs`
-- `src/facade/{objectives,handler}.rs`
+- `src/tool_facade/{objectives,handler}.rs`
 - `src/chat/{mod,chats}.rs`
 - `src/scheduler/{mod,check,brief}.rs`
 - `ui/index.html`, `ui/chat.css`, `ui/dom.js`

@@ -3,7 +3,7 @@
 To run Jet, see the [Run section of the root guide](../../README.md#run). `jet --help` lists deployment options. The data directory owns settings, transcript, session, notes, the app registry and the files: the ones Jet has written and the ones the user attached.
 
 The [root guide](../../README.md) covers registration, commands, Quanty launch and
-existing-data reuse. Chat starts in the main content beside one drawer. Selecting
+existing-data reuse. The page is served from the `ui/` folder on disk at run time, and is not built into the binary. Chat starts in the main content beside one drawer. Selecting
 an app collapses that drawer to an icon rail; Jet returns to the preserved chat.
 `/tools` uses the main content, and settings stay at the drawer footer. The
 workspace retains visited frames and chat drafts across navigation. `/app reload`

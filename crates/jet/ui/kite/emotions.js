@@ -1,3 +1,4 @@
+// The emotions: each feeling word Jet knows and the clip that plays it; neutral has none.
 /**
  * @typedef {object} Emotion
  * @property {string} clip        a key of the clip catalogue

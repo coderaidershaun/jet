@@ -7,7 +7,7 @@ mod conversation;
 mod env_file;
 mod feeling;
 mod markdown;
-pub mod mcp;
+pub mod mcp_client;
 #[cfg(any(test, feature = "test-server"))]
 pub mod test_server;
 mod turn;

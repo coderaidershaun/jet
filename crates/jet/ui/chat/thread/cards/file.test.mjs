@@ -1,3 +1,4 @@
+// Tests that file cards link only to the saved file and that file changes read correctly.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardOf } from './model.js';
