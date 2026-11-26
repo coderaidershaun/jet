@@ -1212,3 +1212,49 @@ fn a_reply_tap_that_cannot_keep_its_line_sends_nothing() {
         "the card stays open"
     );
 }
+
+/// A colleague's item whose bring-up check is cut off three times by a restart still waits to be
+/// brought up: its task is never failed and no "stopped trying" notice is posted.
+#[test]
+fn three_interrupted_bring_ups_keep_the_item() {
+    let mut host = host();
+    let manager = host.sign_in_as(MANAGER);
+    let start: u64 = 4_084_606_800;
+    host.set_clock(start);
+    let card = propose(&host, &manager, "ask", "question", "Can we meet on Friday?");
+    std::fs::write(
+        host.dir.path().join("check-script.json"),
+        json!([{"wait": "never-made"}]).to_string(),
+    )
+    .unwrap();
+    assert_eq!(tap(&manager, &card).0, 200);
+    let mut clock = start;
+    for round in 1..=3 {
+        until(&format!("check {round} to run"), || {
+            (one::<i64>(
+                &host,
+                "SELECT count(*) FROM task_runs WHERE ended_at IS NULL",
+            ) == 1)
+                .then_some(())
+        });
+        host = host.restart();
+        if round < 3 {
+            clock += 4 * 60 * 60 + 1;
+        }
+        host.set_clock(clock);
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let task_state: String = one(&host, "SELECT state FROM agent_tasks");
+    let notices: i64 = one(
+        &host,
+        "SELECT count(*) FROM entries WHERE entry LIKE '%stopped trying%'",
+    );
+    assert_eq!(
+        task_state, "scheduled",
+        "the item's delivery task must wait again"
+    );
+    assert_eq!(
+        notices, 0,
+        "a colleague's item is never given up with a notice"
+    );
+}

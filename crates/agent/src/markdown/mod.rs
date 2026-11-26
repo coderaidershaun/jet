@@ -138,4 +138,20 @@ mod tests {
             assert!(!has_style_attribute(&actual), "{}: {actual}", vector.name);
         }
     }
+
+    /// One line of backtick runs of lengths 1 to 1999, none closed: the scan for a closing run
+    /// must not start over for each opener. The quadratic scan took 99 seconds in a debug build.
+    #[test]
+    fn unclosed_backtick_runs_render_in_linear_time() {
+        let mut text = String::new();
+        for length in 1..2000 {
+            text.push_str(&"`".repeat(length));
+            text.push('a');
+        }
+        let started = std::time::Instant::now();
+        render_markdown(&text);
+        dollar_math(&text);
+        let took = started.elapsed();
+        assert!(took < std::time::Duration::from_secs(10), "took {took:?}");
+    }
 }

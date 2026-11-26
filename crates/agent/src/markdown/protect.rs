@@ -1,6 +1,7 @@
 //! Cuts math out of a reply before the Markdown parser reads it, so the parser never rewrites a
 //! formula. Each formula leaves a marker behind that stands for it until the events are restored.
 
+use std::collections::HashMap;
 use std::iter::Peekable;
 use std::ops::Range;
 use std::vec::IntoIter;
@@ -84,9 +85,12 @@ impl Protected {
             out: String::with_capacity(text.len()),
             markers: Vec::new(),
             no_closer_before: [0; 3],
+            backtick_runs: HashMap::new(),
+            paragraph_breaks: Vec::new(),
             money,
             verbatim: verbatim.into_iter().peekable(),
         };
+        scanner.index_code_spans();
         scanner.run();
         Protected {
             text: scanner.out,
@@ -106,6 +110,11 @@ struct Scanner<'t> {
     /// kind before that point cannot close either, so a paragraph full of unclosed openers is
     /// searched once and not once for each opener.
     no_closer_before: [usize; 3],
+    /// Where each run of backticks starts, by run length, so a code span finds its closer by
+    /// lookup and text full of unclosed backticks stays linear.
+    backtick_runs: HashMap<usize, Vec<usize>>,
+    /// The newlines that end a paragraph or come before a code fence, which end a code span.
+    paragraph_breaks: Vec<usize>,
     money: Money,
     /// Where the text is copied byte for byte, in order of start.
     verbatim: Peekable<IntoIter<Range<usize>>>,
@@ -279,24 +288,39 @@ impl Scanner<'_> {
         self.copy_to(end);
     }
 
-    fn code_span_end(&self, from: usize, run: usize) -> Option<usize> {
-        let mut at = from;
+    fn index_code_spans(&mut self) {
+        let mut at = 0;
         while at < self.bytes.len() {
             match self.bytes[at] {
-                b'\n' if self.paragraph_break_after(at) => return None,
                 b'`' => {
-                    let found = self.run_of(at, b'`');
-                    if found == run {
-                        return Some(at + found);
-                    }
-                    at += found;
-                    continue;
+                    let run = self.run_of(at, b'`');
+                    self.backtick_runs.entry(run).or_default().push(at);
+                    at += run;
                 }
-                _ => {}
+                b'\n' => {
+                    if self.paragraph_break_after(at) {
+                        self.paragraph_breaks.push(at);
+                    }
+                    at += 1;
+                }
+                _ => at += 1,
             }
-            at += 1;
         }
-        None
+    }
+
+    /// Just after the run of `run` backticks that closes a span opened before `from`, unless a
+    /// paragraph break comes first.
+    fn code_span_end(&self, from: usize, run: usize) -> Option<usize> {
+        let runs = self.backtick_runs.get(&run)?;
+        let closer = *runs.get(runs.partition_point(|&start| start < from))?;
+        let breaks = self
+            .paragraph_breaks
+            .partition_point(|&newline| newline < from);
+        let broken = self
+            .paragraph_breaks
+            .get(breaks)
+            .is_some_and(|&newline| newline < closer);
+        (!broken).then_some(closer + run)
     }
 
     /// True when the line after the newline at `newline` is blank or opens a code fence.

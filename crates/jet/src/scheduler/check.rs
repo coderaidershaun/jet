@@ -76,7 +76,8 @@ struct Verdict {
 
 impl Scheduler {
     /// Puts back the tasks that were running when the server stopped: each waits a minute with
-    /// the attempt counted, and the third time one is cut off it fails, with one notice.
+    /// the attempt counted, and the third time one is cut off it fails, with one notice. A task
+    /// that brings up a colleague's message waits again without counting and is never given up.
     pub(super) fn recover(&self) -> Result<(), StoreError> {
         let now = (self.clock)();
         for (task, run) in self.store.running_tasks()? {
@@ -90,7 +91,7 @@ impl Scheduler {
                     "the server stopped during the check",
                 ),
                 &title,
-            );
+            )?;
             self.settle(&task, run, None, verdict)?;
         }
         Ok(())
@@ -111,7 +112,7 @@ impl Scheduler {
                     AFTER_FAILURE_SECONDS,
                     (RunOutcome::Failed, &found),
                     &title,
-                );
+                )?;
                 return self.settle(task, run, None, verdict);
             }
         };
@@ -135,7 +136,7 @@ impl Scheduler {
                         "the server stopped during the check",
                     ),
                     &gathered.title,
-                )),
+                )?),
             };
             if let Some(verdict) = verdict {
                 return self.settle(task, run, None, verdict);
@@ -184,13 +185,13 @@ impl Scheduler {
             .upgrade()
             .and_then(|chats| chats.chat(task.user, Some(task.chat_id)).ok())
         else {
-            return Ok(self.give_up_or_wait(
+            return self.give_up_or_wait(
                 task,
                 now,
                 AFTER_INTERRUPTION_SECONDS,
                 (RunOutcome::Interrupted, "the server is closing"),
                 title,
-            ));
+            );
         };
         let failed = |found: String| {
             self.give_up_or_wait(
@@ -203,7 +204,7 @@ impl Scheduler {
         };
         let transport = match chat.transport_for(settings.model) {
             Ok(transport) => transport,
-            Err(error) => return Ok(failed(error.to_string())),
+            Err(error) => return failed(error.to_string()),
         };
         let notes = self.store.notes(task.user)?;
         let connection = self.facade.bind_check(CheckSpec {
@@ -230,7 +231,7 @@ impl Scheduler {
             Ok(turn) => turn,
             Err(error) => {
                 self.facade.finish_check(&connection);
-                return Ok(failed(error.to_string()));
+                return failed(error.to_string());
             }
         };
         self.signals.attach(turn.stopper());
@@ -252,8 +253,8 @@ impl Scheduler {
                     "the server stopped during the check",
                 ),
                 title,
-            )),
-            Err(error) => Ok(failed(error.to_string())),
+            )?),
+            Err(error) => failed(error.to_string()),
         }
     }
 
@@ -372,7 +373,8 @@ impl Scheduler {
     }
 
     /// A run that was cut off or failed: the task waits `delay` seconds and the attempt counts,
-    /// unless it was the last attempt, and then the task fails with one notice.
+    /// unless it was the last attempt, and then the task fails with one notice. A task that
+    /// brings up a colleague's message is never given up: it waits and the attempt is not counted.
     fn give_up_or_wait(
         &self,
         task: &AgentTask,
@@ -380,9 +382,23 @@ impl Scheduler {
         delay: u64,
         (outcome, found): (RunOutcome, &str),
         title: &str,
-    ) -> Verdict {
+    ) -> Result<Verdict, StoreError> {
+        if self.store.item_of_task(task.id)?.is_some() {
+            return Ok(Verdict {
+                outcome,
+                found: found.to_owned(),
+                read: Vec::new(),
+                tokens: None,
+                cost_usd: None,
+                entry: None,
+                ending: Ending::Wait {
+                    later: self.keep(task, now + ITEM_AGAIN_SECONDS),
+                    counted: false,
+                },
+            });
+        }
         let last = task.attempts >= MAX_ATTEMPTS;
-        Verdict {
+        Ok(Verdict {
             outcome,
             found: found.to_owned(),
             read: Vec::new(),
@@ -401,7 +417,7 @@ impl Scheduler {
                     counted: true,
                 }
             },
-        }
+        })
     }
 
     fn now(&self) -> u64 {

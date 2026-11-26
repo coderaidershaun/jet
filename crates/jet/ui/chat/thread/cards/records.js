@@ -54,6 +54,8 @@ function objectiveLine(command, objective) {
     case 'step_add':
       return 'Added the step ' + (orNull(command.title) ?? stringOf(recordOf(listOf(objective.steps).at(-1)).title));
     case 'step_tick':
+      if (command.started === true) return 'Started ' + stringOf(stepOf(objective, command.step).title);
+      if (command.started === false) return 'Put ' + stringOf(stepOf(objective, command.step).title) + ' back to not started';
       return (command.done === false ? 'Unticked ' : 'Ticked ') + stringOf(stepOf(objective, command.step).title);
     case 'step_edit': {
       const step = stepOf(objective, command.step);
@@ -116,8 +118,11 @@ export function recordsOf(call) {
   const command = recordOf(input.command);
   const result = recordOf(call.result);
   switch (call.tool) {
-    case 'objectives_update':
-      return isRecord(result.objective) ? { line: objectiveLine(command, result.objective), fields: objectiveFields(command, result.objective) } : null;
+    case 'objectives_update': {
+      // A task under no goal comes back as one step, so it reads through a goal that holds only that step.
+      const objective = isRecord(result.objective) ? result.objective : isRecord(result.step) ? { steps: [result.step] } : null;
+      return objective ? { line: objectiveLine(command, objective), fields: objectiveFields(command, objective) } : null;
+    }
     case 'objectives_list': {
       const objectives = listOf(result.objectives).map(recordOf);
       const fields = objectives.map((objective) => ({ term: stringOf(objective.title), text: doneSteps(objective) + ' of ' + count(listOf(objective.steps).length, 'step') + (objective.due ? ' · due ' + dayWords(objective.due) : '') }));

@@ -168,10 +168,11 @@ function runRow(run, ctx, withTitle) {
 const runList = (runs, ctx, withTitle) => h('ul', { class: 'plan-rows' }, ...runs.map((run) => runRow(run, ctx, withTitle)));
 
 function sharedRow(item, ctx) {
+  const closed = item.status === 'done' || item.status === 'dropped';
   const latest = item.latest == null ? null : recordOf(item.latest);
   return foldRow('shared', item.id, ctx,
-    [h('span', { class: 'row-title', text: stringOf(item.title) }), h('span', { class: 'row-facts' }, leftFact(item.daysLeft), fact(progressWords(item.steps), 'quiet', 'fact progress'))],
-    [stepsList(item.steps, ctx, null, item.due), latest ? noteBlock(latest, ctx, null) : h('p', { class: 'pane-hint', text: 'No update yet.' })]);
+    [h('span', { class: 'row-title', text: stringOf(item.title) }), h('span', { class: 'row-facts' }, closed ? fact(item.status === 'done' ? 'Done' : 'Dropped') : leftFact(item.daysLeft), fact(progressWords(item.steps), 'quiet', 'fact progress'))],
+    [stepsList(item.steps, closed ? { ...ctx, today: null } : ctx, null, item.due), latest ? noteBlock(latest, ctx, null) : h('p', { class: 'pane-hint', text: 'No update yet.' })]);
 }
 
 /** What colleagues share, one row each under its owner. */

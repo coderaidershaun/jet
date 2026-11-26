@@ -10,6 +10,9 @@ use jiff::{Timestamp, civil, tz::TimeZone};
 use super::{ChatState, Chats};
 use crate::store::{ChatId, NewTask, SetBy, TaskKind, TaskState, UserId};
 
+/// The most characters a task's reason may hold; the store refuses a longer one.
+const WHY_LIMIT: usize = 300;
+
 /// A promise with no usable time is due this long after it was said.
 const DEFAULT_WAIT_SECONDS: u64 = 24 * 60 * 60;
 
@@ -60,9 +63,10 @@ impl Chats {
                 continue;
             }
             let due = Due::of(promise, zone.as_deref(), now_ms);
+            let why: String = promise.words.chars().take(WHY_LIMIT).collect();
             let task = NewTask {
                 kind: TaskKind::FollowUp,
-                why: &promise.words,
+                why: &why,
                 due_at: due.at,
                 local_time: &due.local_time,
                 time_zone: &due.zone,
@@ -118,4 +122,55 @@ impl Due {
 fn known_zone(name: Option<&str>) -> (String, TimeZone) {
     name.and_then(|name| Some((name.to_owned(), TimeZone::get(name).ok()?)))
         .unwrap_or_else(|| ("UTC".to_owned(), TimeZone::UTC))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chat::{TurnOwner, TurnTools};
+    use crate::files::Files;
+    use crate::scheduler::Signals;
+    use crate::store::test_store;
+    use agent::{McpConnection, TurnIdentity};
+    use std::time::Duration;
+
+    struct NoTools;
+    impl TurnTools for NoTools {
+        fn bind(&self, _: &TurnIdentity, _: bool, _: TurnOwner) -> McpConnection {
+            unreachable!("no turn runs in this test")
+        }
+        fn colleague_text_read(&self, _: TurnOwner, _: &str, _: bool) {}
+        fn revoke(&self, _: TurnOwner, _: &str) {}
+        fn shutdown(&self) {}
+    }
+
+    #[test]
+    fn a_promise_longer_than_a_reason_still_gets_its_follow_up_with_the_words_cut() {
+        let (dir, store, ada, _) = test_store();
+        let files = Files::new(store.clone());
+        let chats = Chats::new(
+            store.clone(),
+            Arc::new(NoTools),
+            files,
+            dir.path().into(),
+            Duration::ZERO,
+            Signals::default(),
+        );
+        let reviewed = vec![(String::new(), chats.main(ada).unwrap())];
+        let words = format!("{}é{}", "x".repeat(WHY_LIMIT - 1), "y".repeat(40));
+        let promise = Promise {
+            chat: 0,
+            said_at: 1_800_000_000_000,
+            words: words.clone(),
+            at: None,
+        };
+        chats.schedule_promises(ada, &reviewed, &[promise], 1_800_000_000_000);
+        let tasks = store.agent_tasks(ada).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(
+            tasks[0].why,
+            words.chars().take(WHY_LIMIT).collect::<String>()
+        );
+        assert!(tasks[0].why.ends_with('é'));
+    }
 }

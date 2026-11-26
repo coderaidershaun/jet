@@ -78,3 +78,11 @@ test('a refused send or reply is headed as a message to a colleague that could n
   assert.equal(refused({ action: 'schedule', at: 'x', why: 'y' }).head, 'Jet could not update your plan');
   assert.equal(refused({ action: 'send' }).advice, 'Too many today.');
 });
+
+test('a step Jet marks started reads as started, and a task under no goal reads as its own line', () => {
+  const step = { id: 4, title: 'Book the park', due: null, doneAt: null };
+  assert.equal(line('objectives_update', { action: 'step_tick', id: 1, step: 2, started: true }, { objective }), 'Started Fly it in the park');
+  assert.equal(line('objectives_update', { action: 'step_tick', id: 1, step: 2, started: false }, { objective }), 'Put Fly it in the park back to not started');
+  assert.equal(line('objectives_update', { action: 'step_add', title: 'Book the park' }, { step }), 'Added the step Book the park');
+  assert.equal(line('objectives_update', { action: 'step_tick', step: 4 }, { step: { ...step, doneAt: 1 } }), 'Ticked Book the park');
+});
