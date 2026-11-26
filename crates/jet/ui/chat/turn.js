@@ -1,3 +1,4 @@
+// The chat turn: sends a message, follows Jet's reply and reactions, and keeps a held message until the reply ends.
 import { MOODS } from '../jet/director.js';
 import { displayName } from '../bridge/settings.js';
 import { randomId } from '../bridge/browser-agent.js';
@@ -312,7 +313,18 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
           active.turnId = envelope.turn.turnId;
           if (current?.user) thread.userSaved(current.user.id);
         } else if (current?.reaction && (!active || !active.turnId || pendingEntry)) followReaction(current.identity);
-        else turn.restore(event.snapshot);
+        else {
+          // The server took another page's message first, so this page's unsent one waits for that turn to end.
+          if (active && !active.dispatched) {
+            const unsent = active;
+            const later = thread.cancelHold();
+            thread.hold(unsent.text, unsent.attachments);
+            thread.hold(later.text, later.attachments);
+            heldAppId = unsent.appId;
+            composerView.setHeld(thread.held);
+          }
+          turn.restore(event.snapshot);
+        }
         return;
       }
       if (waiting && waiting.turnId === envelope.turn?.turnId) waiting.events.push(event);
@@ -386,7 +398,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
         } else onEvent(event);
       };
       try {
-        await agent.send(message, receive);
+        await agent.send({ ...message, chatId: mine.chatId }, receive);
       } catch (error) {
         if (active !== mine) return;
         const failure = {
@@ -400,6 +412,7 @@ export function createTurn({ agent, settings, thread, view, follow, composer, co
 
     /** Puts the user's emoji on a Jet message, or takes it off with null. The new list comes back as a `reactions` event. */
     react(entryId, emoji) {
+      voice.unlock();
       return agent.react({ ...turnSettings(activeAppId()), entryId, emoji }).catch((error) => {
         thread.addWarning('The reaction could not be saved: ' + (error?.message ?? 'the server did not answer'));
         paint();

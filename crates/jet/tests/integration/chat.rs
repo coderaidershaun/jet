@@ -1,3 +1,6 @@
+//! Prove, through the real host, that an accepted turn is idempotent and survives a restart, that every POST
+//! gets its answer even when its body is unread, and that `/api/markdown` is bounded and stalls no other route.
+
 use super::support::{Host, request};
 
 #[test]
@@ -212,4 +215,96 @@ fn restart_recovers_request_identity_without_replaying_provider() {
         assert_eq!(hear.0, 503, "{query}");
         assert_eq!(hear.1["kind"], "notConfigured");
     }
+}
+
+/// Writes a POST to a socket in two pieces, as a client a little slower than the server does, and
+/// gives the first line of the answer, or the error the client saw.
+fn slow_post_answer(host: &Host, path: &str, signed: bool) -> String {
+    use std::io::{Read, Write};
+    use std::time::Duration;
+    let address = host.url.trim_start_matches("http://");
+    let attempt = || -> Result<String, std::io::Error> {
+        let mut socket = std::net::TcpStream::connect(address)?;
+        let identity = if signed {
+            host.signed_lines()
+        } else {
+            format!("Origin: {}\r\n", host.origin)
+        };
+        write!(
+            socket,
+            "POST {path} HTTP/1.1\r\nHost: {address}\r\n{identity}Content-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n",
+        )?;
+        std::thread::sleep(Duration::from_millis(5));
+        socket.write_all(b"{}")?;
+        std::thread::sleep(Duration::from_millis(50));
+        // ureq sets the read timeout before each read; on macOS a reset shows there as errno 22.
+        socket.set_read_timeout(Some(Duration::from_secs(5)))?;
+        let mut answer = String::new();
+        socket.read_to_string(&mut answer)?;
+        Ok(answer.lines().next().unwrap_or_default().to_owned())
+    };
+    attempt().unwrap_or_else(|error| format!("error {:?} {}", error.raw_os_error(), error.kind()))
+}
+
+#[test]
+fn a_post_whose_body_the_handler_does_not_read_still_gets_its_answer() {
+    let host = Host::start();
+    for path in ["/api/chat/forget", "/api/inbox/cards/999999/send", "/mcp"] {
+        let answers: Vec<String> = (0..20)
+            .map(|_| slow_post_answer(&host, path, true))
+            .collect();
+        assert!(
+            answers.iter().all(|line| line.starts_with("HTTP/1.1")),
+            "{path}: {answers:?}"
+        );
+    }
+}
+
+#[test]
+fn the_guards_refusal_of_a_post_with_a_body_reaches_a_slow_client() {
+    let host = Host::start();
+    let answers: Vec<String> = (0..20)
+        .map(|_| slow_post_answer(&host, "/api/chat/forget", false))
+        .collect();
+    assert!(
+        answers.iter().all(|line| line.starts_with("HTTP/1.1 401")),
+        "{answers:?}"
+    );
+}
+
+/// The longest body `/api/markdown` takes, as the host sets it.
+const MARKDOWN_LIMIT: usize = 512 * 1024;
+
+#[test]
+fn markdown_over_its_limit_is_refused() {
+    let host = Host::start();
+    let text = "a".repeat(MARKDOWN_LIMIT + 1024);
+    let (status, _) = host.post("/api/markdown", serde_json::json!({ "text": text }));
+    assert_eq!(status, 413);
+}
+
+/// How many renders hold the host's one worker in the stall test.
+const RENDERS: usize = 3;
+
+#[test]
+fn slow_renders_do_not_stall_other_requests() {
+    use std::time::{Duration, Instant};
+    let host = Host::start_env(&[], &[("TOKIO_WORKER_THREADS", "1")]);
+    // Ordinary markdown, as long as the host takes: a debug build needs seconds for one render.
+    let unit = "```rust\nfn main() { println!(\"hi\"); }\n```\n\n";
+    let text = unit.repeat(MARKDOWN_LIMIT / unit.len() * 3 / 5);
+    let user = host.owner();
+    std::thread::scope(|scope| {
+        for _ in 0..RENDERS {
+            scope.spawn(|| user.post("/api/markdown", serde_json::json!({ "text": text })));
+        }
+        std::thread::sleep(Duration::from_millis(300));
+        let started = Instant::now();
+        user.get("/api/status");
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "a cheap request waited {:?} behind the renders",
+            started.elapsed()
+        );
+    });
 }

@@ -1,16 +1,21 @@
 //! Adapt browser requests to the conversation, and join the routes of accounts, apps, files,
 //! voice, chats and the task list with them into the one router the server runs, behind the sign-in guard. A route
 //! that acts on a chat takes its id from the `chat` query field, and acts on the main chat without
-//! one.
+//! one. One layer around all of it reads a small request body first, so an answer is never lost to
+//! a connection reset.
 
 use agent::{Feeling, Notes};
 use axum::{
     Json, Router,
-    extract::{Query, State},
-    http::{HeaderValue, header::CACHE_CONTROL},
-    middleware,
+    body::Body,
+    extract::{DefaultBodyLimit, Query, Request, State},
+    http::{
+        HeaderValue, StatusCode,
+        header::{CACHE_CONTROL, CONTENT_LENGTH},
+    },
+    middleware::{self, Next},
     response::{
-        Response, Sse,
+        IntoResponse, Response, Sse,
         sse::{Event, KeepAlive},
     },
     routing::{get, get_service, post},
@@ -65,12 +70,43 @@ pub(super) fn router(host: Server) -> Router {
         .route("/api/chat/forget", post(forget))
         .route("/api/settings", get(load_settings).put(save_settings))
         .route("/api/memory", get(load_memory).put(save_memory))
-        .route("/api/markdown", post(markdown))
+        .route(
+            "/api/markdown",
+            post(markdown).layer(DefaultBodyLimit::max(MARKDOWN_LIMIT)),
+        )
         .route("/api/feel", post(feel))
         .fallback_service(ui)
         .layer(guard)
         .with_state(host)
         .merge(facade)
+        .layer(middleware::from_fn(read_small_body))
+}
+
+/// The longest text `/api/markdown` renders, a little above the longest reply Jet writes.
+const MARKDOWN_LIMIT: usize = 512 * 1024;
+/// The longest request body the host reads whole before its handler runs.
+const UNREAD_BODY_DRAIN: usize = 64 * 1024;
+
+/// Reads a small request body before the handler runs. A handler that answers without reading its
+/// body, and a server that closes with those bytes unread, make the system reset the connection,
+/// and the client then loses the answer. A request with no length, or a long one, streams as it is.
+async fn read_small_body(request: Request, next: Next) -> Response {
+    let small = request
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|length| length.to_str().ok()?.parse::<usize>().ok())
+        .is_some_and(|length| length <= UNREAD_BODY_DRAIN);
+    if !small {
+        return next.run(request).await;
+    }
+    let (parts, body) = request.into_parts();
+    match axum::body::to_bytes(body, UNREAD_BODY_DRAIN).await {
+        Ok(bytes) => {
+            next.run(Request::from_parts(parts, Body::from(bytes)))
+                .await
+        }
+        Err(_) => StatusCode::BAD_REQUEST.into_response(),
+    }
 }
 
 /// The chat a request is about: the `chat` query field, or the main chat when it is left out.
@@ -225,8 +261,10 @@ async fn save_memory(
 struct Text {
     text: String,
 }
-async fn markdown(Json(text): Json<Text>) -> Json<String> {
-    Json(agent::render_markdown(&text.text))
+async fn markdown(Json(text): Json<Text>) -> Result<Json<String>, BridgeError> {
+    Ok(Json(
+        on_worker(move || agent::render_markdown(&text.text)).await?,
+    ))
 }
 async fn feel(
     State(host): State<Server>,

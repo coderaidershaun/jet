@@ -1,3 +1,4 @@
+// Tests of the chat turn: a message's flight, its feeling wait, reactions, holds and restores.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTurn } from './turn.js';
@@ -268,7 +269,7 @@ test("a reaction on Jet's message is saved with the settings of a send, and its 
   s.event({ kind: 'finished', entry: { ...s.entry, id: 2 } });
   await s.advance(1000);
   await s.turn.react(2, '👍');
-  const { text: _text, feeling: _feeling, requestId: _id, timeZone: _zone, ...settings } = s.requests[0];
+  const { text: _text, feeling: _feeling, requestId: _id, timeZone: _zone, chatId: _chat, ...settings } = s.requests[0];
   const { entryId, emoji, ...same } = s.reacts[0];
   assert.deepEqual([entryId, emoji], [2, '👍']);
   assert.deepEqual(same, settings, 'a reaction and a message start their turns the same way');
@@ -372,4 +373,61 @@ test('a message typed in a chat still goes to that chat when the page opens anot
   assert.equal(s.requests.length, 1, 'the message is sent');
   assert.deepEqual([s.requests[0].text, s.requests[0].chatId], ['hi', 7], 'to the chat it was typed in');
   assert.equal(s.thread.replying, false, 'and shows nothing in the chat now on screen');
+});
+
+test("a message waiting for its feeling is held when another page's message in the chat is accepted first", async (t) => {
+  const answers = [];
+  const feel = () => new Promise((resolve) => answers.push(resolve));
+  const s = await setup(t, { pending: true, serverEvents: true, feel });
+  const theirs = { identity: { requestId: 'other', turnId: 't2' }, user: { id: 1, role: 'user', text: 'theirs', at: 1 }, text: '', tools: [] };
+  s.turn.observe({ turn: { requestId: 'other', turnId: 't2' }, event: { kind: 'accepted', snapshot: { history: [], active: theirs } } });
+  for (const resolve of answers) resolve({ mood: 'neutral' });
+  await s.advance(0);
+  await s.sending;
+  assert.equal(s.requests.length, 0, 'it waits for the other turn');
+  assert.equal(s.thread.held?.text, 'hi', 'and is held, so it is shown and sent when that turn ends');
+});
+
+test('a message typed in a chat goes to that chat when another opens and the feeling settles before its snapshot', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { createBrowserAgent } = await import('../bridge/browser-agent.js');
+  const posted = [];
+  let feelDone, snapshotDone;
+  class Source { close() {} }
+  const json = (value) => ({ ok: true, json: async () => value });
+  const fetch = (path) => {
+    if (path === '/api/feel') return new Promise((resolve) => { feelDone = () => resolve(json({ mood: 'neutral' })); });
+    if (path === '/api/snapshot?chat=22') return new Promise((resolve) => { snapshotDone = () => resolve(json({ chatId: 22, epoch: 'e', cursor: 0, history: [], active: null })); });
+    if (path === '/api/snapshot') return Promise.resolve(json({ chatId: 11, epoch: 'e', cursor: 0, history: [], active: null }));
+    if (path.startsWith('/api/chat/send')) { posted.push(path); return Promise.resolve(json({ user: { id: 1 } })); }
+    if (path === '/api/markdown') return Promise.resolve(json('<p></p>'));
+    return Promise.resolve(json({}));
+  };
+  const agent = createBrowserAgent({ fetch, EventSource: Source, storage: null, uuid: () => 'id', delay: async () => {} });
+  await agent.snapshot();
+  const noop = () => {};
+  const live = { feel: () => ({ revealAt: 0 }), measure: () => ({}), send: noop, mood: () => ({ revealAt: 0 }), replying: noop, done: noop, failed: noop, stopped: noop, showInLane: noop, showHero: noop };
+  const turn = createTurn({
+    agent, settings: { persona: { name: 'Jet' }, model: 'sonnet', effort: 'medium', turnBudgetUsd: 1 },
+    thread: createThread(), composer: createComposer({ empty: true }), page: { announce: {} },
+    view: { render: noop, liveLane: noop }, follow: { onSend: noop },
+    composerView: { refresh: noop, setLayout: noop, setHeld: noop }, live, afterReply: noop,
+  });
+  const sending = turn.send('typed in chat A');
+  await new Promise(setImmediate);
+  const opening = agent.openChat(22, (snapshot) => turn.restore(snapshot, { fresh: true }));
+  feelDone();
+  for (let i = 0; i < 10; i++) await new Promise(setImmediate);
+  snapshotDone();
+  await opening;
+  await sending;
+  assert.deepEqual(posted, ['/api/chat/send?chat=11'], 'the message is posted to chat A, where it was typed');
+});
+
+test('a reaction unlocks sound, as a sent message does', async (t) => {
+  const voice = speakingVoice();
+  const s = await setup(t, { voice: voice.part });
+  const before = voice.unlocked;
+  await s.turn.react(2, '👍');
+  assert.equal(voice.unlocked, before + 1);
 });
