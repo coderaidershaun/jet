@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Task list mockup, screen 03: Overdue over its limit, Move all armed, an open late row. Opens from disk with no server; mock.js draws it from the state below. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list mockup: Overdue over its limit, Move all armed, an open late row</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="task-list.css">
+<link rel="stylesheet" href="frame.css">
+</head>
+<body>
+<p class="mk-caption"><b>03. Overdue over its limit, Move all armed, an open late row.</b> Overdue shows 3 of 5 with Show 2 more. The first tap on Move all to Today armed it as Move 5 to Today? (a second tap within 4 s confirms). The open late row has no day pressed and its Up and Down are disabled, each with its reason.</p>
+<div id="app"></div>
+<script src="mock.js"></script>
+<script>Mock.render(document.getElementById('app'), { open: 1, armed: true, focus: ['move-all'] });</script>
+</body>
+</html>

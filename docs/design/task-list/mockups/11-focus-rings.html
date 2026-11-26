@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Task list mockup, screen 11: Focus rings. Opens from disk with no server; mock.js draws it from the state below. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list mockup: Focus rings</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="task-list.css">
+<link rel="stylesheet" href="frame.css">
+</head>
+<body>
+<p class="mk-caption"><b>11. Focus rings.</b> For one image, the ring is drawn on seven controls at once, among them the pressed Status segment of an open row, whose ring takes --on-fill; in use only the focused one shows it. Each is the page's :focus-visible rule: 2 px solid --focus, 2 px out (inset on the add field and segmented buttons).</p>
+<div id="app"></div>
+<script src="mock.js"></script>
+<script>Mock.render(document.getElementById('app'), { open: 4, focus: ['sum-late', 'add', 'mark-2', 'seg-not_started', 'chip-6', 'goal-2', 'move-all'] });</script>
+</body>
+</html>

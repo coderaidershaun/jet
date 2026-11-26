@@ -77,8 +77,11 @@ export function createTaskStore({ request = requestJson, now = () => Date.now() 
     tell('read');
   }
 
-  /** One change: shown at once through `apply`, sent after every change before it, and taken back if refused. */
-  function write(failure, apply, call) {
+  /**
+   * One change: shown at once through `apply`, sent after every change before it, and taken back if refused. A refusal
+   * puts its words in `alert`, or, for a `quiet` change whose caller shows them itself, only in the answer's `notice`.
+   */
+  function write(failure, apply, call, quiet = false) {
     const change = { apply };
     if (apply) pending.push(change);
     writes += 1;
@@ -94,9 +97,10 @@ export function createTaskStore({ request = requestJson, now = () => Date.now() 
         return { ok: true, changed: server.changed };
       } catch (error) {
         pending = pending.filter((item) => item !== change);
-        alert = tapEnded(failure, error).notice;
+        const notice = tapEnded(failure, error).notice;
+        if (!quiet) alert = notice;
         readWanted = true;
-        return { ok: false, error };
+        return { ok: false, error, notice };
       } finally {
         writes -= 1;
         tell('write');
@@ -108,6 +112,8 @@ export function createTaskStore({ request = requestJson, now = () => Date.now() 
   }
 
   const taskPath = (id) => `${BASE}/tasks/${encodeURIComponent(id)}`;
+  /** `failure` names what did not happen, such as 'The task could not be moved'. `at` places a task put back. */
+  const change = (id, patch, failure, at = null) => write(failure, (list) => applyPatch(list, id, patch, now(), at), () => request(taskPath(id), patch, 'PATCH'));
 
   return {
     get state() { return state(); },
@@ -139,10 +145,14 @@ export function createTaskStore({ request = requestJson, now = () => Date.now() 
       if (take(raw, number)) tell('read');
     },
     clearGone() { gone = ''; },
-    /** Adds a task last in its day. It shows once the server answers, which is why it is not drawn ahead. */
-    add: (title, day) => write('The task could not be added', null, () => request(`${BASE}/tasks`, { title, day }, 'POST')),
-    /** `failure` names what did not happen, such as 'The task could not be moved'. `at` places a task put back. */
-    change: (id, patch, failure, at = null) => write(failure, (list) => applyPatch(list, id, patch, now(), at), () => request(taskPath(id), patch, 'PATCH')),
+    /**
+     * Adds a task last in its day, under `goalId` or none. It shows once the server answers, which is why it is not drawn
+     * ahead, and a refusal is the caller's to show beside its field.
+     */
+    add: (title, day, goalId = null) => write('The task could not be added', null, () => request(`${BASE}/tasks`, { title, day, goalId }, 'POST'), true),
+    change,
+    /** Gives each late task today's date, one change after another, each keeping its place in the one order. */
+    moveAllToToday: (ids) => Promise.all(ids.map((id) => change(id, { day: 'today' }, 'Some tasks could not be moved'))),
     remove: (id) => write('The task could not be deleted', (list) => applyDelete(list, id), () => request(taskPath(id), undefined, 'DELETE')),
     renameGoal: (id, title) => write('The goal could not be renamed', (list) => applyGoalTitle(list, id, title), () => request(`${BASE}/goals/${encodeURIComponent(id)}`, { title }, 'PATCH')),
     closeGoal: (id) => write('The goal could not be closed', null, () => request(`${BASE}/goals/${encodeURIComponent(id)}`, { state: 'done' }, 'PATCH')),

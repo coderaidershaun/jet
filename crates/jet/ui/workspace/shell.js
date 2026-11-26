@@ -30,10 +30,10 @@ export function createWorkspace({ agent, page, library, taskList, titleOf, onToo
   const placeButtons = [placeButton('tasks', 'Task list', 'tasks', tasksCount), placeButton('files', 'Files', 'files')];
   // The places are rows above the chats, so they stay in sight however long the chat list grows.
   inner.querySelector('.chats').before(h('nav', { class: 'files-nav', 'aria-label': 'Task list and files' }, ...placeButtons.map((button) => h('div', { class: 'files-row' }, button))));
-  taskList.onCount((count) => {
-    tasksCount.hidden = count === 0;
-    tasksCount.textContent = String(count);
-    const label = count === 0 ? 'Task list' : `Task list, ${count} for today`;
+  taskList.onCount(({ overdue, dueToday }) => {
+    tasksCount.hidden = overdue === 0 && dueToday === 0;
+    tasksCount.replaceChildren(...(overdue ? [h('span', { class: 'late' }, icon('alert'), String(overdue)), ` · ${dueToday}`] : [String(dueToday)]));
+    const label = overdue ? `Task list, ${overdue} overdue, ${dueToday} due today` : dueToday ? `Task list, ${dueToday} due today` : 'Task list';
     placeButtons[0].setAttribute('aria-label', label);
     placeButtons[0].title = label;
   });

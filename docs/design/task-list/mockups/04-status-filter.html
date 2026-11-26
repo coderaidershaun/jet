@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Task list mockup, screen 04: Status filter on: In progress. Opens from disk with no server; mock.js draws it from the state below. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list mockup: Status filter on: In progress</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="task-list.css">
+<link rel="stylesheet" href="frame.css">
+</head>
+<body>
+<p class="mk-caption"><b>04. Status filter on: In progress.</b> The pressed count is filled; the filter line says what shows; only sections with a match are drawn; drag and one-place moves are off.</p>
+<div id="app"></div>
+<script src="mock.js"></script>
+<script>Mock.render(document.getElementById('app'), { filter: 'progress', focus: ['sum-progress'] });</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Task list mockup, screen 07: Loading. Opens from disk with no server; mock.js draws it from the state below. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list mockup: Loading</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="task-list.css">
+<link rel="stylesheet" href="frame.css">
+</head>
+<body>
+<p class="mk-caption"><b>07. Loading.</b> Skeletons in the final shape, no shimmer; the add bar is disabled and says why; the first heading is a bar with no text.</p>
+<div id="app"></div>
+<script src="mock.js"></script>
+<script>Mock.render(document.getElementById('app'), { kind: 'loading' });</script>
+</body>
+</html>

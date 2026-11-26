@@ -27,7 +27,7 @@ test('a refused change shows at once, is taken back, says why, and reads the lis
   await tick();
   assert.equal(fake.calls[1].method, 'PATCH');
   fake.calls[1].reject({ kind: 'taskGone', message: 'That task is no longer in your list' });
-  assert.deepEqual(await renamed, { ok: false, error: { kind: 'taskGone', message: 'That task is no longer in your list' } });
+  assert.deepEqual((await renamed).error, { kind: 'taskGone', message: 'That task is no longer in your list' });
   assert.equal(store.state.list.tasks[0].title, 'Call the bank', 'taken back');
   assert.equal(store.state.alert, 'The task could not be renamed. That task is no longer in your list. Try again.');
   assert.equal(fake.calls[2].path, '/api/task-list', 'and the list is read again');
@@ -70,4 +70,26 @@ test('a read keeps a task being edited as it is, and draws once the edit ends', 
   await gone;
   assert.equal(store.state.gone, 'Call the bank', 'a read without the open task ends the edit and names it');
   assert.deepEqual(store.state.list.tasks, []);
+});
+
+test('an add carries its goal, and Move all to Today sends one change per task, in order, with no place', async () => {
+  const fake = server();
+  const store = createTaskStore({ request: fake.request });
+  const first = store.refresh();
+  fake.calls[0].resolve(answer([{ ...task(1), late: true, date: '2026-11-23' }, { ...task(2), late: true, date: '2026-11-24' }]));
+  await first;
+  const added = store.add('Order the fabric', 'tomorrow', 7);
+  await tick();
+  assert.deepEqual(fake.calls[1].body, { title: 'Order the fabric', day: 'tomorrow', goalId: 7 });
+  fake.calls[1].reject({ kind: 'offline', message: 'Jet could not be reached' });
+  assert.equal((await added).notice, 'The task could not be added. Jet could not be reached. Try again.');
+  assert.equal(store.state.alert, '', 'a failed add is shown beside its field, not in the alert');
+  store.moveAllToToday([2, 1]);
+  assert.deepEqual(store.state.list.tasks.map((t) => [t.id, t.late]), [[1, false], [2, false]], 'both leave Overdue at once, in their places');
+  for (const id of [2, 1]) {
+    await tick(); await tick();
+    const call = fake.calls.at(-1);
+    assert.deepEqual([call.method, call.path, call.body], ['PATCH', `/api/task-list/tasks/${id}`, { day: 'today' }]);
+    call.resolve(answer([]));
+  }
 });

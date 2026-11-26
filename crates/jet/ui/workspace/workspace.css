@@ -48,6 +48,8 @@
 /* A place takes the whole width; the plan of the chat comes back with the chat. */
 .workspace-shell:is([data-mode="files"], [data-mode="tasks"])[data-pane] { --pane-w: 0px; }
 .workspace-shell:is([data-mode="files"], [data-mode="tasks"]) :is(.side-pane, .pane-toggle, .pane-scrim) { display: none !important; }
-/* The number of today's open tasks beside the Task list row. It is not a badge: nothing here is unread. */
-.nav-count { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+/* The overdue and due-today counts beside the Task list row. It is not a badge: nothing here is unread. */
+.nav-count { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.nav-count .late { display: inline-flex; align-items: center; gap: 2px; color: var(--danger); font-weight: 700; }
+.nav-count .icon { width: 12px; height: 12px; }
 .workspace-shell[data-rail="true"] .nav-count { display: none; }

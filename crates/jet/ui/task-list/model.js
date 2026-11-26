@@ -1,5 +1,5 @@
-// What the task list knows without a page: the server's read made safe, the days a task falls in, the words of a
-// row, the status cycle, and each change applied to the page's own copy before the server answers. Pure, so tested.
+// What the task list knows without a page: the server's read made safe, the parts and counts of the agenda, the words
+// of a row and a goal, the status cycle, and each change applied to the page's own copy before the server answers.
 
 import { isRecord, listOf, numberOrNull, orNull, recordOf, stringOf } from '../chat/thread/cards/guard.js';
 import { dateWords, daysLeftWords, dueDayWords, isoDay } from '../plan/model.js';
@@ -55,15 +55,88 @@ export function readDonePage(raw) {
   return { done: records(page.done, readTask).filter((task) => task.doneAt !== null), more: page.more === true };
 }
 
-/** The open tasks of each day, in the user's one order. */
-export function dayGroups(list) {
-  const groups = { today: [], tomorrow: [], later: [] };
-  for (const task of list.tasks) groups[task.day].push(task);
+/** The open tasks in the page's four parts, each in the user's one order. `today` holds no late task. */
+export function agendaGroups(list) {
+  const groups = { late: [], today: [], tomorrow: [], later: [] };
+  for (const task of list.tasks) groups[task.late ? 'late' : task.day].push(task);
   return groups;
 }
 
-/** The drawer's count: today's open tasks. */
-export const todayCount = (list) => list.tasks.filter((task) => task.day === 'today').length;
+const isDoneToday = (task, list) => task.doneAt !== null && isoDay(task.doneAt, list.timeZone ?? 'UTC') === list.today;
+
+/** The done tasks of today, newest first, as the read sends them. */
+export const doneToday = (list) => list.done.filter((task) => isDoneToday(task, list));
+
+/** The four counts of the summary, which are also the drawer's two. */
+export function summaryCounts(list) {
+  const groups = agendaGroups(list);
+  return {
+    overdue: groups.late.length, dueToday: groups.today.length,
+    inProgress: list.tasks.filter((task) => task.state === 'in_progress').length, doneToday: doneToday(list).length,
+  };
+}
+
+/** Whether a task shows under a filter: 'late', 'today', 'progress', 'done', `{ goalId }`, or null for none. */
+export function matches(task, filter, list) {
+  if (filter === null) return true;
+  if (typeof filter === 'object') return task.goalId === filter.goalId;
+  switch (filter) {
+    case 'late': return task.late;
+    case 'today': return task.doneAt === null && task.day === 'today' && !task.late;
+    case 'progress': return task.state === 'in_progress';
+    case 'done': return isDoneToday(task, list);
+    default: throw new Error(`matches: unknown filter ${String(filter)}`);
+  }
+}
+
+/** Whole days from one 'YYYY-MM-DD' to another; negative when `to` is earlier. */
+export const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00Z`) - Date.parse(`${from}T00:00Z`)) / 86400000);
+
+const WEEKDAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: 'UTC' });
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/**
+ * What the chip of an open task says. `lead` is the part a narrow column leaves out, and `name` gives the date in full.
+ * @returns {{ tone: 'late' | 'move' | 'date', lead: string, words: string, name: string }}
+ */
+export function chipWords(task, list, year) {
+  const day = dueDayWords(task.date, year);
+  if (task.late) return { tone: 'late', lead: '', words: `${plural(daysBetween(task.date, list.today), 'day')} late`, name: `Was due ${day}. Move` };
+  switch (task.day) {
+    case 'today': case 'tomorrow': return { tone: 'move', lead: '', words: 'Move', name: `Due ${task.day}${day ? `, ${day}` : ''}. Move` };
+    case 'later': {
+      if (!day) return { tone: 'date', lead: '', words: 'No date', name: 'Later, no date. Move' };
+      const until = daysBetween(list.today, task.date);
+      if (until < 1 || until > 6) return { tone: 'date', lead: '', words: day, name: `Due ${day}. Move` };
+      return { tone: 'date', lead: `${day} · `, words: `in ${until} days`, name: `Due ${day}, in ${until} days. Move` };
+    }
+    default: throw new Error(`chipWords: unknown day ${String(task.day)}`);
+  }
+}
+
+/** How long a task has been in progress: 'since 09:30', 'since yesterday', 'since Tue', or 'since 16 Nov · 10 days'. */
+export function sinceWords(startedAt, now, timeZone) {
+  const zone = timeZone ?? 'UTC';
+  const started = isoDay(startedAt, zone), today = isoDay(now, zone);
+  const days = daysBetween(started, today);
+  if (days <= 0) return `since ${clock(startedAt, zone)}`;
+  if (days === 1) return 'since yesterday';
+  if (days <= 6) return `since ${WEEKDAY.format(new Date(`${started}T12:00Z`))}`;
+  return `since ${dateWords(started, Number(today.slice(0, 4)))} · ${days} days`;
+}
+
+/** A goal's facts that the read does not count: its open tasks in progress and late, and its first open task in agenda order. */
+export function goalStats(list, goal) {
+  const mine = list.tasks.filter((task) => task.goalId === goal.id);
+  const groups = agendaGroups({ tasks: mine });
+  return {
+    inProgress: mine.filter((task) => task.state === 'in_progress').length, late: groups.late.length,
+    next: groups.late[0] ?? groups.today[0] ?? groups.tomorrow[0] ?? groups.later[0] ?? null,
+  };
+}
+
+/** A title as one line: a run of line breaks or tabs, typed or pasted, becomes one space. */
+export const oneLine = (text) => text.replace(/[\r\n\t]+/g, ' ');
 
 /** A tap on the box: gray to yellow, yellow to green, and green back to where it was before. */
 export function nextState(task) {
@@ -91,15 +164,7 @@ export function markWords(task) {
 }
 
 /** '14:05' for a Unix second in `timeZone`. */
-const clock = (seconds, timeZone) => new Intl.DateTimeFormat('en-GB', { ...(timeZone ? { timeZone } : {}), hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(seconds * 1000));
-
-/** The right side of a row: the goal's title, which may be cut, and a day fact, which always shows. */
-export function metaWords(task, list, year) {
-  const fact = task.doneAt !== null ? clock(task.doneAt, list.timeZone)
-    : task.late ? `from ${dateWords(task.date, year)}`
-    : task.day === 'later' && task.date ? dueDayWords(task.date, year) : '';
-  return { goal: task.goalTitle ?? '', fact };
-}
+export const clock = (seconds, timeZone) => new Intl.DateTimeFormat('en-GB', { ...(timeZone ? { timeZone } : {}), hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(seconds * 1000));
 
 /** A goal's facts, '2/5 · 3 days left', 'Paused', or '2 days overdue' with the bad tone. */
 export function goalFacts(goal) {
@@ -107,13 +172,6 @@ export function goalFacts(goal) {
   const progress = goal.tasks ? `${goal.done}/${goal.tasks}` : '';
   const left = daysLeftWords(goal.daysLeft);
   return { words: [progress, left.words].filter(Boolean).join(' · '), tone: left.tone === 'bad' ? 'bad' : 'quiet' };
-}
-
-/** A goal's name for a screen reader, with its colour in words. */
-export function goalLabel(goal) {
-  const left = daysLeftWords(goal.daysLeft).words;
-  const parts = [goal.title, STATE_NAMES[goal.state].toLowerCase(), goal.tasks ? `${goal.done} of ${goal.tasks} done` : '', goal.status === 'paused' ? 'paused' : left];
-  return parts.filter(Boolean).join(', ');
 }
 
 /** The done pile in the days it was done: 'Today', 'Yesterday', then 'Mon 23 Nov'. */
@@ -130,13 +188,15 @@ export function doneGroups(done, timeZone, now, year) {
 }
 
 /**
- * Alt+Up or Alt+Down on a task, as the change to send: one place within its day, or to the end of the day before,
- * or to the top of the day after. Null at the top of Today, at the bottom of Later, or for a task not in the list.
+ * Alt+Up or Alt+Down on a task, as the change to send: one place among the rows shown in its day, or to the end of the
+ * day before, or to the top of the day after. Any move re-dates a task, so a late task is never moved one place, and in
+ * Today the late tasks are not counted, so `after` is always a row the person sees. Null at the top of Today, at the
+ * bottom of Later, while a filter hides rows, and for a task not in the list.
  */
-export function keyboardMove(list, id, direction) {
-  const groups = dayGroups(list);
+export function keyboardMove(list, id, direction, filtered = false) {
   const task = list.tasks.find((item) => item.id === id);
-  if (!task) return null;
+  if (!task || task.late || filtered) return null;
+  const groups = agendaGroups(list);
   const day = groups[task.day], at = day.findIndex((item) => item.id === id);
   const dayIndex = DAYS.indexOf(task.day);
   if (direction < 0) {
@@ -213,8 +273,9 @@ export function applyPatch(list, id, patch, now, at = null) {
   if (task.doneAt === null && ('day' in patch || 'after' in patch)) {
     const day = patch.day ?? task.day;
     const date = movedDate(task, day, list);
+    const sameDay = day === task.day && !('after' in patch);
     task = { ...task, day, date, late: date !== null && date < list.today };
-    tasks = placed(tasks, task, 'after' in patch ? patch.after : undefined);
+    tasks = sameDay ? tasks.map((item) => (item.id === id ? task : item)) : placed(tasks, task, 'after' in patch ? patch.after : undefined);
   } else if (task.doneAt === null) {
     tasks = tasks.map((item) => (item.id === id ? task : item));
   } else {

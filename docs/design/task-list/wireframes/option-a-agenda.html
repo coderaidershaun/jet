@@ -1,0 +1,311 @@
+<!doctype html>
+<!-- Option A wireframe of the task list, revision 1: the day agenda with a summary toolbar that filters, one add bar,
+     goal meters near the top, a capped Overdue section, status words on each row and a move chip. Opens from disk. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list wireframe A: Agenda</title>
+<link rel="stylesheet" href="wireframe.css">
+<style>
+  .a-wrap { display: grid; grid-template-columns: minmax(0, 640px) 280px; column-gap: var(--s6); justify-content: center; align-items: start; padding: var(--s5) var(--s4) var(--s6); }
+  .a-col { min-width: 0; }
+  /* The rail stays in view but never runs past the window: it scrolls on its own when it is taller. */
+  .a-rail { grid-column: 2; grid-row: 1; position: sticky; top: var(--s4); max-height: calc(100vh - 52px - var(--s6)); overflow-y: auto; }
+  .a-col .goals-band { display: none; }
+  @container (max-width: 919.98px) {
+    .a-wrap { grid-template-columns: minmax(0, 1fr); padding-inline: var(--s3); }
+    .a-rail { display: none; }
+    .a-col .goals-band { display: block; }
+  }
+
+  /* Summary toolbar: four toggle buttons in one row at every width. */
+  .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s2); margin: 0 0 var(--s3); }
+  .sum { display: flex; flex-direction: column; align-items: flex-start; min-height: 56px; padding: var(--s2) var(--s3); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-control); text-align: left; cursor: pointer; }
+  .sum b { font-size: var(--t-l); line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .sum span { color: var(--mid); font-size: var(--t-xs); white-space: nowrap; }
+  .sum.is-late span { color: var(--fg); font-weight: 700; }
+  /* One "on" look for every filter control: filled. */
+  .sum[aria-pressed="true"] { background: var(--strong); color: var(--on-strong); border-color: var(--strong); }
+  .sum[aria-pressed="true"] span { color: var(--on-strong); }
+
+  /* The one add bar. Under 480 px the Day and Goal line shows once the field is in use. */
+  .add { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r-control); background: var(--paper); }
+  .add .field { flex: 1 1 260px; }
+  .add .opts { display: contents; }
+  .add-error { margin: var(--s1) 0 0; font-size: var(--t-s); font-weight: 600; }
+  .filter-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: var(--s3) 0 0; padding: var(--s2) var(--s3); background: var(--fill); border-radius: var(--r-control); font-size: var(--t-s); }
+  @container (max-width: 479.98px) {
+    .sum { padding: var(--s2); }
+    .add .field { flex: 1 1 0; }
+    .add .opts { display: none; }
+    .add.is-active .opts { display: flex; flex-wrap: wrap; gap: var(--s2); flex-basis: 100%; order: 3; }
+  }
+
+  /* Sections and rows. */
+  .sec { margin-top: var(--s5); }
+  .sec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2); min-height: 28px; padding-bottom: var(--s1); border-bottom: 1px solid var(--line); }
+  .sec-head h3 { margin: 0; font-size: var(--t-s); font-weight: 700; }
+  .sec-head .quiet { font-size: var(--t-xs); }
+  .sec-head .count { margin-left: auto; color: var(--mid); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+  .sec-head .text-btn { min-height: 28px; font-size: var(--t-xs); }
+  .sec.is-late .sec-head { border-bottom: 2px solid var(--fg); }
+  .sec.is-late .sec-head h3::before { content: "! "; }
+  .rows { margin: 0; padding: 0; list-style: none; }
+  .row { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; column-gap: var(--s2); min-height: 44px; border-radius: var(--r-control); }
+  .row .main { min-width: 0; padding: var(--s2) 0; }
+  .row .title-btn { display: block; width: 100%; padding: 0; background: none; border: 0; text-align: left; }
+  .row .meta { display: flex; flex-wrap: wrap; gap: 0 var(--s2); margin-top: 2px; color: var(--mid); font-size: var(--t-xs); }
+  .row .meta .status { color: var(--fg); font-weight: 600; }
+  .row[data-s="done"] .title-btn, .row[data-s="done"] .done-title { color: var(--mid); text-decoration: line-through; }
+  .row .time { color: var(--mid); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+  .row.is-lingering { background: var(--fill); }
+  .row.is-open { display: block; padding: var(--s1) var(--s2) var(--s3); background: var(--fill); }
+  .chip.is-move { border-style: dashed; }
+  /* A phone keeps only the distance on a Later chip; the date stays in its name and in the open row. */
+  @container (max-width: 479.98px) { .chip .d-date { display: none; } }
+  .open-line { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; column-gap: var(--s2); }
+  .strip { display: grid; gap: var(--s2); padding: var(--s2) 0 0 40px; }
+  .strip-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+  .strip-line .label { width: 52px; color: var(--mid); font-size: var(--t-xs); }
+  .strip-line .push { margin-left: auto; }
+  .strip-line .why { flex-basis: 100%; color: var(--mid); font-size: var(--t-xs); }
+  .text-btn[aria-disabled="true"] { color: var(--soft); text-decoration: none; cursor: default; }
+  .sub-head { margin: var(--s3) 0 0; color: var(--mid); font-size: var(--t-xs); font-weight: 700; }
+  .more-line { min-height: 40px; padding: 0; background: none; border: 0; font-size: var(--t-s); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+  .fold { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 40px; margin-top: var(--s5); padding: 0; background: none; border: 0; border-top: 1px solid var(--line); font-size: var(--t-s); font-weight: 700; text-align: left; }
+  .fold .count { color: var(--mid); font-weight: 400; }
+  .fold .caret { margin-left: auto; }
+  .menu-anchor { position: relative; }
+
+  /* Goal rail cards (wide) and goal meters (narrow). */
+  .goals h3 { margin: 0 0 var(--s2); font-size: var(--t-s); font-weight: 700; }
+  .goal { display: grid; gap: var(--s1); margin: 0 0 var(--s2); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r-control); background: var(--bg); }
+  .goal-top { display: flex; align-items: center; gap: var(--s2); margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)) 0; padding: var(--s1) var(--s2); border-radius: var(--r-control); }
+  .goal-top .title { flex: 1; min-width: 0; padding: 0; background: none; border: 0; text-align: left; font-weight: 600; font-size: var(--t-s); color: inherit; }
+  .goal.is-pressed .goal-top { background: var(--strong); color: var(--on-strong); }
+  .more { flex: none; width: 32px; height: 28px; padding: 0; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r-control); }
+  .goal .facts { color: var(--mid); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+  .goal .facts.is-late { color: var(--fg); font-weight: 700; }
+  .goal .next { font-size: var(--t-xs); }
+  .goal .next b { font-weight: 600; }
+  .goal-invite { color: var(--mid); font-size: var(--t-s); }
+  .goals-band { margin-top: var(--s3); }
+  .goals-band h3 { margin: 0 0 var(--s1); font-size: var(--t-xs); color: var(--mid); }
+  .meter { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--s2); row-gap: 4px; padding: var(--s1) 0; }
+  .meter .pick { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; min-height: 32px; padding: 0 var(--s2); background: none; border: 0; border-radius: var(--r-control); text-align: left; font-size: var(--t-s); }
+  .meter .pick .name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meter .pick .facts { flex: none; color: var(--mid); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+  .meter .pick .facts.is-late { color: var(--fg); font-weight: 700; }
+  .meter.is-pressed .pick { background: var(--strong); color: var(--on-strong); }
+  .meter.is-pressed .pick .facts { color: var(--on-strong); }
+  .meter .bar { grid-column: 1; height: 6px; margin: 0 var(--s2); }
+</style>
+</head>
+<body>
+<header class="sheet-head">
+  <h1>Option A: Agenda (revision 1)</h1>
+  <p>The list stays a list of days, in the order the person and Jet share. It opens with four counts that answer "what is overdue, due, in progress and done" and filter the list when tapped, then one add bar for title, day and goal, then each goal's progress. Overdue comes first but shows at most three rows and can be cleared in one action. Each row says in words when a task was started, and its chip moves it in two taps.</p>
+  <p>Sample date: Thursday 26 November 2026. This file adds three overdue tasks with no goal to the shared sample, to show the Overdue limit. Shapes carry status: empty box = not started, half box = in progress, full box with tick = done. A black chip with "!" = overdue.</p>
+</header>
+<main id="frames"></main>
+<script src="sample.js"></script>
+<script>
+const { done, goals, esc, goalOf, isLate, due, box, bar, screen, frame, doneCount } = WF;
+
+// Three more carried-over tasks with no goal, so the Overdue limit shows; the goals' server counts stay true.
+const extra = [
+  { id: 20, title: 'Return the library books', goal: null, state: 'not_started', day: 'today', date: 'Sun 22 Nov', lateDays: 4 },
+  { id: 21, title: 'Reply to the landlord about the boiler', goal: null, state: 'not_started', day: 'today', date: 'Tue 24 Nov', lateDays: 2 },
+  { id: 22, title: 'Pay the parking fine', goal: null, state: 'not_started', day: 'today', date: 'Wed 25 Nov', lateDays: 1 },
+];
+const tasks = [...extra.slice(0, 1), ...WF.tasks.slice(0, 2), ...extra.slice(1), ...WF.tasks.slice(2)];
+// When each started task was started, as the page words `startedAt`: same day a clock, then a weekday, then a date.
+const SINCE = { 2: 'since Tue', 5: 'since 09:30', 14: 'since 16 Nov · 10 days' };
+// Later's chip adds the distance when the date is within six days.
+const SOON = { 8: 'in 4 days', 14: 'in 6 days' };
+
+const counts = {
+  overdue: tasks.filter(isLate).length,
+  today: tasks.filter((t) => t.day === 'today' && !isLate(t)).length,
+  progress: tasks.filter((t) => t.state === 'in_progress').length,
+  doneToday: done.filter((t) => t.when === 'today').length,
+};
+const goalCounts = (goal) => {
+  const open = tasks.filter((t) => t.goal === goal.id);
+  return { progress: open.filter((t) => t.state === 'in_progress').length, late: open.filter(isLate).length };
+};
+const AGENDA_RANK = (t) => (isLate(t) ? 0 : t.day === 'today' ? 1 : t.day === 'tomorrow' ? 2 : 3);
+const nextOf = (goal) => tasks.filter((t) => t.goal === goal.id).sort((a, b) => AGENDA_RANK(a) - AGENDA_RANK(b))[0] ?? null;
+const drawerCount = `<b>! ${counts.overdue}</b>&nbsp;·&nbsp;${counts.today}`;
+
+const summary = (pressed = '') => `<div class="summary" role="toolbar" aria-label="Show only">
+  ${[['late', counts.overdue, 'Overdue'], ['today', counts.today, 'Due today'], ['progress', counts.progress, 'In progress'], ['done', counts.doneToday, 'Done today']]
+    .map(([k, v, w], i) => `<button type="button" tabindex="${i === 0 ? 0 : -1}" class="sum${k === 'late' && v ? ' is-late' : ''}" aria-pressed="${pressed === k}"><b>${k === 'late' && v ? '! ' : ''}${v}</b><span>${w}</span></button>`).join('')}</div>`;
+
+const addBar = ({ text = '', day = 'Today', goal = 'No goal', focus = false } = {}) => `<form class="add${focus || text ? ' is-active' : ''}${focus ? ' marker' : ''}" aria-label="Add a task">
+  <input class="field" aria-label="New task title" placeholder="Add a task (N)" value="${esc(text)}">
+  <span class="opts"><select class="select" aria-label="Day"><option>${day}</option></select>
+  <select class="select" aria-label="Goal"><option>${esc(goal)}</option></select></span>
+  <button class="btn" type="submit">Add</button></form>`;
+
+/** The chip: how late in Overdue, "Move" where the heading already names the day, the date in Later. */
+function chipFor(task) {
+  const d = due(task);
+  if (isLate(task)) return { words: `! ${d.words}`, cls: 'is-late', name: `${d.full}. Move` };
+  if (task.day === 'today' || task.day === 'tomorrow') return { words: 'Move', cls: 'is-move', name: `${d.full}. Move` };
+  return { words: d.words, soon: SOON[task.id] ?? '', cls: '', name: `${d.full}${SOON[task.id] ? `, ${SOON[task.id]}` : ''}. Move` };
+}
+const menuFor = (task) => `<div class="menu" role="menu" aria-label="Move ${esc(task.title)}" style="right:0;top:40px">
+  <button role="menuitemradio" aria-checked="${task.day === 'today' && !isLate(task)}">Today</button>
+  <button role="menuitemradio" aria-checked="${task.day === 'tomorrow'}">Tomorrow</button>
+  <button role="menuitemradio" aria-checked="${task.day === 'later'}">Later</button>
+  ${isLate(task) ? `<div class="menu-foot">Was due ${task.date}</div>` : ''}</div>`;
+
+function meta(task) {
+  const goal = goalOf(task.goal);
+  const parts = [];
+  if (task.state === 'in_progress') parts.push(`<span class="status">In progress ${SINCE[task.id] ?? ''}</span>`);
+  if (goal) parts.push(`<span>${parts.length ? '<span aria-hidden="true">· </span>' : ''}${esc(goal.title)}</span>`);
+  return parts.length ? `<span class="meta">${parts.join('')}</span>` : '';
+}
+
+function row(task, { menu = false, lingering = false, open = false } = {}) {
+  const goal = goalOf(task.goal);
+  if (open) {
+    const late = isLate(task);
+    return `<li class="row is-open" data-s="${task.state}">
+    <div class="open-line">${box(task.state, task.title)}<input class="field" aria-label="Task title" value="${esc(task.title)}"></div>
+    <div class="strip" role="group" aria-label="Change ${esc(task.title)}">
+      <div class="strip-line"><span class="label">Status</span><span class="seg"><button aria-pressed="${task.state === 'not_started'}">Not started</button><button aria-pressed="${task.state === 'in_progress'}">In progress</button><button aria-pressed="false">Done</button></span></div>
+      <div class="strip-line"><span class="label">Day</span><span class="seg"><button aria-pressed="${task.day === 'today' && !late}">Today</button><button aria-pressed="${task.day === 'tomorrow'}">Tomorrow</button><button aria-pressed="${task.day === 'later'}">Later</button></span>${late ? `<span class="why">Was due ${task.date}. Today gives it today's date.</span>` : ''}</div>
+      <div class="strip-line"><span class="label">Goal</span><select class="select" aria-label="Goal"><option>${goal ? esc(goal.title) : 'No goal'}</option></select></div>
+      <div class="strip-line"><button class="text-btn"${late ? ' aria-disabled="true" aria-describedby="why-up"' : ''}>Up</button><button class="text-btn"${late ? ' aria-disabled="true" aria-describedby="why-up"' : ''}>Down</button><button class="text-btn">Open chat</button><button class="text-btn push">Delete</button>
+        ${late ? '<span class="why" id="why-up">An overdue task keeps its place. Use Day or its chip to move it.</span>' : ''}</div>
+    </div></li>`;
+  }
+  const state = lingering ? 'done' : task.state;
+  const c = chipFor(task);
+  const right = lingering ? `<span class="time">Done, 10:02</span>`
+    : `<button type="button" class="chip ${c.cls}" aria-haspopup="menu" aria-expanded="${menu}" aria-label="${esc(c.name)}">${c.soon ? `<span class="d-date">${esc(c.words)} · </span>${esc(c.soon)}` : esc(c.words)} <span class="caret" aria-hidden="true">▾</span></button>${menu ? menuFor(task) : ''}`;
+  return `<li class="row${lingering ? ' is-lingering' : ''}${menu ? ' menu-anchor' : ''}" data-s="${state}">${box(state, task.title)}
+    <span class="main"><button type="button" class="title-btn" title="${esc(task.title)}"><span class="clamp2">${esc(task.title)}</span></button>${lingering ? (goal ? `<span class="meta"><span>${esc(goal.title)}</span></span>` : '') : meta(task)}</span>${right}</li>`;
+}
+const doneRow = (t) => `<li class="row" data-s="done">${box('done', t.title)}<span class="main"><span class="done-title clamp2">${esc(t.title)}</span>${t.goal ? `<span class="meta"><span>${esc(goalOf(t.goal).title)}</span></span>` : ''}</span><span class="time">${t.at}</span></li>`;
+
+function section(key, title, list, { date = '', extra = '', rowOpts = () => ({}), empty = '', limit = Infinity, head = '' } = {}) {
+  const shown = list.slice(0, limit);
+  const rest = list.length - shown.length;
+  return `<section class="sec${key === 'late' ? ' is-late' : ''}" aria-labelledby="h-${key}"><div class="sec-head"><h3 id="h-${key}">${title}</h3><span class="quiet">${date}</span><span class="count">${list.length} open</span>${head}</div>
+    <ul class="rows" aria-label="${title}">${shown.map((t) => row(t, rowOpts(t))).join('') || (empty ? `<li class="quiet" style="padding:10px 0">${empty}</li>` : '')}</ul>
+    ${rest > 0 ? `<button class="more-line" aria-expanded="false">Show ${rest} more overdue</button>` : ''}${extra}</section>`;
+}
+
+function goalCard(goal, { pressed = false } = {}) {
+  const c = goalCounts(goal);
+  const next = nextOf(goal);
+  const facts = goal.paused ? `Paused · due ${goal.due}` : `${goal.overdue ? '! ' : ''}Due ${goal.due} · ${goal.left}`;
+  const nextWords = next ? `${esc(next.title)} · ${esc(chipFor(next).words === 'Move' ? (next.day === 'today' ? 'Today' : 'Tomorrow') : chipFor(next).words)}` : '';
+  return `<div class="goal${pressed ? ' is-pressed' : ''}"><div class="goal-top"><button type="button" class="title" aria-pressed="${pressed}">${esc(goal.title)}</button><button class="more" aria-label="More about ${esc(goal.title)}" aria-expanded="false">⋯</button></div>
+    ${bar(goal)}<span class="facts">${goal.done} of ${goal.tasks} done · ${c.progress} in progress${c.late ? ` · <b>${c.late} late</b>` : ''}</span>
+    <span class="facts${goal.overdue ? ' is-late' : ''}">${facts}</span>
+    ${next ? `<span class="next"><b>Next:</b> <span class="clamp2" style="display:inline">${nextWords}</span></span>` : ''}</div>`;
+}
+const goalsRail = (opts = {}) => `<section class="goals" aria-labelledby="h-goals-${opts.id ?? 'r'}"><h3 id="h-goals-${opts.id ?? 'r'}">Goals</h3>${goals.map((g) => goalCard(g, { pressed: opts.pressed === g.id })).join('')}</section>`;
+
+function meter(goal, pressed) {
+  const words = goal.paused ? `${goal.done}/${goal.tasks} · Paused` : `${goal.done}/${goal.tasks} · ${goal.overdue ? '! ' : ''}${goal.left}`;
+  return `<div class="meter${pressed ? ' is-pressed' : ''}"><button type="button" class="pick" aria-pressed="${pressed}"><span class="name">${esc(goal.title)}</span><span class="facts${goal.overdue ? ' is-late' : ''}">${words}</span></button><button class="more" aria-label="More about ${esc(goal.title)}" aria-expanded="false">⋯</button>${bar(goal)}</div>`;
+}
+const goalsBand = (pressed) => `<section class="goals-band" aria-labelledby="h-band"><h3 id="h-band">Goals</h3>${goals.map((g) => meter(g, pressed === g.id)).join('')}</section>`;
+
+const byDay = (day, pred = () => true) => tasks.filter((t) => t.day === day && !isLate(t) && pred(t));
+const late = (pred = () => true) => tasks.filter((t) => isLate(t) && pred(t));
+const doneToday = (pred = () => true) => done.filter((t) => t.when === 'today' && pred(t));
+
+function agenda({ pred = () => true, rowOpts = () => ({}), add = {}, top = '', pressed, goalPressed, overdueHead } = {}) {
+  const dt = doneToday(pred);
+  const todayExtra = dt.length ? `<p class="sub-head">Done today · ${dt.length}</p><ul class="rows" aria-label="Done today">${dt.map(doneRow).join('')}</ul>` : '';
+  const lateList = late(pred);
+  const head = overdueHead ?? `<button class="text-btn">Move all to Today</button>`;
+  const col = `${summary(pressed)}${addBar(add)}${goalsBand(goalPressed)}${top}
+    ${lateList.length ? section('late', 'Overdue', lateList, { rowOpts, limit: 3, head }) : ''}
+    ${section('today', 'Today', byDay('today', pred), { date: 'Thu 26 Nov', extra: todayExtra, rowOpts, empty: 'Nothing else due today.' })}
+    ${section('tomorrow', 'Tomorrow', byDay('tomorrow', pred), { date: 'Fri 27 Nov', rowOpts, empty: 'Nothing due tomorrow.' })}
+    ${section('later', 'Later', byDay('later', pred), { rowOpts, empty: 'Nothing later.' })}
+    <button class="fold" aria-expanded="false">Done <span class="count">${doneCount}</span><span class="caret">▾</span></button>`;
+  return `<div class="a-wrap"><div class="a-col">${col}</div><aside class="a-rail">${goalsRail({ pressed: goalPressed })}</aside></div>`;
+}
+const scr = (body, opts = {}) => screen(body, { count: drawerCount, ...opts });
+
+const frames = [];
+
+frames.push(frame('a1', 'A1. Full list', 'The first screen answers all four questions and shows every goal\'s progress, at 1280 px and at 400 px.',
+  scr(agenda()),
+  [`<b>Summary toolbar</b> (<code>role="toolbar"</code>, one Tab stop, ←/→ inside): Overdue, Due today, In progress, Done today. A tap shows only those tasks; a second tap, "Show all" or Esc shows everything. One filter at a time. Pressed = filled, the same "on" look as a pressed goal. Overdue is marked by "!" and bold words only. One row of four at every width.`,
+   `<b>Add bar.</b> Title, Day and Goal, then Add. Under 480 px the Day and Goal line appears once the field has the focus or text, so the bar takes one line at rest.`,
+   `<b>Goals.</b> At 920 px and wider: a rail of cards with a bar, counts, due line and "Next:" (the goal's first open task in agenda order, with its chip words). The rail is sticky and scrolls on its own when taller than the window. Under 920 px: a band of one meter per goal under the add bar (title, "3/7 · 4 days left", thin bar, "⋯"), at most 3, then "Show n more goals".`,
+   `<b>Overdue</b> comes first, shows at most 3 rows, then "Show 2 more overdue" (<code>aria-expanded</code>). "Move all to Today" (two taps: "Move 5 to Today?") sends one <code>PATCH {day:'today'}</code> per task with no <code>after</code>, so each keeps its place and gets today's date.`,
+   `<b>Row:</b> box, title (two lines then cut), a meta line, and the chip. The meta line says "In progress since Tue" in words (from <code>startedAt</code>) and the goal's name. The chip says "! 3 days late" in Overdue, a quiet dashed "Move" in Today and Tomorrow, and the date in Later, with "· in 4 days" when it is within six days (under 480 px only "in 4 days"; the date stays in the chip's name).`,
+   `<b>Drawer count</b> shows the two parts apart: "! 5 · 3", named "Task list, 5 overdue, 3 due today".`]));
+
+frames.push(frame('a2', 'A2. Working the list', 'Adding with a goal, the move menu, a task just marked done, and an open overdue row.',
+  scr(agenda({
+    add: { text: 'Order the kite fabric', day: 'Tomorrow', goal: 'Ship the kite page', focus: true },
+    overdueHead: `<button class="text-btn" style="background:var(--strong);color:var(--on-strong);text-decoration:none">Move 5 to Today?</button>`,
+    rowOpts: (t) => ({ menu: t.id === 4, open: t.id === 1, lingering: t.id === 2 }),
+  })),
+  [`<b>Add.</b> Enter sends <code>POST /api/task-list/tasks {title, day, goalId}</code>. The new row appears at the end of its day and is announced: "Added Order the kite fabric to Tomorrow, under Ship the kite page." If a filter is on and the new task does not match it, the filter is cleared and "Showing all tasks" is announced, so the new row is always seen.`,
+   `<b>Move all, armed.</b> The first tap turned "Move all to Today" into "Move 5 to Today?"; a second tap within 4 s confirms, as Delete does.`,
+   `<b>Open overdue row</b> "Review the board deck numbers with finance": Day has nothing pressed, with "Was due Mon 23 Nov. Today gives it today's date." Up and Down are off, with the reason under them: any one-place move would give the task today's date and take it out of Overdue without the person asking.`,
+   `<b>Move menu</b> on "Pick up the dry cleaning": Today ticked. A choice sends <code>PATCH {day}</code>, closes the menu and puts the focus back on the chip. For a late task nothing is ticked and the foot says "Was due …".`,
+   `<b>Lingering done row.</b> "Draft the kite page copy" was ticked: full box, struck through, "Done, 10:02". It stays 4 s after the last tap, then goes under "Done today".`,
+   `<b>Status by keys</b> on a focused row: <kbd>Space</kbd> steps forward; <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> set Not started / In progress / Done.`]));
+
+frames.push(frame('a3', 'A3. One goal shown', 'A tap on a goal filters the list to its tasks and makes it the add bar\'s goal.',
+  scr(agenda({
+    pred: (t) => t.goal === 1, goalPressed: 1, add: { goal: 'Ship the kite page' },
+    top: `<p class="filter-line" role="status">Showing <b>Ship the kite page</b>: 4 open, 3 done. <button class="text-btn">Show all</button></p>`,
+  })),
+  [`<b>Pressed goal</b> is filled, as a pressed summary button is: one "on" look for every filter. <code>aria-pressed="true"</code>.`,
+   `<b>Filter line</b> (<code>role="status"</code>): what shows, its counts, "Show all". Sections with nothing say so; Overdue is left out when empty.`,
+   `<b>Dragging and one-place moves are off</b> while a filter is on, because hidden tasks sit between the shown ones; Alt+arrows say "Show all to reorder". The chip, the Day control and the box still work.`,
+   `<b>"⋯"</b> on a goal opens its details in place: deliverable, title field, Open chat, Mark done (two taps).`]));
+
+frames.push(frame('a4', 'A4. Empty', 'No task and no goal yet.',
+  screen(`<div class="a-wrap"><div class="a-col">${addBar({ focus: true })}
+    <section class="sec"><p style="margin:0 0 8px;font-weight:600">Nothing on your list yet.</p>
+    <p class="quiet" style="margin:0">Add a task above, or tell Jet what you are working on, for example <button class="text-btn" style="font-style:italic;font-weight:400">"I need to ship the kite page by Friday."</button></p></section></div>
+    <aside class="a-rail"><section class="goals"><h3>Goals</h3><p class="goal-invite">Jet makes a goal when you agree one in a chat.</p></section></aside></div>`, { count: '' }),
+  [`<b>The summary, the goal band and the day sections are hidden</b> while the list is empty; the add bar is the one action, focused on a desktop. A phone keeps the focus on the page title so the keyboard stays down.`,
+   `<b>Other empty cases:</b> a day with no task says "Nothing due today." under its heading; a filter with no match says "No tasks in progress. Show all"; the opened Done fold with nothing says "Tasks you finish land here."`]));
+
+const skelRow = () => `<li class="row"><span class="skel-box" style="margin-left:2px"></span><span class="skel" style="width:60%"></span><span></span></li>`;
+const skelHead = `<div class="sec-head"><span class="skel" style="width:96px;height:12px"></span></div>`;
+frames.push(frame('a5', 'A5. Loading', 'Skeletons in the final shape; no shimmer; no heading text that the read could push down.',
+  screen(`<div class="a-wrap" aria-busy="true"><div class="a-col"><div class="summary">${'<div class="sum"><span class="skel" style="width:24px;height:18px"></span><span class="skel" style="width:70%;margin-top:6px"></span></div>'.repeat(4)}</div>
+    <form class="add" aria-label="Add a task"><input class="field" disabled placeholder="Loading the list…" aria-label="New task title"><span class="opts"><select class="select" disabled><option>Today</option></select><select class="select" disabled><option>No goal</option></select></span><button class="btn" disabled style="opacity:.4">Add</button></form>
+    <section class="goals-band"><h3>Goals</h3>${'<div class="meter"><span class="skel" style="width:70%;margin:10px 8px"></span><span></span><span class="skel" style="height:6px;margin:0 8px"></span></div>'.repeat(2)}</section>
+    <section class="sec">${skelHead}<ul class="rows">${skelRow().repeat(4)}</ul></section></div>
+    <aside class="a-rail"><section class="goals"><h3>Goals</h3>${'<div class="goal"><span class="skel" style="width:70%"></span><span class="skel" style="height:8px"></span><span class="skel" style="width:50%"></span></div>'.repeat(2)}</section></aside></div>`, { count: '' }),
+  [`<b>Same shapes as A1:</b> four summary boxes; the add bar in place but disabled, its placeholder saying why ("Loading the list…"), because the Goal select needs the read's goals; two goal skeletons; then one section whose heading is a bar with no text, so whether Overdue or Today lands first, nothing shifts. <code>aria-busy="true"</code> and "Loading the task list" in the polite region.`]));
+
+frames.push(frame('a6', 'A6. First read failed', 'Nothing to show yet: one block and one action.',
+  screen(`<div class="a-wrap"><div class="a-col"><div class="state-block" role="alert"><p>The task list could not be loaded.</p><button class="btn">Try again</button></div></div></div>`, { count: '' }),
+  [`<b>One centred block</b> with "Try again" (<code>role="alert"</code>); no summary, no add bar, no goals.`]));
+
+frames.push(frame('a7', 'A7. A change failed in a loaded list', 'The list stays; the error sits where the person looks.',
+  scr(`<div class="a-wrap"><div class="a-col">
+    <p class="alert" role="alert">The task could not be moved. Jet could not be reached. Try again.</p>
+    <p class="quiet" style="margin:8px 0">The task list could not be refreshed. <button class="text-btn">Try again</button></p>
+    ${summary()}${addBar({ text: 'Order the kite fabric', day: 'Tomorrow', goal: 'Ship the kite page' })}
+    <p class="add-error" id="add-err">! The task could not be added. Jet could not be reached. Press Add to try again.</p>
+    ${section('late', 'Overdue', late(), { limit: 3, head: '<button class="text-btn">Move all to Today</button>' })}</div><aside class="a-rail">${goalsRail()}</aside></div>`),
+  [`<b>A change failed:</b> the list is read again and put back; the alert at the top names the change and the cause until a later change works (as now).`,
+   `<b>A refresh failed:</b> the last good list stays, with the quiet line and "Try again".`,
+   `<b>An add failed:</b> title, day and goal stay; the error sits under the bar, tied to the field by <code>aria-describedby</code>. A "Move all" that fails part way is read again, and the alert says "Some tasks could not be moved. …". Shown together here; in use they appear one at a time.`]));
+
+document.getElementById('frames').innerHTML = frames.join('');
+</script>
+</body>
+</html>

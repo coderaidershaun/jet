@@ -1,0 +1,71 @@
+/* The tokens the task list mockups read: Jet's own colour tokens from ui/chat.css (dark, the theme Jet ships), proposed
+   light values for the same names, the three new colour tokens, and the task list's spacing, type and motion scale. */
+
+:root {
+  /* Colour, light. Proposed values for Jet's existing names; Jet ships dark only today (index.html color-scheme). */
+  --ground: #f6f8fa;
+  --surface: #ffffff;
+  --surface-2: #e9eef2;
+  --line: rgba(11, 20, 27, .10);
+  --edge: rgba(11, 20, 27, .46);
+  --fg: #0f1a22;
+  --muted: #56636e;
+  --accent: #1f6feb;
+  --fill: #1f6feb;
+  --fill-hover: #1a5fcc;
+  --on-fill: #ffffff;
+  --link-jet: #0b5cc5;
+  --danger: #c22f29;
+  --warning: #9a5a00;
+  --ok: #147a52;
+  --focus: #0b5cc5;
+  /* New colour tokens (named in the design note with both values and their contrast). */
+  --hover: rgba(11, 20, 27, .04);
+  --danger-soft: rgba(194, 47, 41, .08);
+  --track: rgba(11, 20, 27, .12);
+  --shadow: 0 8px 24px rgba(11, 20, 27, .16);
+  color-scheme: light;
+
+  /* Jet's non-colour tokens, as in chat.css. */
+  --font: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
+  --r-s: 4px;
+  --r-m: 8px;
+  --r-pill: 999px;
+  --gutter: 16px;
+  --text-size: 15px;
+  --drawer-w: 260px;
+}
+@media (max-width: 759.98px) { :root { --text-size: 16px; } }
+@media (max-width: 419.98px) { :root { --gutter: 12px; } }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0b141b; --surface: #111b23; --surface-2: #17232d; --line: rgba(255, 255, 255, .08); --edge: rgba(255, 255, 255, .34);
+    --fg: #e8edf1; --muted: #8d9ba7; --accent: #3d8bff; --fill: #3d8bff; --fill-hover: #5a9dff; --on-fill: #06101f; --link-jet: #8cc4ff;
+    --danger: #ff7b72; --warning: #f2b154; --ok: #3ddc97; --focus: #8cc4ff;
+    --hover: rgba(255, 255, 255, .04); --danger-soft: rgba(255, 123, 114, .16); --track: rgba(255, 255, 255, .14); --shadow: 0 8px 24px rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0b141b; --surface: #111b23; --surface-2: #17232d; --line: rgba(255, 255, 255, .08); --edge: rgba(255, 255, 255, .34);
+  --fg: #e8edf1; --muted: #8d9ba7; --accent: #3d8bff; --fill: #3d8bff; --fill-hover: #5a9dff; --on-fill: #06101f; --link-jet: #8cc4ff;
+  --danger: #ff7b72; --warning: #f2b154; --ok: #3ddc97; --focus: #8cc4ff;
+  --hover: rgba(255, 255, 255, .04); --danger-soft: rgba(255, 123, 114, .16); --track: rgba(255, 255, 255, .14); --shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  color-scheme: dark;
+}
+
+/* The task list's own scale, on its root: spacing on a 4 px base, three type sizes, three weights, two durations. */
+.tasklist {
+  --tl-space-1: 4px; --tl-space-2: 8px; --tl-space-3: 12px; --tl-space-4: 16px; --tl-space-5: 24px; --tl-space-6: 32px; --tl-space-7: 48px;
+  --tl-text-xs: .8125rem;            /* 13 px: meta, chips, dates, counts' words, text buttons, segments (Jet's 13 px controls) */
+  --tl-text-md: var(--text-size);    /* 15 px, 16 px under 760: titles, headings, the add field */
+  --tl-text-lg: 1.125rem;            /* 18 px: the four counts */
+  --tl-leading: 1.4;
+  --tl-leading-head: 1.25;
+  --tl-weight-normal: 400; --tl-weight-strong: 600; --tl-weight-heavy: 700;
+  --tl-row: 44px;                    /* the least row height and every touch target */
+  --tl-mark: 36px;                   /* the box's column: a 20 px box and the gap after it, all one target */
+  --tl-rail: 280px; --tl-column: 640px;
+  --tl-dur-fast: 120ms; --tl-dur-base: 150ms; --tl-ease: cubic-bezier(.23, 1, .32, 1);
+}

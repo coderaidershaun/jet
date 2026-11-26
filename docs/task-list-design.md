@@ -1,6 +1,6 @@
 # Task list: design plan
 
-The task list is the user's one page of everything their Jet chats track. It shows the tasks under each goal in the order of today, tomorrow and later, then the goals themselves, then a done pile that keeps the history of what the user finished. It is a new place in the left pane, beside Files, and it reads like a paper list: one line per task and a box you colour in.
+The task list is the user's one page of everything their Jet chats track. It shows what is overdue, then today, tomorrow and later, with four counts that filter the list, each goal's progress beside it, and a done pile that keeps the history of what the user finished. It is a new place in the left pane, beside Files, and it reads like a paper list: one line per task and a box you colour in.
 
 This plan is written for two builders. One builds the server, from parts 4 and 5. The other builds the page, from parts 1 to 3 and the page half of part 4. Each part names the repo files it touches. Every path is under `crates/jet/` unless it says otherwise.
 
@@ -16,7 +16,7 @@ This plan was revised once after a design and UX critique. The critic's findings
 | D4 | Each user's tasks have one order, kept in `position`, and every day list shows its tasks in that order. Only a move changes `position`. A change of status never does. | A paper list has one order. Integer positions with no gaps and no float keys keep it simple, and a personal list is short. |
 | D5 | Status is two timestamps: `started_at` makes a task yellow and `done_at` makes it green; with neither set it is gray. A tap on the box moves it one step forward, gray to yellow to green. The open row's three words set any status directly. | This is how the person marks paper. The tri-state checkbox has `aria-checked="mixed"` ([APG checkbox](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/)). The existing code reads `done_at` and does not change. The words are how the person undoes a stray mark. |
 | D6 | A done task leaves its day list for a folded done pile, which holds 90 days of history. The server deletes a done task 90 days after it was done, once it is under no goal or under a goal closed more than 90 days ago. A task that is not done is never purged. One task is cleaned up by its Delete. | Things' Logbook keeps finished items ([Things: Logbook](https://culturedcode.com/things/support/articles/4001304/)). Linear archives closed issues after a set time, but not while the parent is open ([Linear: archive](https://linear.app/docs/archive-issues)). A goal keeps counting the tasks done under it. |
-| D7 | The list opens in the main area, as Files does, at `#tasks`. It does not draw inside the 260 px drawer. Its order is Today, Tomorrow, Goals, Later, then Done. | This follows the repo; see "Where the request and the repo differ" below. The order is the charter's own: "what should be done today, what should be done tomorrow, what are the overarching goals". Later comes after the goals because it is the long tail. |
+| D7 | The list opens in the main area, as Files does, at `#tasks`. It does not draw inside the 260 px drawer. Its order is Overdue, Today, Tomorrow, Later, then Done, with the goals in a rail beside them, or in a band under the add bar on a narrow screen. | This follows the repo; see "Where the request and the repo differ" below. The order keeps the charter's: today, then tomorrow, then the overarching goals, which now sit in sight beside the days (§1.1). |
 | D8 | Jet learns of a change made outside a chat through the existing pane taps. Each task has at most one waiting line, which states its latest state. The line is told before the user's next message in the chat of the task's goal, or in the main chat when the task has no goal. | That path already exists, is told exactly once, runs no model turn and never reaches another user (`src/store/pane.rs`, `src/chat/mod.rs:277-309`). Keeping one line per task means a reversed tap never leaves a false fact behind. |
 | D9 | The plan pane's step box becomes the same three-state mark and makes the same call. The old tick route is deleted. In the pane's step and goal rows, amber then means "in progress" only. | One box should behave the same everywhere. One write path for each change means fewer of the bugs the charter fears. |
 
@@ -30,146 +30,67 @@ This plan was revised once after a design and UX critique. The critic's findings
 
 ## 1. Layout and visual design
 
+This part describes the page as it is built now. It was rebuilt from the agenda design in `docs/design/task-list/` (the design note and its twelve mockup screens) so that what is overdue, due, in progress and done is plain at a glance, and each goal shows its progress. The server did not change for it.
+
 ### 1.1 Where it sits, at real widths
 
-All values come from `ui/chat.css:3-60`, `ui/workspace/workspace.css:1-43` and `ui/chat/library/library.css`.
+The page is `section.tasklist#tasks-content` in the main column at `#tasks`, beside Files (D7). `.tasklist` is the scroller and a size container; the page itself never scrolls. Two widths of that container decide the layout:
 
-| Window | Drawer | Main column | Task list column |
-| --- | --- | --- | --- |
-| 1440 px | 260 px (`--drawer-w`) | 1180 px | 640 px, centred |
-| 1024 px | 260 px | 764 px | 640 px, centred |
-| 800 px (drawer open, at 760 px or more) | 260 px | 540 px | 540 px, of which 508 px is content |
-| any width, drawer folded | 64 px rail | the window width minus 64 px | min(100%, 640 px) |
-| 390 px phone | hidden until the chats button opens it | 390 px | 390 px, of which 366 px is content (`--gutter` is 12 px below 420 px) |
+| Container width | Layout |
+| --- | --- |
+| 920 px or wider (a 1280 px window with the drawer gives 1020 px) | A column of at most 640 px and a goals rail of 280 px, 32 px apart, centred. The rail is sticky under the 52 px head band and scrolls on its own. |
+| 480 to 919 px | One column. The goals are a band of meters under the add bar. |
+| under 480 px | The same, with tighter counts, an add bar of one line at rest (its Day and Goal line shows while the bar has the focus or text), and a Later chip that says only "in 4 days". |
 
-While the list is open the plan pane is hidden and `--pane-w` is 0, exactly as for Files (`library.css:75-76`).
-
-The column is 640 px wide. That is about 70 characters of 15 px text, roughly one line of a paper page. The library uses 880 px because it shows a file's name and its facts side by side.
+The goals are one element. A `ResizeObserver` on `.tasklist` moves it with `insertBefore` when the width crosses 920 px, so the Tab order follows what is seen: after the add bar as the band, or after the Done fold in the rail.
 
 ### 1.2 The drawer row
 
-The row goes into the same `nav.files-nav` that holds Files, **above** Files, because the list is where the person returns every day. Change the nav's `aria-label` from "Files" to "Task list and files".
-
-| Part | Rule (all existing classes unless marked new) |
-| --- | --- |
-| Row | `.files-row` > `button.chat-open`, 34 px tall (44 px when `pointer: coarse`), `padding: 0 8px`, `gap: 8px`, `border-radius: var(--r-s)` (4 px) |
-| Icon | `.nav-icon` (a 32 px column) holding an 18 px icon `tasks`. Add the new path `'M4 6h4v4H4zM4 14h4v4H4zM12 8h8M12 16h8'` to `ICONS` in `ui/dom.js` |
-| Label | `.nav-label`, the text "Task list", 13 px, `--fg` |
-| Count (new `.nav-count`) | The number of open tasks for today. 12 px, `--muted`, `font-variant-numeric: tabular-nums`, `margin-left: auto`. Hidden at 0 and at rail width. It is not a badge: the blue badge (`--fill`) means unread, and none of this is unread |
-| Hover and current | `rgba(255,255,255,.04)` on hover. `--surface-2` and `aria-current="page"` while the list is open, the same rules as Files (`library.css:64-69`) |
-| Rail (64 px) | The icon is centred, and the label and count are hidden. `title="Task list"` |
+The Task list row beside Files shows two counts apart: the alert icon and the overdue number in `--danger`, then "· 3" for the tasks due today, named "Task list, 5 overdue, 3 due today". With nothing overdue it shows "3", named "Task list, 3 due today". At 0 and 0 it is hidden. The view's `onCount` listener gets `{ overdue, dueToday }`.
 
 ### 1.3 The page
 
-```
-┌────────────────────────── Task list ──────────────────────────┐ ← head band 52 px
-│                                                               │
-│  Today  Wed 25 Nov                                            │ ← heading, then one rule
-│  ─────────────────────────────────────────────────────────    │
-│  ▣  Draft the spec                       Ship the kite page   │ ← in progress (yellow, dash)
-│  ☐  Review Sam's PR       Ship the kite page · from 24 Nov    │ ← carried over, muted
-│  ☐  Call the bank                                             │ ← no goal
-│  +  Add a task                                                │ ← a blank line you write on
-│                                                               │
-│  Tomorrow  Thu 26 Nov                                         │
-│  ─────────────────────────────────────────────────────────    │
-│  ☐  Book the venue                                Q4 report   │
-│  +  Add a task                                                │
-│                                                               │
-│  Goals                                                        │
-│  ─────────────────────────────────────────────────────────    │
-│  ●  Ship the kite page                   2/5 · 3 days left    │ ← goal row, 40 px
-│  ●  Hire a designer                                 Paused    │
-│  ●  Q4 report                                 2 days overdue  │   ("overdue" in --danger)
-│                                                               │
-│  Later                                                        │
-│  ─────────────────────────────────────────────────────────    │
-│  ☐  Write the launch post     Ship the kite page · Fri 4 Dec  │
-│  …                                                            │
-│  +  Add a task                                                │
-│                                                               │
-│  ───────────────────────────────────────────────────────────  │
-│  Done  12                                                ⌄    │ ← fold line, folded
-└───────────────────────────────────────────────────────────────┘
-```
+In order, in the column:
 
-The order is **Today, Tomorrow, Goals, Later, then Done**, the charter's own order: "what should be done today, what should be done tomorrow, what are the overarching goals" (D7). The first screen answers the daily question, "what do I do today". The goals stay above Later, which is the long tail. Jet can plan up to 30 steps for each goal (`src/tool_facade/objectives.rs:102`), so Later can be long.
+1. The head band "Task list", the alert, and the quiet refresh notice.
+2. The **summary**: four counts, Overdue, Due today, In progress and Done today, that filter the list (§3.1).
+3. The **add bar**: the field, the Day and Goal selects, and Add, the page's one filled button.
+4. The **goals band**, under 920 px.
+5. The **filter line**, only while a filter is on: "Showing 3 in progress. Show all", or "No tasks in progress. Show all".
+6. **Overdue**, only when it has tasks: at most three rows, then "Show 2 more overdue", and "Move all to Today" in its heading.
+7. **Today** with its date, then **Done today · n**: today's done tasks, newest first, at most five, then "Show n more".
+8. **Tomorrow**, then **Later**, then the **Done** fold, which opens the 90-day pile grouped by day, with "Show older".
 
-Later is **not** folded, because every task stays one look away, as on paper. Folding it after about 7 rows was considered and rejected: a fold hides where a dragged task lands, and that needs its own rules.
+Each heading counts what it shows: "3 open" with no filter, "2 shown" under one. An empty day says "Nothing due tomorrow.", and Today says "Nothing else due today." while Overdue has tasks. Under a filter, a part with nothing to show is left out.
+
+A **row** has three columns: the box (§2), the main part, and the chip.
+
+- The **title** takes up to two lines, then an ellipsis; the whole title is in `title`.
+- The **meta line** under it says "In progress since 09:30" (or "since yesterday", "since Tue", "since 16 Nov · 10 days") in `--warning` at weight 600, worked out from `startedAt`, then the goal's name in `--muted`. The status words are never cut; the goal's name is.
+- The **chip** opens the move menu. In Overdue it says "3 days late" in `--danger` on `--danger-soft` with the alert icon; in Today and Tomorrow a quiet dashed "Move"; in Later the date, with "· in 4 days" within six days, or "No date". Its name always gives the date in full, such as "Was due Mon 23 Nov. Move".
+- A done row shows its time in place of the chip, and a row that lingers after its box turned green says "Done 10:02" in `--ok`.
+
+A **goal** is a card in the rail or a meter in the band.
+
+- The **card**: the title, a toggle that filters the list to the goal (§3.6); "⋯"; a bar of done (`--ok`) and in progress (`--warning`) with a 2 px gap, `role="img"` named "3 of 7 done, 2 in progress"; "3 of 7 done · 2 in progress · 1 late"; the due line "Due Mon 30 Nov · 4 days left", "Due Tue 24 Nov · 2 days overdue" in `--danger` with the alert icon, or "Paused · due Fri 18 Dec"; and "Next · 3 days late" over the title of the goal's first open task in agenda order.
+- The **meter**: one line of the title, cut with an ellipsis, then "3/7 · 4 days left"; "⋯"; and a 4 px bar under it. The band shows three goals, then "Show n more goals".
+- With no goals the band is hidden, and the rail says "Jet makes a goal when you agree one in a chat."
 
 ### 1.4 Spacing, type and colour
 
-| Element | Rule |
-| --- | --- |
-| Section `.tasklist` | `display: flex; flex-direction: column; height: 100%; overflow: auto; background: var(--ground); scrollbar-width: thin`, the same as `.library` (`library.css:3`) |
-| Head band | Sticky, `top: 0`, `z-index: 3`, 52 px, `--ground`, `border-bottom: 1px solid var(--line)`, with `padding: 0 calc(var(--gutter) + 52px)` to leave room for the phone's chats button. Title `h1` "Task list": 14 px / 52 px, weight 600, centred, `--fg`, `tabindex="-1"`, no ring. This is `.library-head` / `.library-title` (`library.css:4-9`) |
-| Column | `width: min(100%, 640px); margin: 0 auto; padding: 0 var(--gutter) max(32px, env(safe-area-inset-bottom)); container-type: inline-size` |
-| Sections | The first has `margin-top: 20px`, each later one `28px` |
-| Section heading line | `display: flex; align-items: baseline; gap: 8px; min-height: 28px; padding-bottom: 4px; border-bottom: 1px solid var(--line)`. The `h2` is 13 px / 20 px, weight 650, `--fg`. The date ("Wed 25 Nov") is 12 px, weight 400, `--muted`, and Later has none. **No count on any heading**: the only counts on the page are the Done fold line and the drawer row |
-| List | `ul` with `margin: 0; padding: 0; list-style: none`. **No rule between rows.** The 40 px rhythm groups them, as on ruled paper with no lines drawn |
-| Task row | `display: flex; align-items: center; gap: 8px; min-height: 40px; border-radius: var(--r-s); user-select: none; -webkit-touch-callout: none` (inputs inside keep `user-select: text`). Hover (`@media (hover: hover)`): `background: rgba(255,255,255,.04)`, as `.chat-row:hover` |
-| Mark button | `display: grid; align-items: center; justify-items: start; flex: none; width: 30px; height: 40px; padding: 0; background: none; border: 0`. The box sits on the column's left edge and the 10 px after it is part of the target |
-| Box | 20 × 20 px, `border: 2px solid`, `border-radius: var(--r-s)`, a 14 px icon at `stroke-width: 3` in `--ground`. These are `.step-box`'s sizes (`plan.css:123-125`), and the colours are in part 2 |
-| Title | `flex: 1; min-width: 0`, `font-size: var(--text-size)` (15 px, or 16 px below 760 px), `line-height: 20px`, `--fg`. One line with an ellipsis while closed, the whole title wrapped while open. `title` attribute: the whole title |
-| Meta (right side) | `flex: 0 1 auto; max-width: 45%`, 12 px / 16 px, `--muted`, one line with an ellipsis, right-aligned. The parts are joined by " · ": the goal's title, then a day fact (§1.5). The goal title is what gets cut, so the day fact always shows |
-| Narrow column | `@container (max-width: 479px)`: a row with meta wraps it to a second line under the title (`flex-wrap: wrap`; meta `flex-basis: 100%; max-width: none; padding-left: 38px; text-align: left; margin-top: -8px`), and the row grows to 52 px. A row with no meta stays one 40 px line |
-| Goal row | The same row. The mark slot holds a 10 px circle in the goal's colour (`margin-left: 5px`, so its centre lines up with a box's centre). The title is 15 px / 20 px. The facts on the right are 12 px, `--muted`, tabular, `white-space: nowrap` |
-| Add line | Its mark slot holds the `plus` icon at 16 px, `--muted`. The input: `flex: 1; height: 32px; margin: 4px 0 4px -8px; padding: 0 8px; background: none; border: 1px solid transparent; border-radius: var(--r-s); font-size: var(--text-size)`, with the placeholder "Add a task" in `--muted`. On focus: `border-color: var(--edge); background: var(--surface)`, keeping the page's focus ring. The `-8px` lines the typed text up with the titles |
-| Open row (§3.3) | `background: var(--surface)`. The title field is styled like `.chat-rename` (`chats.css:39`: `--ground` background, `1px solid var(--edge)` border, 4 px corners, `outline-offset: 0`), but 32 px tall to match the add line (`.chat-rename` itself is 28 px) and 44 px below 760 px. It has the same margin as the add line. The strip under it is `display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 0 6px 8px 30px` |
-| Text buttons | The library's `.text-button` size (`library.css:18`): 13 px, weight 600, `min-height: 36px; padding: 0 8px`, `--link-jet`. The strip's Delete is `--muted` until it is armed, then `--danger` on `rgba(255,123,114,.18)`, as `.chat-delete.is-confirming` (`chats.css:36`) |
-| Status words (strip) | Three text buttons, "Not started", "In progress" and "Done", each with `aria-pressed`. The current one is `--fg` with `background: var(--surface-2)`, and the other two are `--link-jet` |
-| Goal picker | A native `<select>`, 36 px, 13 px, `--surface-2`, `1px solid var(--edge)`, 4 px corners, `max-width: 100%` |
-| Done fold line | The look of `.fold-line` (`plan.css:101-103`): 36 px, 13 px / 20 px, weight 600, `--muted`, a count, a 14 px chevron, `border-top: 1px solid var(--line)`, `margin-top: 28px` |
-| Done day label | The look of `.day-label` (`plan.css:80`): 12 px / 18 px, weight 600, `--muted`, `margin: 10px 0 2px` |
-| Alert | Under the head band, inside the column: `margin-top: 12px; padding: 8px 12px; border-radius: var(--r-s); background: rgba(255,123,114,.12); color: var(--danger); font-size: 12px; line-height: 17px`, `role="alert"`. This is `.pane-alert` (`plan.css:28-29`) |
-| Quiet notice | 12 px / 18 px, `--muted`, with a "Try again" text button, as `.library-usage` when a refresh failed (`library.css:26-29`, `view.js:124-127`) |
+The page's stylesheet, `ui/task-list/task-list.css`, reads colours only through tokens, so it follows Jet's theme with no change on the day Jet gets a light one. Jet ships dark only; `ui/chat.css` holds the dark values of the tokens the page added: `--hover`, `--danger-soft`, `--track`, `--shadow` and `--r-pill`.
 
-**Touch and small screens.** With `pointer: coarse`, the mark button is `width: 44px; height: 44px; margin-left: -12px; padding-left: 12px`: the target grows into the gutter while the box stays on the edge. Rows, the add input and the strip's buttons are at least 44 px tall. Below 760 px every input is 16 px, so that iOS does not zoom (`chats.css:40-41`).
+The page's own scale sits on `.tasklist`: spacing `--tl-space-1` to `--tl-space-7` (4, 8, 12, 16, 24, 32 and 48 px); three type sizes, 13 px for meta, chips and controls, Jet's `--text-size` (15 px, 16 px on a phone) for titles, headings, fields and selects, and 18 px for the counts; weights 400, 600 and 700; 44 px for the least row and every coarse target; and 120 ms and 150 ms with one easing.
 
-**Corners.** Every corner is 4 px (`--r-s`). The one exception is the goal mark, which is a circle because it is not a control.
-
-**Colour.** Only tokens that already exist are used, and each one has a single meaning:
-
-| Token | Value | Meaning here |
-| --- | --- | --- |
-| `--ground` | `#0b141b` | the page background; icons on filled boxes |
-| `--surface` | `#111b23` | an open row; a focused add line |
-| `--surface-2` | `#17232d` | a row lifted in a drag; skeleton shapes; the current status word; the current drawer row |
-| `--line` | `rgba(255,255,255,.08)` | the rule under each heading; the fold line |
-| `--edge` | `rgba(255,255,255,.34)` | the border of a field being typed in |
-| `--fg` | `#e8edf1` | titles, headings |
-| `--muted` | `#8d9ba7` | **gray: not started**, and all secondary text |
-| `--warning` | `#f2b154` | **yellow: in progress**, and nothing else among the rows. This token is amber; it is kept rather than adding a new hue, because it is the page's one warm colour |
-| `--ok` | `#3ddc97` | **green: done**, and nothing else |
-| `--danger` | `#ff7b72` | "overdue", an armed delete, the alert |
-| `--link-jet` | `#8cc4ff` | text buttons |
-| `--accent` | `#3d8bff` | the insertion line while dragging, and nothing else. It is the page's one accent |
-| `--focus` | `#8cc4ff` | focus rings (`chat.css:74`) |
-
-**Amber means "in progress" in the rows, here and in the plan pane.** The pane today colours "Due today", "3 days left", a step due "Today" and "after the due date" in `--warning` (`ui/plan/model.js:70-78, 105-112`, `plan.css:64`). Once the pane's step box turns yellow (D9), that would give amber two meanings side by side. So in both places a goal's days left and a step's date are `--muted`. Only "overdue" and "late" keep a colour, `--danger`. The words stay the same (`daysLeftWords`, `stepDueWords`), and only the tone mapping changes (§4.8).
-
-`--warning` keeps its other uses, which never sit beside a status box: the pane's notice band, the private-note flip, the library's quota line and the HTML file sheet.
+Colour never carries meaning alone: the box has its dash and tick, every danger mark has the alert icon and words, and the bar's split is in the counts line. A pressed count, a pressed goal, a pressed segment and Add share one "on" look, `--fill` with `--on-fill`, and a focus ring inside it takes `--on-fill`.
 
 ### 1.5 Words of a row
 
-| Case | Meta |
-| --- | --- |
-| A task with a goal, dated today or tomorrow | `Ship the kite page` |
-| A task in Today whose date has passed (carried over) | `Ship the kite page · from 24 Nov`, all `--muted`. A carried task is a Bullet Journal ">" ([rapid logging](https://bulletjournal.com/blogs/faq/what-is-rapid-logging-understand-rapid-logging-bullets-and-signifiers)), a normal part of a paper list rather than an error, so the first view after the migration is not a wall of red. The plan pane keeps its own "24 Nov, late" against the goal's plan, in `--danger`. The two show the same date with different emphasis and never contradict each other |
-| A task in Later with a date | `Ship the kite page · Fri 4 Dec` (`dueDayWords`, without the year when it is this year) |
-| A task with no goal and no fact | no meta |
-| A done task | `Ship the kite page · 14:05` |
-| A goal | `2/5 · 3 days left` (`progressWords`, `daysLeftWords`). A paused goal shows `Paused`. An overdue goal shows `2 days overdue` in `--danger` |
+The words are worked out on the page from the read, by pure functions of `ui/task-list/model.js`: `chipWords`, `sinceWords`, `goalStats`, `summaryCounts`, `agendaGroups` and `matches`. A late task is the server's `late` flag; due today is an open task in Today that is not late; done today is a done task whose `doneAt` falls on today in the user's zone.
 
 ### 1.6 Motion
 
-Marking and moving happen tens of times a day, so under the frequency gate of the anti-slop craft rules each one is near-imperceptible.
-
-- A box changes colour instantly, with no transition.
-- A dropped row settles with `transform 120ms cubic-bezier(.23,1,.32,1)`.
-- A row leaving for the done pile collapses its height in 150 ms on the same curve.
-- There is no confetti, no shimmer and no animated page load.
-- Under `prefers-reduced-motion: reduce` every movement is cut. The global rule in `chat.css:135-137` already does this, so drag code must not wait for `transitionend`.
+Only the move menu (120 ms of opacity and a 4 px slide), a dropped row settling (120 ms), and a done row folding away after its linger (150 ms of height) move. A filter, "Show more", Move all and the counts redraw in place, and no number animates. With reduced motion, from the system or Jet's `.reduced` class, none of these move.
 
 ---
 
@@ -191,151 +112,79 @@ The box's accessible name states the state: `aria-label="Draft the spec, in prog
 - **The three words in the open row set any status directly** (§3.3): "Not started", "In progress", "Done". This is how a stray yellow is undone, the way you rub out a mark on paper. Jet is told only the latest state (§5), so a corrected mark never reaches Jet as a false fact.
 - **Putting a task back** (a tap on a green box) returns it to the state it had before it was done: yellow if it had been started, gray if not. One function, `putBackState(task)` in `ui/task-list/model.js`, decides this, and the plan pane imports it. The task keeps its place in the order (D4).
 - **On hover with a fine pointer**, a gray box shows its border in `--warning` and a yellow box shows it in `--ok`. The box shows what a click will do, so nobody has to be taught the cycle.
-- **A goal's colour comes from its tasks**, through the view in §4.4. It is gray while no task has been started or done, and yellow once any task has been started or done. It turns green once every task is done, if it has at least one. A green goal stays in the list until it is closed, by "Mark done" in its open row (§3.6) or by Jet's `close`. The goal dot is `aria-hidden`. The goal row's name carries the colour in words (§3.6), and so does the visible "2/5".
+- **A goal's progress comes from its tasks**: the read's `tasks` and `done`, and the in-progress and late counts the page works out (§1.3). A goal stays in the list until it is closed, by Mark done in its details (§3.6) or by Jet's `close`.
 - **Jet changes status too.** `step_tick` marks a task done or not done, and its new `started` field marks it in progress (§4.9). The list draws whatever the rows say.
 
 ---
 
 ## 3. Interactions
 
-There is one grammar for every row. **The box changes status. The row opens in place to be changed. The row can be dragged.** There are no hover toolbars, no menus and no dialogs.
-
 ### 3.1 Every interaction
 
-| Interaction | Mouse | Keyboard | Touch | Call |
-| --- | --- | --- | --- | --- |
-| Add | Click the "Add a task" line at the end of a day, type, press Enter | Tab to the line, type, press Enter. The field stays focused and empty for the next one. Esc clears it and leaves | Tap the line, type, tap Done on the keyboard (`enterkeyhint="done"`) | `POST /api/task-list/tasks` |
-| Rename in place | Click the row. It opens with the title field focused and the **caret at the end**. Enter or a click outside saves, Esc restores | Enter on the title opens it. Enter saves, Esc restores | Tap the row: it opens **without** focusing the field, so the keyboard stays down. Tap the title field to edit, then tap Done | `PATCH …/tasks/{id}` `{title}` |
-| Change goal | In the open row, the native "Goal" select: "No goal", then the open goals by title | Tab to it, then the arrow keys | Tap it | `PATCH` `{goalId}` |
-| Change day | In the open row, the "Move to" buttons name the other two days | The same buttons, or Alt+↑ / Alt+↓ (§3.2) | The same buttons, or a drag | `PATCH` `{day}` |
-| Change status | Click the box (one step forward), or a status word in the open row (any status) | Space on the box, or the status words | Tap the box (a 44 × 44 target), or a status word | `PATCH` `{state}` |
-| Mark done | Click a yellow box, or "Done" in the open row. The row stays where it is, green, then goes to the pile (§3.4) | Space on a yellow box | Tap a yellow box | `PATCH` `{state:"done"}` |
-| Delete | In the open row: "Delete", then "Delete?" within 4 s, as for chats (`chats-view.js:65-78`) | Delete or Backspace on a closed row opens it with Delete armed and focused. A second Delete or Enter deletes | The same two taps in the open row | `DELETE …/tasks/{id}` |
-| Drag up and down, and between days | Press on the row anywhere but the box and move 4 px. Drop on the line shown | Alt+↑ / Alt+↓ (§3.2), or the open row's "Up" and "Down" | Touch and hold for 350 ms, then drag | `PATCH` `{day, after}` |
-| Open the task's chat | "Open chat" in the open row | The same, by Tab and Enter | The same | none: the page shows the chat |
-| View the done history | Click the "Done" fold line. "Show older" at the end of the pile loads more | Enter or Space on it | Tap it | `GET /api/task-list/done` for older pages |
-| Clean up the history | A done row's "Delete" (two taps). The server cleans up after 90 days (§4.6) | The same | The same | `DELETE …/tasks/{id}` |
-| Put back from done | Click a green box in the pile | Space | Tap | `PATCH` `{state}` (§2) |
-| Rename a goal, or mark it done | Click a goal row to open it (§3.6) | Enter on it | Tap it | `PATCH …/goals/{id}` |
+| What | Mouse or touch | Keyboard |
+| --- | --- | --- |
+| Filter the list | A tap on a count; again, or "Show all", to clear | The summary is one Tab stop (`role="toolbar"`); ← / → between counts, Enter or Space to toggle, Esc to clear |
+| Add a task | Type, choose Day and Goal, Add | N in the list puts the focus in the field; Enter adds and keeps the focus |
+| Change status | A tap on the box steps it forward | Space on the box; 1, 2, 3 on a row set Not started, In progress, Done |
+| Move a task | The chip, then a day; the open row's Day; a drag | Enter, Space or ↓ on the chip opens the menu; Alt+↑ / Alt+↓ move one place |
+| Move all late tasks | "Move all to Today", twice within 4 s | The same |
+| Open a row | A tap on the title or the row | Enter on the title |
+| Delete | Delete in the open row, twice | Delete on a row opens it with Delete armed |
+| A goal | A tap on its title filters; "⋯" opens its details | ↑ / ↓ between goals, ← / → to "⋯", Enter |
+
+The filter is the page's own state and is never sent. One filter is on at a time, a goal filter included. A goal filter sets the add bar's Goal, and "Show all" puts it back to "No goal". An add that the filter would hide clears it, and the page says "Showing all tasks".
+
+Every change shows at once and goes to the server in the order made (§4.12). An add waits for its answer. A failed add keeps its words, day and goal, and says why under the bar ("… Press Add to try again."), tied to the field by `aria-describedby`; any other failed change is taken back and named in the alert until a later change works.
 
 ### 3.2 Keyboard map
 
-**One Tab stop per list.** The lists are each day list, the goals and the open pile. Each one is a single Tab stop with a roving `tabindex`: one control in the list has `tabindex="0"` (the one focused last, or the first row's title) and every other control has `-1`. So 30 tasks still take only a few Tabs to get past.
+Tab moves through the summary (one stop), the add field, Day, Goal and Add, the goals band when narrow, then each list as one stop with a roving `tabindex` (Overdue, Today, Done today, Tomorrow, Later), the Done fold and the pile, then the goals rail when wide. Inside a list, ↑ / ↓, Home and End move to the same control of another row, and ← / → move between the box, the title and the chip. N and 1 / 2 / 3 work only while the focus is in the list and outside a field.
 
-| Key | Where | Does |
-| --- | --- | --- |
-| Tab / Shift+Tab | page | from list to list. The order is Today's list, its add field, Tomorrow's list, its add field, the goals, Later's list, its add field, the fold line, then the pile |
-| ↑ / ↓ | a row's box or title | moves to the same control in the row above or below, within the list. Home and End go to the first and last row |
-| ← / → | a row | switches between the row's box and its title |
-| Alt+↑ / Alt+↓ | a row's box or title | moves the task one place. At the bottom of a day, Alt+↓ moves it to the **top** of the next day (Today, then Tomorrow, then Later), and the focus goes with it. At the top of a day, Alt+↑ moves it to the **end** of the day before. Nothing happens at the top of Today or the bottom of Later. The title carries `aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"` |
-| Space | box | one step forward (§2) |
-| Enter | title | opens the row |
-| Enter | title field | saves and closes |
-| Esc | title field, open row | restores the title and closes. The focus returns to the title |
-| Esc | while dragging | cancels the drag. The row goes back and no call is made |
-| Delete, Backspace | a closed row | opens it with Delete armed |
-
-These shortcuts are active only while a row has the focus, so they do not clash with a screen reader's keys. WCAG 2.1.4 allows a character shortcut that is "active only on focus".
-
-The keys follow two sources. GitHub found arrow-key moves natural, and that announcements must be debounced by 100 ms ([GitHub: accessible sortable list](https://github.blog/engineering/user-experience/exploring-the-challenges-in-creating-an-accessible-sortable-list-drag-and-drop/)). Atlassian warns against arrow keys alone and asks for a visible alternative ([Atlassian: drag and drop accessibility](https://atlassian.design/components/pragmatic-drag-and-drop/accessibility-guidelines/)). That alternative is the open row's buttons, which also meet WCAG 2.5.7: a keyboard path "does not automatically meet this success criterion", while "up or down" controls shown on selection do ([WCAG 2.5.7](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements.html)).
-
-**Announcements** go to the page's existing polite region, `#announce` (`ui/index.html:119`), debounced by 100 ms:
-
-- "Draft the spec moved to Tomorrow, 2 of 4."
-- "Draft the spec is in progress." / "Draft the spec is done."
-- "Added Call the bank to Today."
-- "Deleted Call the bank."
-
-**Focus after an action** follows the plan pane's `data-key` pattern (`pane.js:113-117, 137`):
-
-- After a move: the moved row's title.
-- After done or delete: the next row's box in the same day, else the previous row's, else the day's add field.
-- After an add: the add field.
+On a desktop the focus starts on the first task, or on the add field when the list is empty. A phone keeps it on the head band's title, so its keyboard does not cover the list.
 
 ### 3.3 The open row
 
-```
-│  ▣  [ Draft the spec|                                      ]  │ ← title field, caret at the end
-│     Not started  [In progress]  Done      Goal [ Ship the kite page ⌄ ] │
-│     Move to  Tomorrow  Later     Up  Down     Open chat     Delete    │
-```
+A tap on the title opens the row; one row or goal is open at a time. The title becomes a growing textarea of one line: Enter saves, and a line break typed or pasted becomes a space. Under it:
 
-- **One open row at a time.** Opening another, a click outside, or Esc closes it. A click outside saves.
-- **Focus on open.** A fine pointer or the keyboard focuses the title field with the caret at the end and nothing selected, so the first key typed does not replace the title. A coarse pointer (`pointer: coarse`) opens the row without focusing the field. The keyboard stays down until the person taps the field, as the empty state does on a phone (§3.7).
-- **Status words** set the state directly. The current one has `aria-pressed="true"`.
-- **"Move to"** is a muted 12 px word, followed by buttons for the two days the task is not in.
-- **Up and Down** move the task one place, as Alt+↑ / Alt+↓ do. The row stays open and the focus stays on the button.
-- **At 366 px** the strip wraps to three lines. Delete stays at the end of the last line (`margin-left: auto`).
-- **Semantics.** The strip is a `role="group"` named "Change Draft the spec". The title button carries `aria-expanded` and `aria-controls` pointing at the strip.
-- **An empty title on save is a cancel**: the old title stays, as in `chats-view.js:47-53`.
-- **A done row** opens to a strip that holds Delete only. A finished record is not edited, and its box is the way back (§2).
+1. **Status**: Not started, In progress, Done, which sets any status in one tap.
+2. **Day**: Today, Tomorrow, Later, which moves the task in one tap.
+3. **Goal**: the native select.
+4. **Up**, **Down**, **Open chat**, then **Delete**, which takes two taps.
+
+Esc restores the title and closes the row; a click or a focus outside it saves and closes it. A done row offers Delete only. For a late task, Day has nothing pressed and says "Was due Mon 23 Nov. Today gives it today's date.", and Up and Down are off with "An overdue task keeps its place. Use Day or its chip to move it."
 
 ### 3.4 Done, and the done pile
 
-- **The row lingers in place.** A task marked done turns green and is struck through, and **stays where it is** while the person goes on marking. These rows wait until 4 s pass with no box tapped, then all leave for the pile together, collapsing over 150 ms. Rows never move under a pointer aiming at the next box. The Done count goes up at once. A tap on a lingering green box puts the task back where it was (D4). A lingering row cannot be dragged. The 4 s is the page's existing `CONFIRM_MS` (`ui/plan/taps.js:6`).
-- **The page keeps a lingering row itself.** The server's answer already holds the task under `done`. The view draws it in its old place from its own record of lingering rows (§4.12), so neither the write's answer nor a re-read removes it early.
-- **The pile** is folded under "Done 12". Open, it lists done tasks newest first, grouped by the day they were done in the user's zone: "Today", "Yesterday", then "Mon 23 Nov". The read carries the newest 100. "Show older" at the end loads the next 100 from `GET /api/task-list/done` (§4.11) until the 90 days run out.
-- **A done row** shows a green box, a muted struck-through title, and "goal · 14:05". A tap on the box puts the task back. Its strip offers Delete only, which is how one item is cleaned up. It cannot be dragged, because the pile is ordered by time.
-- **The server cleans up automatically** (§4.6). The open pile's foot says so in one muted line: "Done tasks are kept for 90 days."
+A done task stays green in its place for 4 s after the last tap on any box, then folds away into Done today. A tap in that time puts it back where it was. The pile under the Done fold keeps 90 days (D6), grouped Today, Yesterday, then by date.
 
-### 3.5 Dragging
+### 3.5 Moving
 
-The drag follows [NN/g: drag and drop](https://www.nngroup.com/articles/drag-drop/): the row looks lifted, the insertion moves when the dragged row's centre crosses, touch starts with a long press, and there are alternatives.
+**The move menu** is a popover under the chip, not a dialog: Today, Tomorrow and Later as `menuitemradio`, with the current day ticked, or for a late task none ticked and "Was due Wed 25 Nov" at its foot. ↑ / ↓ move, Enter chooses, Esc closes it onto the chip, and Tab closes it and moves on from the chip. After a choice the focus stays on the moved task's chip.
 
-- **Start.**
-  - Mouse: press and move 4 px. A press that moves less is a click.
-  - Touch: hold 350 ms while moving less than 8 px. Moving more is a scroll.
-  - Rows have `touch-action: pan-y`. Once a touch drag has started, a `touchmove` listener with `{ passive: false }` calls `preventDefault()` so the list stops scrolling (unknown U1).
-  - `user-select: none` and `-webkit-touch-callout: none` on rows stop iOS from starting a text selection or its callout during the hold (§1.4).
-  - The box, a field, a lingering row and a done row never start a drag.
-- **While dragging.**
-  - A copy of the row follows the pointer up and down only. It has `background: var(--surface-2)`, `box-shadow: 0 6px 20px rgba(0,0,0,.45)` and `z-index: 2`. The row's own slot stays at `opacity: .35`.
-  - The drop place is a 2 px line in `--accent` across the list. It moves when the lifted row's centre crosses a row's middle.
-  - A day's heading takes the drop at the top of that day. A day's add line takes it at the end, which makes an empty day a target.
-  - The goals section is passed over and is never a target.
-  - Within 48 px of the scroller's top or bottom edge, the list scrolls 2 to 12 px per frame, faster deeper into the edge.
-  - With a fine pointer the cursor is `grab` over a row and `grabbing` while dragging.
-  - A read that arrives during a drag is kept, and drawn only after the drop or the cancel (§4.12).
-- **Drop.**
-  - The page reorders its own copy at once and sends `PATCH {day, after}`.
-  - Success: the page draws the answer.
-  - Failure: the page reads the list again and shows the alert (§3.7).
-  - The `click` that follows a drop, or a cancelled drag, is swallowed, so it never opens the row.
-- **Cancel.** Esc, `pointercancel`, a lost pointer capture or the window losing focus puts the row back. No call is made.
-- **Drops onto goals or onto the Done line do nothing.** The goal picker and the box do those jobs.
-- **No drag handle icon.** Every row can be dragged, and the open row is the non-drag way. Reminders works this way: "touch and hold … then drag" ([Apple: Reminders](https://support.apple.com/102484)).
+**One-place moves** (Alt+↑ / Alt+↓ and the open row's Up and Down) follow the server's rule that any move re-dates a task (§4.5):
+
+- A late task is never moved one place, so it keeps its date. Alt and an arrow on it say "Move it with its chip."
+- In Today a move counts only the rows shown, which leave the late tasks out, so the `after` it sends is always a task in view.
+- While a filter is on, one-place moves and dragging are off ("Show all to reorder."), because hidden tasks sit between the shown ones.
+
+**Move all to Today** arms as "Move 5 to Today?" and a second tap within 4 s sends one `PATCH {day: 'today'}` for each late task shown, in order, with no `after`. The server gives each one today's date and keeps its place, because its day does not change, so they land in Today in the order they had. If some fail, the alert says "Some tasks could not be moved. … Try again." and the list is read again.
+
+**Dragging** is by mouse, or on touch by a hold of 350 ms. A copy of the row follows the pointer, its place stays faint, and a line shows where it lands. A drop lands in a day; an empty day's "Nothing due …" line takes a drop at that day's end. Overdue is never a place to drop: a drag that starts there lands only in a day, which re-dates the task. A drop over Overdue, the goals or the Done fold puts the row back, and Esc cancels.
 
 ### 3.6 Goals
 
-- **The goal row** shows the colour dot, the title and its facts: "2/5 · 3 days left". Goals are ordered by due date, then id.
-- **Its accessible name** carries the colour in words: "Ship the kite page, in progress, 2 of 5 done, 3 days left".
-- **Opened**, it shows:
-  - the title field (1 to 200 characters, the objectives table's limit);
-  - the deliverable, 13 px / 19 px, `--muted`, cut to two lines;
-  - "Due Fri 4 Dec · 3 days left · 2 of 5 done";
-  - the strip, with "Open chat" and "Mark done". "Mark done" arms as **"Done? Its 3 open tasks leave the list."** (or "Done?" when none is open), and a second click within 4 s confirms.
-- **Marking a goal done** closes it, and its waiting checks are cancelled (`src/objectives/mod.rs:489-511`). Its open tasks leave the day lists without being done. They stay on the closed objective as part of its record, which Jet still lists, and leave only with the objective; the purge never deletes a task that is not done (§4.6). Its done tasks stay in the pile until the purge takes them, 90 days after the goal closed. A task of a closed goal can no longer be changed (409 `goalClosed`), only deleted.
-- **Deleting a goal's chat** takes the goal's open tasks off the list in the same way, because that drops the goal (`src/store/chats.rs:180-189`). So does Jet's `close`.
-- **There is no "Add a goal".** A goal is an objective. The server makes an objective only with a deliverable, a due date and a first check, which Jet agrees with the user in conversation (`src/objectives/mod.rs:297-344`, `facade/objectives.rs:17`).
-- **With no goals**, the Goals section shows the plan pane's invitation (`ui/plan/view.js:179-183`): "Tell Jet what you are working on, for example 'I need to ship the kite page by Friday.'" The example puts that sentence in the open chat's message box through the existing `jet:draft` event (`ui/chat/main.js:274-280`).
-- **No delete or pause.** Dropping or pausing a goal stays with Jet ("drop it") or with deleting its chat. That keeps the list a list.
-- **Only the user's own goals.** Goals shared with the user stay under "Shared with you" in the plan pane. This also keeps Never 3 in `src/lib.rs:6`.
+A tap on a goal's title toggles the goal filter and fills the goal. "⋯" (`aria-expanded`) opens its details in place: under "Next" in the rail card, which the rail scrolls into view, or as a panel under the meter's bar in the band. They hold the deliverable (cut at three lines, whole in `title`), the title field (Enter saves, Esc restores and closes), Open chat and Mark done. Mark done arms for 4 s as "Done? Its 4 open tasks leave the list." and closes the goal on the second tap; its open tasks leave the list. A keyboard or a fine pointer puts the focus in the title field; a coarse pointer leaves it on "⋯". Closing puts the focus back on "⋯"; after Mark done it goes to the next goal, or to the add field. Goals are made only by Jet in a chat.
 
 ### 3.7 Empty, loading and error states
 
 | State | What shows |
 | --- | --- |
-| First load | `aria-busy="true"` and an sr-only "Loading the task list". Skeletons in the final layout's shape, with no shimmer: the "Today" heading and three task lines, each a 20 px `--surface-2` box and a 44 % × 12 px bar. These are the library's skeleton sizes (`library.css:54-58`) |
-| Nothing at all (no goals, no tasks, empty pile) | Today shows its add line, focused on a desktop. A phone focuses the title instead, so its keyboard does not cover the list, as `library/view.js:179-184` does. Tomorrow and Later show only their add lines. The Goals section holds the invitation (§3.6). No illustration, no "all caught up" |
-| An empty day | Its heading, then its add line, and nothing else |
-| An empty pile | The fold line "Done" with no count. Opened, it says "Tasks you finish land here." |
-| The first read failed | A centred block, like `.library-state` (`library.css:32-35`): "The task list could not be loaded." and a "Try again" text button |
-| A later read failed | The last good list stays, with the quiet notice "The task list could not be refreshed. Try again" under the head band |
-| "Show older" failed | The pile keeps what it has, and the alert says "Older done tasks could not be loaded. … Try again." |
-| A change failed | The page puts the list back by reading it again. The alert shows `tapEnded(failure, error)` from `ui/plan/taps.js:28-31`, for example "The task could not be moved. That task is no longer in your list. Try again." It stays until a later change works, as in the pane. The failures are "The task could not be added / renamed / moved / changed / deleted" and "The goal could not be renamed / closed" |
-| An add failed | The typed text goes back into the field, and the alert shows |
-| The open row's task vanished in a re-read | The row closes, and the alert says "That task is no longer in your list." (§4.12) |
-| Offline | The drawer already says "Server disconnected" (`chat/drawer/view.js:18`). Changes fail with "Jet could not be reached." |
+| Loading | `aria-busy`, four count skeletons, the add bar disabled with "Loading the list…", two goal skeletons, a heading bar with no text and four skeleton rows |
+| First read failed | One block: "The task list could not be loaded." and Try again |
+| Refresh failed | The last list stays, with "The task list could not be refreshed. Try again" |
+| Empty list | The add bar, "Nothing on your list yet.", Jet's example sentence, and the goals invitation in the rail; no counts and no band |
+| Filter with no match | "No tasks in progress. Show all" |
+| Empty pile | The fold says "Done" with no count; opened, "Tasks you finish land here." |
 
 ---
 

@@ -1,19 +1,22 @@
-// The task list page in the main column: Today, Tomorrow, the goals, Later and the done pile, drawn over the page's
-// own state so that a re-read never takes away an open edit, a drag, a done row still in place, or the focus.
-// It owns which row is open, the armed delete, the done rows that linger and the roving focus of each list.
+// The task list page in the main column: four counts that filter, one add bar, Overdue, Today with its done tasks,
+// Tomorrow, Later, the done pile, and the goals as a rail of cards or a band of meters. It is drawn over the page's own
+// state, so that a re-read never takes away an open edit, a drag, a done row still in place, a menu, or the focus.
 
-import { h, icon } from '../dom.js';
-import { svgIcon } from '../plan/icons.js';
-import { dueDayWords } from '../plan/model.js';
+import { h } from '../dom.js';
 import { CONFIRM_MS } from '../plan/taps.js';
-import { DAYS, DAY_NAMES, STATE_NAMES, dayGroups, doneGroups, keyboardMove, nextState, putBackState, todayCount } from './model.js';
-import { goalRow, skeletonRow, taskRow, textButton } from './rows.js';
+import { DAY_NAMES, STATE_NAMES, agendaGroups, keyboardMove, matches, nextState, oneLine, putBackState, summaryCounts } from './model.js';
+import { textButton } from './rows.js';
 import { createDrag } from './drag.js';
+import { createKeys } from './keys.js';
+import { createParts } from './parts.js';
+import { LATE_ROWS, drawFilterLine, drawGoalOptions, drawGoals, drawLists, drawPile, drawSkeleton, drawSummary, showParts } from './draw.js';
 
 const LEAVE_MS = 150;
 const SAY_MS = 100;
 const HEAD_PX = 52;
-const EXAMPLE = 'I need to ship the kite page by Friday.';
+const WIDE_PX = 920;
+
+const sameFilter = (a, b) => a === b || (a !== null && b !== null && typeof a === 'object' && typeof b === 'object' && a.goalId === b.goalId);
 
 /**
  * @param {{ store: ReturnType<typeof import('./store.js').createTaskStore>, openChat: (chatId: number) => void,
@@ -23,54 +26,44 @@ export function createTaskList({ store, openChat, announce }) {
   const coarse = matchMedia('(pointer: coarse)');
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('reduced');
   let shown = false, focusOnLoad = false, painting = false, pileOpen = false, goneWords = '';
-  /** The open row: `{ kind: 'task' | 'goal', id, field, before, armed, armTimer }`, or null. */
+  /** The open row or goal: `{ kind: 'task' | 'goal', id, field, before, armed, armTimer, finished }`, or null. */
   let open = null;
+  /** What shows: null for all, 'late', 'today', 'progress', 'done', or `{ goalId }`. It is the page's own and never sent. */
+  let filter = null;
+  /** The task whose move menu is open, or null. */
+  let menuId = null;
+  let lateOpen = false, doneTodayOpen = false, goalsOpen = false, wide = false;
+  let moveAllTimer = 0, moveAllArmed = false;
   /** Done rows that stay in their place, green, until the boxes have been left alone for a while. */
   const lingering = new Map();
   let lingerTimer = 0;
-  /** The control of each list that takes the Tab stop. */
-  const roving = new Map();
   const countListeners = new Set();
   let sayTimer = 0;
   const say = (words) => { clearTimeout(sayTimer); sayTimer = setTimeout(() => announce(words), SAY_MS); };
 
-  const title = h('h1', { class: 'tl-title-head', id: 'tasks-title', tabindex: '-1', text: 'Task list' });
-  const alert = h('p', { class: 'tl-alert', role: 'alert' });
-  const notice = h('p', { class: 'tl-notice' });
-  const stateBlock = h('div', { class: 'tl-state', hidden: true });
-  const loading = h('p', { class: 'sr-only', role: 'status' });
+  const parts = createParts({
+    add: () => add(),
+    moveAll: () => moveAll(),
+    toggleLate: () => { lateOpen = !lateOpen; paint(); },
+    toggleDoneToday: () => { doneTodayOpen = !doneTodayOpen; paint(); },
+    toggleGoals: () => { goalsOpen = !goalsOpen; paint(); },
+    toggleFold: () => { pileOpen = !pileOpen; paint(); },
+  });
+  const { title, alert, notice, stateBlock, loading, addField, addDay, addGoal, syncActive, showAddError, goalsEl, filterLine, column, rail, el } = parts;
 
-  const addField = (day) => {
-    const field = h('input', { class: 'tl-add-field', type: 'text', placeholder: 'Add a task', 'aria-label': `Add a task to ${DAY_NAMES[day]}`, enterkeyhint: 'done', autocomplete: 'off', maxlength: '300', 'data-key': `add-${day}` });
-    field.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); add(day, field); }
-      else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); field.value = ''; field.blur(); }
-    });
-    return field;
-  };
-  const sections = Object.fromEntries(DAYS.map((day) => {
-    const date = h('span', { class: 'tl-date' });
-    const list = h('ul', { class: 'tl-list', 'aria-label': DAY_NAMES[day], 'data-list': day });
-    const field = addField(day);
-    const el = h('section', { class: 'tl-section', 'data-drop-day': day, 'aria-labelledby': `tl-h-${day}` },
-      h('div', { class: 'tl-heading' }, h('h2', { id: `tl-h-${day}`, text: DAY_NAMES[day] }), date), list,
-      h('div', { class: 'tl-add' }, h('span', { class: 'tl-slot' }, icon('plus')), field));
-    return [day, { el, date, list, field }];
-  }));
-  const goalsList = h('ul', { class: 'tl-list', 'aria-label': 'Goals', 'data-list': 'goals' });
-  const invite = h('p', { class: 'tl-invite' }, 'Tell Jet what you are working on, for example ',
-    h('button', { type: 'button', class: 'tl-invite-example', 'data-key': 'example', onClick: (event) => event.currentTarget.dispatchEvent(new CustomEvent('jet:draft', { bubbles: true, detail: { text: EXAMPLE } })) }, `“${EXAMPLE}”`));
-  const goals = h('section', { class: 'tl-section', 'aria-labelledby': 'tl-h-goals' }, h('div', { class: 'tl-heading' }, h('h2', { id: 'tl-h-goals', text: 'Goals' })), goalsList, invite);
-  const foldCount = h('span', { class: 'heading-count' });
-  const fold = h('button', { type: 'button', class: 'fold-line tl-fold', 'aria-expanded': 'false', 'aria-controls': 'tl-pile', 'data-key': 'fold-done', onClick: () => { pileOpen = !pileOpen; paint(); } }, h('span', { text: 'Done' }), foldCount, svgIcon('chevron'));
-  const pile = h('div', { class: 'tl-pile', id: 'tl-pile', hidden: true });
-  const done = h('section', { class: 'tl-done', 'aria-label': 'Done' }, fold, pile);
-  const column = h('div', { class: 'tl-column' }, alert, notice, stateBlock, loading, sections.today.el, sections.tomorrow.el, goals, sections.later.el, done);
-  const el = h('section', { class: 'tasklist', id: 'tasks-content', 'aria-labelledby': 'tasks-title', hidden: true }, h('header', { class: 'tl-head' }, title), column);
+  // The goals are one block: the rail's cards from 920 px, else the band's meters under the add bar, so the Tab
+  // order follows what is seen.
+  new ResizeObserver(() => {
+    const next = el.clientWidth >= WIDE_PX;
+    if (next === wide || el.hidden) return;
+    wide = next;
+    if (wide) rail.append(goalsEl); else column.insertBefore(goalsEl, filterLine);
+    paint();
+  }).observe(el);
 
   const drag = createDrag({
     root: column, scroller: el, top: () => HEAD_PX,
-    onStart(id) { if (open) closeRow(true); store.keep('task', id); },
+    onStart(id) { if (open) closeRow(true); closeMenu(false); store.keep('task', id); },
     onDrop(id, place, fromTop) {
       store.release();
       if (place === null || !move(id, place)) { paint(); return; }
@@ -78,34 +71,54 @@ export function createTaskList({ store, openChat, announce }) {
     },
   });
 
-  const tabFor = (listKey) => (key) => (roving.get(listKey) === key ? '0' : '-1');
-  const findTask = (list, id) => list.tasks.find((task) => task.id === id) ?? list.done.find((task) => task.id === id) ?? null;
+  const focusKey = (key) => el.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+  const keys = createKeys({
+    el, summary: parts.summary, addField,
+    view: {
+      store, get act() { return act; }, filter: () => filter, setFilter: (next) => setFilter(next), cancelOpen: (target) => cancelOpen(target),
+      openMenu: (task) => openMenu(task), closeMenu: (refocus) => closeMenu(refocus), openRow: (...args) => openRow(...args),
+      move: (id, place) => move(id, place), focusKey, say,
+    },
+  });
 
   // ---- What the person does.
 
-  async function add(day, field) {
-    const words = field.value.trim();
+  async function add() {
+    const words = addField.value.trim();
     if (!words) return;
-    field.value = '';
-    const result = await store.add(words, day);
-    if (result.ok) say(`Added ${words} to ${DAY_NAMES[day]}.`);
-    else if (field.value === '') field.value = words;
+    const list = store.state.list;
+    const day = addDay.value, goalId = addGoal.value === '' ? null : Number(addGoal.value);
+    const goal = list?.goals.find((item) => item.id === goalId) ?? null;
+    addField.value = '';
+    showAddError('');
+    const result = await store.add(words, day, goalId);
+    if (result.ok) {
+      // An add that the filter would hide clears it, so the new row is always in sight.
+      const hidden = filter !== null && !matches({ day, goalId, late: false, state: 'not_started', doneAt: null }, filter, list);
+      if (hidden) { filter = null; paint(); }
+      say(`Added ${words} to ${DAY_NAMES[day]}${goal ? `, under ${goal.title}` : ''}.${hidden ? ' Showing all tasks.' : ''}`);
+    } else {
+      if (addField.value === '') addField.value = words;
+      showAddError(result.notice.replace(/Try again\.$/, 'Press Add to try again.'));
+    }
+    syncActive();
   }
+
 
   /** @returns {boolean} whether the task was there to move */
   function move(id, place) {
     const task = store.state.list?.tasks.find((item) => item.id === id);
     if (!task) return false;
     store.change(id, place, 'The task could not be moved');
-    const groups = dayGroups(store.state.list);
-    const at = groups[place.day].findIndex((item) => item.id === id);
-    say(`${task.title} moved to ${DAY_NAMES[place.day]}, ${at + 1} of ${groups[place.day].length}.`);
+    const group = agendaGroups(store.state.list)[place.day];
+    const at = group.findIndex((item) => item.id === id);
+    say(`${task.title} moved to ${DAY_NAMES[place.day]}${at < 0 ? '' : `, ${at + 1} of ${group.length}`}.`);
     return true;
   }
 
   /** A dropped row slides the last few pixels from where it was let go into its place. */
   function settle(id, fromTop) {
-    const row = column.querySelector(`.tl-task[data-id="${id}"]`);
+    const row = el.querySelector(`.tl-task[data-id="${id}"]`);
     if (!row || reduced()) return;
     row.style.transform = `translateY(${fromTop - row.getBoundingClientRect().top}px)`;
     row.getBoundingClientRect();
@@ -116,7 +129,8 @@ export function createTaskList({ store, openChat, announce }) {
   /** Keeps a task about to be done in its place, with what it was before, so a tap can put it back where it was. */
   function linger(task) {
     const list = store.state.list;
-    lingering.set(task.id, { before: task, day: task.day, at: dayGroups(list)[task.day].findIndex((item) => item.id === task.id), index: list.tasks.findIndex((item) => item.id === task.id) });
+    const group = task.late ? 'late' : task.day;
+    lingering.set(task.id, { before: task, group, at: agendaGroups(list)[group].findIndex((item) => item.id === task.id), index: list.tasks.findIndex((item) => item.id === task.id) });
     restartLinger();
   }
 
@@ -127,22 +141,22 @@ export function createTaskList({ store, openChat, announce }) {
     if (lingering.size) lingerTimer = setTimeout(endLinger, CONFIRM_MS);
   }
 
-  /** The done rows leave for the pile together, folding away; the focus goes to the row after the one it was on. */
+  /** The done rows leave for Done today together, folding away; the focus goes to the row after the one it was on. */
   function endLinger() {
-    const rows = [...column.querySelectorAll('.tl-task[data-lingering="true"]')];
+    const rows = [...el.querySelectorAll('.tl-task[data-lingering="true"]')];
     const focused = document.activeElement?.closest?.('.tl-task[data-lingering="true"]');
     let nextKey = null;
     if (focused) {
-      const list = focused.closest('ul');
-      const stay = [...list.children].filter((row) => row.dataset.lingering !== 'true');
-      const index = [...list.children].indexOf(focused);
-      const after = stay.find((row) => [...list.children].indexOf(row) > index) ?? stay.filter((row) => [...list.children].indexOf(row) < index).at(-1);
-      nextKey = after ? `mark-${after.dataset.id}` : `add-${list.dataset.list}`;
+      const items = [...focused.closest('ul').children];
+      const index = items.indexOf(focused);
+      const stay = items.filter((row) => row.dataset.lingering !== 'true' && row.matches('.tl-task'));
+      const after = stay.find((row) => items.indexOf(row) > index) ?? stay.filter((row) => items.indexOf(row) < index).at(-1);
+      nextKey = after ? `mark-${after.dataset.id}` : 'add';
     }
     const finish = () => {
       lingering.clear();
       paint();
-      if (nextKey) column.querySelector(`[data-key="${CSS.escape(nextKey)}"]`)?.focus({ preventScroll: true });
+      if (nextKey) focusKey(nextKey);
     };
     if (reduced() || rows.length === 0) { finish(); return; }
     for (const row of rows) { row.style.height = `${row.offsetHeight}px`; row.classList.add('is-leaving'); }
@@ -150,8 +164,49 @@ export function createTaskList({ store, openChat, announce }) {
     setTimeout(finish, LEAVE_MS);
   }
 
+  function setFilter(next) {
+    const was = filter;
+    filter = sameFilter(next, filter) ? null : next;
+    if (filter !== null && typeof filter === 'object') addGoal.value = String(filter.goalId);
+    else if (was !== null && typeof was === 'object') addGoal.value = '';
+    if (open) closeRow(true);
+    closeMenu(false);
+    paint();
+    say(filter === null ? 'Showing all tasks.' : filterLine.firstChild.textContent);
+  }
+
+  function moveAll() {
+    const ids = agendaGroups(store.state.list).late.filter((task) => matches(task, filter, store.state.list)).map((task) => task.id);
+    if (!moveAllArmed) {
+      moveAllArmed = true;
+      clearTimeout(moveAllTimer);
+      moveAllTimer = setTimeout(() => { moveAllArmed = false; paint(); }, CONFIRM_MS);
+      paint();
+      return;
+    }
+    clearTimeout(moveAllTimer);
+    moveAllArmed = false;
+    store.moveAllToToday(ids);
+    say(`Moved ${ids.length} to Today.`);
+    focusKey(`chip-${ids[0]}`);
+  }
+
+  function openMenu(task) {
+    menuId = task.id;
+    paint();
+    focusKey(`menu-${task.late ? 'today' : task.day}-${task.id}`);
+  }
+
+  function closeMenu(refocus) {
+    if (menuId === null) return;
+    const id = menuId;
+    menuId = null;
+    paint();
+    if (refocus) focusKey(`chip-${id}`);
+  }
+
   const act = {
-    mark(task, el) {
+    mark(task, button) {
       const lingered = lingering.get(task.id);
       if (lingered) {
         lingering.delete(task.id);
@@ -165,26 +220,35 @@ export function createTaskList({ store, openChat, announce }) {
         sayState(task, state);
       }
       restartLinger();
-      el.focus({ preventScroll: true });
+      button.focus({ preventScroll: true });
     },
     open: (task, how) => openRow('task', task, how),
-    openGoal: (goal, how) => openRow('goal', goal, how),
+    openGoal(goal, how) {
+      if (open?.kind === 'goal' && open.id === goal.id) closeRow(true, true);
+      else openRow('goal', goal, how);
+    },
+    pickGoal: (goal) => setFilter({ goalId: goal.id }),
+    toggleMenu: (task) => (menuId === task.id ? closeMenu(true) : openMenu(task)),
     setState(task, state) {
       if (state === task.state) return;
       if (state === 'done') { closeRow(true); linger(task); }
       store.change(task.id, { state }, 'The task could not be changed');
       sayState(task, state);
-      if (state === 'done') column.querySelector(`[data-key="mark-${task.id}"]`)?.focus({ preventScroll: true });
+      if (state === 'done') focusKey(`mark-${task.id}`);
     },
     setGoal(task, goalId) { store.change(task.id, { goalId }, 'The task could not be changed'); },
-    moveTo(task, day) {
-      closeRow(true);
-      move(task.id, { day });
-      column.querySelector(`[data-key="title-${task.id}"]`)?.focus({ preventScroll: true });
+    /** A day chosen in the move menu or the open row. Today for a late task gives it today's date. */
+    setDay(task, day, from) {
+      if (from === 'menu') menuId = null; else closeRow(true);
+      if (task.late || day !== task.day) move(task.id, { day });
+      else paint();
+      focusKey(from === 'menu' ? `chip-${task.id}` : `title-${task.id}`);
     },
     step(task, direction) {
-      const place = keyboardMove(store.state.list, task.id, direction);
+      const place = keyboardMove(store.state.list, task.id, direction, filter !== null);
       if (place) move(task.id, place);
+      else if (task.late) say('Move it with its chip.');
+      else if (filter !== null) say('Show all to reorder.');
     },
     openChat(task) {
       const chat = task.chatId ?? store.state.list?.mainChatId;
@@ -198,15 +262,18 @@ export function createTaskList({ store, openChat, announce }) {
     openGoalChat(goal) { closeRow(true); if (goal.chatId != null) openChat(goal.chatId); },
     async closeGoal(goal) {
       if (!open?.armed) { arm(); return; }
+      const goals = store.state.list.goals;
+      const next = goals[goals.findIndex((item) => item.id === goal.id) + 1] ?? goals.find((item) => item.id !== goal.id);
       closeRow(false);
+      if (sameFilter(filter, { goalId: goal.id })) filter = null;
       const result = await store.closeGoal(goal.id);
       if (result.ok) say(`${goal.title} is done.`);
-      column.querySelector('[data-list="goals"] .tl-title, [data-key="example"]')?.focus({ preventScroll: true });
+      if (next) focusKey(`goal-${next.id}`); else addField.focus({ preventScroll: true });
     },
   };
 
   function deleteTask(task) {
-    const row = column.querySelector(`.tl-task[data-id="${task.id}"]`);
+    const row = el.querySelector(`.tl-task[data-id="${task.id}"]`);
     const list = row?.closest('ul');
     const siblings = list ? [...list.children].filter((item) => item.matches('.tl-row')) : [];
     const index = siblings.indexOf(row);
@@ -215,8 +282,7 @@ export function createTaskList({ store, openChat, announce }) {
     lingering.delete(task.id);
     store.remove(task.id);
     say(`Deleted ${task.title}.`);
-    const key = next ? `mark-${next.dataset.id}` : list?.dataset.list && DAYS.includes(list.dataset.list) ? `add-${list.dataset.list}` : 'fold-done';
-    column.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+    focusKey(next ? `mark-${next.dataset.id}` : list?.dataset.list === 'done' ? 'fold-done' : 'add');
   }
 
   function arm() {
@@ -226,10 +292,30 @@ export function createTaskList({ store, openChat, announce }) {
     paint();
   }
 
+  /** The title field of an open task: one line, Enter saves, and it grows with its words. */
+  function taskField(item) {
+    const field = h('textarea', { class: 'tl-field', rows: '1', 'aria-label': 'Task title', maxlength: '300', enterkeyhint: 'done', autocomplete: 'off', 'data-key': `field-task-${item.id}` });
+    field.value = item.title;
+    const grow = () => { if (!CSS.supports('field-sizing', 'content')) { field.style.height = 'auto'; field.style.height = `${field.scrollHeight}px`; } };
+    field.addEventListener('input', () => {
+      if (/[\r\n\t]/.test(field.value)) {
+        const caret = oneLine(field.value.slice(0, field.selectionStart)).length;
+        field.value = oneLine(field.value);
+        field.setSelectionRange(caret, caret);
+      }
+      grow();
+    });
+    requestAnimationFrame(grow);
+    return field;
+  }
+
   function openRow(kind, item, how, armed = false) {
     if (open?.kind === kind && open.id === item.id) return;
     if (open) closeRow(true);
-    const field = h('input', { class: 'tl-field', type: 'text', value: item.title, 'aria-label': kind === 'goal' ? 'Goal title' : 'Task title', maxlength: kind === 'goal' ? '200' : '300', enterkeyhint: 'done', autocomplete: 'off', 'data-key': `field-${kind}-${item.id}` });
+    closeMenu(false);
+    const field = kind === 'goal'
+      ? h('input', { class: 'tl-goal-field', type: 'text', value: item.title, 'aria-label': 'Goal title', maxlength: '200', enterkeyhint: 'done', autocomplete: 'off', 'data-key': `field-goal-${item.id}` })
+      : taskField(item);
     field.value = item.title;
     field.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); closeRow(true, true); }
@@ -240,14 +326,15 @@ export function createTaskList({ store, openChat, announce }) {
     store.keep(kind, item.id);
     paint();
     const row = openRowEl();
+    if (kind === 'goal' && wide) row?.querySelector('.tl-goal-details')?.scrollIntoView({ block: 'nearest' });
     if (armed || finished) row?.querySelector('.tl-delete')?.focus({ preventScroll: true });
-    else if (how === 'pointer' && coarse.matches) row?.querySelector('.tl-mark, .tl-slot')?.focus?.({ preventScroll: true });
+    else if (how === 'pointer' && coarse.matches) (kind === 'goal' ? row?.querySelector('.tl-goal-more') : row?.querySelector('.tl-mark'))?.focus({ preventScroll: true });
     else { field.focus({ preventScroll: true }); field.setSelectionRange(field.value.length, field.value.length); }
   }
 
-  const openRowEl = () => (open ? column.querySelector(`.tl-${open.kind}[data-id="${open.id}"][data-open="true"]`) : null);
+  const openRowEl = () => (open === null ? null : open.kind === 'goal' ? el.querySelector(`[data-goal="${open.id}"][data-open="true"]`) : el.querySelector(`.tl-task[data-id="${open.id}"][data-open="true"]`));
 
-  /** Closes the open row. `save` keeps a changed title; an empty one is a cancel. `refocus` puts the focus on its title. */
+  /** Closes the open row. `save` keeps a changed title; an empty one is a cancel. `refocus` puts the focus back on it. */
   function closeRow(save, refocus = false) {
     if (!open) return;
     const { kind, id, field, before, armTimer, finished } = open;
@@ -260,90 +347,44 @@ export function createTaskList({ store, openChat, announce }) {
       else store.change(id, { title: words }, 'The task could not be renamed');
     }
     paint();
-    if (refocus) column.querySelector(`[data-key="${kind === 'goal' ? 'goal' : 'title'}-${id}"]`)?.focus({ preventScroll: true });
+    if (refocus) focusKey(`${kind === 'goal' ? 'goal-more' : 'title'}-${id}`);
   }
 
-  // A click or a focus anywhere outside the open row saves it and closes it.
+  // A click or a focus anywhere outside the open row saves it and closes it; a click outside the menu closes it.
   document.addEventListener('click', (event) => {
-    if (!open || painting) return;
+    if (painting) return;
+    if (menuId !== null && !event.target.closest?.(`.tl-menu, [data-key="chip-${menuId}"]`)) closeMenu(false);
+    if (!open) return;
     const row = openRowEl();
     if (row && !row.contains(event.target)) closeRow(true);
   }, true);
-  column.addEventListener('focusout', (event) => {
+  /** Esc in the open row or goal puts its title back and closes it. */
+  function cancelOpen(target) {
+    if (!open || !openRowEl()?.contains(target)) return false;
+    open.field.value = open.before;
+    closeRow(false, true);
+    return true;
+  }
+
+  el.addEventListener('focusout', (event) => {
     if (!open || painting) return;
     const row = openRowEl();
     if (row && event.relatedTarget && !row.contains(event.relatedTarget)) closeRow(true);
   });
 
-  column.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && open && openRowEl()?.contains(event.target)) {
-      event.preventDefault();
-      event.stopPropagation();
-      open.field.value = open.before;
-      closeRow(false, true);
-      return;
-    }
-    if ((event.key === 'Delete' || event.key === 'Backspace') && event.target.matches?.('.tl-delete')) {
-      event.preventDefault();
-      event.target.click();
-      return;
-    }
-    const control = event.target.closest?.('.tl-mark, .tl-title');
-    const row = control?.closest('.tl-row');
-    if (!control || !row || row.dataset.open === 'true') return;
-    const list = row.closest('ul');
-    const rows = [...list.children].filter((item) => item.matches('.tl-row'));
-    const kind = control.classList.contains('tl-mark') ? '.tl-mark' : '.tl-title';
-    const go = (target) => { const next = target?.querySelector(kind); if (next) { next.focus(); event.preventDefault(); } };
-    const at = rows.indexOf(row);
-    const id = Number(row.dataset.id);
-    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-      event.preventDefault();
-      if (!row.matches('.tl-task') || row.dataset.lingering === 'true' || list.dataset.list === 'done') return;
-      const place = keyboardMove(store.state.list, id, event.key === 'ArrowUp' ? -1 : 1);
-      if (!place) return;
-      roving.set(place.day, `title-${id}`);
-      move(id, place);
-      column.querySelector(`[data-key="title-${id}"]`)?.focus({ preventScroll: true });
-      column.querySelector(`[data-key="title-${id}"]`)?.scrollIntoView({ block: 'nearest' });
-    } else if (event.key === 'ArrowUp') go(rows[at - 1]);
-    else if (event.key === 'ArrowDown') go(rows[at + 1]);
-    else if (event.key === 'Home') go(rows[0]);
-    else if (event.key === 'End') go(rows.at(-1));
-    else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-      const other = row.querySelector(kind === '.tl-mark' ? '.tl-title' : '.tl-mark');
-      if (other) { other.focus(); event.preventDefault(); }
-    } else if ((event.key === 'Delete' || event.key === 'Backspace') && row.matches('.tl-task')) {
-      const task = findTask(store.state.list, id);
-      if (task) { event.preventDefault(); openRow('task', task, 'keyboard', true); }
-    }
-  });
-  column.addEventListener('focusin', (event) => {
-    const control = event.target.closest?.('.tl-mark, .tl-title');
-    const list = control?.closest('ul[data-list]');
-    if (!control || !list || !control.dataset.key) return;
-    roving.set(list.dataset.list, control.dataset.key);
-    for (const other of list.querySelectorAll('.tl-mark, .tl-title')) other.tabIndex = other === control ? 0 : -1;
-  });
+
+
+
 
   // ---- Drawing.
 
-  /** Makes sure each list has one Tab stop: the one used last if it is still drawn, else the first row's title. */
-  function settleTabs(list) {
-    const key = roving.get(list.dataset.list);
-    const controls = [...list.querySelectorAll('.tl-mark, .tl-title')];
-    const chosen = controls.find((item) => item.dataset.key === key) ?? list.querySelector('.tl-title') ?? controls[0];
-    for (const item of controls) item.tabIndex = item === chosen ? 0 : -1;
-  }
 
-  function openFor(kind, id) {
-    return open && open.kind === kind && open.id === id ? { field: open.field, armed: open.armed } : null;
-  }
+  const openFor = (kind, id) => (open && open.kind === kind && open.id === id ? { field: open.field, armed: open.armed } : null);
 
-  /** The open tasks of a day, with the done rows that still linger in their old places. */
-  function dayRows(list, day, groups) {
-    const rows = groups[day].map((task) => ({ task, lingering: false }));
-    const mine = [...lingering.entries()].filter(([, l]) => l.day === day).sort((a, b) => a[1].at - b[1].at);
+  /** The shown tasks of a part, with the done rows that still linger in their old places. */
+  function partRows(list, group, tasks) {
+    const rows = tasks.map((task) => ({ task, lingering: false }));
+    const mine = [...lingering.entries()].filter(([, l]) => l.group === group).sort((a, b) => a[1].at - b[1].at);
     for (const [id, l] of mine) {
       const now = list.done.find((task) => task.id === id);
       if (!now) { lingering.delete(id); continue; }
@@ -352,51 +393,12 @@ export function createTaskList({ store, openChat, announce }) {
     return rows;
   }
 
-  function drawLists(list) {
-    const year = new Date().getFullYear();
-    const groups = dayGroups(list);
-    for (const day of DAYS) {
-      const { list: ul, date } = sections[day];
-      date.textContent = day === 'later' ? '' : dueDayWords(day === 'today' ? list.today : list.tomorrow, year);
-      const tab = tabFor(day);
-      ul.replaceChildren(...dayRows(list, day, groups).map(({ task, lingering: isLingering }) => taskRow(task, { list, year, act, tab, open: openFor('task', task.id), draggable: !isLingering, lingering: isLingering })));
-      settleTabs(ul);
-    }
-    goalsList.replaceChildren(...list.goals.map((goal) => goalRow(goal, { year, act, tab: tabFor('goals'), open: openFor('goal', goal.id) })));
-    settleTabs(goalsList);
-    invite.hidden = list.goals.length > 0;
-    drawPile(list, year);
-  }
-
-  function drawPile(list, year) {
-    const shownDone = list.done.filter((task) => !lingering.has(task.id));
-    foldCount.textContent = list.doneCount ? String(list.doneCount) : '';
-    fold.setAttribute('aria-expanded', String(pileOpen));
-    fold.setAttribute('aria-label', list.doneCount ? `Done, ${list.doneCount}` : 'Done');
-    pile.hidden = !pileOpen;
-    if (!pileOpen) { pile.replaceChildren(); return; }
-    if (shownDone.length === 0) { pile.replaceChildren(h('p', { class: 'tl-quiet', text: 'Tasks you finish land here.' })); return; }
-    const tab = tabFor('done');
-    const ul = h('ul', { class: 'tl-list tl-pile-list', 'aria-label': 'Done tasks', 'data-list': 'done' });
-    for (const group of doneGroups(shownDone, list.timeZone ?? 'UTC', Date.now() / 1000, year)) {
-      ul.append(h('li', { class: 'tl-day-label', 'aria-hidden': 'true', text: group.label }), ...group.tasks.map((task) => taskRow(task, { list, year, act, tab, open: openFor('task', task.id), draggable: false, lingering: false })));
-    }
-    settleTabs(ul);
-    const olderLoading = store.state.older === 'loading';
-    const more = list.done.length < list.doneCount;
-    pile.replaceChildren(...[ul,
-      more ? textButton(olderLoading ? 'Loading older…' : 'Show older', () => store.loadOlder(), { class: 'text-button tl-older', 'data-key': 'older', 'aria-disabled': olderLoading ? 'true' : null }) : null,
-      h('p', { class: 'tl-quiet', text: `Done tasks are kept for ${list.doneKeptDays} days.` })].filter(Boolean));
-  }
-
-  function drawSkeleton() {
-    sections.today.date.textContent = '';
-    sections.today.list.replaceChildren(skeletonRow(), skeletonRow(), skeletonRow());
-  }
 
   /** `cause` is the store's 'read' or 'write', or 'view' for a change of this page alone, such as the pile's fold. */
   function paint(cause = 'view') {
-    for (const listener of countListeners) listener(store.state.list ? todayCount(store.state.list) : 0);
+    const list = store.state.list;
+    const counts = list ? summaryCounts(list) : null;
+    for (const listener of countListeners) listener({ overdue: counts?.overdue ?? 0, dueToday: counts?.dueToday ?? 0 });
     if (!shown) return;
     if (drag.dragging) return;
     const state = store.state;
@@ -408,37 +410,46 @@ export function createTaskList({ store, openChat, announce }) {
     if (cause === 'write' && state.alert === '') goneWords = '';
     painting = true;
     const focused = el.contains(document.activeElement) ? document.activeElement : null;
-    const focusKey = focused?.dataset.key ?? null;
-    const caret = focused instanceof HTMLInputElement ? [focused.selectionStart, focused.selectionEnd] : null;
+    const focusedKey = focused?.dataset.key ?? null;
+    const caret = focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement ? [focused.selectionStart, focused.selectionEnd] : null;
     const scroll = el.scrollTop;
     const words = state.alert || goneWords;
     if (alert.textContent !== words) alert.textContent = words;
     notice.replaceChildren(...(state.refreshFailed ? ['The task list could not be refreshed. ', textButton('Try again', () => store.retry(), { 'data-key': 'refresh-again' })] : []));
-    const ready = state.list !== null && state.status !== 'failed';
     el.setAttribute('aria-busy', String(state.status === 'loading'));
     loading.textContent = state.status === 'loading' ? 'Loading the task list' : '';
-    stateBlock.hidden = state.status !== 'failed';
-    if (state.status === 'failed') stateBlock.replaceChildren(h('p', { class: 'tl-state-head', text: 'The task list could not be loaded.' }), textButton('Try again', () => store.retry(), { 'data-key': 'load-again' }));
-    for (const day of DAYS) sections[day].el.hidden = state.status === 'failed' || (state.status === 'loading' && day !== 'today');
-    for (const part of [goals, done]) part.hidden = !ready;
-    for (const day of DAYS) sections[day].el.querySelector('.tl-add').hidden = !ready;
-    if (state.status === 'loading' || state.list === null) drawSkeleton();
-    else if (ready) drawLists(state.list);
+    if (state.status === 'failed') stateBlock.replaceChildren(h('p', { text: 'The task list could not be loaded.' }), h('button', { type: 'button', class: 'tl-primary', 'data-key': 'load-again', onClick: () => store.retry(), text: 'Try again' }));
+    const ready = state.status === 'ready' && list !== null;
+    const empty = ready && list.tasks.length === 0 && list.done.length === 0;
+    showParts(parts, { wide, filter }, state.status, ready, empty);
+    if (ready) {
+      if (filter !== null && typeof filter === 'object' && !list.goals.some((goal) => goal.id === filter.goalId)) filter = null;
+      if (menuId !== null && !list.tasks.some((task) => task.id === menuId)) menuId = null;
+      const year = new Date().getFullYear(), now = Date.now() / 1000;
+      if (!empty && agendaGroups(list).late.length <= LATE_ROWS) lateOpen = false;
+      const look = { filter, menuId, lateOpen, doneTodayOpen, goalsOpen, wide, moveAllArmed, pileOpen, act, store, lingering, setFilter, openFor, partRows, tabFor: keys.tabFor, settleTabs: keys.settleTabs };
+      drawSummary(parts, look, counts);
+      drawGoalOptions(parts, list);
+      drawFilterLine(parts, look, list, counts);
+      if (!empty) drawLists(parts, look, list, year, now);
+      drawGoals(parts, look, list, year);
+      drawPile(parts, look, list, year, now);
+    } else if (state.status === 'loading') drawSkeleton(parts, { wide });
     el.scrollTop = scroll;
-    const again = focusKey ? column.querySelector(`[data-key="${CSS.escape(focusKey)}"]`) : null;
+    const again = focusedKey ? el.querySelector(`[data-key="${CSS.escape(focusedKey)}"]`) : null;
     if (again && again !== document.activeElement) {
       again.focus({ preventScroll: true });
-      if (caret && again instanceof HTMLInputElement) again.setSelectionRange(caret[0], caret[1]);
+      if (caret && (again instanceof HTMLInputElement || again instanceof HTMLTextAreaElement)) again.setSelectionRange(caret[0], caret[1]);
     } else if (!again && focused && !focused.isConnected) title.focus({ preventScroll: true });
     painting = false;
   }
 
-  /** A desktop starts on the first task, or on Today's add line when there is none. A phone keeps the title. */
+  /** A desktop starts on the first task, or on the add field when there is none. A phone keeps the title. */
   function focusFirst() {
     if (!focusOnLoad || document.activeElement !== title) return;
     focusOnLoad = false;
     const list = store.state.list;
-    const target = list.tasks.length === 0 ? sections.today.field : column.querySelector('.tl-title[tabindex="0"]') ?? sections.today.field;
+    const target = list.tasks.length === 0 ? addField : el.querySelector('.tl-list .tl-title[tabindex="0"]') ?? addField;
     target.focus({ preventScroll: true });
   }
 
@@ -459,10 +470,16 @@ export function createTaskList({ store, openChat, announce }) {
     hide() {
       if (open) closeRow(true);
       if (lingering.size) { clearTimeout(lingerTimer); lingering.clear(); }
+      menuId = null;
+      lateOpen = false;
       shown = false;
       el.hidden = true;
     },
-    /** @param {(count: number) => void} listener told the number of today's open tasks whenever it may have changed */
-    onCount(listener) { countListeners.add(listener); listener(store.state.list ? todayCount(store.state.list) : 0); },
+    /** @param {(counts: { overdue: number, dueToday: number }) => void} listener told the drawer's two counts whenever they may have changed */
+    onCount(listener) {
+      countListeners.add(listener);
+      const counts = store.state.list ? summaryCounts(store.state.list) : null;
+      listener({ overdue: counts?.overdue ?? 0, dueToday: counts?.dueToday ?? 0 });
+    },
   };
 }

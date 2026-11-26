@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Task list mockup, screen 12: Goal details. Opens from disk with no server; mock.js draws it from the state below. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list mockup: Goal details</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="task-list.css">
+<link rel="stylesheet" href="frame.css">
+</head>
+<body>
+<p class="mk-caption"><b>12. Goal details.</b> "⋯" on Q4 report for the board opened its details: in the rail card at 1280 px, under the meter's bar at 400 px. Mark done was tapped once and is armed for 4 s; the keyboard is on it. Esc closes the details and puts the focus back on "⋯".</p>
+<div id="app"></div>
+<script src="mock.js"></script>
+<script>Mock.render(document.getElementById('app'), { goalOpen: 2, goalArmed: true, focus: ['goal-done-2'] });</script>
+</body>
+</html>

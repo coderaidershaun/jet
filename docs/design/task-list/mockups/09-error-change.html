@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Task list mockup, screen 09: A change failed, a refresh failed, an add failed. Opens from disk with no server; mock.js draws it from the state below. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list mockup: A change failed, a refresh failed, an add failed</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="task-list.css">
+<link rel="stylesheet" href="frame.css">
+</head>
+<body>
+<p class="mk-caption"><b>09. A change failed, a refresh failed, an add failed.</b> Shown together here; in use they come one at a time. The add bar keeps its title, day and goal, with the error under it.</p>
+<div id="app"></div>
+<script src="mock.js"></script>
+<script>Mock.render(document.getElementById('app'), { alert: 'The task could not be moved. Jet could not be reached. Try again.', notice: true, add: { text: 'Order the kite fabric', day: 'Tomorrow', goal: 'Ship the kite page', error: true } });</script>
+</body>
+</html>

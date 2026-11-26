@@ -9,7 +9,8 @@ const EDGE = 48;
 /**
  * @param {{ root: HTMLElement, scroller: HTMLElement, top: () => number, onStart: (id: number) => void,
  *   onDrop: (id: number, place: { day: string, after: number | null } | null, fromTop?: number) => void }} parts
- *   `root` holds the day lists: each `[data-drop-day]` section holds a `ul` of `[data-drag-id]` rows. `top` is the
+ *   `root` holds the day lists: each `[data-drop-day]` section holds a `ul` of `[data-drag-id]` rows, and a
+ *   `[data-drag-from]` section holds rows that may be dragged out but never dropped back into. `top` is the
  *   height the sticky head covers at the top of `scroller`. `onDrop` gets null for a drag that was cancelled or that
  *   lands where it started, and else where the copy was let go, so the row can settle from there.
  */
@@ -20,8 +21,8 @@ export function createDrag({ root, scroller, top, onStart, onDrop }) {
   const days = () => [...root.querySelectorAll('[data-drop-day]')];
 
   /**
-   * Where the middle of the lifted row lands: its day, and the rows of that day above it. Over the goals or the done
-   * line it lands nowhere, and a drop there puts the row back.
+   * Where the middle of the lifted row lands: its day, and the rows of that day above it. An empty day takes a drop at
+   * its line. Over Overdue, the goals or the done line it lands nowhere, and a drop there puts the row back.
    */
   function target(middle) {
     let found = null;
@@ -49,7 +50,7 @@ export function createDrag({ root, scroller, top, onStart, onDrop }) {
   function start() {
     // The list may have been drawn again since the press, so the row is found again by its id.
     const row = root.querySelector(`[data-drag-id="${press.id}"]`);
-    const section = row?.closest('[data-drop-day]');
+    const section = row?.closest('[data-drop-day], [data-drag-from]');
     if (!section || row.dataset.open === 'true') { press = null; return; }
     const { y } = press;
     const box = row.getBoundingClientRect();
@@ -120,7 +121,7 @@ export function createDrag({ root, scroller, top, onStart, onDrop }) {
     if (event.button !== 0 || drag) return;
     const row = event.target.closest('[data-drag-id]');
     // An open row is a place to drop beside, but it is being edited, so it is not lifted.
-    if (!row || !root.contains(row) || row.dataset.open === 'true' || event.target.closest('.tl-mark, input, select, textarea, .tl-strip')) return;
+    if (!row || !root.contains(row) || row.dataset.open === 'true' || event.target.closest('.tl-mark, .tl-chip, .tl-menu, input, select, textarea, .tl-strip')) return;
     press = { id: row.dataset.dragId, x: event.clientX, y: event.clientY, pointerId: event.pointerId, touch: event.pointerType !== 'mouse' };
     if (press.touch) press.timer = setTimeout(start, HOLD_MS);
   });

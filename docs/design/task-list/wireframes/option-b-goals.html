@@ -1,0 +1,106 @@
+<!doctype html>
+<!-- Option B wireframe of the task list: one section per goal, each with its progress bar and its tasks sorted by when
+     they are due, then the tasks with no goal. Opens from disk with no server; sample.js holds the shared sample list. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list wireframe B: By goal</title>
+<link rel="stylesheet" href="wireframe.css">
+<style>
+  .b-col { width: min(100%, 720px); margin: 0 auto; padding: var(--s5) var(--s4) var(--s6); }
+  @container (max-width: 479.98px) { .b-col { padding-inline: var(--s3); } }
+  .tally { margin: 0 0 var(--s4); font-size: var(--t-s); color: var(--mid); }
+  .tally b { color: var(--fg); }
+  .gsec { margin: 0 0 var(--s5); border: 1px solid var(--line); border-radius: var(--r-control); }
+  .gsec.is-late { border: 2px solid var(--fg); }
+  .ghead { display: grid; gap: var(--s1); padding: var(--s3); border-bottom: 1px solid var(--line); background: var(--paper); }
+  .ghead-top { display: flex; align-items: center; gap: var(--s2); }
+  .ghead h3 { flex: 1; margin: 0; font-size: var(--t-m); line-height: 1.3; }
+  .ghead .facts { font-size: var(--t-xs); color: var(--mid); font-variant-numeric: tabular-nums; }
+  .ghead .facts b { color: var(--fg); }
+  .more { width: 32px; height: 28px; padding: 0; background: none; border: 1px solid var(--line); border-radius: var(--r-control); }
+  .rows { margin: 0; padding: 0 var(--s3); list-style: none; }
+  .row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; column-gap: var(--s2); min-height: 44px; }
+  .row .title { padding: var(--s2) 0; }
+  .rows .group { grid-column: 1 / -1; padding: var(--s2) 0 0; color: var(--mid); font-size: var(--t-xs); font-weight: 700; }
+  .add-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-top: 1px dashed var(--line); }
+  .add-line .field { flex: 1 1 200px; height: 36px; border-color: var(--line); }
+  .fold { width: 100%; min-height: 40px; padding: 0 var(--s3); background: none; border: 0; border-top: 1px solid var(--line); text-align: left; font-size: var(--t-s); color: var(--mid); }
+  .drop-target { outline: 3px solid var(--fg); outline-offset: -3px; }
+</style>
+</head>
+<body>
+<header class="sheet-head">
+  <h1>Option B: By goal</h1>
+  <p>Goals lead. Each goal is a section with its progress bar and due line at the top, then its open tasks sorted by when they are due: overdue first, then today, tomorrow and later. Tasks with no goal come last in their own section. One line of counts at the top says what is overdue, due, in progress and done today. A task moves to another day with its chip and to another goal by a drag.</p>
+  <p>Sample date: Thursday 26 November 2026. Same shapes as option A: empty, half and full box; a black "!" chip is overdue.</p>
+</header>
+<main id="frames"></main>
+<script src="sample.js"></script>
+<script>
+const { tasks, done, goals, counts, esc, goalOf, isLate, chip, box, bar, goalCounts, screen, frame, doneCount } = WF;
+const rank = (t) => (isLate(t) ? 0 : t.day === 'today' ? 1 : t.day === 'tomorrow' ? 2 : 3);
+const RANK_WORDS = ['Overdue', 'Today', 'Tomorrow', 'Later'];
+
+const tally = () => `<p class="tally" role="status"><b>! ${counts.overdue} overdue</b> · <b>${counts.today}</b> due today · <b>${counts.progress}</b> in progress · <b>${counts.doneToday}</b> done today</p>`;
+
+function rows(list) {
+  const sorted = [...list].sort((a, b) => rank(a) - rank(b));
+  let last = -1;
+  return sorted.map((t) => {
+    const head = rank(t) !== last ? `<li class="group">${RANK_WORDS[rank(t)]}</li>` : '';
+    last = rank(t);
+    return `${head}<li class="row" data-s="${t.state}">${box(t.state, t.title)}<span class="title"><span class="clamp2">${esc(t.title)}</span></span>${chip(t)}</li>`;
+  }).join('');
+}
+
+function goalSection(goal, { drop = false } = {}) {
+  const c = goalCounts(goal);
+  const mine = tasks.filter((t) => t.goal === goal.id);
+  return `<section class="gsec${goal.overdue ? ' is-late' : ''}${drop ? ' drop-target' : ''}" aria-labelledby="g-${goal.id}">
+    <div class="ghead"><div class="ghead-top"><h3 id="g-${goal.id}">${goal.overdue ? '! ' : ''}${esc(goal.title)}</h3><button class="more" aria-label="More about ${esc(goal.title)}">⋯</button></div>
+    ${bar(goal)}<span class="facts">${goal.done} of ${goal.tasks} done · ${c.progress} in progress${c.late ? ` · <b>${c.late} late</b>` : ''} · ${goal.paused ? 'Paused' : `${goal.overdue ? '<b>' : ''}Due ${goal.due}, ${goal.left}${goal.overdue ? '</b>' : ''}`}</span></div>
+    <ul class="rows" aria-label="${esc(goal.title)}">${rows(mine)}</ul>
+    <form class="add-line"><input class="field" placeholder="Add a task to ${esc(goal.title)}" aria-label="Add a task to ${esc(goal.title)}"><select class="select" aria-label="Day"><option>Today</option></select></form>
+    <button class="fold" aria-expanded="false">${goal.done} done ▾</button></section>`;
+}
+function looseSection() {
+  const mine = tasks.filter((t) => t.goal === null);
+  const doneHere = done.filter((t) => t.goal === null).length;
+  return `<section class="gsec" aria-labelledby="g-none"><div class="ghead"><div class="ghead-top"><h3 id="g-none">No goal</h3></div><span class="facts">${mine.length} open · ${mine.filter(isLate).length} late</span></div>
+    <ul class="rows" aria-label="No goal">${rows(mine)}</ul>
+    <form class="add-line"><input class="field" placeholder="Add a task" aria-label="Add a task with no goal"><select class="select" aria-label="Day"><option>Today</option></select></form>
+    <button class="fold" aria-expanded="false">${doneHere} done ▾</button></section>`;
+}
+
+const frames = [];
+frames.push(frame('b1', 'B1. Full list', 'Each goal is a block; the tally line is the only place that sums the days.',
+  screen(`<div class="b-col">${tally()}${goals.map((g) => goalSection(g)).join('')}${looseSection()}</div>`),
+  ['<b>Tally line</b> at the top: counts only, not filters.',
+   '<b>Goal block:</b> title, "⋯" (deliverable, rename, Open chat, Mark done), bar, then "1 of 5 done · 1 in progress · 1 late · Due Tue 24 Nov, 2 days overdue". An overdue goal has a heavy border and "!".',
+   '<b>Inside a goal</b> the open tasks are grouped Overdue, Today, Tomorrow, Later, each group in the user\'s one order. The chip moves a task between days.',
+   '<b>Add</b> sits at the end of each goal block, with that goal set and a Day select. No goal at the end.',
+   '<b>Done</b> folds per goal ("3 done"), opening that goal\'s done tasks.']));
+
+frames.push(frame('b2', 'B2. Moving a task to another goal', 'A drag lifts the row; the goal block under the pointer is the target.',
+  screen(`<div class="b-col">${tally()}${goalSection(goals[0])}${goalSection(goals[1], { drop: true })}</div>`),
+  ['<b>Drop on a goal block</b> sends <code>PATCH {goalId}</code>; the task lands in its day group inside that goal. The open row still has the Goal select as the non-drag way.',
+   '<b>Reordering</b> inside a goal group sends <code>PATCH {day, after}</code> with the task before it in the user\'s order, which may be a task of another goal; the page must work out <code>after</code> across hidden goals.']));
+
+frames.push(frame('b3', 'B3. Empty', 'No task, no goal.',
+  screen(`<div class="b-col">${`<section class="gsec"><div class="ghead"><h3>No goal</h3></div><p class="quiet" style="padding:12px;margin:0">Nothing on your list yet. Add a task here, or tell Jet what you are working on, for example <i>"I need to ship the kite page by Friday."</i></p><form class="add-line"><input class="field marker" placeholder="Add a task"><select class="select"><option>Today</option></select></form></section>`}</div>`, { count: '' }),
+  ['The tally is hidden; only the "No goal" block shows, with its add line focused on a desktop.']));
+
+frames.push(frame('b4', 'B4. Loading', 'Two skeleton goal blocks.',
+  screen(`<div class="b-col" aria-busy="true"><p class="tally"><span class="skel" style="width:60%"></span></p>${('<section class="gsec"><div class="ghead"><span class="skel" style="width:50%"></span><span class="skel" style="height:8px"></span></div><ul class="rows">' + '<li class="row"><span class="skel-box"></span><span class="skel" style="width:60%"></span><span></span></li>'.repeat(3) + '</ul></section>').repeat(2)}</div>`, { count: '' })));
+
+frames.push(frame('b5', 'B5. Errors', 'First read failed, then a failed change in a loaded list.',
+  screen(`<div class="b-col"><div class="state-block" role="alert"><p>The task list could not be loaded.</p><button class="btn">Try again</button></div></div>`, { count: '' }) +
+  screen(`<div class="b-col"><p class="alert" role="alert">The task could not be moved. Jet could not be reached. Try again.</p>${tally()}${goalSection(goals[0])}</div>`),
+  ['Same rules as option A: an alert at the top until a later change works; a quiet "could not be refreshed" line; a failed add keeps its text with the error under that goal\'s add line.']));
+
+document.getElementById('frames').innerHTML = frames.join('');
+</script>
+</body>
+</html>

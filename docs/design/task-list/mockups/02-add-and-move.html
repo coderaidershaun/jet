@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Task list mockup, screen 02: Add bar in use, move menu, a task just done. Opens from disk with no server; mock.js draws it from the state below. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list mockup: Add bar in use, move menu, a task just done</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="task-list.css">
+<link rel="stylesheet" href="frame.css">
+</head>
+<body>
+<p class="mk-caption"><b>02. Add bar in use, move menu, a task just done.</b> The add bar holds a title with Day and Goal set. The move menu is open on Pick up the dry cleaning with the keyboard on Today. Draft the kite page copy was just ticked and lingers 4 s. Reduced motion: the menu appears with no slide, and the done row leaves at once with no collapse; the 4 s wait and the colours stay.</p>
+<div id="app"></div>
+<script src="mock.js"></script>
+<script>Mock.render(document.getElementById('app'), { add: { text: 'Order the kite fabric', day: 'Tomorrow', goal: 'Ship the kite page' }, menu: 4, linger: 2, focus: ['menu-today'] });</script>
+</body>
+</html>

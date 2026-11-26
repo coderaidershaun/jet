@@ -1,39 +1,104 @@
-/* The task list: a paper list in one 640 px column. Rows sit on a 40 px rhythm with no rule between them, and the
-   only colour in a row is its box: gray not started, yellow in progress, green done. Every corner is --r-s. */
-.tasklist { display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: auto; background: var(--ground); scrollbar-width: thin; }
-.tl-head { position: sticky; top: 0; z-index: 3; flex: none; height: 52px; padding: 0 calc(var(--gutter) + 52px); background: var(--ground); border-bottom: 1px solid var(--line); }
-.tl-title-head { margin: 0; overflow: hidden; color: var(--fg); font-size: 14px; font-weight: 600; line-height: 52px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+/* The task list: counts that filter, one add bar, goals with bars, a capped Overdue, words for status and a chip that
+   moves. It reads colours only through tokens, so the page follows the app's theme. */
+
+.tasklist {
+  --tl-space-1: 4px; --tl-space-2: 8px; --tl-space-3: 12px; --tl-space-4: 16px; --tl-space-5: 24px; --tl-space-6: 32px; --tl-space-7: 48px;
+  --tl-text-xs: .8125rem;            /* 13 px: meta, chips, dates, counts' words, text buttons, segments (Jet's 13 px controls) */
+  --tl-text-md: var(--text-size);    /* 15 px, 16 px under 760: titles, headings, the add field */
+  --tl-text-lg: 1.125rem;            /* 18 px: the four counts */
+  --tl-leading: 1.4;
+  --tl-leading-head: 1.25;
+  --tl-weight-normal: 400; --tl-weight-strong: 600; --tl-weight-heavy: 700;
+  --tl-row: 44px;                    /* the least row height and every touch target */
+  --tl-mark: 36px;                   /* the box's column: a 20 px box and the gap after it, all one target */
+  --tl-rail: 280px; --tl-column: 640px;
+  --tl-dur-fast: 120ms; --tl-dur-base: 150ms; --tl-ease: cubic-bezier(.23, 1, .32, 1);
+}
+
+.tasklist { display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: auto; background: var(--ground); color: var(--fg); font-family: var(--font); container-type: inline-size; scrollbar-width: thin; }
+.tasklist :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tasklist .icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Head band: the shared 52 px band of the library and the chat. */
+.tl-head { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: center; flex: none; height: 52px; padding: 0 calc(var(--gutter) + 52px); background: var(--ground); border-bottom: 1px solid var(--line); }
+.tl-title-head { margin: 0; overflow: hidden; font-size: 14px; font-weight: var(--tl-weight-strong); line-height: 52px; text-overflow: ellipsis; white-space: nowrap; }
 /* The title takes the focus only so a phone's keyboard stays down; it is not a control, so it shows no ring. */
 .tl-title-head:focus { outline: none; }
-.tl-column { width: min(100%, 640px); margin: 0 auto; padding: 0 var(--gutter) max(32px, env(safe-area-inset-bottom)); container-type: inline-size; }
-.tasklist .text-button { min-height: 36px; padding: 0 8px; font-size: 13px; }
 
-.tl-alert { margin: 12px 0 0; padding: 8px 12px; border-radius: var(--r-s); background: rgba(255, 123, 114, .12); color: var(--danger); font-size: 12px; line-height: 17px; }
+/* Two columns from 920 px: the list and the goal rail. */
+.tl-wrap { display: grid; grid-template-columns: minmax(0, var(--tl-column)) var(--tl-rail); column-gap: var(--tl-space-6); justify-content: center; align-items: start; padding: var(--tl-space-5) var(--gutter) max(var(--tl-space-7), env(safe-area-inset-bottom)); }
+.tl-column { min-width: 0; }
+.tl-rail { position: sticky; top: calc(52px + var(--tl-space-4)); max-height: calc(100vh - 52px - var(--tl-space-6)); overflow-y: auto; scrollbar-width: thin; }
+.tl-wrap:has(> .tl-rail[hidden]) { grid-template-columns: minmax(0, var(--tl-column)); }
+
+/* Alerts. */
+.tl-alert { margin: 0 0 var(--tl-space-3); padding: var(--tl-space-2) var(--tl-space-3); border-radius: var(--r-s); background: var(--danger-soft); color: var(--danger); font-size: var(--tl-text-xs); line-height: var(--tl-leading); }
 .tl-alert:empty, .tl-notice:empty { display: none; }
-.tl-notice { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 18px; }
-.tl-notice .text-button { min-height: 0; padding: 0 4px; font-size: 12px; }
-.tl-state { padding: 72px 16px; text-align: center; }
-.tl-state-head { margin: 0 0 10px; font-size: 15px; font-weight: 600; line-height: 22px; }
+.tl-notice .tl-text-btn { min-height: 0; padding: 0 var(--tl-space-1); }
+.tl-notice { margin: 0 0 var(--tl-space-3); color: var(--muted); font-size: var(--tl-text-xs); line-height: var(--tl-leading); }
+.tl-state { padding: var(--tl-space-7) var(--tl-space-4); text-align: center; }
+.tl-state p { margin: 0 0 var(--tl-space-3); font-size: var(--tl-text-md); font-weight: var(--tl-weight-strong); }
 
-.tl-section { margin-top: 28px; }
-.tl-column > .tl-section:first-of-type { margin-top: 20px; }
-.tl-heading { display: flex; align-items: baseline; gap: 8px; min-height: 28px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
-.tl-heading h2 { margin: 0; color: var(--fg); font-size: 13px; font-weight: 650; line-height: 20px; }
-.tl-date { color: var(--muted); font-size: 12px; }
+/* Buttons shared by every part. */
+.tl-text-btn { display: inline-flex; align-items: center; gap: var(--tl-space-1); min-height: 36px; padding: 0 var(--tl-space-2); background: none; border: 0; border-radius: var(--r-s); color: var(--link-jet); font-size: var(--tl-text-xs); font-weight: var(--tl-weight-strong); line-height: var(--tl-leading); cursor: pointer; }
+.tl-text-btn:hover { background: var(--hover); }
+.tl-text-btn[aria-disabled="true"] { color: var(--muted); cursor: default; }
+.tl-text-btn[aria-disabled="true"]:hover { background: none; }
+.tl-text-btn.is-armed { background: var(--danger-soft); color: var(--danger); }
+.tl-primary { min-height: 36px; padding: 0 var(--tl-space-4); background: var(--fill); border: 0; border-radius: var(--r-s); color: var(--on-fill); font-size: var(--tl-text-md); font-weight: var(--tl-weight-strong); cursor: pointer; }
+.tl-primary:hover:not(:disabled) { background: var(--fill-hover); }
+.tl-primary:disabled { opacity: .45; cursor: default; }
+.tl-select { min-width: 0; max-width: 100%; height: 36px; padding: 0 var(--tl-space-2); background: var(--surface-2); border: 1px solid var(--edge); border-radius: var(--r-s); color: var(--fg); font-size: var(--tl-text-md); }
+
+/* Summary toolbar: four counts that filter, one row at every width. Pressed is filled; Overdue says so in danger. */
+.tl-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--tl-space-2); margin: 0 0 var(--tl-space-3); }
+.tl-sum { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-width: 0; min-height: 60px; padding: var(--tl-space-2) var(--tl-space-3); background: var(--surface); border: 1px solid var(--edge); border-radius: var(--r-m); color: var(--fg); text-align: left; cursor: pointer; }
+.tl-sum:hover { background: var(--hover); }
+.tl-sum-n { display: inline-flex; align-items: center; gap: var(--tl-space-1); font-size: var(--tl-text-lg); font-weight: var(--tl-weight-heavy); line-height: var(--tl-leading-head); font-variant-numeric: tabular-nums; }
+/* A narrow phone wraps a word to a second line rather than cutting it; the 60 px button has room for two. */
+.tl-sum-w { max-width: 100%; color: var(--muted); font-size: var(--tl-text-xs); line-height: var(--tl-leading-head); overflow-wrap: anywhere; }
+.tl-sum[data-kind="late"][data-some="true"] .tl-sum-n, .tl-sum[data-kind="late"][data-some="true"] .tl-sum-w { color: var(--danger); }
+.tl-sum[data-kind="late"][data-some="true"] .tl-sum-w { font-weight: var(--tl-weight-strong); }
+.tl-sum[aria-pressed="true"], .tl-sum[aria-pressed="true"] .tl-sum-n, .tl-sum[aria-pressed="true"] .tl-sum-w { background: var(--fill); border-color: var(--fill); color: var(--on-fill); }
+
+/* The add bar. */
+.tl-add { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tl-space-2); padding: var(--tl-space-1) var(--tl-space-1) var(--tl-space-1) var(--tl-space-3); background: var(--surface); border: 1px solid var(--edge); border-radius: var(--r-m); }
+.tl-add > .icon { color: var(--muted); }
+.tl-add-field { flex: 1 1 200px; min-width: 0; height: 40px; padding: 0 var(--tl-space-1); background: none; border: 0; border-radius: var(--r-s); color: var(--fg); font-size: var(--tl-text-md); outline-offset: 0; }
+.tl-add-field::placeholder { color: var(--muted); }
+.tl-add-opts { display: flex; flex-wrap: wrap; gap: var(--tl-space-2); min-width: 0; }
+.tl-add-error { display: flex; gap: var(--tl-space-1); margin: var(--tl-space-1) 0 0; color: var(--danger); font-size: var(--tl-text-xs); line-height: var(--tl-leading); }
+
+/* Filter line. */
+.tl-filter-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tl-space-1) var(--tl-space-2); margin: var(--tl-space-3) 0 0; padding: var(--tl-space-2) var(--tl-space-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); font-size: var(--tl-text-md); line-height: var(--tl-leading); }
+.tl-filter-line b { font-weight: var(--tl-weight-strong); }
+
+/* Sections. */
+.tl-section { margin-top: var(--tl-space-5); }
+.tl-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--tl-space-1) var(--tl-space-2); min-height: 36px; padding-bottom: var(--tl-space-1); border-bottom: 1px solid var(--line); }
+.tl-heading h2 { display: inline-flex; align-items: center; gap: var(--tl-space-1); margin: 0; font-size: var(--tl-text-md); font-weight: var(--tl-weight-strong); line-height: var(--tl-leading-head); }
+.tl-date, .tl-count { color: var(--muted); font-size: var(--tl-text-xs); font-variant-numeric: tabular-nums; }
+.tl-count { margin-left: auto; }
+.tl-heading .tl-text-btn { min-height: 28px; }
+@media (pointer: coarse) { .tl-heading .tl-text-btn { min-height: var(--tl-row); } }
+.tl-section[data-day="late"] .tl-heading { border-bottom: 2px solid var(--danger); }
+.tl-section[data-day="late"] h2 { color: var(--danger); }
 .tl-list { margin: 0; padding: 0; list-style: none; }
+.tl-sub { margin: var(--tl-space-3) 0 0; color: var(--muted); font-size: var(--tl-text-xs); font-weight: var(--tl-weight-strong); line-height: var(--tl-leading); }
+.tl-quiet { margin: 0; padding: var(--tl-space-3) 0; color: var(--muted); font-size: var(--tl-text-xs); line-height: var(--tl-leading); }
+.tl-more { margin-top: var(--tl-space-1); margin-left: calc(-1 * var(--tl-space-2)); }
 
-.tl-row { min-width: 0; border-radius: var(--r-s); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
-.tl-line { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 40px; }
-@media (hover: hover) { .tl-row[data-open="false"]:hover { background: rgba(255, 255, 255, .04); } }
-.tl-row input, .tl-row select { user-select: text; -webkit-user-select: text; }
-
-/* The box sits on the column's left edge; the gap after it is part of what a tap hits. */
-.tl-mark, .tl-slot { display: grid; align-items: center; justify-items: start; flex: none; width: 30px; height: 40px; padding: 0; background: none; border: 0; }
+/* Rows: box, title over a meta line, chip. */
+.tl-row { position: relative; min-width: 0; border-radius: var(--r-s); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
+.tl-row input, .tl-row select, .tl-row textarea { user-select: text; -webkit-user-select: text; }
+.tl-line { display: flex; align-items: center; gap: var(--tl-space-2); min-height: var(--tl-row); }
+@media (hover: hover) { .tl-row[data-open="false"]:hover { background: var(--hover); } }
+.tl-mark { display: grid; place-items: center start; flex: none; width: var(--tl-mark); height: var(--tl-row); padding: 0; background: none; border: 0; cursor: pointer; }
 .tl-box { display: grid; place-items: center; width: 20px; height: 20px; border: 2px solid var(--muted); border-radius: var(--r-s); color: var(--ground); }
 .tl-box .icon { width: 14px; height: 14px; stroke-width: 3; }
-.tl-row[data-state="in_progress"] > .tl-line .tl-box { background: var(--warning); border-color: var(--warning); }
-.tl-row[data-state="done"] > .tl-line .tl-box { background: var(--ok); border-color: var(--ok); }
-/* With a mouse the box shows what a click will do. */
+.tl-row[data-state="in_progress"] .tl-box { background: var(--warning); border-color: var(--warning); }
+.tl-row[data-state="done"] .tl-box { background: var(--ok); border-color: var(--ok); }
+/* With a mouse the box shows what a click will do, and a row can be picked up. */
 @media (hover: hover) and (pointer: fine) {
   .tl-row[data-state="not_started"] .tl-mark:hover .tl-box { border-color: var(--warning); }
   .tl-row[data-state="in_progress"] .tl-mark:hover .tl-box { border-color: var(--ok); }
@@ -41,81 +106,155 @@
 }
 .tl-mark:focus-visible { outline: none; }
 .tl-mark:focus-visible .tl-box { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tl-main { flex: 1; min-width: 0; padding: var(--tl-space-2) 0; }
+.tl-title { display: -webkit-box; width: 100%; padding: 0; overflow: hidden; background: none; border: 0; color: var(--fg); font-size: var(--tl-text-md); line-height: var(--tl-leading); text-align: left; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; cursor: pointer; }
+.tl-title:focus-visible { outline-offset: 2px; border-radius: var(--r-s); }
+.tl-row[data-state="done"] .tl-title { color: var(--muted); text-decoration: line-through; }
+.tl-meta { display: flex; flex-wrap: wrap; gap: 0 var(--tl-space-1); margin: 0; color: var(--muted); font-size: var(--tl-text-xs); line-height: var(--tl-leading); }
+/* The status words stay whole and may wrap; the goal's name is what gets cut. */
+.tl-since { color: var(--warning); font-weight: var(--tl-weight-strong); }
+.tl-meta-goal { flex: 1 1 6em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-since:not(:last-child)::after { content: " ·"; color: var(--muted); font-weight: var(--tl-weight-normal); }
+.tl-time { flex: none; color: var(--muted); font-size: var(--tl-text-xs); font-variant-numeric: tabular-nums; }
+.tl-row.is-lingering .tl-time { color: var(--ok); font-weight: var(--tl-weight-strong); }
 
-.tl-title { flex: 1; min-width: 0; min-height: 40px; overflow: hidden; padding: 0; background: none; border: 0; color: var(--fg); font-size: var(--text-size); line-height: 20px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-.tl-title:focus-visible { outline-offset: -2px; }
-.tl-row[data-state="done"].tl-task .tl-title { color: var(--muted); text-decoration: line-through; }
-.tl-meta { display: flex; flex: 0 1 auto; justify-content: flex-end; min-width: 0; max-width: 45%; padding-right: 4px; color: var(--muted); font-size: 12px; line-height: 16px; white-space: nowrap; }
-.tl-meta-goal { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.tl-sep, .tl-fact { flex: none; }
-.tl-sep { padding: 0 4px; }
+/* The chip: how late in Overdue, Move in Today and Tomorrow, the date in Later. 28 px to see, 44 px to hit. */
+.tl-chip { position: relative; display: inline-flex; align-items: center; gap: var(--tl-space-1); flex: none; height: 28px; padding: 0 var(--tl-space-2) 0 var(--tl-space-3); background: none; border: 1px solid var(--edge); border-radius: var(--r-pill); color: var(--muted); font-size: var(--tl-text-xs); font-weight: var(--tl-weight-strong); white-space: nowrap; font-variant-numeric: tabular-nums; cursor: pointer; }
+.tl-chip::after { content: ""; position: absolute; inset: -8px -4px; }
+.tl-chip .icon { width: 12px; height: 12px; }
+.tl-chip:hover { background: var(--hover); color: var(--fg); }
+.tl-chip[data-tone="move"] { border-style: dashed; }
+.tl-chip[data-tone="late"] { padding-left: var(--tl-space-2); background: var(--danger-soft); border-color: var(--danger); color: var(--danger); font-weight: var(--tl-weight-heavy); }
+.tl-chip[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
 
-.tl-slot .icon { width: 16px; height: 16px; color: var(--muted); }
-.tl-dot { width: 10px; height: 10px; margin-left: 5px; border-radius: 50%; background: var(--muted); }
-.tl-dot[data-state="in_progress"] { background: var(--warning); }
-.tl-dot[data-state="done"] { background: var(--ok); }
-.tl-facts { flex: none; padding-right: 4px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tl-facts[data-tone="bad"] { color: var(--danger); }
-.tl-invite { margin: 10px 0 0; color: var(--muted); font-size: 13px; line-height: 20px; }
-.tl-invite-example { display: inline; padding: 0; background: none; border: 0; color: var(--link-jet); font: italic 13px/20px var(--font); text-align: left; cursor: pointer; }
+/* The move menu: a popover under its chip, not a dialog. */
+.tl-menu { position: absolute; z-index: 5; right: 0; top: calc(100% - var(--tl-space-1)); min-width: 200px; padding: var(--tl-space-1); background: var(--surface); border: 1px solid var(--edge); border-radius: var(--r-m); box-shadow: var(--shadow); }
+.tl-menu [role="menuitemradio"] { display: flex; align-items: center; justify-content: space-between; gap: var(--tl-space-3); width: 100%; min-height: 40px; padding: 0 var(--tl-space-3); background: none; border: 0; border-radius: var(--r-s); color: var(--fg); font-size: var(--tl-text-md); text-align: left; }
+.tl-menu [role="menuitemradio"]:hover, .tl-menu [role="menuitemradio"]:focus { background: var(--surface-2); }
+.tl-menu [role="menuitemradio"]:focus-visible { outline-offset: -2px; }
+.tl-menu .icon { width: 16px; height: 16px; }
+.tl-menu [aria-checked="true"] { font-weight: var(--tl-weight-strong); }
+.tl-menu [aria-checked="true"] .icon { color: var(--link-jet); }
+.tl-menu-foot { margin: var(--tl-space-1) 0 0; padding: var(--tl-space-2) var(--tl-space-3) var(--tl-space-1); border-top: 1px solid var(--line); color: var(--muted); font-size: var(--tl-text-xs); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not(.reduced) .tl-menu { animation: tl-menu-in var(--tl-dur-fast) var(--tl-ease); }
+  :root:not(.reduced) .tl-row.is-leaving { transition: height var(--tl-dur-base) var(--tl-ease); }
+  :root:not(.reduced) .tl-row.is-settling { transition: transform var(--tl-dur-fast) var(--tl-ease); }
+}
+@keyframes tl-menu-in { from { opacity: 0; transform: translateY(-4px); } }
+
+/* The open row. */
+.tl-row[data-open="true"] { margin: var(--tl-space-1) 0; padding: var(--tl-space-1) var(--tl-space-3) var(--tl-space-3) 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); }
+.tl-row[data-open="true"] > .tl-line { padding-left: var(--tl-space-2); }
+.tl-field { flex: 1; min-width: 0; min-height: 40px; padding: var(--tl-space-2); background: var(--ground); border: 1px solid var(--edge); border-radius: var(--r-s); color: var(--fg); font: inherit; font-size: var(--tl-text-md); line-height: var(--tl-leading); resize: none; field-sizing: content; outline-offset: 0; }
+.tl-strip { display: grid; gap: var(--tl-space-2); padding: var(--tl-space-2) 0 0 calc(var(--tl-mark) + var(--tl-space-4)); }
+.tl-strip-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tl-space-1) var(--tl-space-2); }
+.tl-label { width: 48px; color: var(--muted); font-size: var(--tl-text-xs); }
+.tl-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--edge); border-radius: var(--r-s); overflow: hidden; }
+.tl-seg button { min-height: 36px; padding: 0 var(--tl-space-3); background: none; border: 0; border-left: 1px solid var(--edge); color: var(--fg); font-size: var(--tl-text-xs); font-weight: var(--tl-weight-strong); cursor: pointer; }
+.tl-seg button:first-child { border-left: 0; }
+.tl-seg button:hover { background: var(--hover); }
+.tl-seg button[aria-pressed="true"] { background: var(--fill); color: var(--on-fill); }
+.tl-seg button:focus-visible { outline-offset: -2px; }
+/* A ring inside the filled segment takes its text colour: --focus on --fill is under 2:1. */
+.tl-seg button[aria-pressed="true"]:focus-visible { outline-color: var(--on-fill); }
+.tl-why { flex-basis: 100%; display: flex; gap: var(--tl-space-1); color: var(--muted); font-size: var(--tl-text-xs); line-height: var(--tl-leading); }
+.tl-push { margin-left: auto; }
+.tl-text-btn.tl-delete:not(.is-armed) { color: var(--muted); }
+.tl-title-text { display: block; flex: 1; line-height: var(--tl-row); color: var(--muted); text-decoration: line-through; }
+
+/* Done today and the fold. */
+.tl-fold { display: flex; align-items: center; gap: var(--tl-space-2); width: 100%; min-height: var(--tl-row); margin-top: var(--tl-space-5); padding: 0; background: none; border: 0; border-top: 1px solid var(--line); color: var(--fg); font-size: var(--tl-text-md); font-weight: var(--tl-weight-strong); text-align: left; cursor: pointer; }
+.tl-fold .tl-count { margin-left: 0; font-weight: var(--tl-weight-normal); }
+.tl-fold .icon { margin-left: auto; color: var(--muted); }
+.tl-fold .tl-count:empty { display: none; }
+.tl-day-label { margin: var(--tl-space-3) 0 var(--tl-space-1); color: var(--muted); font-size: var(--tl-text-xs); font-weight: var(--tl-weight-strong); line-height: var(--tl-leading); }
+.tl-pile > .tl-quiet, .tl-older { margin-top: var(--tl-space-1); }
+
+/* The empty list: one sentence, and Jet's example as a link that drafts it in the chat. */
+.tl-empty-head { margin: 0 0 var(--tl-space-1); font-size: var(--tl-text-md); font-weight: var(--tl-weight-strong); }
+.tl-empty-text { margin: 0; color: var(--muted); font-size: var(--tl-text-md); line-height: var(--tl-leading); }
+.tl-invite-example { display: inline; padding: 0; background: none; border: 0; color: var(--link-jet); font: italic var(--tl-text-md) / var(--tl-leading) var(--font); text-align: left; cursor: pointer; }
 .tl-invite-example:hover { text-decoration: underline; }
 
-.tl-add { display: flex; align-items: center; gap: 8px; }
-.tl-add-field, .tl-field {
-  flex: 1; min-width: 0; height: 32px; margin: 4px 0 4px -8px; padding: 0 8px; border-radius: var(--r-s); color: var(--fg); font-size: var(--text-size);
+/* Goals: cards in the rail, meters in the band. A pressed goal is filled, as a pressed count is. */
+.tl-goals h2 { margin: 0 0 var(--tl-space-2); font-size: var(--tl-text-md); font-weight: var(--tl-weight-strong); line-height: var(--tl-leading-head); }
+.tl-goal { display: grid; gap: var(--tl-space-1); margin: 0 0 var(--tl-space-2); padding: var(--tl-space-2) var(--tl-space-3) var(--tl-space-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); font-size: var(--tl-text-xs); line-height: var(--tl-leading); }
+.tl-goal-top { display: flex; align-items: center; gap: var(--tl-space-2); margin: 0 calc(-1 * var(--tl-space-2)); padding: var(--tl-space-1) var(--tl-space-1) var(--tl-space-1) var(--tl-space-2); border-radius: var(--r-s); }
+.tl-goal-name { flex: 1; min-width: 0; min-height: 36px; padding: 0; background: none; border: 0; color: inherit; font-size: var(--tl-text-md); font-weight: var(--tl-weight-strong); line-height: var(--tl-leading-head); text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.tl-goal.is-pressed .tl-goal-top, .tl-meter.is-pressed .tl-pick { background: var(--fill); color: var(--on-fill); }
+.tl-goal.is-pressed .tl-goal-top .tl-goal-more { color: var(--on-fill); }
+/* A ring inside a filled strip takes the strip's text colour, which keeps 4.6:1 or more against the fill. */
+.tl-goal.is-pressed .tl-goal-top :focus-visible { outline-color: var(--on-fill); }
+.tl-goal-more { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; background: none; border: 0; border-radius: var(--r-s); color: var(--muted); cursor: pointer; }
+.tl-goal-more:hover { background: var(--hover); color: var(--fg); }
+.tl-bar { display: flex; gap: 2px; height: 6px; margin: var(--tl-space-1) 0; overflow: hidden; border-radius: var(--r-pill); background: var(--track); }
+.tl-bar-done { background: var(--ok); }
+.tl-bar-prog { background: var(--warning); }
+.tl-goal-facts { color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl-goal-facts b, .tl-goal-due.is-late { color: var(--danger); font-weight: var(--tl-weight-strong); }
+.tl-goal-due { display: flex; align-items: center; gap: var(--tl-space-1); color: var(--muted); }
+.tl-goal-next { display: grid; margin-top: var(--tl-space-1); padding-top: var(--tl-space-2); border-top: 1px solid var(--line); color: var(--fg); }
+.tl-goal-next b { font-weight: var(--tl-weight-strong); }
+.tl-next-title { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.tl-goal-next .tl-next-when { color: var(--muted); }
+.tl-goal-next .tl-next-when.is-late { color: var(--danger); font-weight: var(--tl-weight-strong); }
+.tl-goal-invite { margin: 0; color: var(--muted); font-size: var(--tl-text-xs); line-height: var(--tl-leading); }
+.tl-band { margin-top: var(--tl-space-4); }
+.tl-band h2 { margin: 0 0 var(--tl-space-1); color: var(--muted); font-size: var(--tl-text-xs); font-weight: var(--tl-weight-strong); }
+.tl-meter { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--tl-space-1); }
+.tl-pick { display: flex; align-items: baseline; gap: var(--tl-space-2); min-width: 0; min-height: 36px; padding: var(--tl-space-1) var(--tl-space-2); background: none; border: 0; border-radius: var(--r-s); color: var(--fg); text-align: left; cursor: pointer; }
+.tl-pick-name { flex: 1; min-width: 0; overflow: hidden; font-size: var(--tl-text-md); font-weight: var(--tl-weight-strong); text-overflow: ellipsis; white-space: nowrap; }
+.tl-pick-facts { flex: none; color: var(--muted); font-size: var(--tl-text-xs); font-variant-numeric: tabular-nums; }
+.tl-pick-facts.is-late { color: var(--danger); font-weight: var(--tl-weight-strong); }
+.tl-meter.is-pressed .tl-pick-facts { color: var(--on-fill); }
+.tl-meter .tl-bar { grid-column: 1; height: 4px; margin: 0 var(--tl-space-2) var(--tl-space-2); }
+
+/* A goal's details, opened by its "⋯": under the card's facts in the rail, under the meter's bar in the band. */
+.tl-goal-more[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
+.tl-goal-details { display: grid; gap: var(--tl-space-2); margin-top: var(--tl-space-1); padding-top: var(--tl-space-2); border-top: 1px solid var(--line); }
+.tl-meter + .tl-goal-details { margin: 0 0 var(--tl-space-3); padding: var(--tl-space-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); }
+.tl-deliverable { display: -webkit-box; margin: 0; overflow: hidden; color: var(--muted); font-size: var(--tl-text-xs); line-height: var(--tl-leading); -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.tl-goal-field { width: 100%; min-height: 40px; padding: 0 var(--tl-space-2); background: var(--ground); border: 1px solid var(--edge); border-radius: var(--r-s); color: var(--fg); font-size: var(--tl-text-md); outline-offset: 0; }
+.tl-goal-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tl-space-1) var(--tl-space-2); margin-left: calc(-1 * var(--tl-space-2)); }
+.tl-goal-actions .tl-push { margin-left: auto; }
+
+/* Skeletons keep the final shape; no shimmer. */
+.tl-skel { display: block; height: 12px; border-radius: var(--r-s); background: var(--surface-2); }
+.tl-skel-box { width: 20px; height: 20px; border-radius: var(--r-s); background: var(--surface-2); }
+.tl-skel.is-count { width: 28px; height: 18px; }
+.tl-skel.is-word { width: 60%; margin-top: var(--tl-space-2); }
+.tl-skel.is-heading { width: 96px; margin-top: var(--tl-space-2); }
+.tl-skel.is-title { width: 58%; }
+.tl-skel.is-name { width: 70%; height: 16px; }
+.tl-skel.is-bar { height: 6px; margin: var(--tl-space-1) 0; }
+.tl-goals .tl-skel-goal { display: grid; }
+
+/* Under 920 px: one column, goals as a band under the add bar. */
+@container (max-width: 919.98px) {
+  .tl-wrap { grid-template-columns: minmax(0, 1fr); }
 }
-.tl-add-field { background: none; border: 1px solid transparent; }
-.tl-add-field::placeholder { color: var(--muted); }
-.tl-add-field:focus { border-color: var(--edge); background: var(--surface); }
-.tl-field { background: var(--ground); border: 1px solid var(--edge); outline-offset: 0; }
-
-.tl-row[data-open="true"] { background: var(--surface); }
-.tl-strip { display: flex; flex-direction: column; gap: 2px; padding: 0 6px 8px 30px; }
-.tl-strip-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; }
-.tasklist .text-button[aria-disabled="true"] { color: var(--muted); cursor: default; }
-.tasklist .text-button[aria-disabled="true"]:hover { background: none; }
-.tl-title-text { display: block; line-height: 40px; color: var(--muted); text-decoration: line-through; }
-.tl-word[aria-pressed="true"] { background: var(--surface-2); color: var(--fg); }
-.tl-word-quiet { padding: 0 4px 0 8px; color: var(--muted); font-size: 12px; }
-.tl-pick { display: flex; align-items: center; gap: 4px; max-width: 100%; }
-.tl-goal-pick { min-width: 0; max-width: 100%; height: 36px; padding: 0 6px; background: var(--surface-2); border: 1px solid var(--edge); border-radius: var(--r-s); color: var(--fg); font-size: 13px; }
-.tasklist .tl-delete { margin-left: auto; color: var(--muted); }
-.tasklist .tl-delete.is-armed { background: rgba(255, 123, 114, .18); color: var(--danger); }
-.tl-deliverable { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font-size: 13px; line-height: 19px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.tl-goal-facts { margin: 0 0 2px; color: var(--muted); font-size: 12px; line-height: 18px; font-variant-numeric: tabular-nums; }
-
-.tl-done { margin-top: 28px; }
-.tl-fold .heading-count:empty { display: none; }
-.tl-day-label { margin: 10px 0 2px; color: var(--muted); font-size: 12px; font-weight: 600; line-height: 18px; }
-.tl-quiet { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 18px; }
-.tasklist .tl-older { margin-left: -8px; }
-
-.tl-skeleton { display: flex; align-items: center; gap: 8px; min-height: 40px; }
-.tl-skeleton .tl-box { border: 0; background: var(--surface-2); }
-.tl-bar { display: block; width: 44%; height: 12px; border-radius: var(--r-s); background: var(--surface-2); }
+/* Under 480 px: tighter counts, a one-line add bar at rest, a short Later chip. */
+@container (max-width: 479.98px) {
+  .tl-sum { padding: var(--tl-space-2); }
+  .tl-add-field { flex-basis: 0; }
+  .tl-add-opts { display: none; }
+  .tl-add.is-active .tl-add-opts { display: flex; order: 3; flex-basis: 100%; padding-bottom: var(--tl-space-1); }
+  .tl-add.is-active .tl-add-opts .tl-select { flex: 1; }
+  .tl-chip .tl-chip-date { display: none; }
+  .tl-strip { padding-left: var(--tl-space-2); }
+}
+/* A finger needs 44 px. */
+@media (pointer: coarse) {
+  .tl-text-btn, .tl-seg button, .tl-select, .tl-primary, .tl-pick, .tl-goal-more, .tl-goal-name { min-height: var(--tl-row); }
+  .tl-goal-more { width: var(--tl-row); }
+  .tl-menu [role="menuitemradio"] { min-height: var(--tl-row); }
+  .tl-mark { width: var(--tl-row); margin-left: calc(-1 * var(--tl-space-2)); padding-left: var(--tl-space-2); }
+}
 
 /* A drag: a copy of the row follows the pointer up and down, its own place stays faint, and one line shows where it lands. */
-.tl-ghost { position: fixed; z-index: 30; margin: 0; list-style: none; background: var(--surface-2); box-shadow: 0 6px 20px rgba(0, 0, 0, .45); pointer-events: none; }
+.tl-ghost { position: fixed; z-index: 30; margin: 0; list-style: none; background: var(--surface-2); box-shadow: var(--shadow); pointer-events: none; }
 .tl-row.is-lifted { opacity: .35; }
 .tl-drop-line { position: fixed; z-index: 31; height: 2px; background: var(--accent); pointer-events: none; }
 .is-dragging, .is-dragging * { cursor: grabbing !important; }
 .tl-row.is-leaving { overflow: hidden; }
-@media (prefers-reduced-motion: no-preference) {
-  :root:not(.reduced) .tl-row.is-leaving { transition: height 150ms cubic-bezier(.23, 1, .32, 1); }
-  :root:not(.reduced) .tl-row.is-settling { transition: transform 120ms cubic-bezier(.23, 1, .32, 1); }
-}
-
-/* A narrow column puts a row's goal and day on a second line, so the title keeps its width. */
-@container (max-width: 479px) {
-  .tl-task > .tl-line:has(.tl-meta) { flex-wrap: wrap; min-height: 52px; }
-  .tl-task .tl-meta { flex-basis: 100%; justify-content: flex-start; max-width: none; margin-top: -8px; padding: 0 0 6px 38px; }
-}
-
-/* A finger needs 44 px: the box's target grows into the gutter while the box stays on the edge. */
-@media (pointer: coarse) {
-  .tl-mark { width: 44px; height: 44px; margin-left: -12px; padding-left: 12px; }
-  .tl-line, .tl-title { min-height: 44px; }
-  .tl-add-field, .tl-field { height: 44px; }
-  .tasklist .text-button, .tl-goal-pick { min-height: 44px; }
-}
-@media (max-width: 759.98px) { .tl-field, .tl-add-field { height: 44px; } }

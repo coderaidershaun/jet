@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Task list mockup, screen 10: Long titles and an open row. Opens from disk with no server; mock.js draws it from the state below. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list mockup: Long titles and an open row</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="task-list.css">
+<link rel="stylesheet" href="frame.css">
+</head>
+<body>
+<p class="mk-caption"><b>10. Long titles and an open row.</b> A 200-character title cut at two lines when closed and whole in the open row's growing field; an 80-character word wraps anywhere.</p>
+<div id="app"></div>
+<script src="mock.js"></script>
+<script>Mock.render(document.getElementById('app'), { open: 30, tasks: [ { id: 30, title: 'Ask the venue whether the private room on the first floor can hold twenty-four people with a projector, step-free access and a quiet corner for the speeches, and get the final quote in writing before Friday', goal: 1, state: 'in_progress', day: 'today', date: 'Thu 26 Nov', since: 'since Tue' }, { id: 31, title: 'Check Kite-page_launch-agreement_final_v7_countersigned_by-legal_2026-11-25_scan.pdf before sending it to Sam', goal: null, state: 'not_started', day: 'today', date: 'Thu 26 Nov' }, { id: 32, title: 'Ask the venue whether the private room on the first floor can hold twenty-four people with a projector, step-free access and a quiet corner for the speeches, and get the final quote in writing before Friday', goal: 2, state: 'not_started', day: 'today', date: 'Thu 26 Nov' }, { id: 6, title: 'Book the venue for the team dinner', goal: null, state: 'not_started', day: 'tomorrow', date: 'Fri 27 Nov' } ] });</script>
+</body>
+</html>

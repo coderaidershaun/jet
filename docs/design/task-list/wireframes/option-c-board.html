@@ -1,0 +1,116 @@
+<!doctype html>
+<!-- Option C wireframe of the task list: a board with one column per status (To do, In progress, Done), a band of goal
+     meters above it, and tabs in place of columns on a phone. Opens from disk with no server; sample.js holds the data. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list wireframe C: Status board</title>
+<link rel="stylesheet" href="wireframe.css">
+<style>
+  .c-wrap { padding: var(--s5) var(--s4) var(--s6); max-width: 1000px; margin: 0 auto; }
+  .band { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); margin: 0 0 var(--s4); }
+  .meter { display: grid; gap: var(--s1); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r-control); background: var(--bg); text-align: left; font-size: var(--t-xs); }
+  .meter.is-late { border: 2px solid var(--fg); }
+  .meter .name { font-size: var(--t-s); font-weight: 600; }
+  .meter .facts { color: var(--mid); font-variant-numeric: tabular-nums; }
+  .band-fold { display: none; width: 100%; min-height: 44px; margin: 0 0 var(--s3); padding: 0 var(--s3); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-control); text-align: left; font-size: var(--t-s); font-weight: 600; }
+  .tabs { display: none; margin: 0 0 var(--s3); }
+  .tabs .seg { display: flex; width: 100%; }
+  .tabs .seg button { flex: 1; min-height: 44px; }
+  .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); align-items: start; }
+  .col { min-width: 0; padding: var(--s2); background: var(--fill); border-radius: var(--r-control); }
+  .col.drop-target { outline: 3px solid var(--fg); outline-offset: -3px; }
+  .col-head { display: flex; align-items: baseline; gap: var(--s2); padding: var(--s1) var(--s1) var(--s2); font-size: var(--t-s); font-weight: 700; }
+  .col-head .count { color: var(--mid); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .group { margin: var(--s2) var(--s1) var(--s1); color: var(--mid); font-size: var(--t-xs); font-weight: 700; }
+  .group.is-late { color: var(--fg); }
+  .cards { display: grid; gap: var(--s2); margin: 0; padding: 0; list-style: none; }
+  .card { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: var(--s1); padding: var(--s1) var(--s2) var(--s2) var(--s2); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-control); }
+  .card.is-late { border: 2px solid var(--fg); }
+  .card.is-lifted { opacity: .35; }
+  .card .title { padding-top: var(--s3); font-size: var(--t-s); }
+  .card .foot { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); justify-content: space-between; }
+  .card[data-s="done"] .title { text-decoration: line-through; color: var(--mid); }
+  .card .time { color: var(--mid); font-size: var(--t-xs); }
+  .add-card { display: flex; gap: var(--s2); margin: 0 0 var(--s2); }
+  .add-card .field { flex: 1; height: 36px; }
+  .col-fold { width: 100%; min-height: 40px; margin-top: var(--s2); background: none; border: 0; border-top: 1px solid var(--line); text-align: left; font-size: var(--t-s); color: var(--mid); }
+  @container (max-width: 759.98px) {
+    .c-wrap { padding-inline: var(--s3); }
+    .band { display: none; }
+    .band-fold { display: block; }
+    .tabs { display: block; }
+    .board { grid-template-columns: minmax(0, 1fr); }
+    .col:not(.is-current) { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="sheet-head">
+  <h1>Option C: Status board</h1>
+  <p>Status leads. Three columns, To do, In progress and Done, so what is moving and what is finished is the shape of the page. Inside To do, cards group as Overdue, Today, Tomorrow and Later. A band of goal meters runs above the board. A card moves to another status by a drag across columns, and to another day by its chip. A phone shows one column at a time under three tabs.</p>
+  <p>Sample date: Thursday 26 November 2026. Same shapes as option A: empty, half and full box; a black "!" chip is overdue.</p>
+</header>
+<main id="frames"></main>
+<script src="sample.js"></script>
+<script>
+const { tasks, done, goals, counts, esc, goalOf, isLate, chip, box, bar, goalCounts, screen, frame, doneCount } = WF;
+const rank = (t) => (isLate(t) ? 0 : t.day === 'today' ? 1 : t.day === 'tomorrow' ? 2 : 3);
+const RANK_WORDS = ['! Overdue', 'Today', 'Tomorrow', 'Later'];
+const todo = tasks.filter((t) => t.state === 'not_started');
+const doing = tasks.filter((t) => t.state === 'in_progress');
+
+const card = (t, { lifted = false } = {}) => `<li class="card${isLate(t) ? ' is-late' : ''}${lifted ? ' is-lifted' : ''}" data-s="${t.state}">${box(t.state, t.title)}<span class="title"><span class="clamp2">${esc(t.title)}</span></span>
+  <div class="foot"><span class="goal-tag">${t.goal ? esc(goalOf(t.goal).title) : ''}</span>${chip(t)}</div></li>`;
+const doneCard = (t) => `<li class="card" data-s="done">${box('done', t.title)}<span class="title"><span class="clamp2">${esc(t.title)}</span></span><div class="foot"><span class="goal-tag">${t.goal ? esc(goalOf(t.goal).title) : ''}</span><span class="time">${t.at}</span></div></li>`;
+
+function grouped(list, opts = {}) {
+  const sorted = [...list].sort((a, b) => rank(a) - rank(b));
+  let last = -1, out = '';
+  for (const t of sorted) {
+    if (rank(t) !== last) { if (last !== -1) out += '</ul>'; out += `<p class="group${rank(t) === 0 ? ' is-late' : ''}">${RANK_WORDS[rank(t)]}</p><ul class="cards">`; last = rank(t); }
+    out += card(t, { lifted: opts.lifted === t.id });
+  }
+  return out + (last !== -1 ? '</ul>' : '');
+}
+const meter = (g) => { const c = goalCounts(g); return `<button type="button" class="meter${g.overdue ? ' is-late' : ''}"><span class="name">${g.overdue ? '! ' : ''}${esc(g.title)}</span>${bar(g)}<span class="facts">${g.done}/${g.tasks} done · ${c.progress} in progress · ${g.paused ? 'Paused' : `Due ${g.due}${g.overdue ? ', <b>' + g.left + '</b>' : ''}`}</span></button>`; };
+
+function board({ current = 'todo', drop = '', lifted = null } = {}) {
+  return `<div class="c-wrap">
+    <div class="band" role="group" aria-label="Goals">${goals.map(meter).join('')}</div>
+    <button class="band-fold" aria-expanded="false">Goals · 3 · ! 1 overdue ▾</button>
+    <div class="tabs"><div class="seg" role="tablist" aria-label="Status"><button role="tab" aria-selected="${current === 'todo'}">To do ${todo.length} · ! ${counts.overdue}</button><button role="tab" aria-selected="${current === 'doing'}">In progress ${doing.length}</button><button role="tab" aria-selected="${current === 'done'}">Done ${counts.doneToday}</button></div></div>
+    <div class="board">
+      <section class="col${current === 'todo' ? ' is-current' : ''}" aria-labelledby="c-todo"><div class="col-head"><span id="c-todo">To do</span><span class="count">${todo.length}</span></div>
+        <form class="add-card"><input class="field" placeholder="Add a task" aria-label="Add a task"><select class="select" aria-label="Day"><option>Today</option></select></form>${grouped(todo, { lifted })}</section>
+      <section class="col${current === 'doing' ? ' is-current' : ''}${drop === 'doing' ? ' drop-target' : ''}" aria-labelledby="c-doing"><div class="col-head"><span id="c-doing">In progress</span><span class="count">${doing.length}</span></div>${grouped(doing)}</section>
+      <section class="col${current === 'done' ? ' is-current' : ''}" aria-labelledby="c-done"><div class="col-head"><span id="c-done">Done today</span><span class="count">${counts.doneToday}</span></div><ul class="cards">${done.filter((t) => t.when === 'today').map(doneCard).join('')}</ul><button class="col-fold" aria-expanded="false">Earlier · ${doneCount - counts.doneToday} ▾</button></section>
+    </div></div>`;
+}
+
+const frames = [];
+frames.push(frame('c1', 'C1. Full board', 'Desktop: three columns. Phone: the To do tab.',
+  screen(board()),
+  ['<b>Goal band:</b> one meter per goal (bar, "3/7 done · 2 in progress · Due Mon 30 Nov"). A tap filters the board to that goal. On a phone it folds into one line, "Goals · 3 · ! 1 overdue".',
+   '<b>To do</b> holds every not-started task, grouped Overdue, Today, Tomorrow, Later; overdue cards have a heavy border and a black chip. The add field is at its top.',
+   '<b>In progress</b> holds every started task, whatever its day, with its chip.',
+   '<b>Done today</b> holds today\'s finished tasks; "Earlier" opens the 90-day history.',
+   '<b>Phone:</b> a tab bar replaces the columns; the To do tab carries the overdue count.']));
+frames.push(frame('c2', 'C2. Dragging a card to In progress', 'The status changes by the column a card is dropped in.',
+  screen(board({ current: 'doing', drop: 'doing', lifted: 4 })),
+  ['<b>Drop on a column</b> sends <code>PATCH {state}</code>. Order inside In progress is the user\'s one order; the drop place inside a column sends <code>after</code> too.',
+   '<b>A phone</b> cannot drag across tabs; the box tap (one step forward) and the open card\'s Status control do it.',
+   '<b>Dragging across day groups</b> inside To do changes the day, so one drag can mean status or day by where it ends: two meanings for one gesture.']));
+frames.push(frame('c3', 'C3. Empty', 'No task, no goal.',
+  screen(`<div class="c-wrap"><div class="board"><section class="col is-current"><div class="col-head">To do</div><form class="add-card"><input class="field marker" placeholder="Add a task"><select class="select"><option>Today</option></select></form><p class="quiet" style="margin:8px 4px">Nothing on your list yet. Add a task, or tell Jet what you are working on.</p></section><section class="col"><div class="col-head">In progress</div><p class="quiet" style="margin:4px">Tap a task's box to start it.</p></section><section class="col"><div class="col-head">Done today</div><p class="quiet" style="margin:4px">Tasks you finish land here.</p></section></div></div>`, { count: '' })));
+frames.push(frame('c4', 'C4. Loading', 'Skeleton columns.',
+  screen(`<div class="c-wrap" aria-busy="true"><div class="board">${('<section class="col is-current"><div class="col-head"><span class="skel" style="width:40%"></span></div><ul class="cards">' + '<li class="card"><span class="skel-box" style="margin:8px 0"></span><span class="skel" style="width:70%;margin-top:12px"></span></li>'.repeat(3) + '</ul></section>').repeat(3)}</div></div>`, { count: '' })));
+frames.push(frame('c5', 'C5. Errors', 'First read failed, then a failed change.',
+  screen(`<div class="c-wrap"><div class="state-block" role="alert"><p>The task list could not be loaded.</p><button class="btn">Try again</button></div></div>`, { count: '' }) +
+  screen(`<div class="c-wrap"><p class="alert" role="alert">The task could not be changed. Jet could not be reached. Try again.</p></div>${board()}`),
+  ['Same rules as option A: one alert above the board until a later change works; a quiet refresh line; a failed add keeps its text.']));
+document.getElementById('frames').innerHTML = frames.join('');
+</script>
+</body>
+</html>

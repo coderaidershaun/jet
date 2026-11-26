@@ -72,6 +72,9 @@ const ICONS = {
   menu: 'M4 7h16M4 12h16M4 17h16',
   tasks: 'M4 6h4v4H4zM4 14h4v4H4zM12 8h8M12 16h8',
   files: 'M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7zM14 3v4h4',
+  alert: 'M12 8v5M12 16.5h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
+  info: 'M12 11v5M12 7.5h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z',
   signOut: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
   ...KITES,
 };
