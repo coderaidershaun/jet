@@ -131,8 +131,10 @@ pub enum FolderError {
 
 /// What a prepared folder holds for the turn.
 pub(super) struct Prepared {
-    /// True when the agent file held another system prompt before, or none.
+    /// True when no turn that ended well has run with this agent file yet.
     pub prompt_changed: bool,
+    /// Records the agent file once the turn has ended well.
+    pub read_prompt: ReadPrompt,
     /// Removes the turn's token file when dropped.
     pub token_file: Option<TokenFile>,
 }
@@ -154,9 +156,11 @@ pub(super) fn prepare(
 
     let agent_file = agent_files.join(format!("{}.md", agent.name));
     let text = agent.file(request);
-    // SMELL: when a continued turn fails before the model reads it, the changed prompt it carried
-    // is not sent again, so the model keeps the older notes until they change once more.
-    let prompt_changed = std::fs::read_to_string(&agent_file).ok().as_deref() != Some(&text);
+    let read_prompt = ReadPrompt {
+        path: agents.join(format!("{}-read-prompt.txt", agent.name)),
+        text: text.clone(),
+    };
+    let prompt_changed = !read_prompt.is_read();
     write(&agent_file, &text)?;
     write(&agents.join(ALLOW_PROGRAM), include_str!("allow.awk"))?;
     write(&agents.join(agent.hooks_file), &agent.hooks().to_string())?;
@@ -174,6 +178,7 @@ pub(super) fn prepare(
     };
     Ok(Prepared {
         prompt_changed,
+        read_prompt,
         token_file,
     })
 }
@@ -285,6 +290,27 @@ fn write(path: &Path, text: &str) -> Result<(), FolderError> {
         path: path.to_owned(),
         source,
     })
+}
+
+/// The agent file of the last turn that ended well. A turn that fails may end before the model
+/// reads a changed prompt, so only a turn that ended well records it.
+pub(super) struct ReadPrompt {
+    path: PathBuf,
+    text: String,
+}
+
+impl ReadPrompt {
+    fn is_read(&self) -> bool {
+        std::fs::read_to_string(&self.path).is_ok_and(|read| read == self.text)
+    }
+
+    /// A record that cannot be written only means that the next continued turn sends the
+    /// prompt again, which does no harm.
+    pub(super) fn record(&self) {
+        if let Err(error) = write(&self.path, &self.text) {
+            eprintln!("jet: the agy prompt will be sent again: {error}");
+        }
+    }
 }
 
 /// The file that names Jet's tool server and holds the turn's token.

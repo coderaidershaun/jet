@@ -126,8 +126,9 @@ impl Speaker {
 }
 
 /// Code or a formula is spoken only when it is a plain name: letters, digits, spaces and hyphens.
-// SMELL: the chat page times each word with its own copy of these rules (plain names, web
-// addresses and `[1]` markers), so a change here has to be made there too.
+// Warning: the chat page times each word with its own copy of these rules (plain names, web
+// addresses and `[1]` markers), so a change here has to be made there too. Both test suites check
+// one shared list of cases, which catches a drift only where those cases reach.
 fn is_plain_name(text: &str) -> bool {
     text.chars().any(char::is_alphanumeric)
         && text
@@ -253,5 +254,30 @@ mod tests {
         }
         assert_eq!(spoken_words("Ha <laugh> yes.", true), "Ha <laugh> yes.");
         assert_eq!(spoken_words("Ha <laugh> yes.", false), "Ha yes.");
+    }
+
+    #[derive(serde::Deserialize)]
+    struct VectorFile {
+        vectors: Vec<Vector>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Vector {
+        markdown: String,
+        spoken: String,
+    }
+
+    #[test]
+    fn the_cases_the_chat_page_also_checks_are_spoken_as_listed() {
+        let file: VectorFile = serde_json::from_str(include_str!("speech-vectors.json"))
+            .expect("the vector file is valid");
+        for vector in file.vectors {
+            assert_eq!(
+                spoken_words(&vector.markdown, false),
+                vector.spoken,
+                "{:?}",
+                vector.markdown
+            );
+        }
     }
 }

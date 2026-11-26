@@ -1,6 +1,7 @@
 //! Follows the tool calls of one turn: names each call's server and tool, pairs it with its
 //! result, times it and sums the result up in one line. Of Claude Code's own tools only web
 //! search and page reading count, as the server `web`; the rest, such as ToolSearch, are ignored.
+//! The long text of Jet's own file calls is left out, since no card shows it.
 
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -81,6 +82,10 @@ impl ToolCalls {
                     (result, false)
                 };
             let ok = !is_error && !nested_error;
+            let mut result = result;
+            if open.call.server == "jet" && open.call.tool == "files_read" {
+                drop_field(&mut result, "text");
+            }
             let summary = open.summary(ok, &result);
             let duration_ms = u64::try_from(open.started.elapsed().as_millis()).unwrap_or(u64::MAX);
             let call = ToolCall {
@@ -127,12 +132,30 @@ fn card(id: String, name: &str, input: Value) -> Option<ToolStart> {
     } else {
         (server.to_owned(), tool.to_owned(), input)
     };
+    let mut input = input;
+    match (server.as_str(), tool.as_str()) {
+        ("jet", "files_export") => drop_field(&mut input, "markdown"),
+        ("jet", "files_update") => {
+            if let Some(command) = input.get_mut("command") {
+                drop_field(command, "content");
+            }
+        }
+        _ => {}
+    }
     Some(ToolStart {
         id,
         server,
         tool,
         input,
     })
+}
+
+/// Leaves out a long text that the model wrote or read and no card shows, so the saved thread,
+/// and the page that loads it again on every reload, do not carry it.
+fn drop_field(value: &mut Value, field: &str) {
+    if let Some(fields) = value.as_object_mut() {
+        fields.remove(field);
+    }
 }
 
 /// `mcp__quanty__search` is the tool `search` of the server `quanty`.

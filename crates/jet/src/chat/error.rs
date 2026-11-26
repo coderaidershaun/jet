@@ -35,6 +35,9 @@ pub enum BridgeError {
     Unsupported(String),
     #[error("{0}")]
     TooLarge(String),
+    /// Other requests hold what this one needs for now; the same request can work a little later.
+    #[error("{0}")]
+    RateLimited(String),
     #[error("server is shutting down")]
     ShuttingDown,
 }
@@ -52,6 +55,7 @@ impl BridgeError {
             BridgeError::NotFound(_) => "notFound",
             BridgeError::Unsupported(_) => "unsupported",
             BridgeError::TooLarge(_) => "tooLarge",
+            BridgeError::RateLimited(_) => "rateLimited",
             BridgeError::ShuttingDown => "shuttingDown",
         }
     }
@@ -87,7 +91,10 @@ impl From<FileError> for BridgeError {
             FileError::TooLarge(_) | FileError::StoreFull | FileError::UserFull(_) => {
                 BridgeError::TooLarge(error.to_string())
             }
-            FileError::NoChat(_) => BridgeError::NotFound(error.to_string()),
+            FileError::NoChat(_) | FileError::Forgotten => BridgeError::NotFound(error.to_string()),
+            FileError::Busy | FileError::SlowUpload(_) => {
+                BridgeError::RateLimited(error.to_string())
+            }
             FileError::NoSuchSheet(_)
             | FileError::NotHeld
             | FileError::NotText(_)
@@ -130,6 +137,7 @@ impl axum::response::IntoResponse for BridgeError {
             Self::AdminOnly(_) => StatusCode::FORBIDDEN,
             Self::Unsupported(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::TooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             Self::ShuttingDown => StatusCode::SERVICE_UNAVAILABLE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };

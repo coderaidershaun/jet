@@ -50,3 +50,4 @@ crispasr-sys = { git = "https://github.com/CrispStrobe/CrispASR", tag = "v0.8.55
 
 [dev-dependencies]
 agent = { path = "../agent", features = ["test-server"] }
+tokio = { workspace = true, features = ["test-util"] }

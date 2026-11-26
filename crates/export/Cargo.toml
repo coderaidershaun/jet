@@ -15,6 +15,7 @@ ratex-types = { workspace = true }
 rustybuzz = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+unicode-segmentation = { workspace = true }
 
 [dev-dependencies]
 lopdf = { workspace = true }

@@ -1,28 +1,48 @@
-//! Puts a user's files in one zip, so the page can download many of them with one tap.
+//! Puts a user's files in one zip, so the page can download many of them with one tap. The zip
+//! is written to a temporary file, one stored file in memory at a time.
 
 use std::collections::HashSet;
-use std::io::{Cursor, Write};
+use std::fs::File;
+use std::io::{Seek, Write};
 
 use jiff::{Timestamp, tz::TimeZone};
 use zip::{CompressionMethod, DateTime, ZipWriter, write::SimpleFileOptions};
 
-use super::{FileError, Files};
+use super::{FileError, Files, wait_for};
+use crate::on_worker;
 use crate::store::UserId;
 
 impl Files {
+    /// [`Files::archive`] on a worker, once one of the places to build a zip is free.
+    ///
+    /// # Errors
+    /// - [`FileError::Busy`] when no place comes free in time.
+    /// - Any error of [`Files::archive`].
+    pub async fn zip(
+        &self,
+        user: UserId,
+        ids: Option<Vec<String>>,
+    ) -> Result<(String, File), FileError> {
+        let _place = wait_for(&self.archives, self.waits.queue).await?;
+        let files = self.clone();
+        on_worker(move || files.archive(user, ids.as_deref()))
+            .await
+            .map_err(FileError::Worker)?
+    }
+
     /// The user's files as one zip and its name, newest change first: all the files Jet can see,
-    /// or only those of `ids`. Two files of one name are told apart by a number.
+    /// or only those of `ids`, in a temporary file that is gone once it is closed. Two files of
+    /// one name are told apart by a number.
     ///
     /// # Errors
     /// - [`FileError::NotFound`] naming the first id that is not such a file of the user.
     /// - [`FileError::Archive`] when the zip cannot be written.
-    // SMELL: the whole zip is built in memory, up to the user's limit of 256 MiB, and nothing
-    // limits how many are built at once.
+    /// - [`FileError::Scratch`] when the temporary file cannot be made.
     pub fn archive(
         &self,
         user: UserId,
         ids: Option<&[String]>,
-    ) -> Result<(String, Vec<u8>), FileError> {
+    ) -> Result<(String, File), FileError> {
         let mut held = self.store.held_by_user(user, usize::MAX)?;
         if let Some(ids) = ids {
             let seen: HashSet<String> = held.iter().map(|file| file.about.id.to_string()).collect();
@@ -32,7 +52,8 @@ impl Files {
             held.retain(|file| ids.contains(&file.about.id.to_string()));
         }
         let zone = self.zone(user)?;
-        let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+        let scratch = tempfile::tempfile().map_err(FileError::Scratch)?;
+        let mut zip = ZipWriter::new(scratch);
         let mut taken = HashSet::new();
         for file in held {
             let id = file.about.id.to_string();
@@ -48,7 +69,9 @@ impl Files {
                 .map_err(zip::result::ZipError::from)?;
         }
         let today = zone.to_datetime(now()).strftime("%Y-%m-%d");
-        Ok((format!("Jet files {today}.zip"), zip.finish()?.into_inner()))
+        let mut written = zip.finish()?;
+        written.rewind().map_err(FileError::Scratch)?;
+        Ok((format!("Jet files {today}.zip"), written))
     }
 }
 

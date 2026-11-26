@@ -36,6 +36,8 @@ pub(super) struct Events {
     output_tokens: u64,
     /// What the conversation held after the last model call.
     context_tokens: Option<u64>,
+    /// True once agy has said that the turn ended well.
+    succeeded: bool,
 }
 
 impl Events {
@@ -48,7 +50,12 @@ impl Events {
             cached_tokens: 0,
             output_tokens: 0,
             context_tokens: None,
+            succeeded: false,
         }
+    }
+
+    pub(super) fn has_succeeded(&self) -> bool {
+        self.succeeded
     }
 
     /// The line itself and what it means for the turn reader.
@@ -79,7 +86,10 @@ impl Events {
                 })]
             }
             Some("step_update") => self.step(&event["step_update"])?,
-            Some("result") => self.result(&event["result"]).into_iter().collect(),
+            Some("result") => {
+                self.succeeded = event["result"]["status"] == "SUCCESS";
+                self.result(&event["result"]).into_iter().collect()
+            }
             _ => return Err(Fault::Unknown),
         };
         let mut lines = vec![line.to_owned()];

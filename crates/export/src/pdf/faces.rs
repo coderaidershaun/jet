@@ -3,6 +3,7 @@
 
 use krilla::text::{Font, GlyphId, KrillaGlyph, Tag};
 use rustybuzz::{Direction, UnicodeBuffer};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::ExportError;
 
@@ -13,6 +14,9 @@ const STIX_TWO_MATH: &[u8] = include_bytes!("../../assets/fonts/STIXTwoMath-Regu
 const OPTICAL_SIZE: f32 = 14.0;
 const REGULAR: f32 = 400.0;
 const SEMIBOLD: f32 = 600.0;
+/// The shaper counts the distance from an accent back to its letter in 16 bits, and panics past
+/// it, so text is shaped in pieces far shorter than that.
+const MOST_CHARACTERS_SHAPED_AT_ONCE: usize = 4096;
 
 /// A face of text. Which file and weight each one is lives in [`Faces::new`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,49 +159,107 @@ impl Faces {
         runs
     }
 
-    // SMELL: a whole run is shaped at once. The shaper panics on a letter with about 70,000
-    // accents.
+    /// The run shaped in pieces of at most `MOST_CHARACTERS_SHAPED_AT_ONCE` characters.
     fn shaped(&self, text: &str, loaded: &Loaded) -> Run {
-        let mut buffer = UnicodeBuffer::new();
-        buffer.push_str(text);
-        buffer.set_direction(Direction::LeftToRight);
-        buffer.guess_segment_properties();
-        let shaped = rustybuzz::shape(&loaded.shaper, &[], buffer);
-        let infos = shaped.glyph_infos();
-        let positions = shaped.glyph_positions();
-        // A cluster ends where the next glyph with another cluster starts. Walking back from the
-        // last glyph, a glyph in the same cluster as the one after it has the same end.
-        let mut ends = vec![text.len(); infos.len()];
-        for at in (0..infos.len().saturating_sub(1)).rev() {
-            let (cluster, next) = (infos[at].cluster, infos[at + 1].cluster);
-            ends[at] = if next == cluster {
-                ends[at + 1]
-            } else {
-                next as usize
-            };
+        let starts = piece_starts(text);
+        let mut glyphs = Vec::new();
+        for (n, &start) in starts.iter().enumerate() {
+            let end = starts.get(n + 1).copied().unwrap_or(text.len());
+            glyphs.extend(shape_piece(&text[start..end], start, loaded));
         }
-        let glyphs = infos
-            .iter()
-            .zip(positions)
-            .zip(ends)
-            .map(|((info, position), end)| {
-                let start = info.cluster as usize;
-                let per_em = |units: i32| units as f32 / loaded.units_per_em;
-                KrillaGlyph::new(
-                    GlyphId::new(info.glyph_id),
-                    per_em(position.x_advance),
-                    per_em(position.x_offset),
-                    per_em(position.y_offset),
-                    per_em(position.y_advance),
-                    start..end,
-                    None,
-                )
-            })
-            .collect();
         Run {
             font: loaded.font.clone(),
             text: text.to_owned(),
             glyphs,
         }
+    }
+}
+
+/// Where each piece of a run starts. A piece ends between two letters with their accents, so
+/// that a letter is shaped with its accents, unless one letter alone is longer than a piece.
+fn piece_starts(text: &str) -> Vec<usize> {
+    let mut starts = vec![0];
+    let mut count = 0;
+    for (at, letter) in text.grapheme_indices(true) {
+        if count > 0 && count + letter.chars().count() > MOST_CHARACTERS_SHAPED_AT_ONCE {
+            starts.push(at);
+            count = 0;
+        }
+        for (inside, _) in letter.char_indices() {
+            if count == MOST_CHARACTERS_SHAPED_AT_ONCE {
+                starts.push(at + inside);
+                count = 0;
+            }
+            count += 1;
+        }
+    }
+    starts
+}
+
+/// The glyphs of a piece of a run that starts at byte `offset` of the run.
+fn shape_piece(text: &str, offset: usize, loaded: &Loaded) -> Vec<KrillaGlyph> {
+    let mut buffer = UnicodeBuffer::new();
+    buffer.push_str(text);
+    buffer.set_direction(Direction::LeftToRight);
+    buffer.guess_segment_properties();
+    let shaped = rustybuzz::shape(&loaded.shaper, &[], buffer);
+    let infos = shaped.glyph_infos();
+    let positions = shaped.glyph_positions();
+    // A cluster ends where the next glyph with another cluster starts. Walking back from the
+    // last glyph, a glyph in the same cluster as the one after it has the same end.
+    let mut ends = vec![text.len(); infos.len()];
+    for at in (0..infos.len().saturating_sub(1)).rev() {
+        let (cluster, next) = (infos[at].cluster, infos[at + 1].cluster);
+        ends[at] = if next == cluster {
+            ends[at + 1]
+        } else {
+            next as usize
+        };
+    }
+    infos
+        .iter()
+        .zip(positions)
+        .zip(ends)
+        .map(|((info, position), end)| {
+            let start = info.cluster as usize;
+            let per_em = |units: i32| units as f32 / loaded.units_per_em;
+            KrillaGlyph::new(
+                GlyphId::new(info.glyph_id),
+                per_em(position.x_advance),
+                per_em(position.x_offset),
+                per_em(position.y_offset),
+                per_em(position.y_advance),
+                offset + start..offset + end,
+                None,
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_letter_with_many_accents_is_shaped() {
+        let faces = Faces::new().expect("the fonts load");
+        let text = format!("a{}", "\u{301}".repeat(70_000));
+        let runs = faces.shape(&text, Typeface::Serif);
+        assert!(!runs.is_empty());
+    }
+
+    #[test]
+    fn a_letter_at_the_end_of_a_piece_is_shaped_with_its_accent() {
+        let faces = Faces::new().expect("the fonts load");
+        let glyphs = |text: &str| -> usize {
+            let runs = faces.shape(text, Typeface::Serif);
+            runs.iter().map(|run| run.glyphs.len()).sum()
+        };
+        let accented = "e\u{301}";
+        let filler = "a".repeat(MOST_CHARACTERS_SHAPED_AT_ONCE - 1);
+        assert_eq!(
+            glyphs(&format!("{filler}{accented}")),
+            filler.len() + glyphs(accented)
+        );
     }
 }

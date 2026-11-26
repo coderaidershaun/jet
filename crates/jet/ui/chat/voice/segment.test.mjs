@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { segment, nextBatch, speechText } from './segment.js';
+import { readFileSync } from 'node:fs';
+import { segment, nextBatch, speechText, weighRegion } from './segment.js';
 
 const FENCE = '```js\nlet a = 1. 2.\n```';
 
@@ -89,4 +90,14 @@ test('a listed cue takes time and shows no letters, and a cue alone on a line is
   assert.equal(speechText(text, parts, 0, nextBatch(parts, 0, true).to), '<sigh>\n\nSo true.');
   assert.deepEqual(segment('<sigh>\n\n', false, cues), [], 'with no next line yet the cue waits');
   assert.equal(segment('Done.\n\n<sigh>\n\nThen this. Last', false, cues).length, 2);
+});
+
+test('the page counts the letters the server speaks, for each shared case', () => {
+  const file = new URL('../../../../agent/src/markdown/speech-vectors.json', import.meta.url);
+  const { vectors } = JSON.parse(readFileSync(file, 'utf8'));
+  assert.ok(vectors.length > 0);
+  for (const { markdown, spoken } of vectors) {
+    const letters = (spoken.match(/[\p{L}\p{N}]/gu) ?? []).length;
+    assert.equal(weighRegion(markdown, 0, markdown.length, []), letters, markdown);
+  }
 });

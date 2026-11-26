@@ -1,0 +1,16 @@
+{
+  "about": "Lines of prose and the words a voice says of each. The server picks these words, and the chat page counts their letters to time each word, so both test suites read these cases.",
+  "vectors": [
+    { "markdown": "Hello **bold** and *it* world.", "spoken": "Hello bold and it world." },
+    { "markdown": "un**believ**able", "spoken": "unbelievable" },
+    { "markdown": "See [the docs](https://example.com/x) now.", "spoken": "See the docs now." },
+    { "markdown": "Visit https://example.com/page or www.example.com today.", "spoken": "Visit or today." },
+    { "markdown": "Go to (www.example.com) now.", "spoken": "Go to now." },
+    { "markdown": "A claim[1] and another [2]. Then [1][2] more, [3,4] and [5-6] too.", "spoken": "A claim and another. Then more, and too." },
+    { "markdown": "Use `ls -la` or `rm -rf /tmp` here.", "spoken": "Use ls -la or here." },
+    { "markdown": "The energy \\(E\\) equals \\(mc^2\\), and \\(dark matter\\) too.", "spoken": "The energy E equals, and dark matter too." },
+    { "markdown": "Shown \\[x\\] and $$y$$ but not said.", "spoken": "Shown and but not said." },
+    { "markdown": "Great job 🎉 team ✅", "spoken": "Great job team" },
+    { "markdown": "It costs $5 or $10.", "spoken": "It costs $5 or $10." }
+  ]
+}

@@ -50,19 +50,20 @@ fn html_holds_the_whole_document_typeset_and_standalone(path: &Path) {
 
     // The inline formula and the formula set apart are pictures, and no LaTeX stays outside the
     // text that stands in for a picture.
-    assert_eq!(html.matches("<img class=\"math\"").count(), 2);
+    assert_eq!(html.matches("<svg class=\"math\"").count(), 2);
     let mut without_alternatives = html.clone();
-    for alternative in support::attribute_values(&html, "alt") {
-        without_alternatives = without_alternatives.replace(&format!("alt=\"{alternative}\""), "");
+    for alternative in support::attribute_values(&html, "aria-label") {
+        without_alternatives =
+            without_alternatives.replace(&format!("aria-label=\"{alternative}\""), "");
     }
     assert!(!without_alternatives.contains("\\frac"));
     assert!(!without_alternatives.contains('$'));
 
     assert!(!html.contains("<link"));
     assert!(!html.contains("<script"));
-    for address in support::attribute_values(&html, "src") {
+    for address in support::attribute_values(&html, "href") {
         assert!(
-            address.starts_with("data:"),
+            address.starts_with("data:") || address.starts_with("#formula-"),
             "{address} must be inside the file"
         );
     }
@@ -136,7 +137,7 @@ fn formulas_past_the_budget_are_written_as_their_source() {
     // written.
     let huge = write_text(r"$\rule{84em}{84em}$", Format::Html, "huge.html");
     let html = support::text_of(&huge);
-    assert_eq!(html.matches("<img class=\"math\"").count(), 0);
+    assert_eq!(html.matches("<svg class=\"math\"").count(), 0);
     assert_eq!(
         html.matches("<code class=\"math\">\\rule{84em}{84em}</code>")
             .count(),
@@ -149,10 +150,13 @@ fn formulas_past_the_budget_are_written_as_their_source() {
     let markdown = r"$\rule{20em}{20em}$ ".repeat(uses);
     let path = write_text(&markdown, Format::Html, "medium.html");
     let html = support::text_of(&path);
-    let address = support::attribute_values(&html, "src")
+    // Each use points to the one picture of the formula, which the file holds once.
+    let addresses: Vec<String> = support::attribute_values(&html, "href")
         .into_iter()
-        .next()
-        .expect("the first formula is a picture");
+        .filter(|address| address.starts_with("data:"))
+        .collect();
+    assert_eq!(addresses.len(), 1, "the formula's picture is written once");
+    let address = &addresses[0];
     let picture = STANDARD
         .decode(address.strip_prefix("data:image/png;base64,").unwrap())
         .expect("the picture is base64");
@@ -170,15 +174,16 @@ fn formulas_past_the_budget_are_written_as_their_source() {
         "the budget must run out before the last use: {width} by {height} pixels to a picture"
     );
 
-    assert_eq!(html.matches("<img class=\"math\"").count(), placed);
+    assert_eq!(html.matches("<svg class=\"math\"").count(), placed);
+    assert_eq!(html.matches("<use href=\"#formula-0\"/>").count(), placed);
     assert_eq!(
         html.matches("<code class=\"math\">\\rule{20em}{20em}</code>")
             .count(),
         uses - placed
     );
     assert!(
-        html.len() < 4 << 20,
-        "the page is {} bytes, and a rule packs to about 110 KB",
+        html.len() < 1 << 20,
+        "the page is {} bytes, and its one picture of a rule packs to about 110 KB",
         html.len()
     );
 

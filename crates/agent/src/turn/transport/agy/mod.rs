@@ -197,6 +197,9 @@ impl Transport for AgyCli {
             let mut events = events::Events::new(agent.allowed);
             for line in lines.receiver {
                 let translated = line.and_then(|line| events.translate(&line));
+                if translated.is_ok() && events.has_succeeded() {
+                    prepared.read_prompt.record();
+                }
                 let limit_in_doubt = match &translated {
                     Err(
                         error @ (TransportError::AgyTool { .. } | TransportError::AgyLine { .. }),

@@ -24,8 +24,9 @@ const MAX_PICTURE_SIDE: u32 = 8192;
 /// The most pixels one picture may have, margin included. Drawing a picture takes memory and time
 /// in proportion to its pixels, however empty it looks.
 const MAX_PICTURE_PIXELS: u64 = 4_000_000;
-/// The most pixels of pictures one file may place, every use counted. Without it, a few hundred
-/// characters of Markdown that repeat a large formula make a page of hundreds of megabytes.
+/// The most pixels of pictures one file may place, every use counted. A file holds each picture
+/// once, but a reader draws every use, so without it a few hundred characters of Markdown that
+/// repeat a large formula would take a reader's memory and time without end.
 const MAX_PLACED_PIXELS: u64 = 64_000_000;
 const SOFT_HYPHEN: char = '\u{ad}';
 const BLEED_EM: f64 = 0.1;

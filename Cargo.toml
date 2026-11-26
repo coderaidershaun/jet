@@ -44,6 +44,7 @@ tokio = { version = "1.54.1", default-features = false, features = ["io-util", "
 tokio-stream = { version = "0.1.19", default-features = false, features = ["sync"] }
 tower = { version = "0.5.3", default-features = false }
 tower-http = { version = "0.7.1", default-features = false, features = ["fs"] }
+unicode-segmentation = { version = "1.13.3", default-features = false }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
 url = { version = "2.5.8", default-features = false, features = ["std", "serde"] }
 uuid = { version = "1.28.0", default-features = false, features = ["std", "v4", "serde"] }

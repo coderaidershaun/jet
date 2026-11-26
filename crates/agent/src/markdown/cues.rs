@@ -2,6 +2,7 @@
 //! bubble hides them. The chat page gets the same list, so that it times them as the voice says
 //! them.
 
+use pulldown_cmark::{Event, Parser, Tag};
 use serde::Serialize;
 
 /// One vocal cue and the time it takes to say, in letters.
@@ -66,31 +67,35 @@ pub(super) fn is_cue(raw: &str) -> bool {
 
 /// The text with every line that holds only cues joined onto the next line that has words, so
 /// that Markdown does not read the cue as the start of an HTML block and swallow the paragraph
-/// after it. With no later line, or when the next one opens a code fence, it joins the one
-/// before; a text of nothing but a cue stays as it is. Lines inside a code fence never change.
-// SMELL: a cue line inside code that is indented instead of fenced is still joined, which changes
-// that code. Replies fence their code, so this is accepted.
+/// after it. With no later line, or when the next one is code, it joins the one before; a text of
+/// nothing but a cue stays as it is. Lines of code, fenced or indented, never change.
 pub(super) fn inline_cues(text: &str) -> String {
-    let mut lines: Vec<String> = text.split('\n').map(str::to_owned).collect();
-    let mut fence: Option<String> = None;
+    let mut lines: Vec<Line> = text
+        .split('\n')
+        .zip(code_lines(text))
+        .map(|(text, is_code)| Line {
+            text: text.to_owned(),
+            is_code,
+        })
+        .collect();
     let mut at = 0;
     while at < lines.len() {
-        if let Some(marker) = fence_marker(&lines[at]) {
-            match &fence {
-                None => fence = Some(marker),
-                Some(open) if marker.starts_with(open.as_str()) => fence = None,
-                Some(_) => {}
-            }
-        } else if fence.is_none() && only_cues(&lines[at]) {
+        if !lines[at].is_code && only_cues(&lines[at].text) {
             if let Some(next) = next_words(&lines, at) {
-                let joined = format!("{} {}", lines[at].trim(), lines[next].trim_start());
-                lines[next] = joined;
+                lines[next].text = format!(
+                    "{} {}",
+                    lines[at].text.trim(),
+                    lines[next].text.trim_start()
+                );
                 lines.drain(at..next);
                 continue;
             }
             if let Some(before) = previous_words(&lines, at) {
-                let joined = format!("{} {}", lines[before].trim_end(), lines[at].trim());
-                lines[before] = joined;
+                lines[before].text = format!(
+                    "{} {}",
+                    lines[before].text.trim_end(),
+                    lines[at].text.trim()
+                );
                 lines.drain(before + 1..=at);
                 at = before + 1;
                 continue;
@@ -98,15 +103,44 @@ pub(super) fn inline_cues(text: &str) -> String {
         }
         at += 1;
     }
-    lines.join("\n")
+    let texts: Vec<String> = lines.into_iter().map(|line| line.text).collect();
+    texts.join("\n")
 }
 
-/// The run of backticks or tildes that opens or closes a fence on this line, if it has one.
-fn fence_marker(line: &str) -> Option<String> {
-    let line = line.trim_start();
-    let first = line.chars().next().filter(|c| matches!(c, '`' | '~'))?;
-    let marker: String = line.chars().take_while(|c| *c == first).collect();
-    (marker.len() >= 3).then_some(marker)
+struct Line {
+    text: String,
+    is_code: bool,
+}
+
+/// For each line, whether it lies in a code block. Each line of only cues is first made plain
+/// text, because Markdown would read it as an HTML block that swallows a code fence after it.
+fn code_lines(text: &str) -> Vec<bool> {
+    let plain: Vec<String> = text
+        .split('\n')
+        .map(|line| {
+            if only_cues(line) {
+                line.replace('<', "x")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect();
+    let mut spans = Vec::with_capacity(plain.len());
+    let mut start = 0;
+    for line in &plain {
+        // A line runs up to and including its line break.
+        spans.push(start..start + line.len() + 1);
+        start += line.len() + 1;
+    }
+    let mut is_code = vec![false; spans.len()];
+    for (event, block) in Parser::new(&plain.join("\n")).into_offset_iter() {
+        if let Event::Start(Tag::CodeBlock(_)) = event {
+            for (line, span) in spans.iter().enumerate() {
+                is_code[line] |= span.start < block.end && block.start < span.end;
+            }
+        }
+    }
+    is_code
 }
 
 /// True when the line is one or more listed cues with only spaces between them.
@@ -124,16 +158,16 @@ pub(super) fn only_cues(line: &str) -> bool {
     true
 }
 
-/// The first line after `at` that is not blank, unless that line is a code fence.
-fn next_words(lines: &[String], at: usize) -> Option<usize> {
-    let next = (at + 1..lines.len()).find(|&i| !lines[i].trim().is_empty())?;
-    fence_marker(&lines[next]).is_none().then_some(next)
+/// The first line after `at` that is not blank, unless that line is code.
+fn next_words(lines: &[Line], at: usize) -> Option<usize> {
+    let next = (at + 1..lines.len()).find(|&i| !lines[i].text.trim().is_empty())?;
+    (!lines[next].is_code).then_some(next)
 }
 
-/// The last line before `at` that is not blank, unless that line is a code fence.
-fn previous_words(lines: &[String], at: usize) -> Option<usize> {
-    let before = (0..at).rev().find(|&i| !lines[i].trim().is_empty())?;
-    fence_marker(&lines[before]).is_none().then_some(before)
+/// The last line before `at` that is not blank, unless that line is code.
+fn previous_words(lines: &[Line], at: usize) -> Option<usize> {
+    let before = (0..at).rev().find(|&i| !lines[i].text.trim().is_empty())?;
+    (!lines[before].is_code).then_some(before)
 }
 
 #[cfg(test)]
@@ -158,6 +192,11 @@ mod tests {
                 "```\n<laugh>\nx\n```\n<sigh> End.",
             ),
             ("~~~\n<laugh>\n~~~", "~~~\n<laugh>\n~~~"),
+            (
+                "Code:\n\n    <laugh>\n    x\n\nEnd.",
+                "Code:\n\n    <laugh>\n    x\n\nEnd.",
+            ),
+            ("Text\n\n<sigh>\n\n    x", "Text <sigh>\n\n    x"),
             ("Code:\n```\nx\n```\n<sigh>", "Code:\n```\nx\n```\n<sigh>"),
             ("<sigh>\n```\nx\n```", "<sigh>\n```\nx\n```"),
             (

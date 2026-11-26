@@ -11,7 +11,10 @@ pub struct Registry {
     storage: Box<dyn AppStorage>,
     apps: Vec<(AppOwner, App)>,
     discovery: HashMap<AppId, DiscoveryStatus>,
+    /// Fetches the descriptors of an admin's apps, which may be on the server itself.
     http: ureq::Agent,
+    /// Fetches the descriptors of everyone else's apps, from public addresses only.
+    public_http: ureq::Agent,
 }
 
 impl Registry {
@@ -24,7 +27,8 @@ impl Registry {
             storage,
             apps,
             discovery: HashMap::new(),
-            http: descriptor::client(),
+            http: descriptor::client(Reach::Anywhere),
+            public_http: descriptor::client(Reach::PublicOnly),
         })
     }
     /// The owner's apps, in the order they were added.
@@ -92,7 +96,7 @@ impl Registry {
                 descriptor::apply_overrides(&mut app)?;
                 descriptor::validate_app(&app)?;
                 check_reach(reach, &app)?;
-                let status = descriptor::discover(&self.http, &mut app);
+                let status = descriptor::discover(self.http(reach), &mut app);
                 self.store(owner, reach, app, status, RegistryChange::Edited)
             }
             RegistryCommand::Enable { id } => {
@@ -115,7 +119,7 @@ impl Registry {
             RegistryCommand::Refresh { id } => {
                 let mut app = self.find(owner, &id)?;
                 check_reach(reach, &app)?;
-                let status = descriptor::discover(&self.http, &mut app);
+                let status = descriptor::discover(self.http(reach), &mut app);
                 self.store(owner, reach, app, status, RegistryChange::Refreshed)
             }
         }
@@ -148,8 +152,14 @@ impl Registry {
         descriptor::apply_overrides(&mut app)?;
         descriptor::validate_app(&app)?;
         check_reach(reach, &app)?;
-        let status = descriptor::discover(&self.http, &mut app);
+        let status = descriptor::discover(self.http(reach), &mut app);
         self.store(owner, reach, app, status, RegistryChange::Added)
+    }
+    fn http(&self, reach: Reach) -> &ureq::Agent {
+        match reach {
+            Reach::Anywhere => &self.http,
+            Reach::PublicOnly => &self.public_http,
+        }
     }
     fn find(&self, owner: AppOwner, id: &AppId) -> Result<App, RegistryError> {
         self.owned(owner, id)

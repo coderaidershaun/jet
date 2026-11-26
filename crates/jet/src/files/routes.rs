@@ -1,7 +1,7 @@
 //! Lets the page upload, list, change, delete, download and view the signed-in user's files,
 //! across all of their chats.
 
-use super::{About, Artifact, FileError, FileKind, Files, Library, MAX_FILE_BYTES, OpenedFile};
+use super::{About, Artifact, FileError, FileKind, Files, Library, OpenedFile};
 use crate::{
     account::SignedIn,
     chat::Chats,
@@ -10,8 +10,8 @@ use crate::{
 };
 use axum::{
     Extension, Json, Router,
-    body::Bytes,
-    extract::{DefaultBodyLimit, FromRef, Path, Query, State},
+    body::Body,
+    extract::{FromRef, Path, Query, State},
     http::{
         HeaderMap, HeaderValue, StatusCode,
         header::{
@@ -33,12 +33,7 @@ where
     Arc<Chats>: FromRef<S>,
 {
     Router::new()
-        .route(
-            "/api/files",
-            post(upload_file)
-                .layer(DefaultBodyLimit::max(UPLOAD_BODY_LIMIT))
-                .get(list_files),
-        )
+        .route("/api/files", post(upload_file).get(list_files))
         .route("/api/files/archive", get(archive_all).post(archive_chosen))
         .route(
             "/api/files/{id}",
@@ -52,27 +47,19 @@ where
         .route("/api/files/{id}/restore", post(restore))
 }
 
-/// A little over the largest file, so that the exact limit is enforced where the file is kept and
-/// the page gets its message instead of a bare refusal.
-const UPLOAD_BODY_LIMIT: usize = MAX_FILE_BYTES + 64 * 1024;
-
 #[derive(Deserialize)]
 struct UploadName {
     name: String,
 }
 /// Keeps the request body as an upload. The file is hidden from Jet until a message carries it.
-// SMELL: each upload is held in memory whole until it is written, and nothing limits how many
-// arrive at once, so the server's memory grows with the bytes that visitors are sending.
 async fn upload_file(
     State(files): State<Files>,
     signed_in: SignedIn,
     Query(query): Query<UploadName>,
-    body: Bytes,
+    body: Body,
 ) -> Result<Json<About>, FileError> {
     let user = signed_in.user.id;
-    Ok(Json(
-        files.upload(user, &query.name, Vec::from(body)).await?,
-    ))
+    Ok(Json(files.upload_body(user, &query.name, body).await?))
 }
 /// Runs a change on a worker and, when it worked, tells the user's pages that their files changed.
 async fn change<T: Send + 'static>(
@@ -236,9 +223,7 @@ async fn archive(
     user: UserId,
     ids: Option<Vec<String>>,
 ) -> Result<Response, FileError> {
-    let (name, bytes) = on_worker(move || files.archive(user, ids.as_deref()))
-        .await
-        .map_err(FileError::Worker)??;
+    let (name, zip) = files.zip(user, ids).await?;
     let headers = [
         (CONTENT_TYPE, HeaderValue::from_static("application/zip")),
         (
@@ -248,7 +233,7 @@ async fn archive(
         ),
         (CACHE_CONTROL, HeaderValue::from_static("private, no-cache")),
     ];
-    Ok((headers, bytes).into_response())
+    Ok((headers, Body::from_stream(chunks_of(zip))).into_response())
 }
 
 /// Even a file opened on Jet's own address can run nothing and load nothing.
@@ -388,4 +373,23 @@ fn content_disposition(name: &str, disposition: Disposition) -> Option<HeaderVal
         "{kind}; filename=\"{plain}\"; filename*=UTF-8''{encoded}"
     ))
     .ok()
+}
+
+/// The file's bytes a piece at a time, so a zip is sent from disk and not held in memory. Each
+/// piece is a short read of a local file, quick enough to do here.
+fn chunks_of(
+    mut file: std::fs::File,
+) -> impl tokio_stream::Stream<Item = std::io::Result<Vec<u8>>> {
+    const PIECE_BYTES: usize = 64 * 1024;
+    tokio_stream::iter(std::iter::from_fn(move || {
+        let mut piece = vec![0; PIECE_BYTES];
+        match std::io::Read::read(&mut file, &mut piece) {
+            Ok(0) => None,
+            Ok(read) => {
+                piece.truncate(read);
+                Some(Ok(piece))
+            }
+            Err(error) => Some(Err(error)),
+        }
+    }))
 }

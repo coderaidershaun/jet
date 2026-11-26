@@ -1,6 +1,12 @@
 //! Cuts math out of a reply before the Markdown parser reads it, so the parser never rewrites a
 //! formula. Each formula leaves a marker behind that stands for it until the events are restored.
 
+use std::iter::Peekable;
+use std::ops::Range;
+use std::vec::IntoIter;
+
+use pulldown_cmark::{CodeBlockKind, Event, LinkType, Parser, Tag};
+
 // Private-use characters that bracket a marker. A reply's own copies are replaced first, so every
 // one that reaches the parser was written here.
 pub(super) const OPEN: char = '\u{E000}';
@@ -59,13 +65,18 @@ impl Protected {
     }
 
     /// Like [`Protected::new`], but each single `$` outside code is written as `\$` into the
-    /// text, so a Markdown reader that reads `$` as math sees money.
+    /// text, so a Markdown reader that reads `$` as math sees money. Indented code, autolinks and
+    /// raw HTML come back as written too, because a Markdown reader takes them as they are.
     pub(super) fn with_money_escaped(text: &str) -> Protected {
         Protected::scan(text, Money::Escaped)
     }
 
     fn scan(text: &str, money: Money) -> Protected {
         let text = text.replace([OPEN, CLOSE], "\u{FFFD}");
+        let verbatim = match money {
+            Money::Plain => Vec::new(),
+            Money::Escaped => taken_as_written(&text),
+        };
         let mut scanner = Scanner {
             text: &text,
             bytes: text.as_bytes(),
@@ -74,6 +85,7 @@ impl Protected {
             markers: Vec::new(),
             no_closer_before: [0; 3],
             money,
+            verbatim: verbatim.into_iter().peekable(),
         };
         scanner.run();
         Protected {
@@ -95,11 +107,17 @@ struct Scanner<'t> {
     /// searched once and not once for each opener.
     no_closer_before: [usize; 3],
     money: Money,
+    /// Where the text is copied byte for byte, in order of start.
+    verbatim: Peekable<IntoIter<Range<usize>>>,
 }
 
 impl Scanner<'_> {
     fn run(&mut self) {
         while let Some(&byte) = self.bytes.get(self.at) {
+            if let Some(end) = self.verbatim_end() {
+                self.copy_to(end);
+                continue;
+            }
             let starts_line = self.at == 0 || self.bytes[self.at - 1] == b'\n';
             if starts_line && self.copy_fence() {
                 continue;
@@ -115,6 +133,14 @@ impl Scanner<'_> {
                 _ => self.copy_to(self.at + self.width_at(self.at)),
             }
         }
+    }
+
+    /// The end of the verbatim range that `at` lies in, if any.
+    fn verbatim_end(&mut self) -> Option<usize> {
+        let at = self.at;
+        while self.verbatim.next_if(|range| range.end <= at).is_some() {}
+        let range = self.verbatim.peek().filter(|range| range.start <= at)?;
+        Some(range.end)
     }
 
     fn backslash(&mut self) {
@@ -303,6 +329,29 @@ impl Scanner<'_> {
         self.out.push_str(&self.text[self.at..end]);
         self.at = end;
     }
+}
+
+/// The indented code blocks, autolinks and raw HTML of the text, in order of start.
+fn taken_as_written(text: &str) -> Vec<Range<usize>> {
+    let mut ranges: Vec<Range<usize>> = Parser::new(text)
+        .into_offset_iter()
+        .filter(|(event, _)| {
+            matches!(
+                event,
+                Event::Start(
+                    Tag::CodeBlock(CodeBlockKind::Indented)
+                        | Tag::HtmlBlock
+                        | Tag::Link {
+                            link_type: LinkType::Autolink | LinkType::Email,
+                            ..
+                        }
+                ) | Event::InlineHtml(_)
+            )
+        })
+        .map(|(_, range)| range)
+        .collect();
+    ranges.sort_by_key(|range| range.start);
+    ranges
 }
 
 fn indent_of(line: &[u8]) -> usize {

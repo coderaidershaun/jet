@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 use super::memory::{MemoryError, NewEntry, Saved, Session, now_ms};
 use super::session_policy::FreshReason;
 use super::{Claim, shown};
-use crate::chat::{Entry, EntryId, EntryStatus, Event, Failure, Role, SessionId, TurnIdentity};
+use crate::chat::{
+    Entry, EntryId, EntryStatus, Event, Failure, Notes, Role, SessionId, TurnIdentity,
+};
 use crate::turn::{
     Request, SessionMode, Step, Stopper, Summary, Transport, TransportError, Turn, TurnError,
 };
@@ -25,6 +27,8 @@ pub(super) struct Context {
     pub persona_name: String,
     /// Fingerprint of the prompt inputs, saved with the session.
     pub prompt_hash: String,
+    /// The notes the system prompt was made from.
+    pub notes: Notes,
     pub saved: Option<Session>,
     pub notice: Option<String>,
     /// The user's message that Jet's reaction goes on.
@@ -123,32 +127,41 @@ impl Reply {
     }
 
     /// Records the session as soon as Claude names it, so a crash mid-answer still leaves
-    /// something to resume.
-    // SMELL: notes the user saves after the send but before this point lose their stale
-    // mark here, so Claude only sees them in a later fresh conversation.
+    /// something to resume. Notes the user saved since the send are not in this session's prompt,
+    /// so the session is then saved stale and the next message starts fresh.
     fn save_new_session(&self, session_id: &SessionId) -> Result<(), MemoryError> {
         let Context {
             memory: storage,
             request,
             saved,
             prompt_hash,
+            notes,
             ..
         } = &self.context;
         let kept = match (&request.session, saved) {
             (SessionMode::Resume(_), Some(saved)) => Some(saved),
             _ => None,
         };
+        let stored = storage.session()?;
+        // The user's save clears the mark of the stored session, or finds none to clear. Notes the
+        // review saves meanwhile leave the mark, as they do outside a send.
+        let user_saved_notes = storage.notes()? != *notes
+            && stored
+                .as_ref()
+                .is_none_or(|stored| stored.prompt_hash.is_empty());
+        let prompt_hash = if user_saved_notes {
+            String::new()
+        } else {
+            prompt_hash.clone()
+        };
         // The review may have moved on since this message was sent, so read its progress again.
-        let reviewed = storage
-            .session()?
-            .or_else(|| saved.clone())
-            .unwrap_or_default();
+        let reviewed = stored.or_else(|| saved.clone()).unwrap_or_default();
         storage.save_session(&Session {
             session_id: session_id.clone(),
             last_request_at: self.spawned_at,
             context_tokens: kept.map_or(0, |saved| saved.context_tokens),
             context: kept.map_or_else(Default::default, |saved| saved.context.clone()),
-            prompt_hash: prompt_hash.clone(),
+            prompt_hash,
             reviewed_through: reviewed.reviewed_through,
             reviewed_at: reviewed.reviewed_at,
         })
@@ -444,6 +457,28 @@ mod tests {
             2,
             "the user entry and the failed Jet entry are saved"
         );
+    }
+
+    #[test]
+    fn notes_the_user_saves_while_a_reply_starts_reach_the_next_message() {
+        let chat = Chat::new(["one", "two", "three"]);
+        chat.send(message("first"));
+        let (_, reply) = chat
+            .conversation
+            .send(chat.transport(), message("second"), None)
+            .unwrap();
+        let notes = Notes {
+            memory: "likes tea".into(),
+            ..Notes::default()
+        };
+        chat.conversation.save_notes(notes).unwrap();
+        let _: Vec<Event> = reply.collect();
+        chat.send(message("third"));
+
+        let requests = chat.requests();
+        assert!(matches!(requests[1].session, SessionMode::Resume(_)));
+        assert_eq!(requests[2].session, SessionMode::New);
+        assert!(requests[2].system_prompt.contains("likes tea"));
     }
 
     #[test]

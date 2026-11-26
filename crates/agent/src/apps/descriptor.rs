@@ -1,7 +1,13 @@
-//! Discover declared app endpoints while keeping manual choices authoritative.
-use super::{App, AppAddress, AppOverrides, Embedding, McpOverride, RegistryError};
+//! Discover declared app endpoints while keeping manual choices authoritative, and fetch them
+//! only from addresses the owner may reach.
+use super::address::is_server_side_ip;
+use super::{App, AppAddress, AppOverrides, Embedding, McpOverride, Reach, RegistryError};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use ureq::config::Config;
+use ureq::http::Uri;
+use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver};
+use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppDescriptor {
@@ -27,13 +33,47 @@ pub enum DiscoveryStatus {
     },
 }
 
-pub(super) fn client() -> ureq::Agent {
-    ureq::Agent::config_builder()
+/// The client that fetches descriptors of apps that may reach as far as `reach`. It checks every
+/// address it connects to, so a name that points at the server after it was saved is refused.
+pub(super) fn client(reach: Reach) -> ureq::Agent {
+    let config = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(2)))
         .max_redirects(0)
         .http_status_as_error(false)
-        .build()
-        .into()
+        .build();
+    let resolver = ReachResolver {
+        inner: DefaultResolver::default(),
+        reach,
+    };
+    ureq::Agent::with_parts(config, DefaultConnector::default(), resolver)
+}
+
+#[derive(Debug)]
+struct ReachResolver {
+    inner: DefaultResolver,
+    reach: Reach,
+}
+
+impl Resolver for ReachResolver {
+    fn resolve(
+        &self,
+        uri: &Uri,
+        config: &Config,
+        timeout: NextTimeout,
+    ) -> Result<ResolvedSocketAddrs, ureq::Error> {
+        let addresses = self.inner.resolve(uri, config, timeout)?;
+        if self.reach == Reach::PublicOnly
+            && addresses
+                .iter()
+                .any(|address| is_server_side_ip(address.ip()))
+        {
+            return Err(ureq::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "the app's address is on the server or its private network, which only an admin's app may reach",
+            )));
+        }
+        Ok(addresses)
+    }
 }
 
 pub(super) fn discover(http: &ureq::Agent, app: &mut App) -> DiscoveryStatus {
@@ -181,4 +221,38 @@ pub(super) fn validate_app(app: &App) -> Result<(), RegistryError> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    #[test]
+    fn only_an_admins_app_is_discovered_at_a_name_on_the_server() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
+        });
+        let base = AppAddress::parse(&format!("http://localhost:{port}/")).unwrap();
+
+        assert_eq!(
+            fetch(&client(Reach::Anywhere), &base),
+            Err(DiscoveryStatus::Missing)
+        );
+        server.join().unwrap();
+        let Err(DiscoveryStatus::Unavailable { message }) =
+            fetch(&client(Reach::PublicOnly), &base)
+        else {
+            panic!("a public-only app at localhost must not be fetched");
+        };
+        assert!(message.contains("private network"), "{message}");
+    }
 }

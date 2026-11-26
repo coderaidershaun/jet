@@ -115,6 +115,7 @@ impl Handler {
             sheet: arguments["sheet"].as_str().map(str::to_owned),
             start: number("start"),
             count: number("count"),
+            skip: number("skip"),
         };
         let id = arguments["id"].as_str().unwrap_or_default();
         let user = binding.owner.user;
@@ -207,6 +208,7 @@ impl Handler {
                 .meta
                 .get(agent::TOOL_USE_META)
                 .and_then(Value::as_str),
+            request_id: &request_id,
             target: &target,
             arguments: &sent,
         };

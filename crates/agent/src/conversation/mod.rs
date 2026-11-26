@@ -281,6 +281,7 @@ impl Conversation {
                 .and_then(|reason| reason.notice(&message.persona.name)),
             persona_name: message.persona.name,
             prompt_hash,
+            notes,
             saved,
             react_on,
             answers_reaction,

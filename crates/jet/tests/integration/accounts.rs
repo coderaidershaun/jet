@@ -59,6 +59,7 @@ fn every_kind_of_route_refuses_a_request_without_a_sign_in() {
         ("GET", "/api/events".to_owned()),
         ("GET", format!("/api/files/{app}")),
         ("POST", "/api/voice/speech".to_owned()),
+        ("POST", "/api/voice/hear".to_owned()),
         ("GET", "/api/apps".to_owned()),
         ("GET", format!("/apps/{app}/")),
     ];

@@ -1,9 +1,11 @@
-//! Taking in a file the user attached: the name cleaned, the kind checked by extension and by the
-//! first bytes, the size held to the limits, and the file described by the reader process before
-//! it is kept.
+//! Taking in a file the user attached: the body read once the upload has its place and in time,
+//! the name cleaned, the kind checked by extension and by the first bytes, the size held to the
+//! limits, and the file described by the reader process before it is kept.
+
+use axum::body::{Body, to_bytes};
 
 use super::kind::FileKind;
-use super::{About, FileError, Files, Origin};
+use super::{About, FileError, Files, Origin, wait_for};
 use crate::store::UserId;
 
 /// The largest file, in bytes.
@@ -14,8 +16,34 @@ pub(super) const MAX_USER_BYTES: u64 = 256 * 1024 * 1024;
 pub(super) const MAX_STORE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// The longest file name a file system takes.
 const MAX_NAME_BYTES: usize = 255;
+/// A little over the largest file, so that the exact limit is enforced where the file is kept and
+/// the page gets its message instead of a bare refusal.
+const BODY_LIMIT: usize = MAX_FILE_BYTES + 64 * 1024;
 
 impl Files {
+    /// Reads an upload's body and keeps it as [`Files::upload`] does. The body is read only once
+    /// the upload has one of the few places, so only those uploads are held in memory, and a body
+    /// that does not arrive in time gives its place back.
+    ///
+    /// # Errors
+    /// - [`FileError::Busy`] when no place comes free in time.
+    /// - [`FileError::SlowUpload`] when the body does not arrive in time.
+    /// - [`FileError::TooLarge`] when the body is over the limit or is cut off.
+    /// - Any error of [`Files::upload`].
+    pub async fn upload_body(
+        &self,
+        user: UserId,
+        name: &str,
+        body: Body,
+    ) -> Result<About, FileError> {
+        let _place = wait_for(&self.uploads, self.waits.queue).await?;
+        let bytes = tokio::time::timeout(self.waits.body, to_bytes(body, BODY_LIMIT))
+            .await
+            .map_err(|_| FileError::SlowUpload(clean_name(name)))?
+            .map_err(|_| FileError::TooLarge(clean_name(name)))?;
+        self.upload(user, name, Vec::from(bytes)).await
+    }
+
     /// Keeps a file the user uploaded, hidden from Jet until its message is sent. Only a file the
     /// reader could describe is kept, so nothing unreadable is ever served.
     ///

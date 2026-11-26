@@ -27,9 +27,8 @@ pub fn is_server_side(url: &Url) -> bool {
     }
 }
 
-/// Like [`is_server_side`], and also true when the name resolves to such an address now.
-// SMELL: the name is resolved only when the app is saved, so a name that points elsewhere later
-// (DNS rebinding) still reaches the server. Checking each connection would close it.
+/// Like [`is_server_side`], and also true when the name resolves to such an address now. A name
+/// can point elsewhere later, so the app proxy checks each address it connects to as well.
 pub fn reaches_server_side(url: &Url) -> bool {
     if is_server_side(url) {
         return true;
@@ -38,11 +37,18 @@ pub fn reaches_server_side(url: &Url) -> bool {
         return false;
     };
     url.socket_addrs(|| None).is_ok_and(|addresses| {
-        addresses.iter().any(|address| match address.ip() {
-            IpAddr::V4(ip) => is_private_v4(ip),
-            IpAddr::V6(ip) => is_private_v6(ip),
-        })
+        addresses
+            .iter()
+            .any(|address| is_server_side_ip(address.ip()))
     })
+}
+
+/// Whether the address is on the server itself or a private network.
+pub fn is_server_side_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => is_private_v4(ip),
+        IpAddr::V6(ip) => is_private_v6(ip),
+    }
 }
 
 fn is_private_v4(ip: Ipv4Addr) -> bool {

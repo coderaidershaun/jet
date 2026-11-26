@@ -6,7 +6,7 @@ mod target;
 
 use super::Apps;
 use crate::{account::SignedIn, lock};
-use agent::apps::{App, AppId, DiscoveryStatus};
+use agent::apps::{App, AppId, DiscoveryStatus, Reach};
 use axum::{
     Json, Router,
     body::Body,
@@ -27,7 +27,10 @@ use url::Url;
 
 #[derive(Clone)]
 pub(crate) struct Proxy {
+    /// The client of an admin's apps, which may be on the server itself.
     client: Client<Connector, Body>,
+    /// The client of everyone else's apps, which reaches only public addresses.
+    public_client: Client<Connector, Body>,
     public: Url,
     listen: SocketAddr,
 }
@@ -51,14 +54,26 @@ impl Proxy {
             }
         };
         let public = Url::parse(&origin).map_err(|error| SetupError(error.to_string()))?;
-        let connector = Connector::new()
-            .map_err(|error| SetupError(format!("app TLS configuration failed: {error}")))?;
-        let client = Client::builder(TokioExecutor::new()).build(connector);
+        let client = |reach| {
+            Connector::new(reach)
+                .map(|connector| Client::builder(TokioExecutor::new()).build(connector))
+                .map_err(|error| SetupError(format!("app TLS configuration failed: {error}")))
+        };
         Ok(Self {
-            client,
+            client: client(Reach::Anywhere)?,
+            public_client: client(Reach::PublicOnly)?,
             public,
             listen,
         })
+    }
+
+    /// The client that may reach what the signed-in user's apps may reach.
+    fn client(&self, signed_in: &SignedIn) -> &Client<Connector, Body> {
+        if signed_in.user.is_admin {
+            &self.client
+        } else {
+            &self.public_client
+        }
     }
 }
 
@@ -151,7 +166,7 @@ async fn forward(
         .map_err(|_| ProxyError::Path)?;
     let mut response = apps
         .proxy
-        .client
+        .client(&signed_in)
         .request(request)
         .await
         .map_err(|error| ProxyError::Offline(error.to_string()))?;
@@ -210,7 +225,7 @@ async fn ui_status(
         headers::request(request.headers_mut(), &target, &apps.proxy.public)?;
         let response = apps
             .proxy
-            .client
+            .client(&signed_in)
             .request(request)
             .await
             .map_err(|error| ProxyError::Offline(error.to_string()))?;

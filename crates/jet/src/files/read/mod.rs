@@ -41,6 +41,9 @@ pub(crate) struct Range {
     /// The first page, row or line, counted from 1.
     pub start: Option<usize>,
     pub count: Option<usize>,
+    /// The characters of the first page, row or line to pass over, because an earlier reading
+    /// already gave them.
+    pub skip: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +68,10 @@ pub(crate) enum Reading {
         more: bool,
         /// The sheets of a workbook, empty for anything else.
         sheets: Vec<String>,
+        /// When the last unit was cut at the limit, how many of its characters are read so far:
+        /// read on with `start` = `end` and `skip` = this.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cut: Option<usize>,
     },
     Image {
         /// The picture as a JPEG, in base64.
@@ -178,6 +185,7 @@ mod tests {
                 total,
                 more,
                 sheets,
+                ..
             } => (text, unit, start, end, total, more, sheets),
             Reading::Image { .. } => panic!("{kind:?} read as a picture"),
         }
@@ -287,12 +295,34 @@ mod tests {
         let (text, _, _, end, _, more, _) = text_of(FileKind::Text, long.as_bytes(), &past);
         assert_eq!((text.as_str(), end, more), ("", 1200, false));
 
-        let wide: String = "x".repeat(60_000);
-        let (text, _, _, end, _, more, _) = text_of(FileKind::Text, wide.as_bytes(), &whole);
+        let wide: String = format!("{}{}\nnext", "x".repeat(40_000), "y".repeat(20_000));
+        let first = read(FileKind::Text, wide.as_bytes(), &whole).unwrap();
+        let Reading::Text {
+            text,
+            end,
+            more,
+            cut,
+            ..
+        } = first
+        else {
+            panic!("text reads as text");
+        };
         assert_eq!(
-            (text.chars().count(), end, more),
-            (40_000, 1, false),
-            "a reading is cut to its limit"
+            (text.chars().count(), end, more, cut),
+            (40_000, 1, true, Some(40_000)),
+            "a reading is cut to its limit and says where to read on"
+        );
+        let on = Range {
+            start: Some(end),
+            skip: cut,
+            ..Range::default()
+        };
+        let (text, _, _, end, _, more, _) = text_of(FileKind::Text, wide.as_bytes(), &on);
+        assert_eq!(text, format!("{}\nnext", "y".repeat(20_000)));
+        assert_eq!(
+            (end, more),
+            (2, false),
+            "the rest of a cut line can be read"
         );
 
         for (kind, format) in [

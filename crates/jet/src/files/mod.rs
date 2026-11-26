@@ -12,6 +12,10 @@ mod routes;
 mod sandbox;
 mod upload;
 
+use std::sync::Arc;
+use std::time::Duration;
+
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use uuid::Uuid;
 
 use crate::WorkerFailed;
@@ -30,6 +34,26 @@ use upload::MAX_USER_BYTES;
 
 /// The most files `list` returns.
 const LIST_LIMIT: usize = 200;
+/// Uploads taken in at once. Each is held whole in memory until it is kept, so this bounds that
+/// memory to a few times the largest file.
+const UPLOADS_AT_ONCE: usize = 4;
+/// Zips built at once. Each is written to a temporary file, one stored file in memory at a time.
+const ARCHIVES_AT_ONCE: usize = 1;
+
+/// How long a request may wait at each step that other requests can hold up.
+#[derive(Clone, Copy)]
+struct Waits {
+    /// For a place at the uploads, the zips or the file reader.
+    queue: Duration,
+    /// For an upload's body to arrive once it has its place. It is shorter than `queue`, so a
+    /// stalled upload gives its place back before the next one in line gives up.
+    body: Duration,
+}
+
+const WAITS: Waits = Waits {
+    queue: Duration::from_secs(30),
+    body: Duration::from_secs(20),
+};
 
 /// A saved file, read back to be sent to the browser.
 #[derive(Debug)]
@@ -94,22 +118,33 @@ pub(crate) enum FileError {
     NameNotSendable,
     #[error("request worker failed: {0}")]
     Worker(WorkerFailed),
+    #[error("Jet is busy with other files. Try again in a moment.")]
+    Busy,
+    #[error("“{0}” took too long to arrive. Try again, or send a smaller file.")]
+    SlowUpload(String),
+    #[error("the chat was forgotten while the file was being written, so it was not kept")]
+    Forgotten,
 }
 
-/// Every user's files. Each call acts for one user and sees only that user's files.
-// SMELL: files are kept until Forget or until they are removed. Each user is held to 256 MiB and
-// the store to 2 GiB in all, counting earlier versions, and an upload never sent goes after a day
-// but only when its user next uploads, so a few visitors can still fill the store for a while.
+/// Every user's files. Each call acts for one user and sees only that user's files. A user keeps
+/// their files until they remove them or forget the chat, held to the user's limit and the store's.
 #[derive(Clone)]
 pub(crate) struct Files {
     store: Store,
     sandbox: Sandbox,
+    uploads: Arc<Semaphore>,
+    archives: Arc<Semaphore>,
+    waits: Waits,
     /// What one user's files and their kept versions may take, in bytes.
     user_limit: u64,
 }
 
 impl Files {
     pub fn new(store: Store) -> Files {
+        Files::with_waits(store, WAITS)
+    }
+
+    fn with_waits(store: Store, waits: Waits) -> Files {
         // A test sets a small limit, because filling 256 MiB would take too long.
         let user_limit = std::env::var("JET_TEST_USER_FILE_BYTES")
             .ok()
@@ -117,7 +152,10 @@ impl Files {
             .unwrap_or(MAX_USER_BYTES);
         Files {
             store,
-            sandbox: Sandbox::new(),
+            sandbox: Sandbox::new(waits.queue),
+            uploads: Arc::new(Semaphore::new(UPLOADS_AT_ONCE)),
+            archives: Arc::new(Semaphore::new(ARCHIVES_AT_ONCE)),
+            waits,
             user_limit,
         }
     }
@@ -135,6 +173,7 @@ impl Files {
             Added::Kept => Ok(()),
             Added::Full => Err(FileError::StoreFull),
             Added::UserFull => Err(FileError::UserFull(self.user_limit.div_ceil(1024 * 1024))),
+            Added::Forgotten => Err(FileError::Forgotten),
         }
     }
 
@@ -225,11 +264,99 @@ impl Files {
         Ok((about, reading))
     }
 
-    /// Removes every file sent or written in the chat.
-    ///
-    /// SMELL: an export still running after its turn was stopped can finish after this, and its
-    /// file then stays, linked from nowhere, until the next clear.
+    /// Removes every file sent or written in the chat. Call it after the chat's thread is
+    /// forgotten: a file begun before that and finished after it is then refused, not kept.
     pub fn clear(&self, chat: ChatId) -> Result<(), FileError> {
         Ok(self.store.remove_files(chat)?)
+    }
+}
+
+/// A place in the queue, or [`FileError::Busy`] when none comes free within `deadline`.
+async fn wait_for(
+    queue: &Arc<Semaphore>,
+    deadline: Duration,
+) -> Result<OwnedSemaphorePermit, FileError> {
+    match tokio::time::timeout(deadline, queue.clone().acquire_owned()).await {
+        Ok(permit) => Ok(permit.expect("the queue is never closed")),
+        Err(_) => Err(FileError::Busy),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::test_store;
+    use axum::body::Body;
+
+    fn quick(queue_ms: u64, body_ms: u64) -> (tempfile::TempDir, Files, UserId) {
+        let (dir, store, ada, _) = test_store();
+        let waits = Waits {
+            queue: Duration::from_millis(queue_ms),
+            body: Duration::from_millis(body_ms),
+        };
+        (dir, Files::with_waits(store, waits), ada)
+    }
+
+    /// Starts as many uploads as there are places, each sending nothing, and lets them take
+    /// their places.
+    async fn stall_every_place(
+        files: &Files,
+        user: UserId,
+    ) -> Vec<tokio::task::JoinHandle<Result<About, FileError>>> {
+        let stalled = (0..UPLOADS_AT_ONCE)
+            .map(|_| {
+                let files = files.clone();
+                let silent = tokio_stream::pending::<Result<Vec<u8>, std::io::Error>>();
+                tokio::spawn(async move {
+                    files
+                        .upload_body(user, "slow.txt", Body::from_stream(silent))
+                        .await
+                })
+            })
+            .collect();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        stalled
+    }
+
+    #[tokio::test]
+    async fn an_upload_waits_for_a_place_and_a_stalled_one_gives_its_place_back() {
+        let (_dir, files, ada) = quick(100, 10_000);
+        let _stalled = stall_every_place(&files, ada).await;
+        let refused = files.upload_body(ada, "a.exe", Body::from("MZ")).await;
+        assert!(matches!(refused, Err(FileError::Busy)), "{refused:?}");
+
+        let (_dir, files, ada) = quick(500, 50);
+        let stalled = stall_every_place(&files, ada).await;
+        let taken = files.upload_body(ada, "a.exe", Body::from("MZ")).await;
+        assert!(
+            matches!(taken, Err(FileError::Unsupported(_))),
+            "the upload got past the stalled ones and was read: {taken:?}"
+        );
+        for upload in stalled {
+            let gave_up = upload.await.unwrap();
+            assert!(
+                matches!(gave_up, Err(FileError::SlowUpload(_))),
+                "{gave_up:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_zip_waits_for_the_one_before_it() {
+        let (_dir, files, ada) = quick(50, 50);
+        let building = wait_for(&files.archives, files.waits.queue).await.unwrap();
+        let refused = files.zip(ada, None).await;
+        assert!(matches!(refused, Err(FileError::Busy)), "{refused:?}");
+        drop(building);
+        assert!(files.zip(ada, None).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_read_waits_for_a_free_reader() {
+        let (_dir, files, _) = quick(50, 50);
+        let readers = files.sandbox.readers.clone();
+        let _all_busy = readers.acquire_many_owned(2).await.unwrap();
+        let refused = files.sandbox.describe(FileKind::Text, b"hi", "a.txt").await;
+        assert!(matches!(refused, Err(FileError::Busy)), "{refused:?}");
     }
 }

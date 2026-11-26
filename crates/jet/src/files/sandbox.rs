@@ -52,13 +52,16 @@ enum Answer<T> {
 /// The parent side: starts readers, two at a time.
 #[derive(Clone)]
 pub(super) struct Sandbox {
-    readers: Arc<Semaphore>,
+    pub(super) readers: Arc<Semaphore>,
+    /// The longest a job waits for a free reader.
+    queue: Duration,
 }
 
 impl Sandbox {
-    pub fn new() -> Sandbox {
+    pub fn new(queue: Duration) -> Sandbox {
         Sandbox {
             readers: Arc::new(Semaphore::new(READERS_AT_ONCE)),
+            queue,
         }
     }
 
@@ -95,8 +98,7 @@ impl Sandbox {
         self.run(&job, contents, name).await
     }
 
-    // SMELL: the wait for a free reader has no deadline, so when many slow files arrive at once
-    // an upload or a read of a file waits for as long as the queue ahead of it takes.
+    /// Waits for a free reader, at most as long as `queue`, then runs the job in it.
     async fn run<T: DeserializeOwned>(
         &self,
         job: &Job,
@@ -107,11 +109,7 @@ impl Sandbox {
             eprintln!("jet: could not read {name:?}: {why}");
             FileError::Unreadable(name.to_owned())
         };
-        let _permit = self
-            .readers
-            .acquire()
-            .await
-            .expect("the semaphore is never closed");
+        let _permit = super::wait_for(&self.readers, self.queue).await?;
         let mut child = start_reader()?;
         let mut stdin = child.stdin.take().expect("stdin was piped");
         let mut stdout = child.stdout.take().expect("stdout was piped");

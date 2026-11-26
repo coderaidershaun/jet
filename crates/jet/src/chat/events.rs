@@ -6,7 +6,7 @@ use crate::store::ChatId;
 use agent::{EntryId, Event, ShownEntry, TurnIdentity, mcp::ToolTarget};
 use serde::Serialize;
 use serde_json::{Value, json};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 
@@ -36,6 +36,8 @@ impl From<&TurnIdentity> for TurnContext {
 pub(crate) struct RunningCall<'a> {
     /// The id of the call's card, when the provider gives one.
     pub card_id: Option<&'a str>,
+    /// Jet's own id of the call, which tells two calls apart when neither names its card.
+    pub request_id: &'a str,
     pub target: &'a ToolTarget,
     /// The arguments as the model wrote them.
     pub arguments: &'a Value,
@@ -66,6 +68,9 @@ pub(crate) struct ActiveTurn {
     /// A web search or page read came back in this turn.
     #[serde(skip)]
     read_web: bool,
+    /// The card each call that names no card has taken, by the call's request id.
+    #[serde(skip)]
+    claimed: HashMap<String, String>,
 }
 
 impl ActiveTurn {
@@ -82,6 +87,7 @@ impl ActiveTurn {
             mood: None,
             tools: Vec::new(),
             read_web: false,
+            claimed: HashMap::new(),
         }
     }
 
@@ -138,22 +144,32 @@ impl ActiveTurn {
     }
 
     /// The id of the still-running card the call belongs to. A call that names its card gets that
-    /// card or nothing, never another one that merely looks the same.
-    pub(super) fn card_of(&self, call: &RunningCall) -> Option<String> {
-        match call.card_id {
-            Some(card_id) => self
-                .tools
-                .iter()
-                .any(|tool| tool["id"] == card_id && tool["kind"] == TOOL_STARTED)
-                .then(|| card_id.to_owned()),
-            // SMELL: Codex and agy name no card for a call, so two identical calls at once still share the first card.
-            None => self.running_call_id(call.target, call.arguments),
+    /// card or nothing, never another one that merely looks the same. A call that names none, as
+    /// from Codex and agy, keeps the first look-alike card that no other call has taken.
+    pub(super) fn card_of(&mut self, call: &RunningCall) -> Option<String> {
+        if let Some(card_id) = call.card_id {
+            return self.is_running(card_id).then(|| card_id.to_owned());
         }
+        if let Some(card_id) = self.claimed.get(call.request_id)
+            && self.is_running(card_id)
+        {
+            return Some(card_id.clone());
+        }
+        let card_id = self.free_card(call.target, call.arguments)?;
+        self.claimed
+            .insert(call.request_id.to_owned(), card_id.clone());
+        Some(card_id)
     }
 
-    /// Finds the id of the first still-running call that names the same app, tool and arguments
-    /// as the model sent.
-    fn running_call_id(&self, target: &ToolTarget, arguments: &Value) -> Option<String> {
+    fn is_running(&self, card_id: &str) -> bool {
+        self.tools
+            .iter()
+            .any(|tool| tool["id"] == card_id && tool["kind"] == TOOL_STARTED)
+    }
+
+    /// Finds the id of the first still-running card, not taken by another call, that names the
+    /// same app, tool and arguments as the model sent.
+    fn free_card(&self, target: &ToolTarget, arguments: &Value) -> Option<String> {
         // The card keeps the app id as the model wrote it, so it is compared as an id, not as text.
         let names_app = |server: &Value| {
             server
@@ -167,10 +183,13 @@ impl ActiveTurn {
                 && tool["tool"] == target.tool
                 && tool["input"] == *arguments
         };
+        let is_taken = |card_id: &str| self.claimed.values().any(|taken| taken == card_id);
         self.tools
             .iter()
             .filter(is_this_call)
-            .find_map(|tool| tool["id"].as_str().map(str::to_owned))
+            .filter_map(|tool| tool["id"].as_str())
+            .find(|card_id| !is_taken(card_id))
+            .map(str::to_owned)
     }
 }
 
@@ -332,5 +351,48 @@ impl Runtime {
 
     pub fn publish(&mut self, turn: Option<TurnContext>, event: Value) {
         lock(&self.feed).publish(Some(self.chat), turn, event);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agent::ToolStart;
+
+    #[test]
+    fn two_identical_calls_that_name_no_card_each_keep_their_own_card() {
+        let app = uuid::Uuid::new_v4().to_string();
+        let identity = TurnContext {
+            request_id: "request".into(),
+            client_id: "client".into(),
+            turn_id: "turn".into(),
+        };
+        let mut turn = ActiveTurn::new(identity, None, None);
+        for id in ["first", "second"] {
+            turn.apply(&Event::ToolStarted(ToolStart {
+                id: id.into(),
+                server: app.clone(),
+                tool: "fetch".into(),
+                input: json!({"page": 1}),
+            }));
+        }
+        let target = ToolTarget {
+            app_id: app.parse().unwrap(),
+            tool: "fetch".into(),
+        };
+        let arguments = json!({"page": 1});
+        let call = |request_id| RunningCall {
+            card_id: None,
+            request_id,
+            target: &target,
+            arguments: &arguments,
+        };
+        let one = turn.card_of(&call("one"));
+        let two = turn.card_of(&call("two"));
+        let one_again = turn.card_of(&call("one"));
+        assert_eq!(
+            (one.as_deref(), two.as_deref(), one_again.as_deref()),
+            (Some("first"), Some("second"), Some("first"))
+        );
     }
 }

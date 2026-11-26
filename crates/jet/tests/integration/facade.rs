@@ -326,6 +326,12 @@ fn exported_file_downloads_and_forget_removes_it() {
                 .is_some_and(|history| history.len() == 2)
     });
     assert_eq!(snapshot["history"][1]["status"], "complete", "{snapshot}");
+    let asked = &snapshot["history"][1]["tools"][0]["input"];
+    assert_eq!(asked["title"], "Volatility smile", "{asked}");
+    assert!(
+        asked["markdown"].is_null(),
+        "the thread keeps the title the card shows, not the document: {asked}"
+    );
     let result = &snapshot["history"][1]["tools"][0]["result"];
     assert_eq!(result["name"], "Volatility smile.pdf", "{result}");
     assert_eq!(result["format"], "pdf");
@@ -391,7 +397,9 @@ fn exported_file_downloads_and_forget_removes_it() {
     let html = String::from_utf8(body).unwrap();
     for formula in ["\\sigma^2", "C - P = S - K e^{-rT}"] {
         assert!(
-            html.contains(&format!("<img class=\"math\" alt=\"{formula}\"")),
+            html.contains(&format!(
+                "<svg class=\"math\" role=\"img\" aria-label=\"{formula}\""
+            )),
             "chat maths must be typeset: {formula}"
         );
     }

@@ -12,6 +12,9 @@ const PARAGRAPH_AFTER: f32 = 7.0;
 pub(super) const ITEM_AFTER: f32 = 3.0;
 const RULE_THICKNESS: f32 = 0.5;
 const RULE_ROOM: f32 = 6.0;
+/// Text nested deeper than this is set at this depth, so that it keeps more than half the width of
+/// the page and never runs off it.
+const DEEPEST_INDENT: usize = 12;
 /// A heading stays with this many lines of what follows it.
 const HEADING_KEEPS: usize = 2;
 
@@ -35,9 +38,7 @@ impl Layout<'_> {
                 is_quoted,
             } => {
                 let look = if *is_quoted { BODY.secondary() } else { BODY };
-                // SMELL: the indent has no limit, so text nested more than about 30 deep runs off
-                // the page.
-                let x = INDENT * *indent as f32;
+                let x = indent_x(*indent);
                 let mut chunks = self.set(spans, look, (x, TEXT_WIDTH - x), Align::Left);
                 space(&mut chunks, 0.0, PARAGRAPH_AFTER);
                 chunks
@@ -48,7 +49,7 @@ impl Layout<'_> {
                 spans,
                 indent,
             } => {
-                let x = INDENT * *indent as f32;
+                let x = indent_x(*indent);
                 let mut chunks = self.hanging(marker, spans, BODY, (x, INDENT));
                 let after = if is_before_item {
                     ITEM_AFTER
@@ -142,6 +143,11 @@ impl Layout<'_> {
     }
 }
 
+/// How far text nested `depth` deep starts from the left margin.
+fn indent_x(depth: usize) -> f32 {
+    INDENT * depth.min(DEEPEST_INDENT) as f32
+}
+
 /// Wishes for the space above the first chunk and below the last.
 pub(super) fn space(chunks: &mut [Chunk], before: f32, after: f32) {
     if let Some(first) = chunks.first_mut() {
@@ -149,5 +155,37 @@ pub(super) fn space(chunks: &mut [Chunk], before: f32, after: f32) {
     }
     if let Some(last) = chunks.last_mut() {
         last.after = last.after.max(after);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::faces::Faces;
+    use super::*;
+
+    #[test]
+    fn text_nested_very_deep_stays_on_the_page() {
+        let faces = Faces::new().expect("the fonts load");
+        let quote = format!(
+            "{} deep words that fill a line of the page",
+            "> ".repeat(60)
+        );
+        let list = (0..60).fold(String::new(), |list, depth| {
+            format!(
+                "{list}{}- deep words that fill a line of the page\n",
+                "  ".repeat(depth)
+            )
+        });
+        for markdown in [quote, list] {
+            let chunks = Layout::new(&faces).markdown(&markdown);
+            for item in chunks.iter().flat_map(|chunk| &chunk.items) {
+                if let Item::Glyphs { x, run, size, .. } = item {
+                    assert!(
+                        *x + run.width(*size) <= TEXT_WIDTH,
+                        "a run at {x} leaves the page"
+                    );
+                }
+            }
+        }
     }
 }

@@ -17,6 +17,8 @@ pub(crate) enum Added {
     Full,
     /// Keeping the file would take this user's files and their kept versions past the user's limit.
     UserFull,
+    /// The chat was forgotten after the file was begun, so no thread would link to it.
+    Forgotten,
 }
 
 /// What `change_file` did.
@@ -48,7 +50,8 @@ const ONE_SEEN: &str = "SELECT about FROM files WHERE id = ?1 AND user_id = ?2 A
 impl Store {
     /// Keeps the file, unless all the files together would then be over `limit` bytes, or the
     /// user's own over `user_limit`. `chat` is the chat that wrote it, or `None` for an upload
-    /// that is not sent yet.
+    /// that is not sent yet. A file of a chat that was forgotten at or after `about.at`, the time
+    /// the file was begun, is not kept.
     pub(crate) fn add_file(
         &self,
         user: UserId,
@@ -60,13 +63,21 @@ impl Store {
         let text = to_json(about)?;
         self.try_with(|db| {
             let transaction = db.transaction()?;
-            // An upload that was never sent is dropped after a day, so a user is not locked out by
-            // files they cannot see.
-            if chat.is_none() {
-                transaction.execute(
-                    "DELETE FROM files WHERE user_id = ?1 AND attached = 0 AND at < ?2",
-                    params![user.0, i64::try_from(about.at).unwrap_or(i64::MAX) - UNSENT_MS],
-                )?;
+            let begun = i64::try_from(about.at).unwrap_or(i64::MAX);
+            // Every user's uploads that were never sent are dropped after a day, so neither this
+            // user nor the store is filled by files nobody can see.
+            transaction.execute(
+                "DELETE FROM files WHERE attached = 0 AND at < ?1",
+                [begun - UNSENT_MS],
+            )?;
+            if let Some(chat) = chat
+                && transaction.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM entries WHERE chat_id = ?1 AND forgotten_at >= ?2)",
+                    params![chat.0, begun],
+                    |row| row.get::<_, bool>(0),
+                )?
+            {
+                return Ok(Added::Forgotten);
             }
             if store_bytes(&transaction)? + contents.len() as u64 > limit {
                 return Ok(Added::Full);
@@ -79,7 +90,7 @@ impl Store {
                 params![
                     about.id.to_string(),
                     user.0,
-                    i64::try_from(about.at).unwrap_or(i64::MAX),
+                    begun,
                     about.attached,
                     text,
                     contents,
@@ -526,25 +537,47 @@ mod tests {
     }
 
     #[test]
-    fn a_new_upload_clears_the_uploads_never_sent_that_are_a_day_old() {
-        let (_dir, store, ada, _) = test_store();
+    fn any_new_file_clears_every_users_uploads_never_sent_that_are_a_day_old() {
+        let (_dir, store, ada, bob) = test_store();
         let main = store.main_chat(ada).unwrap().id;
         let (old_unsent, old_sent) = (upload(1_000, false), upload(1_000, true));
         let limits = (u64::MAX, u64::MAX);
         store
-            .add_file(ada, None, &old_unsent, b"x", limits)
+            .add_file(bob, None, &old_unsent, b"x", limits)
             .unwrap();
         store
             .add_file(ada, Some(main), &old_sent, b"x", limits)
             .unwrap();
-        let fresh = upload(10 * UNSENT_MS as u64, false);
-        store.add_file(ada, None, &fresh, b"x", limits).unwrap();
-        let has = |about: &About| {
+        let fresh = upload(10 * UNSENT_MS as u64, true);
+        store
+            .add_file(ada, Some(main), &fresh, b"x", limits)
+            .unwrap();
+        let has = |user: UserId, about: &About| {
             store
-                .file_about(ada, &about.id.to_string())
+                .file_about(user, &about.id.to_string())
                 .unwrap()
                 .is_some()
         };
-        assert!(!has(&old_unsent) && has(&old_sent) && has(&fresh));
+        assert!(!has(bob, &old_unsent) && has(ada, &old_sent) && has(ada, &fresh));
+    }
+
+    #[test]
+    fn a_file_begun_before_its_chat_was_forgotten_is_not_kept() {
+        let (_dir, store, ada, _) = test_store();
+        let main = store.main_chat(ada).unwrap().id;
+        let said = agent::NewEntry::user_text("Write the note");
+        store.add_entry(main, said, 1_000).unwrap();
+        store.forget_entries(main, 2_000).unwrap();
+        let limits = (u64::MAX, u64::MAX);
+        let begun_before = upload(1_500, true);
+        let begun_after = upload(2_500, true);
+        assert!(matches!(
+            store.add_file(ada, Some(main), &begun_before, b"x", limits),
+            Ok(Added::Forgotten)
+        ));
+        assert!(matches!(
+            store.add_file(ada, Some(main), &begun_after, b"x", limits),
+            Ok(Added::Kept)
+        ));
     }
 }

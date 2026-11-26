@@ -43,6 +43,7 @@ impl Files {
     /// - [`FileError::Scratch`] when the temporary folder cannot be used.
     /// - [`FileError::StoreFull`] when it would take the store past 2 GiB.
     /// - [`FileError::UserFull`] when it would take the user's files past their limit.
+    /// - [`FileError::Forgotten`] when the chat was forgotten while the file was written.
     pub fn export(
         &self,
         user: UserId,
@@ -50,6 +51,7 @@ impl Files {
         request: ExportRequest,
     ) -> Result<SavedFile, FileError> {
         let id = Uuid::new_v4();
+        let begun = agent::now_ms();
         let format = request.format;
         let name = format.file_name(&request.title);
         let document = Document {
@@ -71,13 +73,7 @@ impl Files {
         export::write(&document, format, &path)?;
         let contents = std::fs::read(&path).map_err(FileError::Scratch)?;
         let kind = FileKind::of_name(&name).ok_or_else(|| FileError::Unsupported(name.clone()))?;
-        let mut about = About::new(
-            name.clone(),
-            kind,
-            &contents,
-            Origin::Export,
-            agent::now_ms(),
-        );
+        let mut about = About::new(name.clone(), kind, &contents, Origin::Export, begun);
         about.id = id;
         about.context = request
             .context

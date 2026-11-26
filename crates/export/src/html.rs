@@ -1,9 +1,11 @@
-//! A document as one HTML file that stands alone: one inline style sheet, formulas as
-//! pictures inside the file as data addresses, nothing loaded from outside and nothing run.
+//! A document as one HTML file that stands alone: one inline style sheet, each formula as one
+//! picture inside the file that every use of it shows, nothing loaded from outside and nothing run.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use pulldown_cmark::{CowStr, Event, HeadingLevel, Tag, TagEnd, html::push_html};
+
+use std::collections::HashMap;
 
 use crate::commonmark;
 use crate::math::{Display, Formulas};
@@ -23,9 +25,10 @@ code, pre { font-family: "Source Code Pro", ui-monospace, Menlo, monospace; }
 code { font-size: .92em; }
 pre { margin: 0; padding: .75rem 1rem; overflow-x: auto; border-radius: 4px; background: #f4f4f4; font-size: .85rem; line-height: 1.45; }
 pre code { font-size: inherit; }
-img.math { font-size: 1.12em; }
+svg.math { font-size: 1.12em; }
 .display-math { display: block; margin: 1rem 0; text-align: center; }
-.display-math img.math, figure.formula img.math { max-width: 100%; font-size: 1.25em; }
+.display-math svg.math, figure.formula svg.math { max-width: 100%; height: auto; font-size: 1.25em; }
+svg.pictures { position: absolute; width: 0; height: 0; }
 .points { margin: 0 0 1rem; padding-left: 1.4rem; }
 .points li { margin-bottom: .25rem; }
 table { border-collapse: collapse; margin: 0 auto; font-size: .95rem; line-height: 1.4; }
@@ -45,9 +48,7 @@ figure.code .language { position: absolute; top: .3rem; right: .6rem; color: #66
 "#;
 
 pub(crate) fn render(document: &Document) -> String {
-    let mut page = Page {
-        formulas: Formulas::default(),
-    };
+    let mut page = Page::default();
     let title = escape(&document.title);
     let mut body = format!("<h1>{title}</h1>\n");
     if !document.origin.is_empty() {
@@ -60,6 +61,12 @@ pub(crate) fn render(document: &Document) -> String {
     if !document.sources.is_empty() {
         body.push_str(&source_list(&document.sources));
     }
+    if !page.pictures.is_empty() {
+        body.push_str(&format!(
+            "<svg class=\"pictures\" aria-hidden=\"true\"><defs>\n{}</defs></svg>\n",
+            page.pictures
+        ));
+    }
     format!(
         "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
@@ -68,8 +75,13 @@ pub(crate) fn render(document: &Document) -> String {
 }
 
 /// What the file is made of while it is written.
+#[derive(Default)]
 struct Page {
     formulas: Formulas,
+    /// The number of each formula picture in `pictures`.
+    numbers: HashMap<(String, Display), usize>,
+    /// Each formula picture once, as an SVG image that every use of the formula points to.
+    pictures: String,
 }
 
 fn source_list(sources: &[Source]) -> String {
@@ -146,31 +158,36 @@ impl Page {
     }
 
     /// A picture of the formula, sized in em so that it grows with the text around it. The LaTeX
-    /// is its alternative text, and the page shows it as code when the formula cannot be
-    /// typeset.
-    // SMELL: each use of a formula writes its whole picture into the page again. The pixel budget
-    // of the file keeps the page to tens of megabytes, but a formula used often should be written
-    // once and shared.
+    /// is its label, and the page shows it as code when the formula cannot be typeset.
     fn math(&mut self, latex: &str, display: Display) -> String {
         let Some(formula) = self.formulas.get(latex, display) else {
             return format!("<code class=\"math\">{}</code>", escape(latex));
         };
+        let (width, height) = (formula.picture_width_em(), formula.picture_height_em());
+        let next = self.numbers.len();
+        let number = *self
+            .numbers
+            .entry((latex.to_owned(), display))
+            .or_insert_with(|| {
+                self.pictures.push_str(&format!(
+                    "<image id=\"formula-{next}\" width=\"{width:.4}\" height=\"{height:.4}\" href=\"{}\"/>\n",
+                    png_data_uri(&formula.png)
+                ));
+                next
+            });
         // A formula set apart is given only its width, so that a wide one shrinks to the page and
         // keeps its shape. A formula in a line also needs its height and its place on the baseline.
         let style = match display {
-            Display::Block => format!("width:{:.4}em", formula.picture_width_em()),
+            Display::Block => format!("width:{width:.4}em"),
             Display::Inline => format!(
-                "width:{:.4}em;height:{:.4}em;vertical-align:-{:.4}em;margin:0 -{:.4}em",
-                formula.picture_width_em(),
-                formula.picture_height_em(),
+                "width:{width:.4}em;height:{height:.4}em;vertical-align:-{:.4}em;margin:0 -{:.4}em",
                 formula.descent_em + formula.bleed_em,
                 formula.bleed_em,
             ),
         };
         format!(
-            "<img class=\"math\" alt=\"{}\" src=\"{}\" style=\"{style}\">",
+            "<svg class=\"math\" role=\"img\" aria-label=\"{}\" viewBox=\"0 0 {width:.4} {height:.4}\" style=\"{style}\"><use href=\"#formula-{number}\"/></svg>",
             escape(latex),
-            png_data_uri(&formula.png),
         )
     }
 }

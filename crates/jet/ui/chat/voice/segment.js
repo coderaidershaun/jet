@@ -280,7 +280,9 @@ function step(text, i, to, weigher, cues) {
   return i + 1;
 }
 
-// SMELL: these rules copy the server's rules for what is spoken, so a change there must be made here too.
+// Warning: these rules copy the server's rules for what is spoken, so a change there has to be made
+// here too. Both test suites check one shared list of cases, which catches a drift only where those
+// cases reach.
 /** Counts the letters and digits that are spoken: not those of a web address, a `[1]` marker or a link's address. */
 function createWeigher() {
   let weight = 0;
@@ -306,7 +308,8 @@ function createWeigher() {
   };
 }
 
-function weighRegion(text, from, to, cues) {
+/** The letters and digits that are spoken between `from` and `to`, with no pauses. */
+export function weighRegion(text, from, to, cues) {
   const weigher = createWeigher();
   for (let i = from; i < to;) i = step(text, i, to, weigher, cues);
   return weigher.total();
@@ -315,9 +318,11 @@ function weighRegion(text, from, to, cues) {
 function constructWeight(text, found, cues) {
   switch (found.kind) {
     case 'code':
+      return plainNameWeight(text.slice(found.from, found.to));
     case 'math': {
-      const inner = text.slice(found.from, found.to);
-      return /^[\p{L}\p{N} -]+$/u.test(inner) ? (inner.match(/[\p{L}\p{N}]/gu) ?? []).length : 0;
+      // Display math, opened by `\[` or `$$`, is never spoken.
+      const isInline = text.startsWith('\\(', found.from - 2);
+      return isInline ? plainNameWeight(text.slice(found.from, found.to)) : 0;
     }
     case 'emphasis':
     case 'link':
@@ -327,6 +332,11 @@ function constructWeight(text, found, cues) {
     default:
       return 0;
   }
+}
+
+/** Code or a formula is spoken only when it is a plain name: letters, digits, spaces and hyphens. */
+function plainNameWeight(inner) {
+  return /^[\p{L}\p{N} -]+$/u.test(inner) ? (inner.match(/[\p{L}\p{N}]/gu) ?? []).length : 0;
 }
 
 /** The word without the quotes, brackets and emphasis marks that close it. */

@@ -194,6 +194,12 @@ fn attached_files_reach_jet_as_details_and_are_read_on_request() {
     assert!(results[2]["structuredContent"].is_null());
     assert_eq!(results[3]["isError"], true, "{}", results[3]);
 
+    let kept = &snapshot["history"][1]["tools"][1]["result"];
+    assert_eq!(kept["unit"], "rows", "{kept}");
+    assert!(
+        kept["text"].is_null(),
+        "the thread keeps what the card shows of a reading, not its text: {kept}"
+    );
     let saved = &snapshot["history"][1]["tools"][2]["result"];
     assert_eq!(saved["mime"], "image/jpeg", "{saved}");
     assert_eq!(saved["width"], 640);

@@ -256,7 +256,7 @@ fn main() -> ExitCode {
     if !is_user_message {
         return failed_before_the_turn("standard input holds no stream-json user message".into());
     }
-    if prompt == "exit" {
+    if prompt.lines().last() == Some("exit") {
         return failed_before_the_turn("authentication failed or timed out".into());
     }
     if let Ok(config) = std::fs::read(Path::new(AGENTS).join("mcp_config.json")) {

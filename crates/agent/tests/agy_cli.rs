@@ -183,6 +183,17 @@ fn an_agy_turn_runs_as_an_agent_that_has_only_jets_tools() {
     );
     finished(&resumed);
     assert_eq!(sent_message(&work), "and again");
+    // A turn that fails before the model reads a changed prompt leaves it to send again.
+    resumed.system_prompt = "Answer briefly.\n<memory>likes coffee</memory>".into();
+    let mut failing = resumed.clone();
+    failing.prompt = "exit".into();
+    let last = Turn::start(&cli, &failing).unwrap().last();
+    assert!(matches!(last, Some(Step::Failed(_))), "{last:?}");
+    assert!(sent_message(&work).contains("likes coffee"));
+    finished(&resumed);
+    assert!(sent_message(&work).contains("likes coffee"));
+    finished(&resumed);
+    assert_eq!(sent_message(&work), "and again");
 
     // The notes review: an agent of its own with agy's `finish` tool, which the schema needs,
     // and without Jet's tool server.

@@ -96,6 +96,8 @@ pub(super) fn paginate(mut chunks: Vec<Chunk>) -> Vec<Vec<Item>> {
     let mut page: Vec<Item> = Vec::new();
     let mut used = 0.0_f32;
     let mut previous_after = 0.0_f32;
+    // The last chunk the chunk before kept with it, and the height from that chunk to it.
+    let mut kept_before: Option<(usize, f32)> = None;
     for at in 0..chunks.len() {
         let page_is_empty = page.is_empty();
         let mut gap = if page_is_empty {
@@ -103,13 +105,18 @@ pub(super) fn paginate(mut chunks: Vec<Chunk>) -> Vec<Vec<Item>> {
         } else {
             previous_after.max(chunks[at].before)
         };
-        // SMELL: the chunks kept together are summed again for each chunk, so a heading of
-        // thousands of lines takes time that grows with its square.
         let last_kept = (at + chunks[at].keep_with_next).min(chunks.len() - 1);
-        let mut needed = chunks[at].height;
-        for kept in at + 1..=last_kept {
-            needed += chunks[kept - 1].after.max(chunks[kept].before) + chunks[kept].height;
-        }
+        // The lines of a heading all keep the same chunks after it, so each one's height is the
+        // one before less that line. Summing again for each line would grow with the square.
+        let needed = match kept_before {
+            Some((last, height)) if last == last_kept => {
+                height - chunks[at - 1].height - previous_after.max(chunks[at].before)
+            }
+            _ => (at + 1..=last_kept).fold(chunks[at].height, |needed, kept| {
+                needed + chunks[kept - 1].after.max(chunks[kept].before) + chunks[kept].height
+            }),
+        };
+        kept_before = Some((last_kept, needed));
         if !page_is_empty && used + gap + needed > CONTENT_HEIGHT {
             pages.push(std::mem::take(&mut page));
             used = 0.0;
@@ -235,5 +242,54 @@ fn fill(ink: u8) -> Fill {
     Fill {
         paint: luma::Color::new(ink).into(),
         ..Fill::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A chunk of `height` points that draws one rule, so each page shows how many chunks it got.
+    fn chunk(height: f32, keep_with_next: usize) -> Chunk {
+        let rule = Item::Rule {
+            x1: 0.0,
+            x2: 1.0,
+            y: 0.0,
+            thickness: 1.0,
+            ink: INK_RULE,
+        };
+        let mut chunk = Chunk::new(height, vec![rule]);
+        chunk.before = 4.0;
+        chunk.after = 4.0;
+        chunk.keep_with_next = keep_with_next;
+        chunk
+    }
+
+    fn chunks_per_page(chunks: Vec<Chunk>) -> Vec<usize> {
+        paginate(chunks).iter().map(Vec::len).collect()
+    }
+
+    #[test]
+    fn a_heading_moves_to_the_next_page_with_the_lines_it_keeps() {
+        // Twenty-two lines of 26 points fill most of a page of about 698 points, with room for one
+        // more. A heading of three lines that keeps two more lines needs room for five, so it starts
+        // the next page.
+        let mut chunks: Vec<Chunk> = (0..22).map(|_| chunk(26.0, 0)).collect();
+        chunks.extend((0..3).map(|at| chunk(26.0, 2 - at + 2)));
+        chunks.extend((0..10).map(|_| chunk(26.0, 0)));
+        assert_eq!(chunks_per_page(chunks), vec![22, 13]);
+
+        // A heading taller than a page cannot stay together: each line that does not fit with the
+        // rest goes to a page of its own until the rest fits.
+        let count = 40;
+        let heading: Vec<Chunk> = (0..count)
+            .map(|at| chunk(26.0, count - 1 - at + 2))
+            .collect();
+        let mut chunks = vec![chunk(26.0, 0)];
+        chunks.extend(heading);
+        chunks.extend((0..2).map(|_| chunk(26.0, 0)));
+        let mut expected = vec![1; 20];
+        expected.push(23);
+        assert_eq!(chunks_per_page(chunks), expected);
     }
 }

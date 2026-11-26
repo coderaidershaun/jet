@@ -10,8 +10,8 @@ use budget::{HearBudget, Moment};
 use health::VoiceHealth;
 use refusal::Refusal;
 
+use crate::on_worker;
 use crate::settings::{HearingEngine, SpeakingEngine};
-use crate::{WorkerFailed, on_worker};
 use agent::voice::{self, Phonon, Phonon2, PhononMode, VoiceError};
 use agent::{CUES, Cue, Mood};
 use axum::{
@@ -27,12 +27,18 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::Semaphore;
 
 const DISABLED: &str = "Voice is turned off on this server";
 const BROWSER_HEARS: &str = "The browser's own hearing runs in the page, not on the server";
 const BROWSER_SPEAKS: &str = "The browser's own voice runs in the page, not on the server";
+const BUSY: &str = "Jet's own voice is busy with other calls; try again soon";
+/// How long a call waits for its turn at a model on this server.
+const TURN_WAIT: Duration = Duration::from_secs(30);
 const AUDIO_TYPE: &str = "audio/L16;rate=24000;channels=1";
 /// The largest body the hear route reads. A 20 second clip is 640,000 bytes.
 const HEAR_BODY_LIMIT: usize = 1 << 20;
@@ -51,7 +57,8 @@ pub(crate) struct Voice {
 }
 
 /// A model that runs on this server. One call at a time works it, and the others wait here, not on
-/// a worker thread, so a burst of calls cannot use up the workers that the rest of Jet needs.
+/// a worker thread, so a burst of calls cannot use up the workers that the rest of Jet needs. A
+/// call that waits longer than `TURN_WAIT` is refused, so the waiting calls cannot pile up.
 struct OneAtATime<T> {
     model: Arc<T>,
     turn: Arc<Semaphore>,
@@ -75,22 +82,21 @@ impl<T: Default + Send + Sync + 'static> OneAtATime<T> {
         }
     }
 
-    // SMELL: the wait for a turn has no deadline, so calls that arrive faster than the model
-    // works queue up, each holding its request until the caller hangs up.
     async fn run<R: Send + 'static>(
         &self,
         call: impl FnOnce(&T) -> R + Send + 'static,
-    ) -> Result<R, WorkerFailed> {
-        let permit = Arc::clone(&self.turn)
-            .acquire_owned()
+    ) -> Result<R, Refusal> {
+        let permit = tokio::time::timeout(TURN_WAIT, Arc::clone(&self.turn).acquire_owned())
             .await
+            .map_err(|_| Refusal::rate_limited(BUSY))?
             .expect("the semaphore is never closed");
         let model = Arc::clone(&self.model);
-        on_worker(move || {
+        let result = on_worker(move || {
             let _permit = permit;
             call(&model)
         })
-        .await
+        .await?;
+        Ok(result)
     }
 }
 
@@ -227,8 +233,8 @@ struct SpeechRequest {
 
 /// The raw PCM of the spoken words of a piece of Markdown, said by the query's `engine`. The body
 /// is empty when the piece has nothing to say aloud. Phonon runs here, so it spends no Google quota.
-// SMELL: anyone who can reach this server can ask for speech, and each request spends Google
-// quota. The only limits are the cap on the length of a piece and the quota itself.
+/// Only a signed-in user reaches this route. What it spends of Google's quota is bounded by the
+/// cap on the length of a piece and by the quota itself.
 async fn speech(
     State(state): State<Voice>,
     Query(choice): Query<SpeakChoice>,
@@ -280,9 +286,10 @@ struct HearChoice {
 /// The words of a clip of 16 kHz 16-bit mono PCM, as `{"text": "..."}`. Any body is read as PCM.
 /// The query holds the `vocabulary` words that the clip may hold, one value each, and the
 /// `engine` and Phonon-2 `mode` that hear it. Phonon-2 runs here, so it spends no Google quota.
-// SMELL: anyone who can reach this server can ask it to hear a clip, and each request spends
-// Google quota. The clip length, the calls at once, the audio a minute and the audio a day are
-// capped, which bounds the damage but does not stop the exposure.
+/// Only a signed-in user reaches this route. What it spends of Google's quota is bounded by the
+/// hear budget of the server: the clip length, the calls at once, the audio a minute and a day.
+/// The budget is shared by every user on purpose: it guards the server's one Google quota, and
+/// every account is made by the server's owner, since nobody can sign up.
 async fn hear(
     State(state): State<Voice>,
     Query(query): Query<Vec<(String, String)>>,
@@ -346,6 +353,17 @@ mod tests {
             .unwrap();
         let refusal: serde_json::Value = serde_json::from_slice(&body).unwrap();
         refusal["message"].as_str().unwrap().to_owned()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_call_that_waits_too_long_for_its_turn_is_refused() {
+        let model = OneAtATime::<()>::new();
+        let _busy = Arc::clone(&model.turn).acquire_owned().await.unwrap();
+        let asked = tokio::time::Instant::now();
+        let refusal = model.run(|_| ()).await.unwrap_err();
+        assert_eq!(asked.elapsed(), TURN_WAIT);
+        assert_eq!(refusal.kind, refusal::RefusalKind::RateLimited);
+        assert_eq!(refusal.message, BUSY);
     }
 
     #[tokio::test]

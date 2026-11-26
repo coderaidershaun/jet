@@ -4,8 +4,6 @@
 use super::{FileKind, Range, Reading, Unit};
 
 /// The most characters one reading returns, so a single call cannot flood the model.
-// SMELL: each reading stays in the transcript as the call's result, so every reload sends it to
-// the browser again, although the card shows only a line about it.
 const READING_CHARS: usize = 40_000;
 const DEFAULT_PAGES: usize = 20;
 const DEFAULT_LINES: usize = 500;
@@ -16,6 +14,8 @@ const MAX_UNITS: usize = 2000;
 pub(super) struct Wanted {
     pub start: usize,
     pub count: usize,
+    /// The characters of the first unit to pass over.
+    pub skip: usize,
 }
 
 impl Wanted {
@@ -28,6 +28,7 @@ impl Wanted {
         Wanted {
             start: range.start.unwrap_or(1).max(1),
             count: range.count.unwrap_or(usual).clamp(1, MAX_UNITS),
+            skip: range.skip.unwrap_or(0),
         }
     }
 
@@ -39,10 +40,12 @@ impl Wanted {
 /// Pieces of a reading, added until the character limit is reached.
 pub(super) struct Excerpt {
     start: usize,
+    skip: usize,
     text: String,
     chars: usize,
     pieces: usize,
     end: usize,
+    cut: Option<usize>,
     pub is_full: bool,
 }
 
@@ -50,31 +53,31 @@ impl Excerpt {
     pub fn new(wanted: Wanted) -> Excerpt {
         Excerpt {
             start: wanted.start,
+            skip: wanted.skip,
             text: String::new(),
             chars: 0,
             pieces: 0,
             end: wanted.start - 1,
+            cut: None,
             is_full: false,
         }
     }
 
     /// Adds the piece numbered `number`, after `separator` when it is not the first. The first
-    /// piece is cut to the limit if it alone is longer; any later piece that would pass the
-    /// limit is left out, and so is everything after it.
-    // SMELL: the rest of a first piece that is cut is lost. The reading ends at that piece with
-    // nothing more to ask for, so Jet cannot read past the first 40,000 characters of one line or
-    // page, such as an HTML page saved on a single line.
+    /// piece starts after the characters to skip, and is cut to the limit if it is still longer,
+    /// noting where it was cut; any later piece that would pass the limit is left out, and so is
+    /// everything after it.
     pub fn push(&mut self, number: usize, separator: &str, piece: &str) {
         if self.is_full {
             return;
         }
-        let joiner = if self.pieces == 0 {
-            0
+        let (joiner, skipped) = if self.pieces == 0 {
+            (0, self.skip)
         } else {
-            separator.chars().count()
+            (separator.chars().count(), 0)
         };
         let room = READING_CHARS.saturating_sub(self.chars + joiner);
-        let length = piece.chars().count();
+        let length = piece.chars().count().saturating_sub(skipped);
         if length > room && self.pieces > 0 {
             self.is_full = true;
             return;
@@ -83,7 +86,10 @@ impl Excerpt {
             self.text.push_str(separator);
         }
         let kept = length.min(room);
-        self.text.extend(piece.chars().take(kept));
+        if kept < length {
+            self.cut = Some(skipped + kept);
+        }
+        self.text.extend(piece.chars().skip(skipped).take(kept));
         self.chars += joiner + kept;
         self.pieces += 1;
         self.end = number;
@@ -98,8 +104,9 @@ impl Excerpt {
             start: self.start,
             end,
             total,
-            more: end < total,
+            more: end < total || self.cut.is_some(),
             sheets,
+            cut: self.cut,
         }
     }
 }
