@@ -4,6 +4,10 @@ use super::{Email, Store, StoreError, User, UserId, seconds};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
+/// How long after a renewal its replaced token still renews, for a browser whose answer to that
+/// renewal was lost on the network and that tries again with the token it still holds.
+const GRACE_SECONDS: i64 = 60;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct SigninId(pub(crate) String);
 
@@ -70,6 +74,9 @@ impl Store {
         })
     }
 
+    /// Swaps the refresh token `old` for `new`. A token already replaced ends the whole sign-in,
+    /// except when it is offered again within the grace and its successor was never used: then
+    /// `new` takes the unused successor's place.
     pub(crate) fn rotate_refresh(
         &self,
         old: &[u8],
@@ -90,6 +97,20 @@ impl Store {
                 )
                 .optional()?;
             let rotation = match found {
+                Some((signin, Some(replaced_at), true))
+                    if (0..GRACE_SECONDS).contains(&(now - replaced_at))
+                        && is_latest_replaced(&transaction, old, &signin, replaced_at)? =>
+                {
+                    transaction.execute(
+                        "DELETE FROM refresh_tokens WHERE signin_id = ?1 AND replaced_at IS NULL",
+                        [&signin],
+                    )?;
+                    transaction.execute(
+                        "INSERT INTO refresh_tokens (hash, signin_id) VALUES (?1, ?2)",
+                        params![new, signin],
+                    )?;
+                    Rotation::Renewed(SigninId(signin))
+                }
                 Some((signin, Some(_), _)) => {
                     transaction.execute(
                         "UPDATE signins SET revoked_at = ?2 WHERE id = ?1 AND revoked_at IS NULL",
@@ -136,4 +157,20 @@ impl Store {
             Ok(())
         })
     }
+}
+
+/// Whether `old`, replaced at `replaced_at`, is the one token of its sign-in replaced last, so its
+/// successor is the current token and was never used. A tie counts as no.
+fn is_latest_replaced(
+    transaction: &rusqlite::Transaction,
+    old: &[u8],
+    signin: &str,
+    replaced_at: i64,
+) -> rusqlite::Result<bool> {
+    transaction.query_row(
+        "SELECT NOT EXISTS (SELECT 1 FROM refresh_tokens
+                            WHERE signin_id = ?1 AND hash <> ?2 AND replaced_at >= ?3)",
+        params![signin, old, replaced_at],
+        |row| row.get(0),
+    )
 }

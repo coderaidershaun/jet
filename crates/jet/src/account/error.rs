@@ -29,6 +29,8 @@ pub enum AccountError {
     },
     #[error("the signing secret has {length} bytes; it needs at least 32")]
     ShortSecret { length: usize },
+    #[error("{variable} must be set to a password that is not empty and is not the published one")]
+    PublishedSeedPassword { variable: &'static str },
     #[error("the signing secret cannot make a signing key")]
     Key(#[from] jsonwebtoken::errors::Error),
     #[error(transparent)]
@@ -53,6 +55,7 @@ impl AccountError {
             Self::Hash(_)
             | Self::Secret { .. }
             | Self::ShortSecret { .. }
+            | Self::PublishedSeedPassword { .. }
             | Self::Key(_)
             | Self::Store(_)
             | Self::Worker(_) => "io",

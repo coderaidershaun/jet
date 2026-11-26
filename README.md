@@ -87,9 +87,19 @@ at start; `jet seed --data-dir DIR` does the same and is safe to run again. Its 
 `admin1@gmail.com` and `admin2@gmail.com` (the team Commercial) and `admin3@gmail.com`, all with
 the password `000111`. They are not real mailboxes and Jet sends no mail.
 
+A public host, one whose `--public-origin` is HTTPS at a name other than `localhost`, `127.x.x.x`
+or `::1`, refuses `000111`, because anyone can read it here. Its operator sets the demo accounts'
+password in `JET_SEED_PASSWORD`: a fresh database is seeded with it, and with nothing while it is
+unset. A host seeded with `000111` before this rule keeps working: set `JET_SEED_PASSWORD` and
+restart, and each demo account still holding `000111` signs in with that password instead. Jet
+does not start when `JET_SEED_PASSWORD` is empty or is `000111`. A host on `127.0.0.1` or another
+loopback origin seeds and signs in with `000111` as before.
+
 A sign-in is two HttpOnly cookies: a signed JSON Web Token that lives 15 minutes
 (`--access-seconds` shortens it for tests) and a random refresh token that lives 30 days, is
-stored only as a hash and is replaced on each renewal; offering a replaced one ends the sign-in.
+stored only as a hash and is replaced on each renewal; offering a replaced one ends the sign-in,
+except within 60 seconds of its renewal while the token that replaced it is still unused, as when
+the answer to that renewal was lost: then the browser gets a new pair in its place.
 They are marked `Secure` when `--public-origin` is HTTPS, so plain HTTP on 127.0.0.1 still works.
 The sign-in page is `/signin/`; a visit with a sign-in that can still be renewed goes straight
 back to Jet. An open page renews its access token shortly before it runs out, and once more when
@@ -185,6 +195,14 @@ certificate under `/etc/letsencrypt/live/xchainanalytics.com/`; Certbot's enable
 renewal timer maintains it automatically. The live Nginx site is
 `/etc/nginx/sites-available/jet`.
 Every route of this public deployment needs a sign-in (see Accounts and sign-in).
+This host was seeded before a public host refused `000111`, so its operator writes the demo
+accounts' new password once, then runs `sudo systemctl daemon-reload` and restarts Jet:
+
+```sh
+install -d -m 0700 /home/ubuntu/.config/jet
+install -m 0600 /dev/null /home/ubuntu/.config/jet/env
+echo 'JET_SEED_PASSWORD=a long password of your own' > /home/ubuntu/.config/jet/env
+```
 
 To update the executable and restart Jet (the build needs cmake and g++, and Phonon-2 hears and Phonon speaks only once their models are in `/home/ubuntu/code/jet/models/`, the service's working folder; see Run). Jet loads CrispASR's libraries when it starts, so the second and third lines install them where the system's loader finds them, and Jet still starts after `target` is cleaned. On Linux they go to `/usr/local/lib`, not beside the program, because CrispASR's own library looks for the ggml libraries only in its build folder and the system's places. On a Mac, copying the `.dylib` files beside the program is enough.
 

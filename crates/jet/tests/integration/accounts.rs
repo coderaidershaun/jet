@@ -1,7 +1,10 @@
 //! Prove the sign-in through the real host: who gets in, what the cookies say, and what is refused.
-use super::support::{Host, OWNER, PASSWORD, agent, cookie_header, sign_in};
+use super::support::{Host, OWNER, PASSWORD, agent, cookie_header, listening_url, sign_in};
 use serde_json::{Value, json};
-use std::process::Command;
+use std::{
+    path::Path,
+    process::{Child, Command, Stdio},
+};
 
 const ACCOUNTS: [&str; 5] = [
     OWNER,
@@ -118,7 +121,7 @@ fn the_owner_signs_in_and_jet_knows_who_they_are() {
 
 #[test]
 fn cookies_are_http_only_and_same_site_and_secure_only_under_https() {
-    let plain = fresh(&[]);
+    let mut plain = fresh(&[]);
     let cookies = set_cookies(&sign_in(&plain.url, &plain.url, OWNER, PASSWORD));
     assert_eq!(cookies.len(), 2, "{cookies:?}");
     for cookie in &cookies {
@@ -126,9 +129,15 @@ fn cookies_are_http_only_and_same_site_and_secure_only_under_https() {
         assert!(cookie.contains("; SameSite="), "{cookie}");
         assert!(!cookie.contains("Secure"), "{cookie}");
     }
-    let public = "https://jet.test";
-    let secure = fresh(&["--public-origin", public]);
-    let cookies = set_cookies(&sign_in(&secure.url, public, OWNER, PASSWORD));
+    let seeded = std::mem::replace(&mut plain.dir, tempfile::tempdir().unwrap());
+    drop(plain);
+
+    let operator = "the operator's own password";
+    let (mut secure, url) = public(seeded.path(), &[("JET_SEED_PASSWORD", operator)]);
+    let published = sign_in(&url, PUBLIC, OWNER, PASSWORD).status().as_u16();
+    let cookies = set_cookies(&sign_in(&url, PUBLIC, OWNER, operator));
+    secure.kill().unwrap();
+    assert_eq!(published, 401, "a public host takes the published password");
     assert_eq!(cookies.len(), 2, "{cookies:?}");
     for cookie in &cookies {
         assert!(cookie.ends_with("; Secure"), "{cookie}");
@@ -226,10 +235,44 @@ fn a_refresh_replaces_the_token_and_a_replaced_token_ends_the_sign_in() {
     };
     assert_ne!(refresh(&first), refresh(&second));
     assert_eq!(me(&host, &second), 200);
+    let third = cookie_header(&post(&host, "/api/auth/refresh", &second));
+    assert_eq!(me(&host, &third), 200);
 
     assert_eq!(post(&host, "/api/auth/refresh", &first).status(), 401);
+    assert_eq!(me(&host, &third), 401, "reuse ends the whole sign-in");
+    assert_eq!(post(&host, "/api/auth/refresh", &third).status(), 401);
+}
+
+#[test]
+fn a_renewal_whose_answer_was_lost_does_not_end_the_sign_in() {
+    let host = fresh(&[]);
+    let held = cookie_header(&sign_in(&host.url, &host.url, OWNER, PASSWORD));
+    // The server renews, but the answer never reaches the browser, which keeps `held`.
+    let lost = post(&host, "/api/auth/refresh", &held);
+    assert_eq!(lost.status(), 200);
+    let never_seen = cookie_header(&lost);
+    let retried = post(&host, "/api/auth/refresh", &held).status().as_u16();
+    let held_access = me(&host, &held);
+    let unseen_access = me(&host, &never_seen);
+    assert_eq!(
+        (retried, held_access, unseen_access),
+        (200, 200, 200),
+        "one renewal answer lost on the network ends the whole 30-day sign-in"
+    );
+}
+
+#[test]
+fn a_replaced_token_offered_a_minute_later_ends_the_sign_in() {
+    let host = fresh(&[]);
+    let first = cookie_header(&sign_in(&host.url, &host.url, OWNER, PASSWORD));
+    let second = cookie_header(&post(&host, "/api/auth/refresh", &first));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    host.set_clock(now + 61);
+    assert_eq!(post(&host, "/api/auth/refresh", &first).status(), 401);
     assert_eq!(me(&host, &second), 401, "reuse ends the whole sign-in");
-    assert_eq!(post(&host, "/api/auth/refresh", &second).status(), 401);
 }
 
 #[test]
@@ -319,4 +362,38 @@ fn the_database_holds_no_password_in_clear_text() {
     let text = String::from_utf8_lossy(&bytes);
     assert!(text.contains("$argon2id$"), "the hashes were not found");
     assert!(!text.contains(PASSWORD));
+}
+
+const PUBLIC: &str = "https://jet.test";
+
+/// Starts Jet on a public https origin with the given environment, without signing anyone in.
+fn public(dir: &Path, env: &[(&str, &str)]) -> (Child, String) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jet"))
+        .args([
+            "--listen",
+            "127.0.0.1:0",
+            "--disable-feelings",
+            "--disable-voice",
+        ])
+        .args(["--public-origin", PUBLIC, "--data-dir"])
+        .arg(dir)
+        .env_remove("JET_SEED_PASSWORD")
+        .envs(env.iter().copied())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let url = listening_url(&mut child);
+    (child, url)
+}
+
+#[test]
+fn a_public_host_refuses_the_published_seed_password() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut child, url) = public(dir.path(), &[]);
+    let status = sign_in(&url, PUBLIC, OWNER, PASSWORD).status().as_u16();
+    child.kill().unwrap();
+    assert_eq!(
+        status, 401,
+        "a public host takes the password that the source publishes"
+    );
 }

@@ -17,12 +17,14 @@ pub(crate) use seed::{OWNER, seed};
 pub(crate) use token::Keys;
 
 use crate::{
+    objectives::{self, Clock},
     server::ServerConfig,
     store::{SigninId, Store, User},
 };
 use axum::{extract::FromRequestParts, http::request::Parts};
 use cookies::Cookies;
 use limit::Failures;
+use seed::DemoPassword;
 use std::{
     net::IpAddr,
     sync::{Arc, Mutex},
@@ -44,6 +46,9 @@ pub(crate) struct Accounts {
     public_origin: Option<String>,
     trusted_proxy: Option<IpAddr>,
     failures: Arc<Mutex<Failures>>,
+    demo_password: DemoPassword,
+    /// The time a renewal is judged by, which a test host can move.
+    clock: Clock,
 }
 
 /// The signed-in user of a request. The guard puts it on every request it lets through with a
@@ -72,9 +77,8 @@ impl Accounts {
     /// Seeds the demo organisation when the database holds no user yet, and loads the signing
     /// secret.
     pub(crate) fn open(config: &ServerConfig, store: Store) -> Result<Self, AccountError> {
-        if store.user_count()? == 0 {
-            seed(&store)?;
-        }
+        let demo_password = DemoPassword::for_host(config.public_origin.as_deref())?;
+        demo_password.seed_empty(&store)?;
         let public_origin = config.public_origin.clone();
         Ok(Self {
             store,
@@ -88,6 +92,8 @@ impl Accounts {
             public_origin,
             trusted_proxy: config.trusted_proxy,
             failures: Arc::new(Mutex::new(Failures::default())),
+            demo_password,
+            clock: objectives::test_clock().unwrap_or_else(objectives::system_clock),
         })
     }
 

@@ -230,10 +230,109 @@ fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
 }
 
 /// Runs one migration and records its version in the same transaction, so a migration that fails
-/// halfway leaves no trace.
+/// halfway leaves no trace. Foreign keys are off while it runs, so a table rebuild that drops the
+/// old table does not cascade into the rows that reference it; a migration that leaves a broken
+/// reference fails and rolls back instead. Foreign keys are on again afterwards, on every path.
 fn apply(connection: &mut Connection, sql: &str, version: usize) -> rusqlite::Result<()> {
+    connection.pragma_update(None, "foreign_keys", false)?;
+    let applied = apply_checked(connection, sql, version);
+    let restored = connection.pragma_update(None, "foreign_keys", true);
+    applied.and(restored)
+}
+
+fn apply_checked(connection: &mut Connection, sql: &str, version: usize) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
     transaction.execute_batch(sql)?;
     transaction.pragma_update(None, "user_version", version as i64)?;
+    let broken: i64 =
+        transaction.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })?;
+    if broken != 0 {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY),
+            Some(format!("{broken} rows reference a row that is gone")),
+        ));
+    }
     transaction.commit()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MIGRATIONS, apply, migrate};
+    use rusqlite::Connection;
+
+    /// A later migration that lets mcp_servers take one more provider: the documented rebuild.
+    const REBUILD: &str = "CREATE TABLE mcp_servers_new (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    provider TEXT NOT NULL
+        CHECK (provider IN ('gmail', 'google', 'outlook', 'slack', 'notion', 'jira', 'linear', 'custom')),
+    name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+    url TEXT NOT NULL,
+    enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    key_header TEXT,
+    sealed_key BLOB,
+    state TEXT NOT NULL CHECK (state IN ('unchecked', 'connected', 'needs_key', 'failed')),
+    reason TEXT,
+    tools TEXT NOT NULL CHECK (json_valid(tools)),
+    CHECK ((key_header IS NULL) = (sealed_key IS NULL)),
+    CHECK (state <> 'failed' OR reason IS NOT NULL),
+    CHECK (state IN ('failed', 'needs_key') OR reason IS NULL),
+    UNIQUE (user_id, url)
+) STRICT;
+INSERT INTO mcp_servers_new (id, user_id, provider, name, url, enabled, key_header, sealed_key, state, reason, tools)
+    SELECT id, user_id, provider, name, url, enabled, key_header, sealed_key, state, reason, tools
+    FROM mcp_servers ORDER BY rowid;
+DROP TABLE mcp_servers;
+ALTER TABLE mcp_servers_new RENAME TO mcp_servers;";
+
+    fn count(db: &Connection, table: &str) -> i64 {
+        db.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_rebuild_of_mcp_servers_run_by_the_migration_runner_keeps_every_sign_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Connection::open(dir.path().join("jet.sqlite3")).unwrap();
+        db.execute_batch(
+            "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
+        )
+        .unwrap();
+        migrate(&mut db).unwrap();
+        db.execute_batch(
+            "INSERT INTO users (email, display_name, password_hash) VALUES ('ada@example.com', 'Ada', 'x');
+             INSERT INTO mcp_servers (id, user_id, provider, name, url, enabled, key_header, sealed_key, state, reason, tools)
+                 VALUES ('s1', 1, 'gmail', 'Gmail', 'https://gmail.example/mcp', 1, NULL, NULL, 'connected', NULL, '[]');
+             INSERT INTO mcp_sign_ins (server_id, authorization_endpoint, token_endpoint, resource, client_id, registered, redirect_uri, secret_in_body, sealed_access)
+                 VALUES ('s1', 'https://a/authorize', 'https://a/token', 'https://gmail.example/mcp', 'client', 0, 'https://jet/mcp-signin/return', 0, x'01');
+             INSERT INTO mcp_sign_in_starts (state_hash, server_id, user_id, sealed_verifier, redirect_uri, expires_at)
+                 VALUES ('h', 's1', 1, x'02', 'https://jet/mcp-signin/return', 9999999999);",
+        )
+        .unwrap();
+        let before = (
+            count(&db, "mcp_servers"),
+            count(&db, "mcp_sign_ins"),
+            count(&db, "mcp_sign_in_starts"),
+        );
+
+        apply(&mut db, REBUILD, MIGRATIONS.len() + 1).unwrap();
+
+        let after = (
+            count(&db, "mcp_servers"),
+            count(&db, "mcp_sign_ins"),
+            count(&db, "mcp_sign_in_starts"),
+        );
+        let foreign_keys: i64 = db
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            after, before,
+            "the rebuild of mcp_servers deleted the sign-ins it holds"
+        );
+        assert_eq!(foreign_keys, 1, "the runner left foreign keys off");
+    }
 }

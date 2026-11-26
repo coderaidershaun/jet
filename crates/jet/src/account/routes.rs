@@ -4,7 +4,6 @@ use super::{
     AccountError, Accounts, SIGNIN_SECONDS, SignedIn,
     cookies::{self, ACCESS, REFRESH},
     limit::client_address,
-    password,
     token::{self, Grant, digest, random_hex},
 };
 use crate::{
@@ -64,11 +63,12 @@ async fn sign_in(
         .begin(&email, address, Instant::now())
         .map_err(|retry_after| AccountError::TooManyFailures { retry_after })?;
     let store = accounts.store.clone();
+    let demo_password = accounts.demo_password.clone();
     let looked_up = email.clone();
     let user = on_worker(move || -> Result<Option<UserId>, AccountError> {
         let stored = store.password_hash(&looked_up)?;
         let hash = stored.as_ref().map(|(_, hash)| hash.as_str());
-        let matched = password::matches(&credentials.password, hash);
+        let matched = demo_password.matches(&looked_up, &credentials.password, hash);
         Ok(stored.filter(|_| matched).map(|(user, _)| user))
     })
     .await??;
@@ -85,7 +85,8 @@ async fn sign_in(
 }
 
 /// Swaps the refresh token for a new one and gives a new access token. A token that was already
-/// swapped ends the whole sign-in, because only a copy of it can still be offered.
+/// swapped ends the whole sign-in, because only a copy of it can still be offered, unless the
+/// browser lost the answer to its last renewal and offers it again at once.
 async fn refresh(
     State(accounts): State<Accounts>,
     headers: HeaderMap,
@@ -94,7 +95,7 @@ async fn refresh(
         return Ok(accounts.signed_out());
     };
     let new = random_hex(32);
-    let now = token::now();
+    let now = (accounts.clock)();
     let rotation = accounts
         .store
         .rotate_refresh(&digest(old), &digest(&new), now)?;

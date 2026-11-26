@@ -11,6 +11,8 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/code/jet
 Environment=HOME=/home/ubuntu
 Environment=PATH=/home/ubuntu/.local/bin:/home/ubuntu/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+# Holds JET_SEED_PASSWORD=..., the demo accounts' password on this public host. Make it owner-only.
+EnvironmentFile=/home/ubuntu/.config/jet/env
 ExecStart=/home/ubuntu/.local/bin/jet --listen 127.0.0.1:8787 --data-dir /home/ubuntu/.local/share/jet --ui-dir /home/ubuntu/code/jet/crates/jet/ui --public-origin https://xchainanalytics.com
 Restart=always
 RestartSec=5
