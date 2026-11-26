@@ -1,0 +1,106 @@
+/* The settings window: a centred modal with the menu of sections on its left and the chosen section on its right.
+   On a narrow window it fills the screen, and the menu and the section take turns. */
+.settings-window {
+  position: fixed; inset: 0; z-index: 40; margin: auto; padding: 0;
+  width: min(880px, calc(100vw - 48px)); height: min(640px, calc(100dvh - 48px)); max-width: 100vw; max-height: 100dvh;
+  background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden;
+  opacity: 0; transform: scale(.98); transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+.settings-window.open { opacity: 1; transform: none; transition-duration: 160ms; transition-timing-function: cubic-bezier(.23, 1, .32, 1); }
+.settings-window::backdrop { background: rgba(0, 0, 0, 0); transition: background 160ms; }
+.settings-window.open::backdrop { background: rgba(0, 0, 0, .5); }
+.reduced .settings-window { transform: none; }
+
+.settings-frame { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+.settings-head { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 56px; padding: 6px 6px 6px 20px; border-bottom: 1px solid var(--line); }
+.settings-head h2 { flex: none; margin: 0; font-size: 15px; line-height: 20px; font-weight: 650; }
+.settings-saved { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 16px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.settings-head .icon-button { color: var(--muted); }
+.settings-head .icon-button:hover { color: var(--fg); }
+.settings-head .icon-button .icon { width: 20px; height: 20px; }
+.settings-back { display: none; }
+.settings-back .icon { transform: rotate(90deg); }
+
+.settings-body { display: grid; grid-template-columns: 216px minmax(0, 1fr); min-height: 0; }
+.settings-nav { min-height: 0; overflow-y: auto; padding: 12px 8px; background: var(--ground); scrollbar-width: thin; }
+.settings-menu { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.settings-entry {
+  display: flex; align-items: center; width: 100%; min-height: 36px; padding: 8px 12px;
+  background: none; border: 0; border-radius: var(--r-s); color: var(--muted); font-size: 14px; line-height: 20px; text-align: left;
+}
+.settings-entry:hover { background: rgba(255, 255, 255, .04); color: var(--fg); }
+.settings-entry[aria-current] { background: var(--surface-2); color: var(--fg); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+.settings-pane { min-width: 0; min-height: 0; overflow-y: auto; padding: 4px 32px calc(32px + env(safe-area-inset-bottom)); scrollbar-width: thin; }
+.settings-panel { max-width: 560px; }
+.settings-panel:focus { outline: none; }
+.settings-save-error { margin: 16px 0 0; color: var(--danger); font-size: 13px; line-height: 18px; }
+.settings-save-error:empty { display: none; }
+
+@media (max-width: 639.98px) {
+  .settings-window { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .settings-head { padding-left: 16px; }
+  .settings-window[data-view="section"] .settings-head { padding-left: 4px; }
+  .settings-window[data-view="section"] .settings-back { display: grid; }
+  .settings-body { grid-template-columns: minmax(0, 1fr); }
+  .settings-window[data-view="section"] .settings-nav, .settings-window[data-view="menu"] .settings-pane { display: none; }
+  .settings-nav { padding: 8px 8px calc(16px + env(safe-area-inset-bottom)); background: none; }
+  /* A list to step into: rows a finger can hit, each with a chevron that says it leads on. */
+  .settings-entry, .settings-entry[aria-current] { justify-content: space-between; min-height: 48px; color: var(--fg); font-size: 16px; font-weight: 400; background: none; box-shadow: none; }
+  .settings-entry::after { content: ""; flex: none; width: 7px; height: 7px; margin-right: 4px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+  .settings-pane { padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
+}
+
+.group { padding: 24px 0 8px; }
+.group + .group { margin-top: 8px; border-top: 1px solid var(--line); }
+/* A section's heading is the title of the right side, so it reads as a title, not as a label. */
+.group h3 { margin: 0 0 16px; font-size: 17px; line-height: 24px; font-weight: 650; color: var(--fg); }
+.group h4 { margin: 12px 0 4px; font-size: 13px; }
+.note, .help { margin: 4px 0 12px; font-size: 12px; line-height: 16px; color: var(--muted); }
+.help { margin: 0; }
+
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.field-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.field-label { font-size: 13px; line-height: 18px; font-weight: 600; }
+.counter { font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.counter.over { color: var(--danger); }
+.settings-window input[type="text"], .settings-window input[type="password"], .settings-window input[type="number"], .settings-window textarea {
+  width: 100%; min-height: 44px; padding: 10px 14px;
+  background: var(--surface-2); border: 1px solid var(--edge); border-radius: var(--r-s);
+  font-size: 16px; line-height: 22px;
+}
+.settings-window textarea { resize: vertical; }
+.settings-window textarea.mono { padding: 10px 12px; font: 12px/18px var(--mono); }
+
+.problem { margin: -4px 0 12px; font-size: 12px; line-height: 16px; color: var(--danger); }
+.status { margin: 0; font-size: 12px; line-height: 16px; color: var(--muted); }
+.status[data-found="true"] { color: var(--ok); }
+.status[data-found="false"] { color: var(--danger); }
+
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: 8px; }
+.switch-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 18px; }
+.switch-text > :first-child { font-weight: 600; }
+.switch { appearance: none; position: relative; flex: none; width: 48px; height: 28px; margin: 0; background: #2b3a46; border-radius: var(--r-s); transition: background 120ms; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: calc(var(--r-s) / 2); background: #fff; transition: transform 120ms; }
+.switch:checked { background: var(--accent); }
+.switch:checked::after { transform: translateX(20px); }
+.switch:disabled { opacity: .6; }
+
+.row-actions { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.confirm { margin-top: 12px; padding: 12px 14px; background: var(--surface-2); border-left: 2px solid var(--danger); border-radius: var(--r-s); }
+.confirm p { margin: 0 0 8px; font-size: 13px; }
+
+/* A choice is a field like the text fields: its label above, a 44 px box below. Two sit side by side when the section is wide enough;
+   an engine's name with "(unavailable)" needs 190 px, so on a phone the voice choices stack. */
+.model-picker, .voice-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.voice-picker { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.model-picker label, .voice-picker label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.model-picker label > span, .voice-picker label > span { font-size: 13px; line-height: 18px; font-weight: 600; }
+.settings-window select {
+  width: 100%; min-height: 44px; padding: 0 10px;
+  background: var(--surface-2); border: 1px solid var(--edge); border-radius: var(--r-s);
+  color: inherit; font-size: 16px; line-height: 22px;
+}
+/* The engine at work when it is not the one chosen: the answer to "which voice is this?", so it reads above the reasons. */
+.note.in-use { color: var(--fg); }
+.reasons .note { margin: 0 0 4px; }
+.reasons { margin-bottom: 8px; }

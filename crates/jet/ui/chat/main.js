@@ -23,7 +23,7 @@ import { connectFileView } from './file-view.js';
 import { files } from './library/store.js';
 import { createLibrary } from './library/view.js';
 import { connectHearing } from './hear/connect.js';
-import { createSheet } from './settings/sheet.js';
+import { createSettingsWindow } from './settings/window.js';
 import { createLive } from './stage/live.js';
 import { createFollow } from './thread/scroll.js';
 import { createThread } from './thread/store.js';
@@ -98,7 +98,7 @@ async function start() {
     follow,
     handlers: {
       retry: () => turn.retry(),
-      openSettings: (section) => sheet.open(section),
+      openSettings: (section) => settingsWindow.open(section),
       openLink: (url) => agent.openLink(url).catch(warn('the link could not be opened')),
       render: (text) => agent.renderMarkdown(text),
       readImage: (appId, path) => agent.readAppImage(appId, path),
@@ -172,7 +172,7 @@ async function start() {
     modelEl: $('context-model'), tokensEl: $('context-tokens'), barEl: $('context-bar'),
     percentEl: $('context-percent'), noteEl: $('context-note'), gearButton: $('gear'),
     handlers: {
-      openSettings: () => sheet.open(),
+      openSettings: () => settingsWindow.open(),
     },
   });
   agent.onConnectionChanged?.((connected) => {
@@ -292,7 +292,7 @@ async function start() {
     }
     const where = program.searched ? "I looked in: " + program.searched.join(', ') : "Ask an admin to set where it is.";
     const message = "I couldn't find " + (program.provider ?? "Claude Code") + ". " + where;
-    view.setBanner(message, { label: 'Settings', run: () => sheet.open('claude') });
+    view.setBanner(message, { label: 'Settings', run: () => settingsWindow.open('claude') });
   }
   let statusNumber = 0;
   async function refreshStatus() {
@@ -437,17 +437,17 @@ async function start() {
     trayView.take();
     composerView.setLayout('centred');
     live.showHero();
-    sheet.close();
+    settingsWindow.close();
     refreshStatus();
   }
 
-  const sheet = createSheet({
-    dialog: $('sheet'),
+  const settingsWindow = createSettingsWindow({
+    dialog: $('settings'),
     context: {
       settings,
       agent,
       isAdmin: user.isAdmin,
-      systemReducesMotion: () => systemReduces.matches,
+      systemMotion: systemReduces,
       onClaudeChecked: showProgramStatus,
       onForget: forget,
       chatTitle: () => $('chat-title').textContent,
@@ -465,10 +465,10 @@ async function start() {
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
-    const action = composer.escape({ sheetOpen: sheet.isOpen });
+    const action = composer.escape({ settingsOpen: settingsWindow.isOpen });
     if (action === 'none') return;
     event.preventDefault();
-    if (action === 'closeSheet') sheet.close();
+    if (action === 'closeSettings') settingsWindow.close();
     else turn.stop();
   });
   systemReduces.addEventListener('change', () => {

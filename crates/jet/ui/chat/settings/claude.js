@@ -1,29 +1,44 @@
+// Two sections: where the agent programs are, with the admin-only paths to them, and forgetting the open chat.
+
 import { displayName } from '../../bridge/settings.js';
 import { h } from '../../dom.js';
 import { button, note, section, textField } from './controls.js';
 import { named } from './names.js';
 
-/** @param {import('./sheet.js').SheetContext} ctx */
-export function buildClaude({ settings, agent, isAdmin, changed, onClaudeChecked, onForget, chatTitle = () => '' }) {
+/** @param {import('./window.js').SettingsContext} ctx */
+export function buildPrograms({ settings, agent, isAdmin, changed, onClaudeChecked }) {
   const status = h('p', { class: 'status', role: 'status' });
-  const path = textField({
-    label: 'Path to claude',
-    value: settings.claudePath ?? '',
+  const pathField = (key, label) => textField({
+    label,
+    value: settings[key] ?? '',
     placeholder: 'Found automatically',
     onInput: (text) => {
-      settings.claudePath = text.trim() === '' ? null : text.trim();
+      settings[key] = text.trim() === '' ? null : text.trim();
       changed('claude');
     },
-  });
+  }).el;
+  // Whoever sets a path chooses the program the server runs, so only an admin gets the fields.
+  const paths = isAdmin ? [pathField('codexPath', 'Path to codex'), pathField('agyPath', 'Path to agy'), pathField('claudePath', 'Path to claude')] : [];
 
-  const codexPath = textField({
-    label: 'Path to codex', value: settings.codexPath ?? '', placeholder: 'Found automatically',
-    onInput: (text) => { settings.codexPath = text.trim() || null; changed('claude'); },
-  });
-  const agyPath = textField({
-    label: 'Path to agy', value: settings.agyPath ?? '', placeholder: 'Found automatically',
-    onInput: (text) => { settings.agyPath = text.trim() || null; changed('claude'); },
-  });
+  return {
+    el: section('claude', 'Agent programs', ...paths, status),
+
+    /** Asks where the selected agent is, and shows the answer here and in the page's banner. */
+    async refresh() {
+      try {
+        const { program } = await agent.status();
+        status.textContent = programStatus(program);
+        status.dataset.found = String(program.found);
+        onClaudeChecked(program);
+      } catch (error) {
+        status.textContent = 'Could not check: ' + (error && error.message ? error.message : error);
+      }
+    },
+  };
+}
+
+/** @param {import('./window.js').SettingsContext} ctx */
+export function buildForget({ settings, onForget, chatTitle = () => '' }) {
   const failure = h('p', { class: 'problem', role: 'alert' });
   const showAsk = () => {
     confirmBox.hidden = true;
@@ -53,25 +68,13 @@ export function buildClaude({ settings, agent, isAdmin, changed, onClaudeChecked
   });
 
   return {
-    el: [
-      // Whoever sets a path chooses the program the server runs, so only an admin gets the fields.
-      section('claude', 'Agent programs', ...(isAdmin ? [codexPath.el, agyPath.el, path.el] : []), status),
-      section('forget', 'Forget this conversation', note('Start again with an empty thread.'), ask, confirmBox, failure),
-    ],
+    el: section('forget', 'Forget this conversation', note('Start again with an empty thread.'), ask, confirmBox, failure),
 
-    /** Asks where the selected agent is, and shows the answer here and in the page's banner. */
-    async refresh() {
+    refresh() {
       // The user has many chats, so the button names the one it clears.
       const title = chatTitle();
       ask.textContent = title ? 'Forget “' + title + '”' : 'Forget this chat';
-      try {
-        const { program } = await agent.status();
-        status.textContent = programStatus(program);
-        status.dataset.found = String(program.found);
-        onClaudeChecked(program);
-      } catch (error) {
-        status.textContent = 'Could not check: ' + (error && error.message ? error.message : error);
-      }
+      showAsk();
     },
   };
 }

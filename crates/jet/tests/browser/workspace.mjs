@@ -1,3 +1,5 @@
+// Drives the workspace shell of the real page against the real server, two app fixtures and a free provider stand-in:
+// the drawer and rail, slash commands, retained frames and chat, settings, Stop, and the layout at desktop and phone sizes.
 import { createProcesses, saveOwnerSettings, signIn, until } from './process.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises';
@@ -62,12 +64,12 @@ if (input.includes('fail-before-init')) {
   const apps = async () => (await context.request.get(origin + '/api/apps')).json();
   const nav = id => page.locator(`.app-list [data-app-id="${id}"]`);
   const frame = id => page.frameLocator(`.app-frame[data-app-id="${id}"] iframe`);
-  const chat = async () => { await page.locator('#sheet').waitFor({ state: 'hidden' }); if (await page.locator('.workspace-shell').getAttribute('data-mode') !== 'chat') await page.locator('#jet-toggle').click(); };
+  const chat = async () => { await page.locator('#settings').waitFor({ state: 'hidden' }); if (await page.locator('.workspace-shell').getAttribute('data-mode') !== 'chat') await page.locator('#jet-toggle').click(); };
   const slash = async text => { await chat(); await page.locator('#field').fill(text); await page.locator('#field').press('Enter'); };
   async function add(address, label) {
     await slash(`/app add ${address} ${JSON.stringify(label)}`);
     await until(async () => (await apps()).some(app => app.label === label), 'Command must save app');
-    await until(async () => (await page.locator('.command-result').textContent()).includes('App saved: ' + label), 'Saved command result must arrive');
+    await until(async () => (await page.locator('.command-body').textContent()).includes('App saved: ' + label), 'Saved command result must arrive');
     return (await apps()).find(app => app.label === label);
   }
   assert.ok(await page.locator('#page').isVisible());
@@ -94,7 +96,7 @@ if (input.includes('fail-before-init')) {
   assert.equal(await page.locator('#drawer-name').textContent(), 'Jet');
   assert.equal(await page.locator('#drawer-title').textContent(), 'First-mate');
   await slash('/unknown');
-  await until(async () => /Command help/.test(await page.locator('.command-result').textContent()), 'Command help appears in empty chat');
+  await until(async () => /Commands/.test(await page.locator('.command-body').textContent()), 'Command help appears in empty chat');
   assert.equal(await page.locator('.empty').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'The greeting leaves room for command guidance');
   await page.screenshot({ path: path.join(output, 'workspace-empty-help.png') });
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -242,7 +244,7 @@ if (input.includes('fail-before-init')) {
   await until(async () => (await page.locator('#context-tokens').textContent()) === '600 / 1,000 tokens', 'Returning to measured selection restores its context');
   await page.route('**/api/settings', route => route.request().method() === 'PUT' ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'Fixture save failed' }) }) : route.continue());
   await slash('/model opus');
-  await until(async () => /failed/i.test(await page.locator('.command-result').textContent()), 'Save failure is visible');
+  await until(async () => /failed/i.test(await page.locator('.command-body').textContent()), 'Save failure is visible');
   assert.equal(await page.locator('#context-model').textContent(), 'Sonnet');
   assert.equal(await page.locator('#context-tokens').textContent(), '600 / 1,000 tokens');
   await page.unroute('**/api/settings');
@@ -251,7 +253,7 @@ if (input.includes('fail-before-init')) {
   await until(async () => (await page.locator('#context-tokens').textContent()) === '600 / 1,000 tokens', 'Persisted context survives browser reload');
   assert.equal((await (await context.request.get(origin + '/api/settings')).json()).effort, 'low');
   await slash('/thinking');
-  await until(async () => /Current thinking: low/.test(await page.locator('.command-result').textContent()), 'No argument reports current thinking');
+  await until(async () => /Current thinking: low/.test(await page.locator('.command-body').textContent()), 'No argument reports current thinking');
   await page.locator('#field').fill('Draft survives overlays');
   await until(() => page.locator('.empty').evaluate(el => getComputedStyle(el).visibility === 'hidden'), 'Restored history finishes hiding greeting');
   await delay(250);
@@ -290,20 +292,20 @@ if (input.includes('fail-before-init')) {
   await page.screenshot({ path: path.join(output, 'workspace-settings.png'), animations: 'disabled' });
   await page.keyboard.press('Escape');
   await slash('/app add');
-  await until(async () => /app add <address>/.test(await page.locator('.command-result').textContent()), 'Incomplete add stays inline');
+  await until(async () => /app add <address>/.test(await page.locator('.command-body').textContent()), 'Incomplete add stays inline');
   assert.equal(await page.locator('dialog[open]').count(), 0);
-  const commandBox = await page.locator('.command-result').boundingBox();
+  const commandBox = await page.locator('.command-body').boundingBox();
   const threadBox = await page.locator('#thread').boundingBox();
   assert.ok(commandBox.y >= threadBox.y && commandBox.y + commandBox.height <= threadBox.y + threadBox.height, 'Command guidance stays visible after a long conversation');
   const lastRow = await page.locator('#rows > :last-child').boundingBox();
   assert.ok(commandBox.y >= lastRow.y + lastRow.height, 'Command guidance sits below the newest message');
   await slash('/app add file:///invalid');
-  await until(async () => /http|address|scheme/i.test(await page.locator('.command-result').textContent()), 'Invalid address explains failure');
+  await until(async () => /http|address|scheme/i.test(await page.locator('.command-body').textContent()), 'Invalid address explains failure');
   await slash('/app add ' + first);
-  await until(async () => /already|duplicate|registered/i.test(await page.locator('.command-result').textContent()), 'Duplicate reports conflict');
+  await until(async () => /already|duplicate|registered/i.test(await page.locator('.command-body').textContent()), 'Duplicate reports conflict');
   const offline = await add('http://127.0.0.1:1/', 'Offline app');
   assert.ok(offline.id);
-  assert.match(await page.locator('.command-result').textContent(), /saved.*(unavailable|connect|request)/i);
+  assert.match(await page.locator('.command-body').textContent(), /saved.*(unavailable|connect|request)/i);
   assert.equal(sends.length, 3);
   const changed = await api({ action: 'edit', id: b.id, overrides: { ...b.overrides, label: 'Renamed notebook' } });
   await until(async () => (await nav(b.id).getAttribute('aria-label')) === changed.app.label, 'Independent registry update must refresh browser without focus');
@@ -317,7 +319,7 @@ if (input.includes('fail-before-init')) {
   await api({ action: 'remove', id: b.id });
   await until(() => page.locator('#page').isVisible(), 'Removing the visible app returns to chat');
   await slash('/app reload');
-  await until(async () => /Choose an app/.test(await page.locator('.command-result').textContent()), 'Removing selected app clears context');
+  await until(async () => /Choose an app/.test(await page.locator('.command-body').textContent()), 'Removing selected app clears context');
   await slash('/thinking high');
   await until(async () => (await (await context.request.get(origin + '/api/settings')).json()).effort === 'high', 'New effort is saved before next reply');
   await page.locator('#field').fill('hang');
@@ -347,9 +349,10 @@ if (input.includes('fail-before-init')) {
   await until(async () => (await page.locator('#context-tokens').textContent()) === '600 / 1,000 tokens', 'Fixture measures before Forget');
   await until(async () => await page.locator('#send').getAttribute('aria-label') === 'Send', 'Fixture reveal ends before Forget');
   await page.locator('#gear').click();
+  await page.getByRole('button', { name: 'Forget this conversation', exact: true }).click();
   await page.getByRole('button', { name: 'Forget “Main chat”', exact: true }).click();
   await page.getByRole('button', { name: 'Forget', exact: true }).click();
-  await page.locator('#sheet').waitFor({ state: 'hidden' });
+  await page.locator('#settings').waitFor({ state: 'hidden' });
   await until(async () => (await page.locator('#context-tokens').textContent()) === '— / — tokens', 'Forget clears measured context');
   await page.reload();
   await page.locator('#loading').waitFor({ state: 'detached' });

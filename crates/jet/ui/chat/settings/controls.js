@@ -1,9 +1,9 @@
-// The few form controls the settings sheet is made of, so each section reads as
+// The few form controls the settings window is made of, so each section reads as
 // a list of fields rather than a pile of elements.
 
 import { h } from '../../dom.js';
 
-/** A titled block of the sheet. */
+/** A titled block of a settings section. */
 export function section(id, title, ...children) {
   const heading = h('h3', { id: 'heading-' + id, text: title });
   return h('section', { class: 'group', id: 'section-' + id, 'aria-labelledby': 'heading-' + id }, heading, ...children);
@@ -50,8 +50,9 @@ export function switchRow({ label, checked, note: help, onChange }) {
   const input = h('input', { type: 'checkbox', role: 'switch', class: 'switch' });
   input.checked = checked;
   input.addEventListener('change', () => onChange(input.checked));
-  const text = h('span', { class: 'switch-text' }, h('span', { text: label }), help ? h('span', { class: 'help', text: help }) : null);
-  return { el: h('label', { class: 'switch-row' }, text, input), input };
+  const helpText = help ? h('span', { class: 'help', text: help }) : null;
+  const text = h('span', { class: 'switch-text' }, h('span', { text: label }), helpText);
+  return { el: h('label', { class: 'switch-row' }, text, input), input, help: helpText };
 }
 
 export const button = (text, props = {}) => h('button', { type: 'button', class: 'action', ...props, text });

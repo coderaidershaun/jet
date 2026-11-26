@@ -10,7 +10,7 @@ const TITLE_LIMIT = 32;
 const NOTES_LIMIT = 600;
 const NOTES_TEXT = 'How should {name} talk to you?';
 
-/** @param {import('./sheet.js').SheetContext} ctx */
+/** @param {import('./window.js').SettingsContext} ctx */
 export function buildPersona({ settings, changed }) {
   const field = (key, label, maxLength, lines = 1) => textField({
     label,

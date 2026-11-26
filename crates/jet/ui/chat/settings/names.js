@@ -1,5 +1,5 @@
-// Texts in the settings sheet that say Jet's name. Each keeps its template on
-// the element, so a name change repaints them all without rebuilding the sheet.
+// Texts in the settings window that say Jet's name. Each keeps its template on
+// the element, so a name change repaints them all without rebuilding the window.
 
 const TEMPLATE_ATTR = 'data-name-text';
 

@@ -1,3 +1,5 @@
+// The model and thinking selects, grouped by provider, with only the thinking levels the chosen model offers.
+
 import { h } from '../../dom.js';
 import { MODELS, providerOf, effortsFor } from '../../bridge/models.js';
 

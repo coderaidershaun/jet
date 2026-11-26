@@ -14,7 +14,7 @@ const NOTES = [
   ['recent', 'Recent', 'What the last conversation was about'],
 ];
 
-/** @param {import('./sheet.js').SheetContext} ctx */
+/** @param {import('./window.js').SettingsContext} ctx */
 export function buildMemory({ agent, settings }) {
   /** @type {Record<string, string>} */
   let saved = { memory: '', user: '', recent: '' };
@@ -73,7 +73,7 @@ export function buildMemory({ agent, settings }) {
   return {
     el: section('memory', 'Memory', ...editors.map((editor) => editor.el)),
 
-    /** Loads the notes each time the sheet opens. */
+    /** Loads the notes each time the window opens. */
     async refresh() {
       try {
         take(await agent.loadMemory());

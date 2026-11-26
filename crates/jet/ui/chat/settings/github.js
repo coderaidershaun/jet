@@ -7,7 +7,7 @@ import { button, note, section } from './controls.js';
 
 const TOKEN_PATH = '/api/github/token';
 
-/** @param {{ fetch?: typeof globalThis.fetch }} ctx   the sheet's context; only a test passes `fetch` */
+/** @param {{ fetch?: typeof globalThis.fetch }} ctx   the window's context; only a test passes `fetch` */
 export function buildGithub({ fetch: fetcher = globalThis.fetch } = {}) {
   let saved = false;
   const input = h('input', { type: 'password', autocomplete: 'off', spellcheck: 'false' });

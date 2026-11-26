@@ -59,9 +59,9 @@ export function createComposer({ empty, tray = emptyTray }) {
       return composer.replying ? 'hold' : 'send';
     },
 
-    /** @param {{ sheetOpen: boolean }} open @returns {'closeSheet' | 'stop' | 'none'} */
-    escape({ sheetOpen }) {
-      if (sheetOpen) return 'closeSheet';
+    /** @param {{ settingsOpen: boolean }} open @returns {'closeSettings' | 'stop' | 'none'} */
+    escape({ settingsOpen }) {
+      if (settingsOpen) return 'closeSettings';
       return composer.replying ? 'stop' : 'none';
     },
   };

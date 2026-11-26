@@ -1,7 +1,9 @@
+// Only an admin sees and sends the program paths; every user sees where the agent program stands.
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSettings, saveSettings } from '../../bridge/settings.js';
-import { buildClaude } from './claude.js';
+import { buildPrograms } from './claude.js';
 
 function fakeElement(tag) {
   return {
@@ -26,9 +28,9 @@ test('only an admin sees and sends the program paths, and a non-admin is told wh
         return { ok: true, json: async () => answer };
       };
       const settings = await loadSettings({ isAdmin });
-      const view = buildClaude({ settings, isAdmin, agent: { status: async () => ({ program }) }, changed() {}, onClaudeChecked() {}, onForget() {} });
+      const view = buildPrograms({ settings, isAdmin, agent: { status: async () => ({ program }) }, changed() {}, onClaudeChecked() {} });
       await view.refresh();
-      const texts = view.el.flatMap(walk).map((node) => node.textContent);
+      const texts = walk(view.el).map((node) => node.textContent);
       await saveSettings(settings);
 
       const paths = ['Path to claude', 'Path to codex'].filter((label) => texts.includes(label));

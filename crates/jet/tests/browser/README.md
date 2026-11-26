@@ -103,6 +103,21 @@ directory. `JET_BINARY` optionally selects a previously built local Jet executab
 continuity across app switches.
 Run this mode for the integrated application acceptance gate.
 
+## Settings window
+
+The settings harness starts its own Jet with the free provider stand-in and checks the
+settings window: it opens as a modal, each menu entry shows its section, the banner's
+Settings action opens Agent programs, a changed setting survives a reload, Escape and a
+backdrop click close it, Tab stays inside, focus returns to the gear, and at 400 px the
+menu and the section take turns. It saves the window in light and dark at 1280 and 400 px.
+
+```sh
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
+CHROME_BINARY='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
+SCREENSHOT_DIR=/tmp/jet-settings \
+node crates/jet/tests/browser/settings.mjs
+```
+
 ## Commands and tool discovery
 
 ```sh

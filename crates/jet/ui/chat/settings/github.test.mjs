@@ -1,3 +1,5 @@
+// The GitHub token goes only to its own endpoint and is never shown again.
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGithub } from './github.js';

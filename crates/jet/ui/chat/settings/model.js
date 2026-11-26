@@ -1,3 +1,5 @@
+// The section that picks the model, its thinking level and, for Claude, the budget of one turn.
+
 import { h } from '../../dom.js';
 import { note, section } from './controls.js';
 

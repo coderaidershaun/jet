@@ -275,7 +275,7 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
     spoken.typed(field.value);
   });
   document.addEventListener('keydown', (event) => {
-    // An Esc inside a dialog, such as the settings sheet, is for that dialog.
+    // An Esc inside a dialog, such as the settings window, is for that dialog.
     if (event.key === 'Escape' && !event.target.closest?.('dialog') && spoken.escape()) {
       event.preventDefault();
       return;

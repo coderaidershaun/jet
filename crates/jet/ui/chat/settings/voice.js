@@ -11,7 +11,7 @@ const MODES = Object.freeze([
   Object.freeze(['cpu', 'CPU only']),
 ]);
 
-/** @param {import('./sheet.js').SheetContext} ctx */
+/** @param {import('./window.js').SettingsContext} ctx */
 export function buildVoice({ settings, agent, changed }) {
   const mode = h('select', { 'aria-label': 'Phonon-2 mode' }, ...MODES.map(([value, text]) => h('option', { value, text })));
   const modeField = h('label', {}, h('span', { text: 'Phonon-2 mode' }), mode);
