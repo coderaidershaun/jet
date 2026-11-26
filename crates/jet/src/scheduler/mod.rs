@@ -103,10 +103,13 @@ impl Signals {
         true
     }
 
-    /// The check's turn has started. A user's message that came before it stops the turn now.
-    fn attach(&self, stopper: Stopper) {
+    /// The check's turn has started. A user's message that came before it stops the turn now,
+    /// and so does a scheduler that was told to stop before the turn could be stopped. The flag
+    /// is read under the lock that `Scheduler::stop` takes after it sets the flag, so one of the
+    /// two always stops the turn.
+    fn attach(&self, stopper: Stopper, stopping: &AtomicBool) {
         if let Some(running) = lock(&self.0.running).as_mut() {
-            if running.preempted {
+            if running.preempted || stopping.load(Ordering::SeqCst) {
                 stopper.stop();
             }
             running.stopper = Some(stopper);
@@ -255,6 +258,9 @@ impl Scheduler {
                 {
                     self.signals.wait(self.poll);
                 }
+                // The database of a host that is stopping may be closed already; that is no
+                // fault to report.
+                Err(_) if self.stopping.load(Ordering::SeqCst) => return Ok(()),
                 Err(error) => return Err(Paused(error)),
             }
         }

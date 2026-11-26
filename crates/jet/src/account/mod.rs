@@ -97,6 +97,12 @@ impl Accounts {
         })
     }
 
+    /// Whether a database with no user would get the demo accounts on this host. A public host
+    /// with no operator's password gets none.
+    pub(crate) fn seeds_a_new_install(&self) -> bool {
+        self.demo_password.seeds()
+    }
+
     pub(crate) fn keys(&self) -> &Keys {
         &self.keys
     }

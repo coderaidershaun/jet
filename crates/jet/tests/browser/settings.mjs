@@ -3,7 +3,8 @@
 // backdrop, Tab kept inside, focus back on the opener, the list-then-section view at 400 px, and the MCP section
 // adding, testing, turning off and on, signing in and out with OAuth and removing servers against a local MCP stand-in
 // that is also its own sign-in server. It saves the window in light and dark at 1280 and 400 px, and the MCP section's
-// states at both widths.
+// states at both widths. Last, the admin types RESET and restores the server to factory defaults, and the page lands
+// on the sign-in page.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -22,7 +23,7 @@ const processes = createProcesses();
 const SECTIONS = [
   ['Persona', 'Persona'], ['Model and thinking', 'Model and thinking'], ['Voice', 'Voice input'], ['Motion', 'Motion'],
   ['Memory', 'Memory'], ['GitHub', 'GitHub'], ['MCP', 'MCP servers'], ['Agent programs', 'Agent programs'],
-  ['Forget this conversation', 'Forget this conversation'],
+  ['Forget this conversation', 'Forget this conversation'], ['Restore to factory defaults', 'Restore to factory defaults'],
 ];
 const MCP_KEY = 'drive-key-7731';
 
@@ -463,6 +464,34 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
     await context.close();
   }
   console.log('PASS narrow_window_lists_then_shows_a_section');
+
+  // ---- An admin restores the server to factory defaults: only the typed word arms the button, the reset runs to
+  // the end, the page lands on the sign-in page, and the seeded admin signs in to a fresh install on the same host.
+  context = await openPage({ width: 1280, height: 800 }, 'dark', false);
+  await openFromGear(false);
+  await entry('Forget this conversation').click();
+  assert.match(await settingsDialog().locator('#settings-forget .note').innerText(), /goals and tasks are kept/);
+  await entry('Restore to factory defaults').click();
+  const reset = settingsDialog().locator('#settings-factory-reset');
+  await reset.getByRole('button', { name: 'Restore this server' }).click();
+  const confirmReset = reset.getByRole('group', { name: 'Confirm restoring' });
+  assert.match(await confirmReset.innerText(), /deletes every user's data on this server.*cannot be undone/s);
+  const runReset = confirmReset.getByRole('button', { name: 'Delete everything' });
+  const word = confirmReset.getByLabel('Type RESET to confirm');
+  assert.ok(await runReset.isDisabled(), 'the reset waits for the typed word');
+  await word.fill('reset');
+  assert.ok(await runReset.isDisabled(), 'another word does not arm the reset');
+  await word.fill('RESET');
+  await page.mouse.move(0, 0);
+  await shoot('settings-factory-reset-1280.png');
+  await runReset.click();
+  await page.waitForURL((url) => url.pathname === '/signin/');
+  await signIn(page, origin);
+  await page.locator('#loading').waitFor({ state: 'detached' });
+  assert.equal(await page.locator('#drawer-name').innerText(), 'Jet', 'the name saved before the reset is gone');
+  assert.deepEqual((await (await context.request.get(origin + '/api/snapshot')).json()).history, []);
+  await context.close();
+  console.log('PASS factory_reset_asks_for_the_word_and_lands_on_sign_in');
 
   assert.deepEqual(errors, []);
   console.log('Screenshots: ' + screens);

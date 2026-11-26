@@ -88,14 +88,24 @@ impl DemoPassword {
         }
     }
 
+    /// The password the demo accounts are seeded with, or `None` on a public host with no
+    /// operator's password.
+    fn seed_password(&self) -> Option<&str> {
+        match self {
+            Self::Published => Some(PASSWORD),
+            Self::Refused { operator } => operator.as_deref(),
+        }
+    }
+
+    /// Whether an empty database gets the demo organisation on this host.
+    pub(super) fn seeds(&self) -> bool {
+        self.seed_password().is_some()
+    }
+
     /// Seeds the demo organisation into an empty database, unless a public host has no
     /// operator's password.
     pub(super) fn seed_empty(&self, store: &Store) -> Result<(), AccountError> {
-        let password = match self {
-            Self::Published => Some(PASSWORD),
-            Self::Refused { operator } => operator.as_deref(),
-        };
-        if let Some(password) = password
+        if let Some(password) = self.seed_password()
             && store.user_count()? == 0
         {
             seed_with(store, password)?;

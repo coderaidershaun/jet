@@ -185,9 +185,17 @@ fn a_turn_records_an_objective_that_only_its_owner_can_list() {
     );
     assert_eq!(
         data(&results[0])["chat"],
-        json!({"id": chat, "title": "Ship the kite", "new": true}),
+        json!({"id": chat, "title": "Ship the kite"}),
         "the answer says where the objective landed"
     );
+    let in_main: i64 = db
+        .query_row(
+            "SELECT count(*) FROM objectives o JOIN chats c ON c.id = o.chat_id WHERE c.kind = 'main'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(in_main, 0, "the main chat holds no objective");
     let first: String = db
         .query_row(
             "SELECT json_extract(entry, '$.text') FROM entries WHERE chat_id = ?1",
@@ -216,6 +224,69 @@ fn a_turn_records_an_objective_that_only_its_owner_can_list() {
     assert_eq!(data(&results[0])["objectives"], json!([]));
     assert_eq!(data(&results[1])["tasks"], json!([]));
     assert_eq!(error_kind(&results[2]), "noSuchObjective");
+}
+
+#[test]
+fn an_objective_agreed_in_a_chat_the_user_opened_gets_a_new_chat() {
+    let host = host();
+    let owner = host.owner();
+    let (status, opened) = owner.post("/api/chats", json!({}));
+    assert_eq!(status, 200, "{opened}");
+    let opened = opened["id"].as_i64().unwrap();
+    let results = run_turn_in(
+        &host,
+        &owner,
+        Some(opened),
+        "create",
+        "I am building a kite.",
+        json!([create(json!([]))]),
+    );
+    let chat = &data(&results[0])["chat"];
+    assert_ne!(
+        chat["id"], opened,
+        "the objective stayed in the opened chat"
+    );
+    assert_eq!(chat["title"], "Ship the kite");
+    let db = database(&host);
+    let kind = |id: i64| -> String {
+        db.query_row("SELECT kind FROM chats WHERE id = ?1", [id], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    };
+    assert_eq!(
+        (kind(opened), kind(chat["id"].as_i64().unwrap())),
+        ("topic".to_owned(), "objective".to_owned())
+    );
+    let said = owner.get(&format!("/api/snapshot?chat={opened}"))["history"].to_string();
+    assert!(said.contains("It has its own chat now"), "{said}");
+}
+
+#[test]
+fn a_task_under_no_objective_stays_in_the_main_chat_and_its_answer_names_that_chat() {
+    let host = host();
+    let owner = host.owner();
+    let main = owner.get("/api/snapshot")["chatId"].clone();
+    let results = run_turn(
+        &host,
+        &owner,
+        "loose",
+        "Remind me to buy string.",
+        json!([objectives(
+            json!({"action":"step_add","title":"Buy string"})
+        )]),
+    );
+    let answer = data(&results[0]);
+    assert_eq!(answer["step"]["title"], "Buy string");
+    assert_eq!(answer["chat"], json!({"id": main, "title": "Main chat"}));
+    let list = owner.get("/api/task-list");
+    assert_eq!(
+        (&list["tasks"][0]["title"], &list["tasks"][0]["chatId"]),
+        (&json!("Buy string"), &main),
+        "the Task list row opens the main chat"
+    );
+    let chats = owner.get("/api/chats");
+    assert_eq!(chats.as_array().unwrap().len(), 1, "{chats}");
 }
 
 #[test]

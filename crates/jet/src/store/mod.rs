@@ -178,6 +178,16 @@ impl Store {
         })
     }
 
+    /// Closes the database, so its file can be deleted. Every copy of this store is left with an
+    /// empty database that has no table, so each later call of theirs fails and none can write
+    /// into a database that is opened in the same folder afterwards.
+    pub(crate) fn close(&self) -> Result<(), StoreError> {
+        let empty = Connection::open_in_memory()?;
+        let database = std::mem::replace(&mut *lock(&self.connection), empty);
+        database.close().map_err(|(_, source)| source)?;
+        Ok(())
+    }
+
     fn with<T>(
         &self,
         call: impl FnOnce(&mut Connection) -> rusqlite::Result<T>,

@@ -247,6 +247,7 @@ export function createBrowserAgent({ fetch: fetcher = globalThis.fetch, EventSou
     },
     react: (request) => call(inChat('/api/chat/react'), { ...request, requestId: uuid(), clientId }),
     forget: () => call(inChat('/api/chat/forget'), {}),
+    factoryReset: (confirm) => call('/api/factory-reset', { confirm }),
     loadMemory: () => call('/api/memory'),
     saveMemory: (notes) => call('/api/memory', notes, 'PUT'),
     renderMarkdown: (text) => call('/api/markdown', { text }),

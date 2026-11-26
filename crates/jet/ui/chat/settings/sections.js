@@ -1,6 +1,7 @@
 // The sections of the settings window in menu order. A new section is one entry here and one module beside it.
 
 import { buildForget, buildPrograms } from './claude.js';
+import { buildFactoryReset } from './factory-reset.js';
 import { buildGithub } from './github.js';
 import { buildMcp } from './mcp.js';
 import { buildMemory } from './memory.js';
@@ -17,6 +18,7 @@ import { buildVoice } from './voice.js';
  *   makes the section once; the window calls `refresh` each time it opens
  * @property {boolean} [savesWithButtons]   the section saves only when a button is pressed, so the window does not
  *   say that changes save as you type
+ * @property {boolean} [adminOnly]   only an admin gets the section and its menu entry
  */
 
 /** @type {readonly SettingsSection[]} */
@@ -30,4 +32,5 @@ export const SECTIONS = Object.freeze([
   { id: 'mcp', label: 'MCP', build: buildMcp, savesWithButtons: true },
   { id: 'claude', label: 'Agent programs', build: buildPrograms },
   { id: 'forget', label: 'Forget this conversation', build: buildForget },
+  { id: 'factory-reset', label: 'Restore to factory defaults', build: buildFactoryReset, savesWithButtons: true, adminOnly: true },
 ].map((section) => Object.freeze(section)));

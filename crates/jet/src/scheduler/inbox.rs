@@ -68,7 +68,9 @@ impl Scheduler {
             shared_objectives: &objectives,
             time_limit: self.time_limit,
         };
-        match agent::answer_from_shared(&*transport, &ask, |stopper| self.signals.attach(stopper)) {
+        match agent::answer_from_shared(&*transport, &ask, |stopper| {
+            self.signals.attach(stopper, &self.stopping)
+        }) {
             Ok(Some(answer)) => match self.objectives.answer_by_jet(item, &answer) {
                 Ok(Closed::Done(posted)) => {
                     chats.announce_posted(&posted);

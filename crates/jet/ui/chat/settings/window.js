@@ -19,6 +19,7 @@ const FOCUSABLE = 'button, input, select, textarea, a[href], [tabindex]:not([tab
  * @property {{ matches: boolean, addEventListener: (type: 'change', listener: () => void) => void }} systemMotion   the system's reduced-motion query
  * @property {(claude: import('../../bridge/agent.js').ClaudeStatus) => void} onClaudeChecked   the page's banner follows each check
  * @property {() => Promise<void>} onForget
+ * @property {(word: string) => Promise<void>} onFactoryReset   restores the server to factory defaults; `word` is what the admin typed
  * @property {() => string} [chatTitle]   the title of the open chat, which Forget clears
  */
 
@@ -32,7 +33,8 @@ const isShown = (el) => el.offsetParent !== null;
  *   load?: () => Promise<import('../../bridge/settings.js').Settings>,
  * }} options
  */
-export function createSettingsWindow({ dialog, context, onChange, save, sections = SECTIONS, load = () => loadSettings(context) }) {
+export function createSettingsWindow({ dialog, context, onChange, save, sections: every = SECTIONS, load = () => loadSettings(context) }) {
+  const sections = every.filter((section) => !section.adminOnly || context.isAdmin);
   const ids = sections.map((section) => section.id);
   if (new Set(ids).size !== ids.length) throw new Error('settings: two sections share an id in ' + ids.join(', '));
 

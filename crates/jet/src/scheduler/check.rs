@@ -234,7 +234,7 @@ impl Scheduler {
                 return failed(error.to_string());
             }
         };
-        self.signals.attach(turn.stopper());
+        self.signals.attach(turn.stopper(), &self.stopping);
         let result = turn.finish();
         let state = self.facade.finish_check(&connection);
         let now = self.now();

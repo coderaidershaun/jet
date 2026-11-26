@@ -52,9 +52,9 @@ pub(crate) struct NewObjective<'a> {
     pub(crate) steps: &'a [NewStep],
     pub(crate) sources: &'a [NewSource],
     pub(crate) check: NewTask<'a>,
-    /// The first entry of a new chat.
+    /// The first entry of the objective's new chat.
     pub(crate) summary: &'a str,
-    /// The line left in the chat where it was agreed, when the objective got a new chat.
+    /// The line left in the chat where it was agreed.
     pub(crate) line: &'a str,
     pub(crate) at: u64,
 }
@@ -387,32 +387,22 @@ fn jet_text(text: &str) -> NewEntry {
     }
 }
 
-/// The chat the new objective belongs to, made or converted inside the transaction.
+/// The new chat of the new objective, named after it, made inside the transaction. The chat where
+/// it was agreed, which must be the user's own, gets the line that says so.
 fn objective_chat(tx: &Transaction, new: &NewObjective) -> Result<ChatId, StoreError> {
-    let kind: String = tx.query_row(
-        "SELECT kind FROM chats WHERE id = ?1 AND user_id = ?2",
+    tx.query_row(
+        "SELECT id FROM chats WHERE id = ?1 AND user_id = ?2",
         params![new.agreed_in.0, new.user.0],
-        |row| row.get(0),
+        |row| row.get::<_, i64>(0),
     )?;
-    match kind.as_str() {
-        "main" | "objective" => {
-            tx.execute(
-                "INSERT INTO chats (user_id, kind, title, created_at) VALUES (?1, 'objective', ?2, ?3)",
-                params![new.user.0, new.title, seconds(new.at)],
-            )?;
-            let chat = ChatId(tx.last_insert_rowid());
-            // `new.at` is in seconds; an entry's time is in milliseconds, as the page reads it.
-            let at_ms = new.at.saturating_mul(1000);
-            insert_entry(tx, chat, jet_text(new.summary), at_ms)?;
-            insert_entry(tx, new.agreed_in, jet_text(new.line), at_ms)?;
-            Ok(chat)
-        }
-        _ => {
-            tx.execute(
-                "UPDATE chats SET kind = 'objective', title = ?2 WHERE id = ?1",
-                params![new.agreed_in.0, new.title],
-            )?;
-            Ok(new.agreed_in)
-        }
-    }
+    tx.execute(
+        "INSERT INTO chats (user_id, kind, title, created_at) VALUES (?1, 'objective', ?2, ?3)",
+        params![new.user.0, new.title, seconds(new.at)],
+    )?;
+    let chat = ChatId(tx.last_insert_rowid());
+    // `new.at` is in seconds; an entry's time is in milliseconds, as the page reads it.
+    let at_ms = new.at.saturating_mul(1000);
+    insert_entry(tx, chat, jet_text(new.summary), at_ms)?;
+    insert_entry(tx, new.agreed_in, jet_text(new.line), at_ms)?;
+    Ok(chat)
 }

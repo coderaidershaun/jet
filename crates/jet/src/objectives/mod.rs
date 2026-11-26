@@ -11,9 +11,9 @@ mod time;
 use crate::chat::TurnOwner;
 use crate::scheduler::Signals;
 use crate::store::{
-    AgentTask, CancelOutcome, Edit, NewNote, NewObjective, NewSource, NewStep, NewTask, Note,
-    NoteStatus, Objective, ObjectiveId, ObjectiveStatus, Person, Run, Scheduled, SetBy, Source,
-    Step, StepId, Store, StoreError, Tap, TaskId, TaskKind, TaskState, Team, UserId,
+    AgentTask, CancelOutcome, ChatId, Edit, NewNote, NewObjective, NewSource, NewStep, NewTask,
+    Note, NoteStatus, Objective, ObjectiveId, ObjectiveStatus, Person, Run, Scheduled, SetBy,
+    Source, Step, StepId, Store, StoreError, Tap, TaskId, TaskKind, TaskState, Team, UserId,
 };
 pub(crate) use inbox::InboxError;
 pub(crate) use pane::Pane;
@@ -236,7 +236,19 @@ pub(crate) struct ObjectiveView {
 #[serde(rename_all = "camelCase")]
 pub(crate) enum StepAnswer {
     Objective(ObjectiveView),
-    Step(Step),
+    /// A task under no objective lives in the user's main chat, which the answer names.
+    #[serde(untagged)]
+    Loose {
+        step: Step,
+        chat: NamedChat,
+    },
+}
+
+/// The id and the title of a chat, as an answer names it.
+#[derive(Debug, Serialize)]
+pub(crate) struct NamedChat {
+    id: ChatId,
+    title: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -458,21 +470,25 @@ impl Objectives {
         Ok(goal)
     }
 
-    /// What Jet is answered after a step changed: its objective, or the step under no objective.
+    /// What Jet is answered after a step changed: its objective, or the step under no objective
+    /// with the main chat.
     fn step_answer(
         &self,
         user: UserId,
         goal: Option<ObjectiveId>,
         step: StepId,
     ) -> Result<StepAnswer, ObjectiveError> {
-        match goal {
-            Some(goal) => Ok(StepAnswer::Objective(self.show(user, goal)?)),
-            None => self
-                .store
-                .step(user, step)?
-                .map(StepAnswer::Step)
-                .ok_or(ObjectiveError::NoSuchStep { step: step.0 }),
-        }
+        let Some(goal) = goal else {
+            let no_step = ObjectiveError::NoSuchStep { step: step.0 };
+            let step = self.store.step(user, step)?.ok_or(no_step)?;
+            let main = self.store.main_chat(user)?;
+            let chat = NamedChat {
+                id: main.id,
+                title: main.title,
+            };
+            return Ok(StepAnswer::Loose { step, chat });
+        };
+        Ok(StepAnswer::Objective(self.show(user, goal)?))
     }
 
     /// The user's tasks under no objective: the open ones, and those the done pile keeps.
@@ -1169,36 +1185,6 @@ mod tests {
             chat,
             "the check lands in the objective's chat"
         );
-    }
-
-    #[test]
-    fn create_in_a_topic_chat_converts_it() {
-        let world = world();
-        let topic = world.store.add_chat(world.ada.user, "Kites").unwrap();
-        let owner = TurnOwner {
-            user: world.ada.user,
-            chat: topic,
-        };
-        let view = world.objectives.create(owner, kite()).unwrap();
-        assert_eq!(view.objective.chat_id, topic);
-        let converted = world.store.chat(owner.user, topic).unwrap().unwrap();
-        assert_eq!(
-            (converted.kind, converted.title.as_str()),
-            (ChatKind::Objective, "Ship the kite")
-        );
-    }
-
-    #[test]
-    fn create_in_a_chat_that_holds_an_objective_makes_a_new_chat() {
-        let world = world();
-        let topic = world.store.add_chat(world.ada.user, "Kites").unwrap();
-        let owner = TurnOwner {
-            user: world.ada.user,
-            chat: topic,
-        };
-        world.objectives.create(owner, kite()).unwrap();
-        let again = world.objectives.create(owner, kite()).unwrap();
-        assert_ne!(again.objective.chat_id, topic);
     }
 
     #[test]

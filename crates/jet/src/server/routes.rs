@@ -1,5 +1,5 @@
 //! Adapt browser requests to the conversation, and join the routes of accounts, apps, files,
-//! voice, chats and the task list with them into the one router the server runs, behind the sign-in guard. A route
+//! voice, chats, the task list and the factory reset with them into the one router the server runs, behind the sign-in guard. A route
 //! that acts on a chat takes its id from the `chat` query field, and acts on the main chat without
 //! one. One layer around all of it reads a small request body first, so an answer is never lost to
 //! a connection reset.
@@ -27,7 +27,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::services::ServeDir;
 
-use super::{Server, chats};
+use super::{Server, chats, reset};
 use crate::{
     account::{self, SignedIn},
     apps,
@@ -38,7 +38,7 @@ use crate::{
     voice,
 };
 
-pub(super) fn router(host: Server) -> Router {
+pub(super) fn router(host: Server, resets: mpsc::Sender<reset::Answer>) -> Router {
     let facade = host.facade.router();
     let ui = get_service(ServeDir::new(&host.config.ui_dir)).layer(middleware::map_response(
         |mut response: Response| async move {
@@ -61,6 +61,7 @@ pub(super) fn router(host: Server) -> Router {
         .merge(super::task_list::router())
         .merge(super::inbox::router())
         .merge(chats::router())
+        .merge(reset::router(resets))
         .route("/api/status", get(status))
         .route("/api/snapshot", get(snapshot))
         .route("/api/events", get(events))

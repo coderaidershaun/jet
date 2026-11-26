@@ -7,6 +7,7 @@ mod chat;
 mod chats;
 mod checks;
 mod facade;
+mod factory_reset;
 mod github;
 mod import;
 mod inbox;

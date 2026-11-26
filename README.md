@@ -95,6 +95,28 @@ restart, and each demo account still holding `000111` signs in with that passwor
 does not start when `JET_SEED_PASSWORD` is empty or is `000111`. A host on `127.0.0.1` or another
 loopback origin seeds and signs in with `000111` as before.
 
+An admin can restore the server to factory defaults: Settings, Restore to factory defaults, which
+asks for the word RESET and says that it deletes every user's data and cannot be undone.
+`POST /api/factory-reset` with `{ "confirm": "RESET" }` is the route; it answers 403 `adminOnly` to
+anyone who is not an admin and 400 without the word, and deletes nothing in both cases. The reset
+stops every running provider turn, those of chats and those of the scheduler, closes the database,
+deletes everything below the data directory (the database with every table, the signing secret, the
+token key and every other file there; a link is removed, never followed) and the folders Jet made in
+the system's temporary folder for the agy turns of this data directory's chats, which hold users'
+instructions and notes, and then opens a new host
+on the empty directory as a first start does: the schema is made again, new keys are made and the demo
+organisation is seeded. A key given in the
+environment (`JET_SIGNING_SECRET`, `JET_GITHUB_TOKEN_KEY`) is not in the data directory and stays as
+it is. Nothing of the old host stays in memory, and Jet does not restart. Every browser is signed out
+and lands on the sign-in page. Nothing else outside the data
+directory is touched. The reset is refused with 400, with nothing deleted, in two cases: when the
+data directory holds the folder Jet runs in, its program, its pages or a speech model (`models/`,
+`PHONON2_MODEL`, `PHONON_TTS_MODEL`), and on a public host with no `JET_SEED_PASSWORD`, which would
+seed no account, so that nobody could sign in afterwards. When a file cannot be deleted, or a folder
+cannot be listed to its end, the rest is still deleted, the answer is 500 and names the path, and the
+new host runs on what is left; when no new host can be opened, Jet stops with the reason, and the
+next start finishes the reset.
+
 A sign-in is two HttpOnly cookies: a signed JSON Web Token that lives 15 minutes
 (`--access-seconds` shortens it for tests) and a random refresh token that lives 30 days, is
 stored only as a hash and is replaced on each renewal; offering a replaced one ends the sign-in,
@@ -373,9 +395,10 @@ turn only, and every row is private to its owner until the owner shares it (see 
 - `objectives_list` reads the user's objectives with their steps, sources, update notes and waiting
   agent-tasks. Duration (start to due date) and days left are worked out on every read, never stored.
 - `objectives_update` takes one typed `command`: `create` (title, deliverable, due date, optional
-  start date, steps and sources, and the **first check**, which it cannot be made without; the
-  server picks the chat: a new one when the turn is in the main chat or in a chat that already holds
-  an objective, otherwise the current chat, and the answer's `chat` says which), `edit`, `step_add`, `step_tick`,
+  start date, steps and sources, and the **first check**, which it cannot be made without; every
+  new objective gets a new chat named after it, whatever chat the turn is in, and the answer's
+  `chat` says which), `edit`, `step_add` (a task under no objective stays in the user's main chat,
+  and the answer's `chat` names it), `step_tick`,
   `step_edit` (one step's new title, new due date, or both, as when a step slips),
   `dates` (with the reason; it moves the objective's start and due dates and its note says in words what moved, and the steps keep theirs), `note` (status `on track`, `at risk`, `blocked` or `done`, what moved,
   blockers, and a `private` flag) and `close` (`done` or `dropped`, which also cancels the waiting
@@ -518,7 +541,7 @@ load. The reaction controls are not Tab stops: from the thread the arrow keys mo
 messages, Tab then reaches that message's control, the arrows move between the picks and Escape
 gives the focus back. On a phone the chooser's picks are 44 px tall and it moves left to stay inside
 the screen. Settings say "Changes save as you type" and then "Saved", and their Forget button names
-the chat it clears: Forget “<chat title>”. `tests/browser/thread.mjs`
+the chat it clears: Forget “<chat title>”; its note says that goals and tasks are kept. `tests/browser/thread.mjs`
 drives all of this against the real host.
 
 ## Checks

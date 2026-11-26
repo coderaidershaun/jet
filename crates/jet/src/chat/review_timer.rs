@@ -33,13 +33,19 @@ impl ReviewTimer {
     pub fn schedule(&self, host: Arc<ChatState>, target: ReviewTarget) {
         let waiting = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let generation = self.generation.clone();
+        let mut wait = host.review_quiet;
+        // The sleeping thread must not keep the chat alive: a chat that was closed or deleted, and
+        // all it holds of its host, is freed at once, not when the wait ends.
+        let host = Arc::downgrade(&host);
         std::thread::spawn(move || {
-            let mut wait = host.review_quiet;
             loop {
                 std::thread::sleep(wait + MARGIN);
                 if generation.load(Ordering::SeqCst) != waiting {
                     return;
                 }
+                let Some(host) = host.upgrade() else {
+                    return;
+                };
                 let Some(hub) = host.hub.upgrade() else {
                     return;
                 };

@@ -467,6 +467,10 @@ async function start() {
       systemMotion: systemReduces,
       onClaudeChecked: showProgramStatus,
       onForget: forget,
+      onFactoryReset: async (word) => {
+        await agent.factoryReset(word);
+        location.assign('/signin/');
+      },
       chatTitle: () => $('chat-title').textContent,
     },
     save: async () => { await saveSettings(settings); await refreshStatus(); },

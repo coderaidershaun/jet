@@ -1,10 +1,11 @@
-//! Open the host, serve its routes and shut it down. It joins the jobs of the crate: accounts,
-//! chat, apps, files, voice and the tool facade.
+//! Open the host, serve its routes, restore it to factory defaults and shut it down. It joins the
+//! jobs of the crate: accounts, chat, apps, files, voice and the tool facade.
 
 mod chats;
 mod config;
 mod inbox;
 mod pane;
+mod reset;
 mod routes;
 mod shares;
 mod task_list;
@@ -23,12 +24,17 @@ use crate::store::{Email, ImportError, Store, StoreError};
 use crate::tool_facade::Facade;
 use crate::voice::Voice;
 use agent::apps::Registry;
-use axum::{Router, extract::FromRef};
+use axum::{
+    Router,
+    extract::{FromRef, Request},
+};
 pub use config::ServerConfig;
 use std::{
+    net::SocketAddr,
     sync::{Arc, Mutex},
     time::Duration,
 };
+use tokio::sync::{RwLock, mpsc, oneshot};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
@@ -112,6 +118,14 @@ impl FromRef<Server> for Voice {
 
 impl Server {
     pub fn open(config: ServerConfig) -> Result<Self, ServerError> {
+        let voice = Voice::new(config.disable_voice);
+        Self::open_with(config, voice)
+    }
+
+    /// Builds every part of the host from the data folder. The voice is given, because a reset
+    /// keeps it: the loaded speech models and what is left of Google's allowance belong to the
+    /// machine, not to the data a reset deletes.
+    fn open_with(config: ServerConfig, voice: Voice) -> Result<Self, ServerError> {
         let proxy = Proxy::new(config.public_origin.as_deref(), config.listen)
             .map_err(|error| ServerError::Config(error.to_string()))?;
         let store = Store::open(&config.data_dir)?;
@@ -174,13 +188,36 @@ impl Server {
             files,
             github_tokens,
             mcp_servers,
-            voice: Voice::new(config.disable_voice),
+            voice,
             config,
         })
     }
 
-    fn router(&self) -> Router {
-        routes::router(self.clone())
+    /// Starts the scheduler and gives the router of this host, with the channel on which its
+    /// reset route asks. `mcp_url` is the tool server at the address the host really listens on.
+    fn start(&self, mcp_url: &str) -> (Router, mpsc::Receiver<reset::Answer>) {
+        self.facade.set_url(mcp_url.to_owned());
+        self.scheduler.start();
+        let (asks, asked) = mpsc::channel(1);
+        (routes::router(self.clone(), asks), asked)
+    }
+
+    /// Restores the server to factory defaults: stops this host and its provider turns, deletes
+    /// everything below the data folder and the folders of its agy turns, and opens a new host
+    /// there as a first start does, with the demo accounts. The second value names what could not
+    /// be deleted.
+    ///
+    /// The database is closed for every part of this host before its file goes, so a turn that
+    /// ends late writes nowhere. An error means no host could be opened on the data folder.
+    async fn reset(&self) -> Result<(Self, Result<(), reset::ResetError>), ServerError> {
+        self.shutdown().await;
+        let (store, config, voice) = (self.store.clone(), self.config.clone(), self.voice.clone());
+        tokio::task::spawn_blocking(move || {
+            store.close()?;
+            let left = reset::wipe(&config);
+            Ok((Self::open_with(config, voice)?, left))
+        })
+        .await?
     }
 
     /// Stops provider work and closes event streams within a fixed cleanup deadline.
@@ -194,6 +231,8 @@ impl Server {
         }
     }
 
+    /// Serves the host until a stop signal. Every request goes to the router of the host that is
+    /// live now, so a reset swaps the whole host under the open port, with no restart.
     pub async fn serve(self, listener: tokio::net::TcpListener) -> Result<(), ServerError> {
         let address = listener.local_addr()?;
         let ip = if address.ip().is_unspecified() {
@@ -201,30 +240,53 @@ impl Server {
         } else {
             address.ip()
         };
-        self.facade.set_url(format!(
-            "http://{}/mcp",
-            std::net::SocketAddr::new(ip, address.port())
-        ));
-        self.scheduler.start();
-        let router = self.router();
-        let (finish, finished) = tokio::sync::oneshot::channel::<()>();
+        let mcp_url = format!("http://{}/mcp", SocketAddr::new(ip, address.port()));
+        let mut host = self;
+        let (router, mut resets) = host.start(&mcp_url);
+        let live = Arc::new(RwLock::new(router));
+        let answering = live.clone();
+        let app = Router::new().fallback(move |request: Request| {
+            let answering = answering.clone();
+            async move {
+                let mut router = answering.read().await.clone();
+                let Ok(response) = tower::Service::call(&mut router, request).await;
+                response
+            }
+        });
+        let (finish, finished) = oneshot::channel::<()>();
         let mut running = tokio::spawn(async move {
             axum::serve(
                 listener,
-                router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                app.into_make_service_with_connect_info::<SocketAddr>(),
             )
             .with_graceful_shutdown(async {
                 let _ = finished.await;
             })
             .await
         });
-        tokio::select! {
-            result = &mut running => {
-                return Ok(result??);
+        let stop = shutdown_signal();
+        tokio::pin!(stop);
+        loop {
+            tokio::select! {
+                result = &mut running => {
+                    return Ok(result??);
+                }
+                () = &mut stop => break,
+                Some(answer) = resets.recv() => {
+                    // New requests wait here until the new host can answer them.
+                    let mut router = live.write().await;
+                    let (fresh, left) = host.reset().await.inspect_err(|_| {
+                        eprintln!("jet: the reset stopped the host and could not open a new one; start Jet again");
+                    })?;
+                    host = fresh;
+                    (*router, resets) = host.start(&mcp_url);
+                    if answer.send(left).is_err() {
+                        eprintln!("jet: the reset is done; the admin who asked for it has gone");
+                    }
+                }
             }
-            _ = shutdown_signal() => {}
         }
-        self.shutdown().await;
+        host.shutdown().await;
         if finish.send(()).is_err() {
             eprintln!("jet: server already stopped");
         }

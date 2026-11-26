@@ -87,6 +87,23 @@ test('a section added to the registry gets a menu entry, and choosing it shows t
   }
 });
 
+test('only an admin gets the section that restores the server to factory defaults', () => {
+  const previous = { document: globalThis.document, addEventListener: globalThis.addEventListener };
+  globalThis.document = { createElement: fakeElement, createElementNS: (_, tag) => fakeElement(tag), createDocumentFragment: () => fakeElement('#fragment'), activeElement: null };
+  globalThis.addEventListener = () => {};
+  try {
+    const reset = SECTIONS.filter((section) => section.id === 'factory-reset');
+    const labels = (isAdmin) => {
+      const dialog = fakeElement('dialog');
+      createSettingsWindow({ dialog, context: { settings: {}, isAdmin }, onChange() {}, save: async () => {}, sections: reset });
+      return walk(dialog).filter((node) => node.className === 'settings-entry').map((entry) => entry.textContent);
+    };
+    assert.deepEqual([labels(true), labels(false)], [['Restore to factory defaults'], []]);
+  } finally {
+    Object.assign(globalThis, previous);
+  }
+});
+
 test('a window that opens with no save of its own waiting takes the saved settings whole', async () => {
   const previous = { document: globalThis.document, requestAnimationFrame: globalThis.requestAnimationFrame, addEventListener: globalThis.addEventListener };
   globalThis.document = { createElement: fakeElement, createElementNS: (_, tag) => fakeElement(tag), createDocumentFragment: () => fakeElement('#fragment'), activeElement: null };

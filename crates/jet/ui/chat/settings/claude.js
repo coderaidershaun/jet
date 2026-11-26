@@ -68,7 +68,7 @@ export function buildForget({ settings, onForget, chatTitle = () => '' }) {
   });
 
   return {
-    el: section('forget', 'Forget this conversation', note('Start again with an empty thread.'), ask, confirmBox, failure),
+    el: section('forget', 'Forget this conversation', note('Start again with an empty thread. Your goals and tasks are kept.'), ask, confirmBox, failure),
 
     refresh() {
       // The user has many chats, so the button names the one it clears.

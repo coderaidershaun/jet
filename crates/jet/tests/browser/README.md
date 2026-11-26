@@ -110,6 +110,10 @@ settings window: it opens as a modal, each menu entry shows its section, the ban
 Settings action opens Agent programs, a changed setting survives a reload, Escape and a
 backdrop click close it, Tab stays inside, focus returns to the gear, and at 400 px the
 menu and the section take turns. It saves the window in light and dark at 1280 and 400 px.
+Its last step is the admin's Restore to factory defaults on that same Jet, whose data
+directory is a temporary folder the harness made: only the typed word RESET arms the button,
+the reset runs to the end, the page lands on `/signin/`, and the seeded admin signs in to a
+fresh install.
 
 ```sh
 PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \

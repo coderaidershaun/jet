@@ -62,6 +62,7 @@ import { createBrowserAgent } from './browser-agent.js';
  * @property {(request: Omit<SendRequest, 'text' | 'attachments' | 'feeling'> & { entryId: number, emoji: string | null }) => Promise<{ entry: ShownEntry }>} react
  *   puts the user's emoji on a Jet message, or takes it off with null; the new list arrives as a `reactions` event
  * @property {() => Promise<void>} forget   rejects with kind "busy" while a reply runs
+ * @property {(confirm: string) => Promise<object>} factoryReset   an admin's wipe of the whole server back to a fresh install; `confirm` is the word the admin typed, which the server checks
  * @property {() => Promise<Notes>} loadMemory
  * @property {(notes: { memory: string, user: string, recent: string }) => Promise<Notes>} saveMemory
  * @property {(text: string) => Promise<string>} renderMarkdown
