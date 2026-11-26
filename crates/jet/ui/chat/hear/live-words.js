@@ -1,6 +1,6 @@
 // The browser's own speech recognition, used only to show the user's words while they speak.
 // Gemini's heard words take their place as they land.
-// Browser only: there is no test for it, so it is kept short.
+// Browser only; its test drives a stand-in recognizer.
 
 const FIRST_RETRY_MS = 300;
 const LONGEST_RETRY_MS = 5000;
@@ -12,7 +12,7 @@ const RESTART_AT_ONCE = new Set(['no-speech']);
 /**
  * @param {{ onWords: (text: string) => void }} options   `onWords` gets the words since the last drop each time they change
  * @returns {{ supported: boolean, start: () => void, stop: () => void, dropFinished: () => void, dropAll: () => void }}
- *   `supported` is false when the browser has no recognizer; `start` and `stop` say whether the recognizer is wanted;
+ *   `supported` is false when the browser has no recognizer or has refused to run it; `start` and `stop` say whether the recognizer is wanted;
  *   `dropFinished` forgets the words already final, and `dropAll` all of them
  */
 export function createLiveWords({ onWords }) {
@@ -75,7 +75,10 @@ export function createLiveWords({ onWords }) {
   };
 
   return {
-    supported: true,
+    /** False once the browser has refused to run its recognizer, so no live words will come. */
+    get supported() {
+      return !refused;
+    },
 
     start() {
       wanted = true;

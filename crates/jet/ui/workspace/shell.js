@@ -1,3 +1,4 @@
+// The workspace shell: the drawer, the main column, the plan pane and the places, and which of them shows at this width.
 import { h, icon } from '../dom.js';
 import { requestJson } from '../bridge/browser-agent.js';
 import { createFrameContainer } from './frames.js';
@@ -5,6 +6,8 @@ import { createPlanPane } from '../plan/pane.js';
 
 export function createWorkspace({ agent, page, library, taskList, titleOf, onTools = () => {}, openChat = () => {} }) {
   const narrow = matchMedia('(max-width: 759px)');
+  // From 760 to 1023 px the open plan pane lies beside a drawer that folds to its rail.
+  const midWidth = matchMedia('(min-width: 760px) and (max-width: 1023px)');
   let expanded = !narrow.matches;
   let mode = 'chat', apps = [], selected = null, refreshNumber = 0;
   let resolveReady;
@@ -58,6 +61,7 @@ export function createWorkspace({ agent, page, library, taskList, titleOf, onToo
 
   function paint() {
     root.dataset.expanded = String(expanded);
+    root.dataset.rail = String(!expanded || (root.dataset.pane === 'open' && midWidth.matches));
     root.dataset.mode = mode;
     content.inert = narrow.matches && expanded;
     sidePane.inert = narrow.matches && expanded;
@@ -118,6 +122,9 @@ export function createWorkspace({ agent, page, library, taskList, titleOf, onToo
     }
   }, true);
   narrow.addEventListener('change', () => { expanded = !narrow.matches && mode === 'chat'; paint(); });
+  midWidth.addEventListener('change', paint);
+  // The plan pane opens and closes on its own, and the rail follows it.
+  new MutationObserver(paint).observe(root, { attributes: true, attributeFilter: ['data-pane'] });
   /** The place the address names, or null for the chat. */
   const placeOfHash = () => Object.keys(places).find((name) => location.hash === '#' + name) ?? null;
   // Each place has an address of its own, so back leaves it, and back while files are being chosen ends the choice first.

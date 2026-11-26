@@ -5,9 +5,8 @@ const TARGET_RATE = 16000;
 const HOP_SAMPLES = 256;
 const HOPS_PER_MESSAGE = 2;
 
-// SMELL: this path is used only when the browser will not give a 16 kHz context, and Chrome does,
-// so it has never run in the browser Jet is built for. Its low-pass is a plain average, which lets
-// some high sound fold back into speech. A check in Safari is the only real proof that it works.
+// Used only when the browser will not give a 16 kHz context, which Chrome does. Its low-pass is a plain
+// average, so some high sound can fold back into speech; it has not been tried in a browser that needs it.
 class Resampler {
   constructor(inputRate) {
     this.step = inputRate / TARGET_RATE;

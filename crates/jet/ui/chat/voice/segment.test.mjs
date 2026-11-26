@@ -1,3 +1,4 @@
+// Tests how a streaming reply is cut into the parts that Jet speaks, and that the cuts never change as it grows.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -29,6 +30,8 @@ const CASES = [
   ['a heading still being written waits', '# Titl', false, []],
   ['list items open blocks, and the marker is not a sentence end', '1. First. Second.\n2. Third\n- Fourth', true, ['^1. First.', 'Second.', '^2. Third', '^- Fourth']],
   ['a quote is prose', '> It is quoted. And more.\n\nAfter.', true, ['^> It is quoted.', 'And more.', '^After.']],
+  ['indented code is one silent part, and is not a list continuation or a lazy line', 'Intro.\n\n    let a = 1. 2.\n\n    b()\n\nOutro. Last\n\n- item\n\n    more words. Here', true, ['^Intro.', '~^let a = 1. 2.\n\n    b()', '^Outro.', 'Last', '^- item', '^more words.', 'Here']],
+  ['every indented paragraph under a list item is spoken', '- First step.\n\n    It has a note.\n\n    And a second note.\n\nDone.', true, ['^- First step.', '^It has a note.', '^And a second note.', '^Done.']],
   ['an indented continuation joins its paragraph', 'First line\n  and the second. Third', false, ['^First line\n  and the second.']],
 ];
 
@@ -53,6 +56,18 @@ test('parts settle at sentence ends and keep formatted runs and silent blocks wh
       const settled = segment(full.slice(0, length), false);
       assert.deepEqual(settled, whole.slice(0, settled.length), JSON.stringify(full.slice(0, length)));
     }
+  }
+});
+
+test('a part too long for one request is cut between words, and the cut never changes as the text grows', () => {
+  const text = 'word '.repeat(600);
+  const whole = segment(text, true);
+  assert.ok(whole.length > 2);
+  for (const part of whole) assert.ok(part.end - part.start <= 1000, 'every part fits one request');
+  assert.equal(whole.map((part) => text.slice(part.start, part.end)).join(' '), text.trim(), 'no word is lost');
+  for (const length of [0, 900, 1500, 2100, 2999]) {
+    const settled = segment(text.slice(0, length), false);
+    assert.deepEqual(settled, whole.slice(0, settled.length), String(length));
   }
 });
 

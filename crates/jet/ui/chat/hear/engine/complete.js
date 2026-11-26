@@ -14,9 +14,8 @@ function endsOpen(withoutMarks) {
   return OPEN_WORDS.has(last) || OPEN_PAIRS.has(words.slice(-2).join(' '));
 }
 
-// SMELL: the recogniser may put a full stop after an unfinished phrase, which then looks complete
-// and is sent after only 700 ms. Speech that resumes reopens the turn, but a slow speaker can still
-// be cut off. Only use will show whether the wait needs a better signal.
+// The recogniser may put a full stop after an unfinished phrase, which then looks complete and is sent after
+// the short wait for a complete one. Speech that resumes reopens the turn, so only a slow speaker is cut off.
 /**
  * @param {string} text   the words of the last utterance
  * @returns {'complete' | 'open' | 'neutral'}   a finished sentence, a thought that goes on, or no way to tell

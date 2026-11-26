@@ -50,12 +50,12 @@ function defaultStorage() {
  *   onEvent: (event: object) => void,
  *   clock?: { after: (fn: () => void, ms: number) => () => void },
  *   storage?: { getItem: (key: string) => string | null, setItem: (key: string, value: string) => void, removeItem: (key: string) => void } | null,
- *   stopOnFailure?: boolean,
+ *   stopOnFailure?: () => boolean,
  * }} options   `capture.stop` must also cancel a start still under way; `storage` keeps the echo strikes between page
- *   loads and may be missing or blocked; `stopOnFailure` is true when the page has nothing to send without Google's words,
+ *   loads and may be missing or blocked; `stopOnFailure` says, at the time a clip fails, whether the page has nothing to send without Google's words,
  *   so a clip that fails twice ends listening
  */
-export function createHearing({ capture, vad, transcribe, vocabulary, recentJetWords, onEvent, clock = realClock, storage = defaultStorage(), stopOnFailure = false }) {
+export function createHearing({ capture, vad, transcribe, vocabulary, recentJetWords, onEvent, clock = realClock, storage = defaultStorage(), stopOnFailure = () => false }) {
   let state = 'off';
   let jetSpeaking = false;
   let generation = 0;

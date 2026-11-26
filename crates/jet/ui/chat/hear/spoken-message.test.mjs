@@ -1,3 +1,4 @@
+// Tests what becomes of the spoken message as the listening engine's turns begin, end and are thrown away.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSpokenMessage } from './spoken-message.js';
@@ -153,4 +154,17 @@ test("Jet's voice is ducked while the person speaks over it, and words that cut 
   assert.equal(over.page.ducked, true);
   over.spoken.micStopped();
   assert.equal(over.page.ducked, false);
+});
+
+test('throwing away a turn that was no longer open leaves the next turn pausing with its Send halo and Esc', () => {
+  const { spoken, page } = room();
+  spoken.hear(speech('t1'));
+  spoken.micStopped();
+  spoken.hear(speech('t2'));
+  spoken.hear(words('t2', 'hello'));
+  spoken.hear(pausing('t2'));
+  assert.equal(page.halo, true);
+  spoken.hear({ kind: 'discarded', turnId: 't1', reason: 'tooShort' });
+  assert.equal(page.halo, true);
+  assert.equal(spoken.escape(), true);
 });

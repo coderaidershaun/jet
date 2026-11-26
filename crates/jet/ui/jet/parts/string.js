@@ -7,13 +7,16 @@
 
 import { easeOutBack } from '../easing.js';
 import { bezier, resample } from '../geometry.js';
+import { HOVER_Y, kite, TIP } from './forms.js';
 import { clamp } from '../maths.js';
 
 export const SEGMENTS = 16;
 const SEGMENT_LENGTH = 3.75;
 export const REST_LENGTH = SEGMENTS * SEGMENT_LENGTH;
-// SMELL: the floor is typed in to fit a standing kite's string; a new hover height leaves it behind.
-export const FLOOR = 237.5;
+// The string may dip this far below a standing kite's tip, which is where the lying pose ends up.
+const LIE_DEPTH = 5.7;
+/** The lowest point on the page the string reaches: just under the tip of a standing kite. */
+export const FLOOR = kite()[TIP][1] + HOVER_Y + LIE_DEPTH;
 const WRITTEN_SAMPLES = 130;
 
 const DRAG_PER_UNIT = 0.08;
@@ -90,18 +93,15 @@ export function jPose() {
 }
 
 /**
- * The string lying on the floor to the left of a standing kite, whose tip is at
- * (100, 231.8): it leaves the tip steeply downward, then runs flat.
+ * The string lying on the floor to the left of a standing kite, whose tip is
+ * LIE_DEPTH above the floor: it leaves the tip steeply downward, then runs flat.
  */
 export function lyingPose() {
-  const tip = [100, 231.8];
+  const tip = [100, FLOOR - LIE_DEPTH];
   const at = (dx, dy) => [tip[0] + dx, tip[1] + dy];
   return poseFromPoints(resample(bezier(tip, at(-3, 5.6), at(-15, 5.6), at(-58, 5.2)), SEGMENTS + 1));
 }
 
-// SMELL: a hanging chain has even segments, but the insult animation's string keeps
-// the J pose's uneven segments from its first frame, so the two match only once the
-// pose is fully blended in.
 /**
  * One chain of 16 segments. It holds no state; it exists so that a caller has
  * one thing to keep and ask for points.
@@ -130,6 +130,7 @@ export function createChain({ windHz = WIND_HZ } = {}) {
       const rest = 90 + windDegrees + clamp(DRAG_PER_UNIT * drag * alongChain(i), -MAX_DRAG_DEGREES, MAX_DRAG_DEGREES);
       const blend = pose ? pose.blend[i] : 0;
       const degrees = pose ? rest + blend * (pose.angles[i] + WIND_SHARE_IN_POSE * windDegrees - rest) : rest;
+      // Each segment's length blends from even to the pose's own with its blend, so a hanging chain is even.
       const proportion = pose && pose.proportions ? 1 + blend * (pose.proportions[i] - 1) : 1;
       const length = SEGMENT_LENGTH * payout * proportion;
       const radians = (degrees * Math.PI) / 180;

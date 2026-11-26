@@ -3,6 +3,7 @@
 // purpose, as `drift` does; `workingEnd` finishes the turn, melts back into
 // the kite and opens the eyes.
 
+import { LID_OVERSHOOT } from '../blink.js';
 import { createClip } from '../clip.js';
 import { easeInOut, easeOut } from '../easing.js';
 import { clamp } from '../maths.js';
@@ -26,7 +27,6 @@ const FINISH_LONGEST_MS = 700;
 const FINISH_SLOWDOWN = 1.5;
 const OPEN_OVERSHOOT_AFTER_MS = 160;
 const OPEN_SETTLED_AFTER_MS = 300;
-const OPEN_OVERSHOOT = -0.07;
 
 const SHUT_DONE_MS = SHUT_MS + HOLD_MS;
 const MORPH_DONE_MS = SHUT_DONE_MS + MORPH_MS;
@@ -149,7 +149,7 @@ export function buildWorkingEnd(start, { roll: angle = 0, elapsedMs = 0 } = {}) 
   lids(unmorphedMs, [1, 1]);
   phase('unmorph');
 
-  lids(finishMs + OPEN_OVERSHOOT_AFTER_MS + MORPH_MS, [OPEN_OVERSHOOT, OPEN_OVERSHOOT], easeOut);
+  lids(finishMs + OPEN_OVERSHOOT_AFTER_MS + MORPH_MS, [LID_OVERSHOOT, LID_OVERSHOOT], easeOut);
   lids(finishMs + OPEN_SETTLED_AFTER_MS + MORPH_MS, [0, 0], easeInOut);
   phase('open');
   return finish();

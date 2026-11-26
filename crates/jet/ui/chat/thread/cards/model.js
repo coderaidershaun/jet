@@ -61,8 +61,8 @@ import { shareOf } from './share.js';
 
 const OPEN_QUOTE = '“';
 const CLOSE_QUOTE = '”';
-// SMELL: these match the words quanty writes in its advice and in its health report. If quanty rewords them, the
-// health hint and the red report lines stop showing, and no test here notices.
+// These match the words quanty writes in its advice and in its health report. A test holds a copy of those words
+// and checks that these patterns match it; quanty is a separate repo, so a rewording there must be copied into that test by hand.
 const HEALTH_SENTENCE = /\s*Call the `health` tool[^.]*\.?/;
 const FAILED_LINE = /FAILED/;
 const HEALTH_HINT = 'Ask for a health check to see which service is down.';

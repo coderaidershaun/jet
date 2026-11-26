@@ -160,8 +160,7 @@ export function createDictation({ forming, field, clock, reducedMotion }) {
      */
     takeOver() {
       if (takenOver) return;
-      // SMELL: heard words still waiting to land go after what the person typed, so a key pressed while a burst appears
-      // splits that burst around the key. Landing them first would keep the words in order.
+      flush();
       const spoken = withoutTail();
       tail = '';
       takenOver = true;

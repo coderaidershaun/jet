@@ -5,19 +5,8 @@
 @media (max-width: 1023px) {
   .side-pane { position: fixed; z-index: 20; inset: 0 0 0 auto; width: min(440px, 100vw); box-shadow: -12px 0 40px #0008; }
 }
-/*
- * From 760 to 1023 px the drawer folds to its rail while the pane is open, so the chat stays in sight beside it.
- * SMELL: these repeat the drawer's own rail rules for one more case, because the shell's expanded state is not this
- * pane's to change. A shell state for "rail" would let the drawer's rules serve both.
- */
+/* From 760 to 1023 px the drawer folds to its rail while the pane is open, so the chat stays in sight beside it. */
 @media (min-width: 760px) and (max-width: 1023px) {
-  .workspace-shell[data-pane="open"][data-expanded="true"] { grid-template-columns: 64px minmax(0, 1fr) var(--pane-w); }
-  .workspace-shell[data-pane="open"] :is(.drawer-persona, .context-capacity, .context-toggle, .nav-label, .nav-count, .settings-label, .nav-heading, .new-chat-label, .chat-actions, .account-who) { display: none !important; }
-  .workspace-shell[data-pane="open"] :is(.nav-head, .chat-open, .gear) { justify-content: center; padding: 0; }
-  .workspace-shell[data-pane="open"] .new-chat { width: 44px; height: 44px; padding: 0; justify-content: center; }
-  .workspace-shell[data-pane="open"] .account { flex-direction: column; gap: 6px; padding: 10px 0 4px; }
-  .workspace-shell[data-pane="open"] .chat-open { height: 40px; }
-  .workspace-shell[data-pane="open"] .badge { display: grid; position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; box-shadow: 0 0 0 2px var(--surface); }
   .pane-scrim { left: 64px; background: rgba(11, 20, 27, .45); }
 }
 .pane-head { position: sticky; top: 0; z-index: 2; flex: none; background: var(--surface); border-bottom: 1px solid var(--line); }

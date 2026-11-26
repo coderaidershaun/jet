@@ -1,3 +1,4 @@
+/* The drawer: the chat list and account column on the left, whole or folded to its rail. */
 .drawer { width: var(--drawer-w); overflow: hidden; background: var(--surface); border-right: 1px solid var(--line); }
 .drawer-inner { display: flex; flex-direction: column; height: 100%; padding-top: env(safe-area-inset-top); padding-left: env(safe-area-inset-left); }
 /* No gap after the kite: its 48 px button ends where every title in the pane starts. */
@@ -43,8 +44,8 @@
 .signout:disabled { opacity: .45; }
 .signout .icon { width: 18px; height: 18px; }
 .signout.is-confirming { padding: 0 8px; background: rgba(255, 123, 114, .18); color: var(--danger); font-size: 12px; font-weight: 650; }
-.workspace-shell[data-expanded="false"] .signout.is-confirming { width: 52px; padding: 0 2px; font-size: 11px; line-height: 13px; }
-.workspace-shell[data-expanded="false"] .account { flex-direction: column; gap: 6px; padding: 10px 0 4px; }
-.workspace-shell[data-expanded="false"] .account-who { display: none; }
-.workspace-shell[data-expanded="false"] .gear { justify-content: center; padding: 0; }
+.workspace-shell[data-rail="true"] .signout.is-confirming { width: 52px; padding: 0 2px; font-size: 11px; line-height: 13px; }
+.workspace-shell[data-rail="true"] .account { flex-direction: column; gap: 6px; padding: 10px 0 4px; }
+.workspace-shell[data-rail="true"] .account-who { display: none; }
+.workspace-shell[data-rail="true"] .gear { justify-content: center; padding: 0; }
 @media (pointer: coarse) { .gear { height: 44px; } .signout { min-width: 44px; height: 44px; } }

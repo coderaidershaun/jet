@@ -1,3 +1,4 @@
+// Tests how heard words land in the spoken message and move into the field on a take-over.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDictation } from './dictation.js';
@@ -197,4 +198,15 @@ test('live words show after the heard words until those land in their place, and
   assert.equal(dictation.autoSend, true);
   dictation.showLive('next');
   assert.equal(forming.text, 'Next');
+});
+
+test('a key pressed while a burst of words is still landing goes after the whole burst, not inside it', () => {
+  const { forming, field, dictation } = room();
+  dictation.open();
+  dictation.append('one two three four');
+  assert.equal(forming.text, 'One');
+  field.text = 'x';
+  dictation.takeOver();
+  assert.equal(field.text, 'One two three four x');
+  assert.equal(forming.text, '');
 });

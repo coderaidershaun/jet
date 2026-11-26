@@ -55,13 +55,13 @@ export function createSpokenMessage({ forming, field, clock, reducedMotion, live
     // A turn the mic cut short can be thrown away as an echo after the next turn has begun,
     // and must not take the new turn's live words with it.
     const wasOpen = openTurns.delete(turnId);
-    if (wasOpen) liveWords.dropAll();
     unduckFor(turnId);
-    // SMELL: this runs even for a turn that was no longer open, so throwing away a turn the mic cut short turns off
-    // the Send halo of the next turn while it pauses, and Esc does nothing until that turn pauses again.
+    // A turn that was no longer open is not the one pausing now, so its halo stays.
+    if (!wasOpen) return false;
+    liveWords.dropAll();
     pausing = false;
     paintHalo();
-    return wasOpen;
+    return true;
   }
 
   return {

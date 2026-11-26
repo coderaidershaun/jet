@@ -92,8 +92,6 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
     composer: composerView,
   });
 
-  // SMELL: a recognizer that gives no words, such as one the browser refuses, still counts, so the mic keeps listening
-  // and the notice promises live words that never come.
   /** With a recognizer of its own the browser carries on while Google cannot hear; without one the mic stops, and says so. */
   const hearingProblem = (message) => (liveWords.supported
     ? `${message.replace(/\.$/, '')}. Jet is using your browser's own hearing until it is back.`
@@ -208,16 +206,15 @@ export function connectHearing({ agent, status, button, pill, trailCanvas, field
         recentJetWords,
         onEvent,
         clock,
-        stopOnFailure: !liveWords.supported,
+        stopOnFailure: () => !liveWords.supported,
       });
     })();
     loading.catch(() => { loading = null; });
     return loading;
   }
 
-  // SMELL: the voice detector downloads before the microphone is asked for, so on a first start the
-  // click may be a second old by then. Chrome does not mind; Safari may leave the audio paused, and
-  // then the mic waits for one more touch.
+  // The voice detector downloads before the microphone is asked for, so on a first start the click may be a second
+  // old. Safari may then leave the audio paused, and the mic says "Click anywhere to start listening" and carries on at the next touch.
   async function start() {
     const mine = ++generation;
     showState('starting');

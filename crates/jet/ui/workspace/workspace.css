@@ -1,6 +1,6 @@
 /* Three columns: the drawer, the content, and the plan pane on the right, 0 px wide while it is closed. Below 1024 px the open pane lies over the chat instead of taking a column. */
 .workspace-shell { display: grid; grid-template-columns: 64px minmax(0, 1fr) var(--pane-w); height: 100vh; height: 100dvh; overflow: hidden; }
-.workspace-shell[data-expanded="true"] { grid-template-columns: var(--drawer-w) minmax(0, 1fr) var(--pane-w); }
+.workspace-shell[data-rail="false"] { grid-template-columns: var(--drawer-w) minmax(0, 1fr) var(--pane-w); }
 .workspace-content { position: relative; grid-column: 2; min-width: 0; min-height: 0; overflow: hidden; }
 .workspace-shell[data-pane="open"] { --pane-w: clamp(320px, 30vw, 560px); }
 .workspace-frames, #tools-content { height: 100%; min-width: 0; overflow: auto; }
@@ -15,11 +15,11 @@
 .nav-icon { display: grid; place-items: center; flex: none; width: 32px; }
 .workspace-button .nav-icon { height: 32px; border: 1px solid var(--line); border-radius: var(--r-s); font-weight: 650; }
 .nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.workspace-shell[data-expanded="false"] .drawer-persona,
-.workspace-shell[data-expanded="false"] .context-capacity,
-.workspace-shell[data-expanded="false"] .context-toggle,
-.workspace-shell[data-expanded="false"] .nav-label,
-.workspace-shell[data-expanded="false"] .settings-label { display: none; }
+.workspace-shell[data-rail="true"] .drawer-persona,
+.workspace-shell[data-rail="true"] .context-capacity,
+.workspace-shell[data-rail="true"] .context-toggle,
+.workspace-shell[data-rail="true"] .nav-label,
+.workspace-shell[data-rail="true"] .settings-label { display: none; }
 @media (max-width: 1023px) {
   .workspace-shell[data-pane="open"] { --pane-w: 0px; }
 }
@@ -50,4 +50,4 @@
 .workspace-shell:is([data-mode="files"], [data-mode="tasks"]) :is(.side-pane, .pane-toggle, .pane-scrim) { display: none !important; }
 /* The number of today's open tasks beside the Task list row. It is not a badge: nothing here is unread. */
 .nav-count { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.workspace-shell[data-expanded="false"] .nav-count { display: none; }
+.workspace-shell[data-rail="true"] .nav-count { display: none; }

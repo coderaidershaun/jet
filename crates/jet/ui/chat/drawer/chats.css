@@ -44,12 +44,12 @@
 /* Where the pointer hovers, rename and delete take the badge's place while the row is pointed at, so the title keeps its room. */
 @media (hover: hover) { .chat-row:hover .badge, .chat-row:focus-within .badge { display: none; } }
 
-.workspace-shell[data-expanded="false"] .nav-heading,
-.workspace-shell[data-expanded="false"] .new-chat-label,
-.workspace-shell[data-expanded="false"] .chat-actions { display: none !important; }
-.workspace-shell[data-expanded="false"] .nav-head { justify-content: center; padding-left: 0; }
-.workspace-shell[data-expanded="false"] .new-chat { width: 44px; height: 44px; padding: 0; justify-content: center; }
-.workspace-shell[data-expanded="false"] .chat-open { justify-content: center; height: 40px; padding: 0; }
-.workspace-shell[data-expanded="false"] .badge { display: grid; position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; box-shadow: 0 0 0 2px var(--surface); }
+.workspace-shell[data-rail="true"] .nav-heading,
+.workspace-shell[data-rail="true"] .new-chat-label,
+.workspace-shell[data-rail="true"] .chat-actions { display: none !important; }
+.workspace-shell[data-rail="true"] .nav-head { justify-content: center; padding-left: 0; }
+.workspace-shell[data-rail="true"] .new-chat { width: 44px; height: 44px; padding: 0; justify-content: center; }
+.workspace-shell[data-rail="true"] .chat-open { justify-content: center; height: 40px; padding: 0; }
+.workspace-shell[data-rail="true"] .badge { display: grid; position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; box-shadow: 0 0 0 2px var(--surface); }
 /* With no hover, rename and delete show only on the open chat, as on a desktop, and each is 44 px for a finger. */
 @media (hover: none) { .chat-row:not(:has(.chat-open[aria-current="true"])) .chat-actions { display: none; } .chat-action { min-width: 44px; height: 44px; } }

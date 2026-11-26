@@ -1,3 +1,4 @@
+// Tests the listening engine from microphone frames to turns, with a stand-in capture and voice detector.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHearing } from './hearing.js';
@@ -70,7 +71,7 @@ function room({ storage = memoryStorage(), jetWords = '', stopOnFailure = false 
     onEvent: (event) => events.push(event),
     clock,
     storage,
-    stopOnFailure,
+    stopOnFailure: () => stopOnFailure,
   });
   const frames = (ms, percent) => {
     for (let spent = 0; spent < ms; spent += HOP * 2) {

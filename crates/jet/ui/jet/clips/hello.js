@@ -4,6 +4,7 @@
 // other eye are the player's answer to them.
 
 import { createClip } from '../clip.js';
+import { BLINK, LID_OVERSHOOT } from '../blink.js';
 import { easeInOut, easeOut } from '../easing.js';
 
 // [ms, degrees the right corner is lifted]. There is no key at 0: the wave starts from wherever
@@ -13,8 +14,7 @@ const BRIEF_KEYS = [...KEYS.slice(0, 5), [1450, -3], [1650, 0]];
 const LIFT_PEAK_MS = 500;
 
 // The lid shuts fast, holds, then opens slower with a small overshoot. Each row is [ms, closure, easing].
-const WINK = [[920, 0], [1000, 1, easeInOut], [1300, 1], [1460, -0.07, easeOut], [1600, 0, easeInOut]];
-const BLINK = [[60, 1, easeInOut], [100, 1], [200, -0.07, easeOut], [340, 0, easeInOut]];
+const WINK = [[920, 0], [1000, 1, easeInOut], [1300, 1], [1460, LID_OVERSHOOT, easeOut], [1600, 0, easeInOut]];
 const EYE_SWAP_MS = 60;
 
 const PHASES = { dip: 180, lift: 650, wag: 1900, drop: 2300, rest: 2550 };

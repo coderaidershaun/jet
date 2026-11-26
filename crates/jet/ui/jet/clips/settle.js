@@ -3,6 +3,7 @@
 // and the string starts lying down as soon as its end would reach the floor.
 // When the wind had Jet the landing is gentle and starts from wherever Jet is.
 
+import { LID_OVERSHOOT } from '../blink.js';
 import { createClip } from '../clip.js';
 import { cubicBezier, easeInOut, easeOut } from '../easing.js';
 import { HOVER_Y, kite, TIP } from '../parts/forms.js';
@@ -34,7 +35,6 @@ const SHUT_BEFORE_MS = 60;
 // Held shut long enough that every frame of a slow screen sees the lids closed while the eye kind changes.
 const SHUT_UNTIL_MS = 40;
 const OPEN_BY_MS = 160;
-const OVERSHOOT = -0.07;
 const LIDS_OPEN_MS = 300;
 const LAND_SQUASH_MS = 80;
 const REBOUND_MS = 220;
@@ -74,7 +74,7 @@ export function buildSettle(start, { gentle = false, fromY = HOVER_Y } = {}) {
   eyeKind(contactMs, 'round');
   anger(contactMs, 0);
   lids(contactMs + SHUT_UNTIL_MS, [1, 1]);
-  lids(contactMs + OPEN_BY_MS, [OVERSHOOT, OVERSHOOT], easeOut);
+  lids(contactMs + OPEN_BY_MS, [LID_OVERSHOOT, LID_OVERSHOOT], easeOut);
   lids(contactMs + LIDS_OPEN_MS, [0, 0], easeInOut);
 
   squash(contactMs, [1, 1]);

@@ -1,3 +1,5 @@
+// The insult: the kite blinks into angry eyes, shivers, raises its string into a J and writes a fist and a finger, then settles.
+import { BLINK } from '../blink.js';
 import { createClip } from '../clip.js';
 import { easeInOut, easeOut, pulse, ramp } from '../easing.js';
 import { HOVER_Y } from '../parts/forms.js';
@@ -44,11 +46,8 @@ export function buildInsulted(start) {
   const grounded = start.reducedMotion;
   const blinks = start.eyeKind !== 'lid' && !start.reducedMotion;
   if (blinks) {
-    lids(60, [1, 1], easeInOut);
-    eyeKind(60, 'lid');
-    lids(100, [1, 1]);
-    lids(200, [-0.07, -0.07], easeOut);
-    lids(340, [0, 0], easeInOut);
+    for (const [ms, closure, ease] of BLINK) lids(ms, [closure, closure], ease);
+    eyeKind(BLINK[0][0], 'lid');
   } else lids(200, [0, 0], easeOut);
   anger(420, 0);
   anger(560, 1, easeOut);

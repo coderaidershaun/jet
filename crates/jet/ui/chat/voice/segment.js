@@ -2,11 +2,12 @@
 // time, and marks where each word ends. A part is returned only once its end cannot change, so a
 // part found while the reply streams is also a part of the finished reply.
 //
-// SMELL: indented code, headings underlined with = or -, and tables with no leading | are not
-// recognised. A wrong cut costs only a pause, but indented code is read aloud. Replies from the
-// model fence their code, so this is accepted.
+// Headings underlined with = or -, and tables with no leading |, are not recognised. A wrong cut there
+// costs only a pause, and replies from the model use # headings and piped tables.
 
 const MAX_BATCH_CHARACTERS = 200;
+/** The server refuses a request past 2,000 characters, and a voice does best well below that. */
+const MAX_PART_CHARACTERS = 1000;
 const PAUSE_AFTER_SENTENCE = 6;
 const PAUSE_AFTER_COMMA = 3;
 const ABBREVIATIONS = new Set(['e.g.', 'i.e.', 'etc.', 'vs.', 'mr.', 'mrs.', 'ms.', 'dr.', 'st.']);
@@ -17,6 +18,7 @@ const TABLE = /^ {0,3}\|/;
 const HEADING = /^ {0,3}#{1,6}[ \t]+/;
 const RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 const QUOTE = /^ {0,3}>[ \t]?/;
+const INDENTED = /^(?: {4}|\t)/;
 const ITEM = /^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+/;
 
 /**
@@ -42,8 +44,6 @@ export function withoutCues(text, cues) {
   return text.replace(new RegExp(`[ \\t]?(?:${tags.join('|')})`, 'g'), '');
 }
 
-// SMELL: a part is never split, so a part too long for one request (about a thousand characters,
-// or the server's limit of 2,000) always fails and shows without sound. Two in a row end the voice.
 /**
  * The next piece to send to the voice: a silent part alone, otherwise one sentence for the first
  * piece of a reply and at most two sentences of one block after that.
@@ -129,10 +129,10 @@ function isCueLine(line, cues) {
   return true;
 }
 
-// SMELL: this copies the server's rule that a line of only cues joins the next line with words, so that
-// Markdown does not read it as an HTML block. The server's other rule, joining the line before when none
-// follows, is not copied, because that line may already be spoken. So a cue line before a code fence, or
-// at the very end, is its own part and is not performed.
+// A line of only cues joins the next line with words, as the server does, so that Markdown does not read it as an
+// HTML block. The server's other rule, joining the line before when no words follow, is not copied: that line is
+// spoken as soon as its paragraph ends, so a cue line before a code fence, or at the very end, is its own part and
+// is not performed. Holding every paragraph's last sentence back to learn what follows would stall the voice.
 /**
  * @returns {{ kind: string, start: number, end: number, contentStart: number, closed: boolean, awaitingWords: boolean }[]}
  *   `closed` is true when nothing more can join the block; `awaitingWords` is true while the block is only cues
@@ -141,6 +141,8 @@ function blocksOf(text, cues) {
   const blocks = [];
   let open = null;
   let ending = null;
+  // True while the last block that began on an unindented line is a list item, so indented text still belongs to it.
+  let inList = false;
   for (const line of linesOf(text)) {
     const lineText = text.slice(line.start, line.end);
     if (ending) {
@@ -151,6 +153,8 @@ function blocksOf(text, cues) {
       }
       continue;
     }
+    // Blank lines inside indented code belong to it, even one that is only half written; the next text that is not indented ends it.
+    if (open?.kind === 'indent' && lineText.trim() === '') continue;
     if (line.complete && lineText.trim() === '') {
       if (open?.awaitingWords) continue;
       if (open) open.closed = true;
@@ -162,7 +166,13 @@ function blocksOf(text, cues) {
       open.awaitingWords = line.complete && isCueLine(lineText, cues);
       continue;
     }
-    const kind = startOf(lineText, line.complete);
+    const indented = INDENTED.test(lineText) && lineText.trim() !== '';
+    if (indented && open?.kind === 'indent') {
+      open.end = line.end;
+      continue;
+    }
+    // Indented text is code unless it continues a paragraph, quote or list item, which it cannot interrupt.
+    const kind = indented && !CONTINUES.has(open?.kind) && !inList ? 'indent' : startOf(lineText, line.complete);
     const continues = kind === null ? CONTINUES.has(open?.kind) : kind === open?.kind && (kind === 'table' || kind === 'quote');
     if (continues) {
       open.end = line.end;
@@ -178,6 +188,7 @@ function blocksOf(text, cues) {
       awaitingWords: kind === null && line.complete && isCueLine(lineText, cues),
     };
     blocks.push(open);
+    if (!indented) inList = open.kind === 'item';
     if (kind === 'heading' || kind === 'rule') {
       open.closed = line.complete;
       open = null;
@@ -198,7 +209,7 @@ function blocksOf(text, cues) {
   return blocks;
 }
 
-const isSilent = (kind) => kind === 'fence' || kind === 'math' || kind === 'table' || kind === 'rule';
+const isSilent = (kind) => kind === 'fence' || kind === 'math' || kind === 'table' || kind === 'rule' || kind === 'indent';
 
 function partsOf(text, block, finished, cues) {
   const closed = block.closed || finished;
@@ -241,6 +252,8 @@ function proseParts(text, block, closed, cues) {
   };
   units.forEach((unit, index) => {
     if (unit.endsSentence && index < units.length - 1) cut(index);
+    // Cut before a word that would make the part too long, once that word has stopped growing.
+    else if ((closed || index + 2 < units.length) && index + 1 < units.length && units[index + 1].end - units[first].start > MAX_PART_CHARACTERS) cut(index);
   });
   if (closed && first < units.length) cut(units.length - 1);
   return parts;

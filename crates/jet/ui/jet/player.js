@@ -5,8 +5,9 @@
 // gusts of a kite the wind has, blinks, eyes that change kind only while shut,
 // and the string. It knows nothing about the DOM.
 
+import { BLINK } from './blink.js';
 import { bodyPoint, restingFrame } from './draw/paint.js';
-import { easeInOut, easeOut, pulse } from './easing.js';
+import { pulse } from './easing.js';
 import { clamp, lerp } from './maths.js';
 import { CENTRE, HOVER_Y, kite, TIP } from './parts/forms.js';
 import { createChain, raiseBlend, SEGMENTS, wind } from './parts/string.js';
@@ -53,13 +54,9 @@ const NO_GUST = { lift: 0, roll: 0, x: 0, drag: 0 };
 
 const BLINK_GAP_MIN_MS = 4000;
 const BLINK_GAP_RANGE_MS = 5000;
-const BLINK_SHUT_MS = 60;
-const BLINK_HOLD_END_MS = 100;
-const BLINK_OPEN_END_MS = 200;
-const BLINK_END_MS = 340;
-// SMELL: the lid curve (shut, open 0.07 past, settle) is typed here and again in three clips;
-// one shared curve would keep them in step.
-const BLINK_OVERSHOOT = -0.07;
+const BLINK_SHUT_MS = BLINK[0][0];
+const BLINK_END_MS = BLINK.at(-1)[0];
+const BLINK_TRACK = [{ t: 0, v: 0 }, ...BLINK.map(([t, v, e]) => ({ t, v, e }))];
 const SHUT_ENOUGH = 0.9;
 const ROUND_AFTER_CLIP_MS = 3000;
 
@@ -78,14 +75,8 @@ export const stretchFromSpeed = (degreesPerSecond) => MAX_STRETCH * Math.min(1, 
 
 const copyOf = (value) => (Array.isArray(value) ? value.slice() : value);
 
-// The blink's closure: shut fast, held a moment, opened slower with a small overshoot, then settled.
-function blinkClosure(into) {
-  if (into < 0 || into >= BLINK_END_MS) return 0;
-  if (into < BLINK_SHUT_MS) return easeInOut(into / BLINK_SHUT_MS);
-  if (into < BLINK_HOLD_END_MS) return 1;
-  if (into < BLINK_OPEN_END_MS) return lerp(1, BLINK_OVERSHOOT, easeOut((into - BLINK_HOLD_END_MS) / (BLINK_OPEN_END_MS - BLINK_HOLD_END_MS)));
-  return lerp(BLINK_OVERSHOOT, 0, easeInOut((into - BLINK_OPEN_END_MS) / (BLINK_END_MS - BLINK_OPEN_END_MS)));
-}
+// The blink's closure at `into` ms after it began.
+const blinkClosure = (into) => (into < 0 || into >= BLINK_END_MS ? 0 : sample(BLINK_TRACK, into));
 
 // One wind number for the whole string, the mean of its segments.
 function meanWind(ms) {
