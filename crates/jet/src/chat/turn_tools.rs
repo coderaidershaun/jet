@@ -2,7 +2,7 @@
 //! tool server implements it, so the chat never has to import the tool server.
 
 use crate::store::{ChatId, UserId};
-use agent::{McpConnection, TurnIdentity};
+use agent::{McpConnection, McpServerFacts, TurnIdentity};
 
 /// Whose turn it is: the signed-in user who sent the message, for whom the turn's tools act, and
 /// the chat it runs in.
@@ -27,4 +27,9 @@ pub(crate) trait TurnTools: Send + Sync {
     fn revoke(&self, owner: TurnOwner, request_id: &str);
     /// Lets go of every turn.
     fn shutdown(&self);
+    /// The MCP servers the user has turned on, as Jet is told of them at the start of a turn. A
+    /// stand-in with no tool server has none.
+    fn mcp_servers(&self, _user: UserId) -> Vec<McpServerFacts> {
+        Vec::new()
+    }
 }

@@ -6,7 +6,7 @@ mod github;
 mod tokens;
 
 pub(crate) use github::GithubError;
-pub(crate) use tokens::{GithubTokens, TokenError, router};
+pub(crate) use tokens::{GithubTokens, router};
 
 use crate::store::UserId;
 use github::{Github, Repo};

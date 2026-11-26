@@ -60,8 +60,10 @@ pub struct ToolResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum McpError {
-    #[error("app {app_id} is disabled or removed")]
+    #[error("app or MCP server {app_id} is turned off or removed")]
     Unavailable { app_id: AppId },
+    #[error("the server asked for credentials, or refused the ones Jet sent")]
+    Unauthorized,
     #[error("tool {tool} is not listed by app {app_id}")]
     UnknownTool { app_id: AppId, tool: String },
     #[error("invalid tool arguments: {message}")]

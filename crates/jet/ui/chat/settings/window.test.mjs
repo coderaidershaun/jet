@@ -70,7 +70,13 @@ test('a section added to the registry gets a menu entry, and choosing it shows t
     walk(dialog).find((node) => node.className === 'settings-menu').fire('keydown', { key: 'ArrowDown', target: entries.at(-1) });
     assert.deepEqual([shown(), current(), document.activeElement], [['settings-persona'], ['Persona'], entries[0]], 'the arrow wraps to the first entry');
 
+    settingsWindow.open('mcp');
+    assert.deepEqual([shown(), current()], [['settings-mcp'], ['MCP']], 'the MCP entry opens the MCP section');
+    const savedLine = walk(dialog).find((node) => node.className === 'settings-saved');
+    assert.equal(savedLine.hidden, true, 'a section that saves with buttons does not say changes save as you type');
+
     settingsWindow.open('claude');
+    assert.equal(savedLine.hidden, false);
     assert.deepEqual([shown(), current(), dialog.dataset.view], [['settings-claude'], ['Agent programs'], 'section']);
     assert.throws(() => settingsWindow.open('nowhere'), /no section "nowhere"/);
   } finally {

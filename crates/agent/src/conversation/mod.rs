@@ -32,8 +32,8 @@ pub use wake::{
 };
 
 use crate::chat::{
-    Attachment, Effort, Entry, EntryId, McpConnection, Model, Notes, Persona, Role, ShownEntry,
-    TurnIdentity,
+    Attachment, Effort, Entry, EntryId, McpConnection, McpServerFacts, Model, Notes, Persona, Role,
+    ShownEntry, TurnIdentity,
 };
 use crate::markdown::render_markdown;
 use crate::turn::{Request, SessionMode, Stopper, Transport, Turn};
@@ -61,6 +61,8 @@ pub struct Message {
     pub voice_cues: bool,
     /// Lines for Jet about what the user did since their last message, such as a tap on a card.
     pub notices: Vec<String>,
+    /// The MCP servers the user has turned on, read again for every turn.
+    pub mcp_servers: Vec<McpServerFacts>,
 }
 
 /// How many of the newest entries a prompt lists the reactions of.
@@ -244,7 +246,12 @@ impl Conversation {
         let entries = self.saved.entries()?;
         let request = Request {
             prompt,
-            system_prompt: persona::compose(&message.persona, &notes, message.model),
+            system_prompt: persona::compose(
+                &message.persona,
+                &notes,
+                message.model,
+                Some(&message.mcp_servers),
+            ),
             model: message.model,
             effort: message.effort,
             budget_usd: message.budget_usd,
@@ -361,6 +368,7 @@ mod test_support {
             spoken: false,
             voice_cues: false,
             notices: Vec::new(),
+            mcp_servers: Vec::new(),
         }
     }
 

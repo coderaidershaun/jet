@@ -8,7 +8,7 @@ use uuid::Uuid;
 #[serde(transparent)]
 pub struct AppId(Uuid);
 impl AppId {
-    pub(super) fn generate() -> Self {
+    pub fn generate() -> Self {
         Self(Uuid::new_v4())
     }
 }

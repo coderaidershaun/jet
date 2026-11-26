@@ -1,6 +1,5 @@
-//! The apps Jet hosts, as the browser sees them: the list and its changes, each app's tools, and
-//! the proxy that serves an app's own page from Jet's address. Each app belongs to the user who
-//! added it, and every route and tool reaches only that user's apps.
+//! The apps Jet hosts as the browser sees them, each reachable only by the user who added it, and
+//! the MCP servers users add, which share the apps' tool client.
 
 mod proxy;
 mod registry;
@@ -15,15 +14,17 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use crate::chat::{BridgeError, Chats};
 use crate::lock;
+use crate::mcp_servers::McpServers;
 use crate::store::{Store, UserId};
 pub(crate) use proxy::Proxy;
 
-/// What the app routes and the tool facade share: the registry, the client that calls the apps'
-/// tools, and the proxy.
+/// What the app routes and the tool facade share: the registry, the client that calls the tools of
+/// the apps and of the users' MCP servers, those servers, and the proxy.
 #[derive(Clone)]
 pub(crate) struct Apps {
     registry: Arc<Mutex<Registry>>,
     mcp: Arc<HttpMcpClient>,
+    servers: McpServers,
     proxy: Proxy,
     store: Store,
     /// Told about each change, so the owner's open chats show it.
@@ -34,12 +35,14 @@ impl Apps {
     pub(crate) fn new(
         registry: Arc<Mutex<Registry>>,
         mcp: Arc<HttpMcpClient>,
+        servers: McpServers,
         proxy: Proxy,
         store: Store,
     ) -> Self {
         Self {
             registry,
             mcp,
+            servers,
             proxy,
             store,
             chats: Arc::new(OnceLock::new()),
@@ -53,6 +56,10 @@ impl Apps {
 
     pub(crate) fn mcp(&self) -> &Arc<HttpMcpClient> {
         &self.mcp
+    }
+
+    pub(crate) fn servers(&self) -> &McpServers {
+        &self.servers
     }
 
     /// The user's apps, in the order they were added.

@@ -68,7 +68,7 @@ export function createSettingsWindow({ dialog, context, onChange, save, sections
   };
   const ctx = { ...context, changed };
 
-  const entries = sections.map(({ id, label, build }) => {
+  const entries = sections.map(({ id, label, build, savesWithButtons = false }) => {
     const { el, refresh: refreshSection = () => {} } = build(ctx);
     const panelId = 'settings-' + id;
     const panel = h('div', { class: 'settings-panel', id: panelId, tabindex: '-1', hidden: true }, el);
@@ -77,7 +77,7 @@ export function createSettingsWindow({ dialog, context, onChange, save, sections
       choose(id);
       showSection();
     });
-    return { id, label, panel, button, refreshSection };
+    return { id, label, panel, button, refreshSection, savesWithButtons };
   });
   const entryOf = (id) => {
     const entry = entries.find((candidate) => candidate.id === id);
@@ -100,6 +100,7 @@ export function createSettingsWindow({ dialog, context, onChange, save, sections
 
   function choose(id) {
     current = entryOf(id).id;
+    saved.hidden = entryOf(id).savesWithButtons;
     for (const entry of entries) {
       const chosen = entry.id === current;
       entry.panel.hidden = !chosen;

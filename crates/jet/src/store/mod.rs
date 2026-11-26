@@ -8,6 +8,7 @@ mod files;
 mod github_tokens;
 mod import;
 mod inbox;
+mod mcp_servers;
 mod notes;
 mod objectives;
 mod pane;
@@ -29,6 +30,7 @@ pub(crate) use inbox::{
     CardId, Close, Closed, Item, ItemId, ItemKind, ItemState, Posted, ReplyCard, ReplyCardId,
     ReplyOutcome, SendCard, SendTap, Sent,
 };
+pub(crate) use mcp_servers::{McpProvider, McpServer, McpState, McpTool, NewMcpServer, SealedKey};
 pub(crate) use objectives::{Edit, NewObjective, Objective, ObjectiveId, ObjectiveStatus};
 pub(crate) use pane::{Tap, Told};
 pub(crate) use shares::{
@@ -91,6 +93,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0012_closed_and_reply_cards.sql"),
     include_str!("migrations/0013_artifacts.sql"),
     include_str!("migrations/0014_task_list.sql"),
+    include_str!("migrations/0015_mcp_servers.sql"),
 ];
 
 #[derive(Debug, thiserror::Error)]

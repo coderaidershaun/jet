@@ -10,7 +10,7 @@ use std::time::Duration;
 
 /// Sends one message with the provider script in it, waits for the reply to end, and gives the
 /// result of each step of the script.
-fn run_turn(host: &Host, id: &str, words: &str, script: Value) -> Vec<Value> {
+pub(super) fn run_turn(host: &Host, id: &str, words: &str, script: Value) -> Vec<Value> {
     let mut message = request(id);
     message["text"] = json!(format!("{words}\nfacade:{script}"));
     let (status, accepted) = host.post("/api/chat/send", message);

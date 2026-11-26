@@ -2,6 +2,7 @@
 
 import { buildForget, buildPrograms } from './claude.js';
 import { buildGithub } from './github.js';
+import { buildMcp } from './mcp.js';
 import { buildMemory } from './memory.js';
 import { buildModel } from './model.js';
 import { buildMotion } from './motion.js';
@@ -14,6 +15,8 @@ import { buildVoice } from './voice.js';
  * @property {string} label   its words in the menu
  * @property {(ctx: import('./window.js').SettingsContext) => { el: Node, refresh?: () => unknown }} build
  *   makes the section once; the window calls `refresh` each time it opens
+ * @property {boolean} [savesWithButtons]   the section saves only when a button is pressed, so the window does not
+ *   say that changes save as you type
  */
 
 /** @type {readonly SettingsSection[]} */
@@ -24,6 +27,7 @@ export const SECTIONS = Object.freeze([
   { id: 'motion', label: 'Motion', build: buildMotion },
   { id: 'memory', label: 'Memory', build: buildMemory },
   { id: 'github', label: 'GitHub', build: (ctx) => ({ el: buildGithub(ctx) }) },
+  { id: 'mcp', label: 'MCP', build: buildMcp, savesWithButtons: true },
   { id: 'claude', label: 'Agent programs', build: buildPrograms },
   { id: 'forget', label: 'Forget this conversation', build: buildForget },
 ].map((section) => Object.freeze(section)));

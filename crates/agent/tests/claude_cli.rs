@@ -35,6 +35,7 @@ fn a_recorded_quanty_search_reaches_the_page_and_the_thread() {
         spoken: false,
         voice_cues: false,
         notices: Vec::new(),
+        mcp_servers: Vec::new(),
     };
     let (_, reply) = conversation.send(Arc::new(claude), message, None).unwrap();
     let events: Vec<Event> = reply.collect();

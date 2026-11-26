@@ -1,6 +1,9 @@
 //! Keep one negotiated HTTP connection per registered endpoint.
-use super::{McpError, Progress, ToolCatalogue, ToolRequest, ToolResult, dispatch::Purpose};
-use crate::apps::{AppId, Registry};
+use super::{
+    Endpoint, Endpoints, McpError, Progress, ToolCatalogue, ToolRequest, ToolResult,
+    dispatch::Purpose,
+};
+use crate::apps::AppId;
 use rmcp::{
     ClientHandler, RoleClient, ServiceExt,
     model::{ProgressNotificationParam, ProgressToken},
@@ -58,7 +61,7 @@ impl ClientHandler for Notifications {
     }
 }
 pub(super) struct Connection {
-    pub endpoint: String,
+    pub endpoint: Endpoint,
     pub running: Arc<RunningService<RoleClient, Notifications>>,
     pub generation: u64,
 }
@@ -69,14 +72,14 @@ pub(super) struct AppState {
 }
 
 pub struct HttpMcpClient {
-    pub(super) registry: Arc<Mutex<Registry>>,
+    pub(super) endpoints: Arc<dyn Endpoints>,
     pub(super) apps: AsyncMutex<HashMap<AppId, Arc<AsyncMutex<AppState>>>>,
     pub(super) calls: Arc<Mutex<HashMap<String, Option<tokio::sync::oneshot::Sender<()>>>>>,
 }
 impl HttpMcpClient {
-    pub fn new(registry: Arc<Mutex<Registry>>) -> Self {
+    pub fn new(endpoints: Arc<dyn Endpoints>) -> Self {
         Self {
-            registry,
+            endpoints,
             apps: AsyncMutex::new(HashMap::new()),
             calls: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -119,17 +122,13 @@ impl HttpMcpClient {
     ) -> impl Future<Output = Result<ToolResult, McpError>> + Send {
         self.prepare(request, Purpose::Status, None)
     }
-    pub(super) fn endpoint(&self, id: &AppId) -> Result<String, McpError> {
-        let registry = self
-            .registry
-            .lock()
-            .map_err(|_| failure("registry lock failed"))?;
-        registry
-            .get(id)
-            .filter(|app| app.enabled)
-            .and_then(|app| app.mcp_url.as_ref())
-            .map(ToString::to_string)
-            .ok_or_else(|| McpError::Unavailable { app_id: id.clone() })
+    pub(super) fn endpoint(&self, id: &AppId) -> Result<Endpoint, McpError> {
+        self.endpoints.endpoint(id)
+    }
+    /// Drops the connection and the tools kept for the server, so the next use connects afresh.
+    /// A call already sent keeps its own connection until it ends.
+    pub async fn forget(&self, id: &AppId) {
+        self.apps.lock().await.remove(id);
     }
     pub(super) async fn state(&self, id: &AppId) -> Arc<AsyncMutex<AppState>> {
         self.apps
@@ -139,7 +138,7 @@ impl HttpMcpClient {
             .or_default()
             .clone()
     }
-    pub(super) async fn connect(endpoint: String) -> Result<Connection, McpError> {
+    pub(super) async fn connect(endpoint: Endpoint) -> Result<Connection, McpError> {
         use rmcp::transport::{
             StreamableHttpClientTransport,
             streamable_http_client::StreamableHttpClientTransportConfig,
@@ -149,17 +148,18 @@ impl HttpMcpClient {
         let client = reqwest::Client::builder()
             .connect_timeout(DEADLINE)
             .redirect(reqwest::redirect::Policy::none())
+            .default_headers(headers(&endpoint)?)
             .build()
             .map_err(failure)?;
         // A write with an uncertain outcome must never be sent a second time.
-        let mut config = StreamableHttpClientTransportConfig::with_uri(endpoint.clone());
+        let mut config = StreamableHttpClientTransportConfig::with_uri(endpoint.url.clone());
         config.reinit_on_expired_session = false;
         config.max_sse_event_size = MAX_BYTES;
         let transport = StreamableHttpClientTransport::with_client(client, config);
         let running = tokio::time::timeout(DEADLINE, Notifications::default().serve(transport))
             .await
             .map_err(failure)?
-            .map_err(failure)?;
+            .map_err(refusal)?;
         Ok(Connection {
             endpoint,
             running: Arc::new(running),
@@ -185,6 +185,49 @@ impl HttpMcpClient {
         self.apps.lock().await.clear();
     }
 }
+/// The endpoint's headers, each value marked sensitive so the HTTP library never prints it.
+fn headers(endpoint: &Endpoint) -> Result<reqwest::header::HeaderMap, McpError> {
+    use reqwest::header::{HeaderName, HeaderValue};
+    let mut headers = reqwest::header::HeaderMap::new();
+    for (name, value) in &endpoint.headers {
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| failure(format!("{name:?} is not a valid header name")))?;
+        let mut value = HeaderValue::from_str(value)
+            .map_err(|_| failure(format!("the value of header {name} is not valid")))?;
+        value.set_sensitive(true);
+        headers.insert(name, value);
+    }
+    Ok(headers)
+}
+
+/// Why the server would not start a session: [`McpError::Unauthorized`] when it asked for
+/// credentials (HTTP 401) or refused the ones sent (HTTP 403), else the deepest cause in words.
+fn refusal(error: rmcp::service::ClientInitializeError) -> McpError {
+    use rmcp::service::ClientInitializeError;
+    // The transport's own error is a field that the error does not name as its source.
+    match &error {
+        ClientInitializeError::TransportError { error, .. } => classify(&*error.error),
+        other => classify(other),
+    }
+}
+
+/// [`McpError::Unauthorized`] when the error, or one that caused it, is the server asking for
+/// credentials or refusing them, else the deepest cause in words.
+fn classify(mut cause: &(dyn std::error::Error + 'static)) -> McpError {
+    use rmcp::transport::streamable_http_client::StreamableHttpError;
+    loop {
+        if let Some(
+            StreamableHttpError::AuthRequired(_) | StreamableHttpError::InsufficientScope(_),
+        ) = cause.downcast_ref::<StreamableHttpError<reqwest::Error>>()
+        {
+            return McpError::Unauthorized;
+        }
+        match cause.source() {
+            Some(source) => cause = source,
+            None => return failure(cause),
+        }
+    }
+}
 pub(super) fn failure(error: impl std::fmt::Display) -> McpError {
     McpError::Transport {
         message: error.to_string(),
@@ -197,6 +240,7 @@ pub(super) fn protocol(error: rmcp::ServiceError) -> McpError {
             message: error.message.into_owned(),
             data: error.data,
         },
+        rmcp::ServiceError::TransportSend(error) => classify(&*error.error),
         error => failure(error),
     }
 }

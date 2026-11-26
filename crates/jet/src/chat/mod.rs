@@ -539,6 +539,7 @@ impl ChatState {
                 .filter(|index| !index.is_empty())
                 .into_iter()
                 .collect(),
+            mcp_servers: self.tools.mcp_servers(self.user()),
         };
         (identity, message)
     }

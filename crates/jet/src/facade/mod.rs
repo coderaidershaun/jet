@@ -1,8 +1,9 @@
 //! Bind the stable provider tool surface to one initiating browser turn, acting for the user who
-//! sent its message: their apps, their files and their credentials only.
+//! sent its message: their apps, their MCP servers, their files and their credentials only.
 mod chats;
 mod check;
 mod files;
+mod gate;
 mod handler;
 mod handoff;
 mod marks;
@@ -16,7 +17,8 @@ use crate::evidence::Evidence;
 use crate::files::Files;
 use crate::lock;
 use crate::objectives::Objectives;
-use agent::{McpConnection, TurnIdentity, mcp::HttpMcpClient};
+use crate::store::UserId;
+use agent::{McpConnection, McpServerFacts, TurnIdentity, mcp::HttpMcpClient};
 use axum::{
     Json, Router,
     body::Bytes,
@@ -47,8 +49,8 @@ struct Binding {
     /// The signed-in user who sent the message, and the chat the turn runs in. Every tool acts
     /// for that user only.
     owner: TurnOwner,
-    /// `github_activity` ran in this turn, or a colleague's shared objectives were read, so it
-    /// has read text written by others.
+    /// `github_activity` ran in this turn, a colleague's shared objectives were read, or a tool of
+    /// an MCP server the user added was called, so it has read text written by others.
     has_read_strangers: bool,
     /// A colleague's message is in this turn's prompt, or was read by the turn: the turn is
     /// refused what is refused after web text, and `send`, from its first call.
@@ -184,6 +186,9 @@ impl TurnTools for Facade {
         for (owner, request) in requests {
             self.revoke(owner, &request);
         }
+    }
+    fn mcp_servers(&self, user: UserId) -> Vec<McpServerFacts> {
+        self.apps.servers().facts(user)
     }
 }
 async fn authorize(State(facade): State<Arc<Facade>>, request: Request, next: Next) -> Response {

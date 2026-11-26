@@ -12,6 +12,7 @@ mod import;
 mod inbox;
 mod library;
 mod mcp_fixture;
+mod mcp_servers;
 mod objectives;
 mod pane;
 mod promises;

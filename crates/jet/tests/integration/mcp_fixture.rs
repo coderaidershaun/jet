@@ -1,4 +1,5 @@
-//! Run an independent free app with a real SDK MCP endpoint.
+//! Run an independent free app with a real SDK MCP endpoint, open to all or guarded by a key.
+use axum::response::IntoResponse;
 use rmcp::{
     RoleServer, ServerHandler,
     model::*,
@@ -163,11 +164,27 @@ impl App {
 pub struct Fixture {
     pub url: String,
     pub app: App,
+    /// The `Authorization` value a guarded fixture accepts.
+    authorization: Arc<std::sync::Mutex<String>>,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Fixture {
     pub fn start() -> Self {
+        Self::serve(None)
+    }
+    /// Like `start`, with the MCP endpoint answering 401 to any request that does not carry
+    /// `Authorization: Bearer <token>`, the way a server that needs a key does.
+    pub fn guarded(token: &str) -> Self {
+        Self::serve(Some(format!("Bearer {token}")))
+    }
+    /// From now on a guarded fixture accepts only this token, as when a key is revoked.
+    pub fn require(&self, token: &str) {
+        *self.authorization.lock().unwrap() = format!("Bearer {token}");
+    }
+    fn serve(guard: Option<String>) -> Self {
+        let authorization = Arc::new(std::sync::Mutex::new(guard.clone().unwrap_or_default()));
+        let expected = authorization.clone();
         let (address, receive) = std::sync::mpsc::channel();
         let (stop, stopped) = tokio::sync::oneshot::channel();
         let app = App::default();
@@ -178,12 +195,26 @@ impl Fixture {
             address.send(format!("http://{}/",listener.local_addr().unwrap())).unwrap();
             let service = StreamableHttpService::new(move || Ok(App { discovered:Default::default(), ..server.clone() }), Arc::new(LocalSessionManager::default()), Default::default());
             let router = axum::Router::new().nest_service("/mcp",service).route("/jet-app.json",axum::routing::get(|| async { axum::Json(json!({"version":1,"name":"Fixture","ui":"./","mcp":"mcp","embedding":"relative-paths"})) }));
+            let router = match guard {
+                Some(_) => router.layer(axum::middleware::from_fn(move |request: axum::extract::Request, next: axum::middleware::Next| {
+                    let allowed = request.headers().get("authorization").is_some_and(|value| value == expected.lock().unwrap().as_str());
+                    async move {
+                        if allowed {
+                            return next.run(request).await;
+                        }
+                        let challenge = [("www-authenticate", r#"Bearer resource_metadata="http://127.0.0.1/.well-known/oauth-protected-resource""#)];
+                        (axum::http::StatusCode::UNAUTHORIZED, challenge).into_response()
+                    }
+                })),
+                None => router,
+            };
             tokio::select! { _ = axum::serve(listener,router) => {}, _ = stopped => {} }
         })
         });
         Self {
             url: receive.recv().unwrap(),
             app,
+            authorization,
             stop: Some(stop),
             thread: Some(thread),
         }

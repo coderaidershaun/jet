@@ -16,6 +16,8 @@
 .settings-head h2 { flex: none; margin: 0; font-size: 15px; line-height: 20px; font-weight: 650; }
 .settings-saved { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 16px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .settings-head .icon-button { color: var(--muted); }
+/* The close button keeps to the right when a section hides the saving line. */
+.settings-head .icon-button:last-child { margin-left: auto; }
 .settings-head .icon-button:hover { color: var(--fg); }
 .settings-head .icon-button .icon { width: 20px; height: 20px; }
 .settings-back { display: none; }
@@ -104,3 +106,35 @@
 .note.in-use { color: var(--fg); }
 .reasons .note { margin: 0 0 4px; }
 .reasons { margin-bottom: 8px; }
+
+/* The MCP section: a plain list of servers, each with its state, and the add form below it. */
+.mcp-list { margin: 0 0 12px; padding: 0; list-style: none; }
+.mcp-server { padding: 14px 0; border-top: 1px solid var(--line); }
+.mcp-server:last-child { border-bottom: 1px solid var(--line); }
+.mcp-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.mcp-name { min-width: 0; font-size: 15px; line-height: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.mcp-url { margin: 2px 0 6px; color: var(--muted); font: 12px/16px var(--mono); overflow-wrap: anywhere; }
+.mcp-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0; font-size: 13px; line-height: 18px; }
+.mcp-state { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.mcp-state::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.mcp-state[data-state="connected"]::before { background: var(--ok); }
+.mcp-state[data-state="needs_key"]::before { background: var(--warning); }
+.mcp-state[data-state="failed"]::before { background: var(--danger); }
+.mcp-key-words { color: var(--muted); }
+.mcp-detail { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 16px; }
+.mcp-detail[data-state="failed"] { color: var(--danger); }
+.mcp-tools { margin-top: 6px; font-size: 13px; line-height: 18px; }
+.mcp-tools summary { width: fit-content; color: var(--muted); cursor: pointer; }
+.mcp-tools p { margin: 4px 0 0; font: 12px/18px var(--mono); overflow-wrap: anywhere; }
+.mcp-server .row-actions { flex-wrap: wrap; margin-top: 10px; }
+.mcp-server .problem { margin: 8px 0 0; }
+.mcp-panel { margin-top: 12px; padding: 12px 14px 4px; border: 1px solid var(--line); border-radius: var(--r-s); }
+.mcp-panel .row-actions { margin-bottom: 12px; }
+.mcp-add > .note { margin-top: -4px; }
+/* Fields that belong together share a row when the section is wide enough, so the form fits without scrolling. */
+.mcp-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 0 12px; }
+.mcp-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0 12px; }
+.mcp-key-fields { display: contents; }
+@media (max-width: 639.98px) {
+  .mcp-pair { grid-template-columns: minmax(0, 1fr); }
+}

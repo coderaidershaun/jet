@@ -12,15 +12,17 @@ mod task_list;
 use crate::account::{self, AccountError, Accounts};
 use crate::apps::{Apps, Proxy};
 use crate::chat::{BridgeError, Chats, TurnTools};
-use crate::evidence::{Evidence, GithubTokens, TokenError};
+use crate::evidence::{Evidence, GithubTokens};
 use crate::facade::Facade;
 use crate::files::Files;
 use crate::lock;
+use crate::mcp_servers::McpServers;
 use crate::objectives::{self, Objectives};
 use crate::scheduler::{Scheduler, Signals};
+use crate::seal::{SealError, Sealer};
 use crate::store::{Email, ImportError, Store, StoreError};
 use crate::voice::Voice;
-use agent::{apps::Registry, mcp::HttpMcpClient};
+use agent::apps::Registry;
 use axum::{Router, extract::FromRef};
 pub use config::ServerConfig;
 use std::{
@@ -39,7 +41,7 @@ pub enum ServerError {
     #[error(transparent)]
     Account(#[from] AccountError),
     #[error(transparent)]
-    Token(#[from] TokenError),
+    Seal(#[from] SealError),
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error("could not copy the older Jet's files into the database")]
@@ -61,6 +63,7 @@ pub struct Server {
     scheduler: Arc<Scheduler>,
     files: Files,
     github_tokens: GithubTokens,
+    mcp_servers: McpServers,
     voice: Voice,
     config: ServerConfig,
 }
@@ -95,6 +98,12 @@ impl FromRef<Server> for GithubTokens {
     }
 }
 
+impl FromRef<Server> for McpServers {
+    fn from_ref(server: &Server) -> Self {
+        server.mcp_servers.clone()
+    }
+}
+
 impl FromRef<Server> for Voice {
     fn from_ref(server: &Server) -> Self {
         server.voice.clone()
@@ -111,10 +120,11 @@ impl Server {
             eprintln!("jet: copied the older Jet's files into the owner's account; the files stay");
         }
         let registry = Arc::new(Mutex::new(Registry::open(Box::new(store.clone()))?));
-        let github_tokens = GithubTokens::open(store.clone(), &config.data_dir)?;
-        let mcp = Arc::new(HttpMcpClient::new(registry.clone()));
+        let sealer = Sealer::open(&config.data_dir)?;
+        let github_tokens = GithubTokens::new(store.clone(), sealer.clone());
+        let (mcp_servers, mcp) = McpServers::open(store.clone(), sealer, registry.clone());
         let files = Files::new(store.clone());
-        let apps = Apps::new(registry, mcp, proxy, store.clone());
+        let apps = Apps::new(registry, mcp, mcp_servers.clone(), proxy, store.clone());
         let signals = Signals::default();
         let test_clock = objectives::test_clock();
         let clock = test_clock.clone().unwrap_or_else(objectives::system_clock);
@@ -157,6 +167,7 @@ impl Server {
             scheduler,
             files,
             github_tokens,
+            mcp_servers,
             voice: Voice::new(config.disable_voice),
             config,
         })

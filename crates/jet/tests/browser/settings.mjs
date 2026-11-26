@@ -1,9 +1,11 @@
 // Drives the settings window of the real page against the real server and the provider stand-in: a modal with a menu
 // that shows each section, the banner's Settings action, a setting that saves and survives a reload, Escape and the
-// backdrop, Tab kept inside, focus back on the opener, and the list-then-section view at 400 px. It saves the window in
-// light and dark at 1280 and 400 px.
+// backdrop, Tab kept inside, focus back on the opener, the list-then-section view at 400 px, and the MCP section
+// adding, testing, turning off and on and removing servers against a local MCP stand-in. It saves the window in light
+// and dark at 1280 and 400 px, and the MCP section's states at both widths.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises';
+import http from 'node:http';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -17,11 +19,39 @@ const processes = createProcesses();
 // Each menu entry and the heading its section opens with; Voice holds the input and the output.
 const SECTIONS = [
   ['Persona', 'Persona'], ['Model and thinking', 'Model and thinking'], ['Voice', 'Voice input'], ['Motion', 'Motion'],
-  ['Memory', 'Memory'], ['GitHub', 'GitHub'], ['Agent programs', 'Agent programs'], ['Forget this conversation', 'Forget this conversation'],
+  ['Memory', 'Memory'], ['GitHub', 'GitHub'], ['MCP', 'MCP servers'], ['Agent programs', 'Agent programs'],
+  ['Forget this conversation', 'Forget this conversation'],
 ];
+const MCP_KEY = 'drive-key-7731';
 
-let browser, page;
+/** A small MCP server that answers only requests that carry its key, with three tools. */
+async function startMcpStandIn() {
+  const tools = ['search_pages', 'read_page', 'append_note'].map((name) => ({ name, description: 'Stand-in tool', inputSchema: { type: 'object' }, annotations: { readOnlyHint: name !== 'append_note' } }));
+  const server = http.createServer(async (request, response) => {
+    if (request.headers.authorization !== 'Bearer ' + MCP_KEY) {
+      response.writeHead(401, { 'WWW-Authenticate': 'Bearer resource_metadata="http://127.0.0.1/.well-known/oauth-protected-resource"' });
+      return response.end();
+    }
+    let body = '';
+    for await (const chunk of request) body += chunk;
+    const message = JSON.parse(body);
+    if (!Object.hasOwn(message, 'id')) {
+      response.writeHead(202);
+      return response.end();
+    }
+    const result = message.method === 'initialize'
+      ? { protocolVersion: '2025-11-25', serverInfo: { name: 'stand-in', version: '1' }, capabilities: { tools: {} } }
+      : { tools };
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { server, url: `http://127.0.0.1:${server.address().port}/` };
+}
+
+let browser, page, mcpStandIn;
 try {
+  mcpStandIn = await startMcpStandIn();
   const data = path.join(scratch, 'data');
   await mkdir(data);
   const provider = path.join(scratch, 'provider.cjs');
@@ -56,7 +86,7 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
   const focusInside = () => page.evaluate(() => document.querySelector('#settings').contains(document.activeElement));
   const gearFocused = () => page.evaluate(() => document.activeElement === document.querySelector('#gear'));
   // The label of a counted field also holds its counter, so the field is found by the words of its label alone.
-  const nameField = () => settingsDialog().locator('label.field', { has: page.locator('.field-label', { hasText: /^Name$/ }) }).locator('input');
+  const nameField = () => settingsDialog().locator('#settings-persona label.field', { has: page.locator('.field-label', { hasText: /^Name$/ }) }).locator('input');
   const shoot = (name) => page.screenshot({ path: path.join(screens, name), animations: 'disabled' });
   const openFromGear = async (phone) => {
     if (phone && (await page.locator('.workspace-shell').getAttribute('data-expanded')) !== 'true') await page.locator('.chats-toggle').click();
@@ -146,6 +176,88 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
   assert.equal(await nameField().inputValue(), 'Kestrel', 'the name survives a reload');
   assert.equal((await (await context.request.get(origin + '/api/settings')).json()).persona.name, 'Kestrel');
   console.log('PASS changed_setting_survives_reload');
+  await page.keyboard.press('Escape');
+  await closed();
+
+  // ---- The MCP section, wide: empty, then a server with its key, one with a wrong key and one with none.
+  const mcp = (selector) => settingsDialog().locator('#settings-mcp ' + selector);
+  const serverRow = (name) => mcp('.mcp-server').filter({ has: page.locator('.mcp-name', { hasText: name }) });
+  const keysSent = [];
+  // The stand-in answers on any path, so each server gets its own address.
+  const addServer = async (name, key, path = 'mcp') => {
+    if (await mcp('form').isHidden()) await mcp('button:text-is("Add a server")').click();
+    await mcp('form label:has(> .field-label:text-is("Provider")) select').selectOption('custom');
+    await mcp('form label:has(> .field-label:text-is("Name")) input').fill(name);
+    await mcp('form label:has(> .field-label:text-is("Address")) input').fill(mcpStandIn.url + path);
+    await mcp('form label:has(> .field-label:text-is("Key")) select').selectOption(key === null ? 'none' : 'bearer');
+    if (key !== null) await mcp('form label:has(> .field-label:text-is("Token")) input').fill(key);
+    await mcp('button:text-is("Add and test")').click();
+    await serverRow(name).waitFor();
+  };
+  const stateOf = (name) => serverRow(name).locator('.mcp-state').innerText();
+  const driveMcp = async (width) => {
+    page.on('response', async (response) => {
+      if (response.url().includes('/api/mcp/')) keysSent.push(await response.text().catch(() => ''));
+    });
+    await entry('MCP').click();
+    await mcp('.note').filter({ hasText: 'No servers yet' }).waitFor();
+    assert.ok(await settingsDialog().locator('.settings-saved').isHidden(), `${width}: the MCP section does not say changes save as you type`);
+    assert.ok(await mcp('form').isVisible(), `${width}: with no servers the add form is open`);
+    const oauth = mcp('.note').filter({ hasText: 'Signing in with OAuth is not built yet' });
+    assert.ok(await oauth.isVisible(), `${width}: the form says plainly that OAuth sign-in is not built`);
+    await mcp('form label:has(> .field-label:text-is("Provider")) select').selectOption('notion');
+    assert.equal(await mcp('form label:has(> .field-label:text-is("Address")) input').inputValue(), 'https://mcp.notion.com/mcp', 'Notion fills in its address');
+    await page.mouse.move(0, 0);
+    await shoot(`settings-mcp-empty-${width}.png`);
+    // Slack accepts only an OAuth sign-in, and both its note and the form say that Jet cannot do one yet.
+    await mcp('form label:has(> .field-label:text-is("Provider")) select').selectOption('slack');
+    await mcp('.note').filter({ hasText: 'Slack accepts only an OAuth sign-in' }).waitFor();
+    await shoot(`settings-mcp-oauth-${width}.png`);
+
+    await addServer('Team wiki', MCP_KEY);
+    await until(async () => (await stateOf('Team wiki')) === 'Connected', `${width}: the server with its key connects`);
+    assert.equal(await serverRow('Team wiki').locator('summary').innerText(), '3 tools');
+    await serverRow('Team wiki').getByRole('button', { name: 'Test connection' }).click();
+    await until(async () => (await stateOf('Team wiki')) === 'Connected', `${width}: the test connects again`);
+    console.log(`PASS mcp_add_and_test_${width}`);
+
+    await serverRow('Team wiki').getByRole('switch').click();
+    await until(async () => (await stateOf('Team wiki')) === 'Off', `${width}: the server turns off`);
+    assert.ok(await serverRow('Team wiki').getByRole('switch').evaluate((el) => el === document.activeElement), `${width}: the focus stays on the switch`);
+    assert.ok(await serverRow('Team wiki').getByRole('button', { name: 'Test connection' }).isHidden(), 'an off server has no test');
+    await serverRow('Team wiki').getByRole('switch').click();
+    await until(async () => (await stateOf('Team wiki')) === 'Connected', `${width}: the server turns on and connects`);
+    console.log(`PASS mcp_turn_off_and_on_${width}`);
+
+    if (width === 1280) {
+      // The other states, side by side: a key the server refuses, and no key at all.
+      await addServer('Wrong key', 'not-the-key', 'wrong/mcp');
+      await until(async () => (await stateOf('Wrong key')) === 'Failed', 'a wrong key fails');
+      assert.match(await serverRow('Wrong key').locator('.mcp-detail').innerText(), /refused the key/);
+      await addServer('No key', null, 'open/mcp');
+      await until(async () => (await stateOf('No key')) === 'Needs a sign-in or key', 'no key needs a sign-in or key');
+      await page.mouse.move(0, 0);
+      await shoot('settings-mcp-states-1280.png');
+      for (const name of ['Wrong key', 'No key']) {
+        await serverRow(name).getByRole('button', { name: 'Remove', exact: true }).click();
+        await serverRow(name).getByRole('group').getByRole('button', { name: 'Remove', exact: true }).click();
+        await serverRow(name).waitFor({ state: 'detached' });
+      }
+    } else {
+      await shoot('settings-mcp-400.png');
+      assert.ok(await page.evaluate(() => document.querySelector('.settings-pane').scrollWidth <= innerWidth), 'the MCP section fits the width');
+    }
+    await serverRow('Team wiki').getByRole('button', { name: 'Remove', exact: true }).click();
+    await serverRow('Team wiki').getByRole('group').getByRole('button', { name: 'Remove', exact: true }).click();
+    await serverRow('Team wiki').waitFor({ state: 'detached' });
+    await mcp('.note').filter({ hasText: 'No servers yet' }).waitFor();
+    console.log(`PASS mcp_remove_${width}`);
+    assert.ok(keysSent.length > 0 && keysSent.every((text) => !text.includes(MCP_KEY)), 'no answer to the page holds the key');
+  };
+  await openFromGear(false);
+  await driveMcp(1280);
+  await page.keyboard.press('Escape');
+  await closed();
   await context.close();
 
   // ---- 1280 px, light.
@@ -173,6 +285,10 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
     if (colorScheme === 'light') await shoot('settings-400-light.png');
     await settingsDialog().getByRole('button', { name: 'All settings' }).tap();
     assert.ok(await entry('Voice').evaluate((el) => el === document.activeElement), 'back returns to the entry it left');
+    if (colorScheme === 'dark') {
+      await driveMcp(400);
+      await settingsDialog().getByRole('button', { name: 'All settings' }).tap();
+    }
     await page.keyboard.press('Escape');
     await closed();
     await context.close();
@@ -186,6 +302,7 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
   throw error;
 } finally {
   await browser?.close();
+  mcpStandIn?.server.close();
   await processes.close();
   if (!process.env.SCREENSHOT_DIR) await rm(scratch, { recursive: true, force: true });
 }

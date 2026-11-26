@@ -50,6 +50,7 @@ pub(super) fn router(host: Server) -> Router {
         .merge(files::router())
         .merge(voice::router())
         .merge(evidence::router())
+        .merge(crate::mcp_servers::router())
         .merge(super::shares::router())
         .merge(super::pane::router())
         .merge(super::task_list::router())

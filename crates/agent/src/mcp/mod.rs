@@ -2,10 +2,12 @@
 
 mod catalogue;
 mod dispatch;
+mod endpoint;
 mod http;
 mod metadata;
 mod service;
 
 pub use catalogue::{ServerMetadata, ToolDefinition, ToolTarget};
+pub use endpoint::{Endpoint, Endpoints};
 pub use http::HttpMcpClient;
 pub use service::{McpError, Progress, ToolCatalogue, ToolRequest, ToolResult};

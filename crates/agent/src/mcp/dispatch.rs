@@ -153,7 +153,10 @@ impl HttpMcpClient {
             response = handle.await_response() => { guard.wire = None; response.map_err(protocol) },
             _ = cancelled => Err(McpError::Cancelled { request_id:request.request_id.clone() }),
         };
-        if matches!(response, Err(McpError::Transport { .. })) {
+        if matches!(
+            response,
+            Err(McpError::Transport { .. } | McpError::Unauthorized)
+        ) {
             let state = self.state(&request.target.app_id).await;
             let mut state = state.lock().await;
             if state

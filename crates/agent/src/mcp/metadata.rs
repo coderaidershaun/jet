@@ -45,6 +45,13 @@ impl HttpMcpClient {
                 state.catalogue = Some(catalogue.clone());
                 Ok(catalogue)
             }
+            // Tools of a server that refuses the credentials cannot be called, so they are not
+            // offered as stale ones.
+            Err(McpError::Unauthorized) => {
+                state.connection = None;
+                state.catalogue = None;
+                Err(McpError::Unauthorized)
+            }
             Err(error) => {
                 state.connection = None;
                 if let Some(catalogue) = state.catalogue.as_mut() {

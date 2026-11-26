@@ -30,7 +30,7 @@ pub fn is_server_side(url: &Url) -> bool {
 /// Like [`is_server_side`], and also true when the name resolves to such an address now.
 // SMELL: the name is resolved only when the app is saved, so a name that points elsewhere later
 // (DNS rebinding) still reaches the server. Checking each connection would close it.
-pub(super) fn reaches_server_side(url: &Url) -> bool {
+pub fn reaches_server_side(url: &Url) -> bool {
     if is_server_side(url) {
         return true;
     }

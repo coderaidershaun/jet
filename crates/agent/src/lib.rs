@@ -15,9 +15,9 @@ pub mod voice;
 
 pub use chat::{
     Attachment, CheckIn, Colleague, ColleagueOutcome, ContextStatus, Effort, Entry, EntryId,
-    EntryStatus, Event, FACADE_TOOLS, Failure, MEMORY_LIMIT, McpConnection, Model, Mood, Notes,
-    Persona, RECENT_LIMIT, Reaction, Role, SessionId, ShownEntry, TOOL_USE_META, TURN_HEADER,
-    ToolCall, ToolStart, TurnIdentity, USER_LIMIT,
+    EntryStatus, Event, FACADE_TOOLS, Failure, MEMORY_LIMIT, McpConnection, McpServerFacts, Model,
+    Mood, Notes, Persona, RECENT_LIMIT, Reaction, Role, SessionId, ShownEntry, TOOL_USE_META,
+    TURN_HEADER, ToolCall, ToolStart, TurnIdentity, USER_LIMIT,
 };
 pub use conversation::{
     AnswerAsk, AnswerError, CANNOT_ANSWER, CHECK_BUDGET_USD, CHECK_TIME_LIMIT, CheckDone,

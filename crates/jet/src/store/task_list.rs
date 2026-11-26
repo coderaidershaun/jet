@@ -499,7 +499,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{MIGRATIONS, apply, migrate};
+    use super::super::{MIGRATIONS, apply};
     use rusqlite::Connection;
 
     /// The number of rows of every table, by name.
@@ -565,7 +565,8 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
-        migrate(db).unwrap();
+        // Only 0014: the migrations after it add tables of their own.
+        apply(db, MIGRATIONS[13], 14).unwrap();
 
         let after = counts(db);
         let added: Vec<_> = after.iter().filter(|row| !before.contains(row)).collect();

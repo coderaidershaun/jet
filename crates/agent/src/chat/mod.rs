@@ -78,6 +78,22 @@ impl Default for Persona {
     }
 }
 
+/// One MCP server the user added and has turned on, as Jet is told of it at the start of a turn.
+/// Every field is written by Jet or by the user, never copied from what the server says, so the
+/// system prompt holds no stranger's words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpServerFacts {
+    /// The id that tools_call takes as `appId`.
+    pub id: String,
+    pub name: String,
+    /// What the server is for, in Jet's words.
+    pub purpose: String,
+    /// The names of the tools it listed when Jet last connected.
+    pub tools: Vec<String>,
+    /// Why it cannot be called now, in Jet's words, or `None` when it is connected.
+    pub problem: Option<String>,
+}
+
 /// The three notes Jet carries between conversations.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]

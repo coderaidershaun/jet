@@ -5,7 +5,7 @@ mod model;
 mod registry;
 mod storage;
 
-pub use address::{AppAddress, Reach, is_server_side};
+pub use address::{AppAddress, Reach, is_server_side, reaches_server_side};
 pub use descriptor::{AppDescriptor, DiscoveryStatus};
 pub use model::{
     AddApp, App, AppId, AppOverrides, Embedding, McpOverride, RegistryChange, RegistryCommand,

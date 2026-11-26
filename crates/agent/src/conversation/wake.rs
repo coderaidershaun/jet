@@ -247,7 +247,7 @@ pub struct CheckTurn {
 pub fn start_check(transport: &dyn Transport, start: &CheckStart) -> Result<CheckTurn, TurnError> {
     let request = Request {
         prompt: start.brief.clone(),
-        system_prompt: compose(start.persona, start.notes, start.model),
+        system_prompt: compose(start.persona, start.notes, start.model, None),
         model: start.model,
         effort: start.effort,
         budget_usd: CHECK_BUDGET_USD,

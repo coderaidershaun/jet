@@ -10,6 +10,8 @@ use std::{
 const REQUEST_LIMIT: Duration = Duration::from_secs(30);
 
 pub const OWNER: &str = "shaunsurfing@gmail.com";
+/// Where a host started with `Host::start_logged` writes its error output, in its data directory.
+pub const LOG_FILE: &str = "stderr.log";
 pub const PASSWORD: &str = "000111";
 
 pub struct Host {
@@ -33,6 +35,20 @@ impl Host {
     }
     /// Like `start_with`, with extra environment variables for the host.
     pub fn start_env(flags: &[&str], env: &[(&str, &str)]) -> Self {
+        Self::start_into(flags, env, |_| Stdio::inherit())
+    }
+    /// Like `start`, with the host's error output written to `LOG_FILE` in its data directory, so
+    /// a test can read every line it logged.
+    pub fn start_logged() -> Self {
+        Self::start_into(&[], &[], |dir| {
+            std::fs::File::create(dir.join(LOG_FILE)).unwrap().into()
+        })
+    }
+    fn start_into(
+        flags: &[&str],
+        env: &[(&str, &str)],
+        stderr: impl FnOnce(&std::path::Path) -> Stdio,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let program = dir.path().join("provider.py");
         std::fs::write(&program, include_str!("provider.py")).unwrap();
@@ -41,7 +57,8 @@ impl Host {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
-        let host = Self::launch_env(dir, flags, env);
+        let stderr = stderr(dir.path());
+        let host = Self::launch_env(dir, flags, env, stderr);
         host.set_programs(json!({"claudePath": program}));
         host
     }
@@ -50,9 +67,14 @@ impl Host {
     }
     /// Starts the host with extra flags and signs the owner in.
     pub fn launch_with(dir: tempfile::TempDir, flags: &[&str]) -> Self {
-        Self::launch_env(dir, flags, &[])
+        Self::launch_env(dir, flags, &[], Stdio::inherit())
     }
-    fn launch_env(dir: tempfile::TempDir, flags: &[&str], env: &[(&str, &str)]) -> Self {
+    fn launch_env(
+        dir: tempfile::TempDir,
+        flags: &[&str],
+        env: &[(&str, &str)],
+        stderr: Stdio,
+    ) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_jet"))
             .args(["--listen", "127.0.0.1:0", "--data-dir"])
             .arg(dir.path())
@@ -63,7 +85,7 @@ impl Host {
             .env("JET_TEST_CHECK_LIMIT_MS", "1500")
             .envs(env.iter().copied())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(stderr)
             .spawn()
             .unwrap();
         let url = listening_url(&mut child);
@@ -368,6 +390,10 @@ pub fn cookie_header<B>(response: &ureq::http::Response<B>) -> String {
 
 pub fn host() -> Host {
     with_fakes(Host::start())
+}
+/// Like `host`, with the host's error output kept in `LOG_FILE`.
+pub fn logged_host() -> Host {
+    with_fakes(Host::start_logged())
 }
 /// Like `host`, with extra environment variables for the host.
 pub fn host_env(env: &[(&str, &str)]) -> Host {
