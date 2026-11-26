@@ -255,6 +255,25 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
   await page.keyboard.press('Escape');
   await closed();
 
+  // A model saved elsewhere, by another tab or the /model command, is not put back by this page's next save.
+  const savedSettings = async () => (await context.request.get(origin + '/api/settings')).json();
+  const elsewhere = await context.request.put(origin + '/api/settings', { headers: { origin }, data: { ...(await savedSettings()), model: 'opus' } });
+  assert.equal(elsewhere.status(), 200, 'the other tab saved the model');
+  await openFromGear(false);
+  await nameField().fill('Merlin');
+  await settingsDialog().locator('.settings-saved', { hasText: 'Saved' }).waitFor();
+  const afterSave = await savedSettings();
+  assert.deepEqual([afterSave.model, afterSave.persona.name], ['opus', 'Merlin'], 'the save kept the model saved elsewhere');
+  console.log('PASS a_save_keeps_a_setting_saved_elsewhere');
+
+  // An edit made a moment before the page reloads is saved all the same.
+  await nameField().fill('Osprey');
+  await page.waitForTimeout(100);
+  await page.reload();
+  await page.locator('#loading').waitFor({ state: 'detached' });
+  await until(async () => (await savedSettings()).persona.name === 'Osprey', 'the edit made 100 ms before the reload was saved');
+  console.log('PASS an_edit_just_before_a_reload_is_saved');
+
   // ---- The MCP section, wide: empty, then a server with its key, one with a wrong key and one with none.
   const mcp = (selector) => settingsDialog().locator('#settings-mcp ' + selector);
   const serverRow = (name) => mcp('.mcp-server').filter({ has: page.locator('.mcp-name', { hasText: name }) });

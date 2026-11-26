@@ -21,6 +21,8 @@ pub enum RegistryError {
         "only an admin can register an app at {0}, because a port, a loopback or a private address reaches services on the server itself; use the app's public address, or ask an admin"
     )]
     ServerSide(String),
+    #[error("app {0} was changed while Jet checked its address; try again")]
+    Changed(AppId),
     #[error("the saved apps could not be read or written: {0}")]
     Storage(#[source] Box<dyn std::error::Error + Send + Sync>),
 }

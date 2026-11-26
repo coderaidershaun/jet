@@ -8,9 +8,57 @@ const LEAST_DELAY_MS = 1_000;
 // The server's Date header counts whole seconds, so a smaller difference is not a wrong clock.
 const CLOCK_SLACK_MS = 2_000;
 
-// Two renewals in flight with one refresh token look like a stolen copy and end the sign-in,
-// so every tab of Jet renews under one shared lock.
-const sharedLock = (task) => globalThis.navigator?.locks?.request('jet-renew', task) ?? task();
+const LOCK_NAME = 'jet-renew';
+// Longer than any renewal takes, so a tab that closes while it holds the lease frees it by running out.
+const LEASE_MS = 10_000;
+
+/** The storage that every tab of Jet shares, or null where the browser blocks it. */
+function pageStorage() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Resolves when another tab says it has renewed, or after `ms`. */
+function released(ms) {
+  return new Promise((resolve) => {
+    const channel = new BroadcastChannel(LOCK_NAME);
+    const done = () => {
+      clearTimeout(timer);
+      channel.close();
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    channel.onmessage = done;
+  });
+}
+
+/**
+ * Two renewals in flight with one refresh token look like a stolen copy and end the sign-in, so every tab of Jet
+ * renews under one shared lock. Web Locks exist only on https or localhost; elsewhere a lease in the shared storage
+ * stands in, and a tab that finds another tab's lease waits for it.
+ */
+function sharedLock(storage) {
+  const locks = globalThis.navigator?.locks;
+  if (locks) return (task) => locks.request(LOCK_NAME, task);
+  if (storage === null) return (task) => task();
+  return async (task) => {
+    for (let held = Number(storage.getItem(LOCK_NAME)); held > Date.now(); held = Number(storage.getItem(LOCK_NAME))) {
+      await released(held - Date.now());
+    }
+    storage.setItem(LOCK_NAME, String(Date.now() + LEASE_MS));
+    try {
+      return await task();
+    } finally {
+      storage.removeItem(LOCK_NAME);
+      const channel = new BroadcastChannel(LOCK_NAME);
+      channel.postMessage('renewed');
+      channel.close();
+    }
+  };
+}
 
 /** Sends the person to sign in, and back to this page afterwards. */
 function goToSignIn() {
@@ -19,9 +67,10 @@ function goToSignIn() {
 
 /**
  * @param {{ fetch: typeof fetch, signedOut?: () => void, now?: () => number,
+ *           storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null,
  *           lock?: (task: () => Promise<any>) => Promise<any> }} options
  */
-export function createSession({ fetch, signedOut = goToSignIn, now = Date.now, lock = sharedLock }) {
+export function createSession({ fetch, signedOut = goToSignIn, now = Date.now, storage = pageStorage(), lock = sharedLock(storage) }) {
   let timer = null;
   let renewing = null;
 

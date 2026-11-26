@@ -4,7 +4,7 @@
 use super::handler::{Handler, message};
 use super::tools::object;
 use super::{Binding, Facade};
-use crate::files::{FileError, MAX_CONTEXT_CHARS};
+use crate::files::{FileError, MAX_CONTEXT_CHARS, usual_id};
 use crate::on_worker;
 use crate::store::{ChatId, UserId};
 use serde_json::{Value, json};
@@ -103,8 +103,12 @@ impl Handler {
         let (user, chat) = (binding.owner.user, binding.owner.chat);
         let files = self.0.files.clone();
         let text = |key: &str| command[key].as_str().unwrap_or_default().to_owned();
-        let (id, name, content, context) =
-            (text("id"), text("name"), text("content"), text("context"));
+        let (id, name, content, context) = (
+            usual_id(&text("id")),
+            text("name"),
+            text("content"),
+            text("context"),
+        );
         let other = command["chat"].as_i64().map(ChatId);
         let version = command["version"]
             .as_u64()

@@ -1,7 +1,7 @@
 //! The guard in front of every route: it lets a request through only with a sign-in, an app's
 //! proof or a file's proof, except on the few paths the sign-in page needs.
 
-use super::{AccountError, Accounts, SIGNIN_SECONDS, SignedIn, cookies, token};
+use super::{AccountError, Accounts, SignedIn, cookies, token};
 use axum::{
     extract::{Request, State},
     http::{
@@ -29,6 +29,9 @@ const OPEN_PATHS: [&str; 8] = [
 ];
 /// Marks the path segment that carries an app's proof: `/apps/{id}/~{proof}/...`.
 const PROOF_MARK: char = '~';
+/// The proof sits in an address that logs and histories keep, so it lasts only an hour; the page loads an open app
+/// frame again before that, which gets a new one.
+const APP_PROOF_SECONDS: u64 = 60 * 60;
 
 enum Admission {
     Open,
@@ -154,7 +157,7 @@ impl Accounts {
             signin: signed_in.signin.clone(),
             app: app.to_owned(),
         };
-        let proof = self.keys.sign(grant, token::now() + SIGNIN_SECONDS);
+        let proof = self.keys.sign(grant, token::now() + APP_PROOF_SECONDS);
         let tail = request
             .uri()
             .path()

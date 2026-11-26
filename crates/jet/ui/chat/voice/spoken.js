@@ -19,7 +19,7 @@ const PAUSE_INSIDE_BLOCK_S = 0.25;
 const PAUSE_NEW_BLOCK_S = 0.45;
 const PAUSE_AFTER_SILENT_S = 0.6;
 const FATAL_KINDS = new Set(['notConfigured', 'rejected']);
-const BLOCKED_MESSAGE = 'The browser blocked sound; click the speaker to allow it.';
+export const BLOCKED_MESSAGE = 'The browser blocked sound; click the speaker to allow it.';
 
 /**
  * @param {{

@@ -397,3 +397,50 @@ fn a_public_host_refuses_the_published_seed_password() {
         "a public host takes the password that the source publishes"
     );
 }
+
+/// The `exp` claim of a JSON Web Token, read without checking its signature.
+fn expiry_of(token: &str) -> u64 {
+    use base64::Engine;
+    let claims = token.split('.').nth(1).expect("a token has three parts");
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(claims)
+        .expect("the claims are base64url");
+    let claims: Value = serde_json::from_slice(&bytes).expect("the claims are JSON");
+    claims["exp"].as_u64().expect("the claims hold exp")
+}
+
+#[test]
+fn an_app_proof_in_the_address_lasts_an_hour_at_most() {
+    let host = fresh(&[]);
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = format!("http://{}/", closed.local_addr().unwrap());
+    drop(closed);
+    let (status, added) = host.post("/api/apps", json!({"action": "add", "address": address}));
+    assert_eq!(status, 200, "{added}");
+    let id = added["app"]["id"].as_str().unwrap().to_owned();
+    let opened = agent()
+        .get(format!("{}/apps/{id}/", host.url))
+        .header("cookie", &host.cookie)
+        .header("sec-fetch-mode", "navigate")
+        .header("sec-fetch-dest", "document")
+        .header("sec-fetch-site", "same-origin")
+        .call()
+        .unwrap();
+    assert_eq!(opened.status(), 307);
+    let location = opened.headers()["location"].to_str().unwrap().to_owned();
+    let proof = location
+        .split('~')
+        .nth(1)
+        .and_then(|rest| rest.split('/').next())
+        .unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    // Anyone who reads the address, in a log or a history, can use the proxy as this user until the proof runs out.
+    let lasts = expiry_of(proof).saturating_sub(now);
+    assert!(
+        lasts <= 60 * 60,
+        "the proof in an app address lasts {lasts} s"
+    );
+}

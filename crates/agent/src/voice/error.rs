@@ -1,5 +1,5 @@
 //! Why a clip of speech could not be made or heard. The messages are shown to the user, so none
-//! of them can hold the key.
+//! of them can hold the key, and each has a form without the server's paths.
 
 use std::path::PathBuf;
 
@@ -38,4 +38,17 @@ pub enum VoiceError {
     PhononLoad { path: PathBuf, reason: String },
     #[error("Phonon could not speak the words: {0}")]
     PhononFailed(String),
+}
+
+impl VoiceError {
+    /// The message with no path on the server in it, for a user who is not an admin.
+    pub fn without_path(&self) -> String {
+        match self {
+            VoiceError::ModelMissing { .. } => "Phonon-2's model is not on the server".into(),
+            VoiceError::ModelLoad { .. } => "Phonon-2 could not open its model".into(),
+            VoiceError::PhononMissing { .. } => "The Phonon 31m model is not on the server".into(),
+            VoiceError::PhononLoad { .. } => "Phonon could not load its model".into(),
+            other => other.to_string(),
+        }
+    }
 }

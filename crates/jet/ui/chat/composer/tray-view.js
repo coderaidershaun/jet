@@ -1,7 +1,8 @@
 // The part of the composer that attaches files: the + button, the chips of the files on their way,
-// and dragging, dropping and pasting. The tray model decides what a chip is; this draws it and
-// sends the files to the server.
+// and dragging, dropping and pasting. The tray model decides what a chip is; this draws it, sends
+// the files to the server, and deletes the unsent ones when the page goes.
 
+import { dropUploads } from '../../bridge/uploads.js';
 import { h, icon } from '../../dom.js';
 import { ACCEPT, fileSheet } from '../files.js';
 import { MOST_FILES } from './tray.js';
@@ -164,6 +165,11 @@ export function createTrayView({ box, trayEl, composerEl, dropTarget, attachButt
       if (carriesFiles(event)) event.preventDefault();
     });
   }
+  // An upload no message carried would take room that no list shows, so it goes with the page, and the tray empties to match.
+  window.addEventListener('pagehide', () => {
+    dropUploads(tray.take().map((about) => about.id));
+    paint();
+  });
   field.addEventListener('paste', (event) => {
     const files = [...(event.clipboardData?.files ?? [])];
     if (files.length === 0) return;

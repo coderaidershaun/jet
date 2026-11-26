@@ -1,7 +1,7 @@
 //! Keeps a reply from carrying anything that runs: raw HTML becomes text (except a vocal cue,
 //! which is dropped), links are limited to web and mail addresses, and images become text.
 
-use pulldown_cmark::{Event, Tag, TagEnd};
+use pulldown_cmark::{Event, LinkType, Tag, TagEnd};
 
 use super::cues::{is_cue, only_cues};
 
@@ -15,7 +15,12 @@ pub(super) fn make_safe<'a>(
         // A line of only cues that could not join a line of words is read as an HTML block.
         Event::Html(raw) if only_cues(&raw) => None,
         Event::Html(raw) | Event::InlineHtml(raw) => Some(Event::Text(raw)),
-        Event::Start(Tag::Link { dest_url, .. }) if !is_allowed_link(&dest_url) => {
+        // An email autolink's destination is the bare address; the HTML writer adds `mailto:`.
+        Event::Start(Tag::Link {
+            link_type,
+            dest_url,
+            ..
+        }) if link_type != LinkType::Email && !is_allowed_link(&dest_url) => {
             in_dropped_link = true;
             None
         }

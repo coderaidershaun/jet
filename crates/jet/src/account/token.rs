@@ -22,7 +22,7 @@ const FILE_PROOF_SECONDS: u64 = 15 * 60;
 pub(super) enum Grant {
     /// Use Jet as the user of this sign-in.
     Access { signin: SigninId },
-    /// Load one app's pages through the proxy, for as long as the sign-in lasts.
+    /// Load one app's pages through the proxy, for an hour at most and never past the sign-in.
     App { signin: SigninId, app: String },
     /// Download one file, with no sign-in: an app's server fetches a file Jet handed it.
     File { file: String },

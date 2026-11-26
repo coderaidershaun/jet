@@ -12,25 +12,35 @@ const NOTES_TEXT = 'How should {name} talk to you?';
 
 /** @param {import('./window.js').SettingsContext} ctx */
 export function buildPersona({ settings, changed }) {
-  const field = (key, label, maxLength, lines = 1) => textField({
-    label,
-    value: settings.persona[key],
-    maxLength,
-    lines,
-    count: countCodePoints,
-    onInput: (text) => {
-      settings.persona[key] = text;
-      changed('persona');
-    },
-  }).el;
+  const fields = [];
+  const field = (key, label, maxLength, lines = 1) => {
+    const made = textField({
+      label,
+      value: settings.persona[key],
+      maxLength,
+      lines,
+      count: countCodePoints,
+      onInput: (text) => {
+        settings.persona[key] = text;
+        changed('persona');
+      },
+    });
+    fields.push({ key, made });
+    return made.el;
+  };
   const notes = field('notes', NOTES_TEXT, NOTES_LIMIT, 4);
   named(notes.querySelector('.field-label'), NOTES_TEXT, displayName(settings));
-  return section(
-    'persona',
-    'Persona',
-    field('name', 'Name', NAME_LIMIT),
-    field('jobTitle', 'Job title', TITLE_LIMIT),
-    notes,
-    note('Changes apply to the next conversation.'),
-  );
+  return {
+    el: section(
+      'persona',
+      'Persona',
+      field('name', 'Name', NAME_LIMIT),
+      field('jobTitle', 'Job title', TITLE_LIMIT),
+      notes,
+      note('Changes apply to the next conversation.'),
+    ),
+    refresh() {
+      for (const { key, made } of fields) made.set(settings.persona[key]);
+    },
+  };
 }

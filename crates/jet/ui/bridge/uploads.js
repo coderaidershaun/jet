@@ -1,5 +1,5 @@
-// Sends one file to the server as the raw body of a request. `fetch` reports no upload progress,
-// so this uses XMLHttpRequest.
+// Sends one file to the server as the raw body of a request, and deletes uploads no message will
+// carry. `fetch` reports no upload progress, so the upload uses XMLHttpRequest.
 
 /**
  * @param {File} file
@@ -26,4 +26,15 @@ export function uploadFile(file, onProgress = () => {}) {
     request.onerror = () => reject({ kind: 'network', message: 'The connection was lost.' });
     request.send(file);
   });
+}
+
+/**
+ * Deletes uploads that no message will carry, as the page goes away. `keepalive` lets each request outlive the page.
+ * @param {string[]} ids
+ */
+export function dropUploads(ids) {
+  for (const id of ids) {
+    fetch('/api/files/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true })
+      .catch((error) => console.warn('an unsent upload could not be deleted:', error));
+  }
 }

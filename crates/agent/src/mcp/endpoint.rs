@@ -1,15 +1,17 @@
 //! Where the client finds each tool server it is asked about, the headers that its requests carry,
-//! and who renews a sign-in and hears what each connection found, so apps and servers share one client.
+//! how far its address may reach, and who renews a sign-in and hears what each connection found, so apps and servers share one client.
 use super::{McpError, ToolCatalogue, http::failure};
-use crate::apps::{AppId, Registry};
+use crate::apps::{AppId, Reach, Registry};
 use std::sync::Mutex;
 
-/// The address of one tool server and the headers sent with each request to it. A header value
-/// can hold a key, so the `Debug` print names the headers and hides their values.
+/// The address of one tool server, the headers sent with each request to it, and whether its
+/// owner may reach the server itself or its private network. A header value can hold a key, so the
+/// `Debug` print names the headers and hides their values.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Endpoint {
     pub url: String,
     pub headers: Vec<(String, String)>,
+    pub reach: Reach,
 }
 
 impl std::fmt::Debug for Endpoint {
@@ -19,6 +21,7 @@ impl std::fmt::Debug for Endpoint {
             .debug_struct("Endpoint")
             .field("url", &self.url)
             .field("headers", &names)
+            .field("reach", &self.reach)
             .finish()
     }
 }
@@ -51,7 +54,8 @@ pub trait Endpoints: Send + Sync {
     fn observed(&self, _id: &AppId, _found: Result<&ToolCatalogue, &McpError>) {}
 }
 
-/// A registered app is reached at its tool address with no extra header.
+/// A registered app is reached at its tool address with no extra header. The registry does not
+/// know who is an admin, so the host narrows the reach for everyone else.
 impl Endpoints for Mutex<Registry> {
     fn endpoint(&self, id: &AppId) -> Result<Endpoint, McpError> {
         let registry = self.lock().map_err(|_| failure("registry lock failed"))?;
@@ -62,6 +66,7 @@ impl Endpoints for Mutex<Registry> {
             .map(|url| Endpoint {
                 url: url.to_string(),
                 headers: Vec::new(),
+                reach: Reach::Anywhere,
             })
             .ok_or_else(|| McpError::Unavailable { app_id: id.clone() })
     }

@@ -70,21 +70,36 @@ impl Registry {
         reach: Reach,
         command: RegistryCommand,
     ) -> Result<RegistryResult, RegistryError> {
-        match command {
-            RegistryCommand::List => Ok(RegistryResult {
-                apps: self.list(owner),
-                ..Default::default()
-            }),
-            RegistryCommand::Add(input) => self.add(owner, reach, input),
+        match self.begin(owner, reach, command)? {
+            Step::Done(result) => Ok(result),
+            Step::Discover(discovery) => self.finish(discovery.run()?),
+        }
+    }
+    /// The quick part of a command. An add, edit or refresh also gives back the network part, to
+    /// run with no lock held and hand to [`finish`](Self::finish).
+    pub fn begin(
+        &mut self,
+        owner: AppOwner,
+        reach: Reach,
+        command: RegistryCommand,
+    ) -> Result<Step, RegistryError> {
+        let (before, mut app, change) = match command {
+            RegistryCommand::List => {
+                return Ok(Step::Done(RegistryResult {
+                    apps: self.list(owner),
+                    ..Default::default()
+                }));
+            }
+            RegistryCommand::Add(input) => (None, new_app(input)?, RegistryChange::Added),
             RegistryCommand::Edit {
                 id,
                 address,
                 overrides,
             } => {
-                let mut app = self.find(owner, &id)?;
+                let before = self.find(owner, &id)?;
+                let mut app = before.clone();
                 if let Some(address) = address {
                     app.base_url = AppAddress::parse(&address)?;
-                    self.check_duplicate(owner, &app)?;
                     app.ui_url = app.base_url.resolve("./")?;
                     app.mcp_url = None;
                     app.embedding = Embedding::External;
@@ -93,67 +108,62 @@ impl Registry {
                 if let Some(overrides) = overrides {
                     descriptor::replace_overrides(&mut app, overrides)?;
                 }
-                descriptor::apply_overrides(&mut app)?;
-                descriptor::validate_app(&app)?;
-                check_reach(reach, &app)?;
-                let status = descriptor::discover(self.http(reach), &mut app);
-                self.store(owner, reach, app, status, RegistryChange::Edited)
+                (Some(before), app, RegistryChange::Edited)
             }
             RegistryCommand::Enable { id } => {
-                self.set_enabled(owner, reach, &id, RegistryChange::Enabled)
+                return self
+                    .set_enabled(owner, &id, RegistryChange::Enabled)
+                    .map(Step::Done);
             }
             RegistryCommand::Disable { id } => {
-                self.set_enabled(owner, reach, &id, RegistryChange::Disabled)
+                return self
+                    .set_enabled(owner, &id, RegistryChange::Disabled)
+                    .map(Step::Done);
             }
             RegistryCommand::Remove { id } => {
                 let app = self.find(owner, &id)?;
                 self.storage.remove(&id)?;
                 self.apps.retain(|(_, app)| app.id != id);
                 self.discovery.remove(&id);
-                Ok(RegistryResult {
+                return Ok(Step::Done(RegistryResult {
                     app: Some(app),
                     change: Some(event(&id, RegistryChange::Removed)),
                     ..Default::default()
-                })
+                }));
             }
             RegistryCommand::Refresh { id } => {
-                let mut app = self.find(owner, &id)?;
-                check_reach(reach, &app)?;
-                let status = descriptor::discover(self.http(reach), &mut app);
-                self.store(owner, reach, app, status, RegistryChange::Refreshed)
+                let before = self.find(owner, &id)?;
+                (Some(before.clone()), before, RegistryChange::Refreshed)
             }
-        }
-    }
-    fn add(
-        &mut self,
-        owner: AppOwner,
-        reach: Reach,
-        input: AddApp,
-    ) -> Result<RegistryResult, RegistryError> {
-        let base_url = AppAddress::parse(&input.address)?;
-        descriptor::validate_overrides(&base_url, &input.overrides)?;
-        if let Some((_, app)) = self
-            .apps
-            .iter()
-            .find(|(by, app)| *by == owner && app.base_url == base_url)
-        {
-            return Err(RegistryError::DuplicateAddress(app.id.clone()));
-        }
-        let mut app = App {
-            id: AppId::generate(),
-            label: base_url.as_str().into(),
-            ui_url: base_url.resolve("./")?,
-            base_url,
-            mcp_url: None,
-            embedding: Embedding::External,
-            enabled: true,
-            overrides: input.overrides,
         };
-        descriptor::apply_overrides(&mut app)?;
-        descriptor::validate_app(&app)?;
-        check_reach(reach, &app)?;
-        let status = descriptor::discover(self.http(reach), &mut app);
-        self.store(owner, reach, app, status, RegistryChange::Added)
+        if change != RegistryChange::Refreshed {
+            self.check_duplicate(owner, &app)?;
+            descriptor::apply_overrides(&mut app)?;
+            descriptor::validate_app(&app)?;
+        }
+        Ok(Step::Discover(Discovery {
+            owner,
+            reach,
+            http: self.http(reach).clone(),
+            before,
+            app,
+            change,
+        }))
+    }
+    /// Saves what a discovery found, unless the app was changed or removed while it ran.
+    pub fn finish(&mut self, found: Discovered) -> Result<RegistryResult, RegistryError> {
+        let Discovered {
+            owner,
+            before,
+            app,
+            status,
+            change,
+        } = found;
+        if self.owned(owner, &app.id) != before.as_ref() {
+            return Err(RegistryError::Changed(app.id));
+        }
+        self.check_duplicate(owner, &app)?;
+        self.store(owner, app, status, change)
     }
     fn http(&self, reach: Reach) -> &ureq::Agent {
         match reach {
@@ -177,24 +187,20 @@ impl Registry {
     fn set_enabled(
         &mut self,
         owner: AppOwner,
-        reach: Reach,
         id: &AppId,
         change: RegistryChange,
     ) -> Result<RegistryResult, RegistryError> {
         let mut app = self.find(owner, id)?;
         app.enabled = change == RegistryChange::Enabled;
-        self.store(owner, reach, app, self.discovery_status(id), change)
+        self.store(owner, app, self.discovery_status(id), change)
     }
-    /// Saves the app, after checking again what its own descriptor may have pointed it at.
     fn store(
         &mut self,
         owner: AppOwner,
-        reach: Reach,
         app: App,
         status: DiscoveryStatus,
         change: RegistryChange,
     ) -> Result<RegistryResult, RegistryError> {
-        check_reach(reach, &app)?;
         self.storage.save(owner, &app)?;
         match self.apps.iter_mut().find(|(_, stored)| stored.id == app.id) {
             Some(stored) => stored.1 = app.clone(),
@@ -208,6 +214,67 @@ impl Registry {
             ..Default::default()
         })
     }
+}
+
+/// What a command leaves to do after [`Registry::begin`].
+#[allow(
+    clippy::large_enum_variant,
+    reason = "a step is made once per command and moved straight to its caller"
+)]
+pub enum Step {
+    Done(RegistryResult),
+    Discover(Discovery),
+}
+
+/// The slow part of an add, edit or refresh: address lookups and the descriptor fetch.
+pub struct Discovery {
+    owner: AppOwner,
+    reach: Reach,
+    http: ureq::Agent,
+    before: Option<App>,
+    app: App,
+    change: RegistryChange,
+}
+
+impl Discovery {
+    /// Fetches the descriptor, checking the app's addresses before and after, since the
+    /// descriptor may point the app somewhere else.
+    pub fn run(mut self) -> Result<Discovered, RegistryError> {
+        check_reach(self.reach, &self.app)?;
+        let status = descriptor::discover(&self.http, &mut self.app);
+        check_reach(self.reach, &self.app)?;
+        Ok(Discovered {
+            owner: self.owner,
+            before: self.before,
+            app: self.app,
+            status,
+            change: self.change,
+        })
+    }
+}
+
+/// What a [`Discovery`] found, for [`Registry::finish`] to save.
+pub struct Discovered {
+    owner: AppOwner,
+    before: Option<App>,
+    app: App,
+    status: DiscoveryStatus,
+    change: RegistryChange,
+}
+
+fn new_app(input: AddApp) -> Result<App, RegistryError> {
+    let base_url = AppAddress::parse(&input.address)?;
+    descriptor::validate_overrides(&base_url, &input.overrides)?;
+    Ok(App {
+        id: AppId::generate(),
+        label: base_url.as_str().into(),
+        ui_url: base_url.resolve("./")?,
+        base_url,
+        mcp_url: None,
+        embedding: Embedding::External,
+        enabled: true,
+        overrides: input.overrides,
+    })
 }
 
 /// Refuses an app whose page, tools or base is on the server itself when the owner may only reach

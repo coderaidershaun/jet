@@ -4,10 +4,10 @@
 use super::{owner, sign_in::Credentials};
 use crate::{
     seal::Sealer,
-    store::{McpServer, McpState, McpTool, Store},
+    store::{McpServer, McpState, McpTool, Store, UserId},
 };
 use agent::{
-    apps::{AppId, Registry},
+    apps::{AppId, Reach, Registry},
     mcp::{Endpoint, Endpoints, McpError, RenewFuture, Renewal, ToolCatalogue},
 };
 use std::sync::{Arc, Mutex};
@@ -85,6 +85,19 @@ pub(super) struct ToolEndpoints {
 }
 
 impl ToolEndpoints {
+    /// Only an admin's server may be on the server itself or its private network.
+    fn reach(&self, user: Option<UserId>) -> Result<Reach, McpError> {
+        let user = match user {
+            Some(user) => self.store.user(user).map_err(|error| McpError::Transport {
+                message: format!("could not read the server's owner: {error}"),
+            })?,
+            None => None,
+        };
+        Ok(match user {
+            Some(user) if user.is_admin => Reach::Anywhere,
+            _ => Reach::PublicOnly,
+        })
+    }
     fn is_app(&self, id: &AppId) -> bool {
         !matches!(
             self.registry.endpoint(id),
@@ -97,7 +110,12 @@ impl Endpoints for ToolEndpoints {
     fn endpoint(&self, id: &AppId) -> Result<Endpoint, McpError> {
         match self.registry.endpoint(id) {
             Err(McpError::Unavailable { .. }) => {}
-            app => return app,
+            Ok(mut app) => {
+                let owner = crate::lock(&self.registry).owner_of(id);
+                app.reach = self.reach(owner.map(|owner| UserId(owner.0)))?;
+                return Ok(app);
+            }
+            failed => return failed,
         }
         let unavailable = || McpError::Unavailable { app_id: id.clone() };
         let stored = self
@@ -125,6 +143,7 @@ impl Endpoints for ToolEndpoints {
         Ok(Endpoint {
             url: stored.url,
             headers,
+            reach: self.reach(Some(stored.user))?,
         })
     }
 

@@ -420,3 +420,58 @@ fn a_failed_reply_names_the_program_path_only_to_an_admin() {
     assert!(theirs.contains("couldn't find Claude Code"), "{theirs}");
     assert!(!theirs.contains("/nowhere"), "{theirs}");
 }
+
+#[test]
+fn one_users_slow_app_does_not_stall_another_users_app_list() {
+    let host = Host::start();
+    let other = host.sign_in_as(SECOND);
+    // The kernel takes the connection, but nothing ever answers, so discovery waits its whole timeout.
+    let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = format!("http://{}/", silent.local_addr().unwrap());
+    let owner = host.owner();
+    let adding = std::thread::spawn(move || {
+        owner.post("/api/apps", json!({"action": "add", "address": address}))
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    let started = Instant::now();
+    other.get("/api/apps");
+    let waited = started.elapsed();
+    let (status, added) = adding.join().unwrap();
+    drop(silent);
+    assert_eq!(status, 200, "{added}");
+    assert!(
+        waited < Duration::from_millis(500),
+        "another user's app list waited {waited:?} behind one user's app whose server does not answer"
+    );
+}
+
+#[test]
+fn an_app_on_the_server_is_reached_for_an_admin_and_refused_once_its_owner_is_not_one() {
+    let fixture = Fixture::start();
+    let host = host();
+    let (status, added) = host.post("/api/apps", json!({"action":"add","address":fixture.url}));
+    assert_eq!(status, 200, "{added}");
+    let id = added["app"]["id"].as_str().unwrap().to_owned();
+    let tools = format!("/api/apps/{id}/tools");
+    assert_eq!(
+        host.owner().fetch(&tools).0,
+        200,
+        "an admin reaches the app"
+    );
+
+    rusqlite::Connection::open(host.dir.path().join("jet.sqlite3"))
+        .unwrap()
+        .execute(
+            "UPDATE users SET is_admin = 0 WHERE email = ?1",
+            [super::support::OWNER],
+        )
+        .unwrap();
+    // A new session is needed, since the one open was made while the owner was an admin.
+    for action in ["disable", "enable"] {
+        let (status, changed) = host.post("/api/apps", json!({"action":action,"id":id}));
+        assert_eq!(status, 200, "{changed}");
+    }
+    let (status, refusal) = host.owner().fetch(&tools);
+    assert_eq!(status, 502, "{refusal}");
+    assert!(refusal.to_string().contains("private network"), "{refusal}");
+}

@@ -1,4 +1,4 @@
-//! Slows password guessing: failed sign-ins are counted per email and per client address.
+//! Slows password guessing: failed sign-ins are counted per email and per client network.
 
 use crate::store::Email;
 use std::{
@@ -10,7 +10,7 @@ use std::{
 const WINDOW: Duration = Duration::from_secs(15 * 60);
 const EMAIL_FAILURES: u32 = 5;
 const ADDRESS_FAILURES: u32 = 20;
-/// At most this many emails and addresses are counted at once, so guesses at many emails from
+/// At most this many emails and networks are counted at once, so guesses at many emails from
 /// many addresses cannot grow memory without end. When the counts are full of live ones, every
 /// new client waits: refusing sign-ins is safer than forgetting failures.
 const MAX_KEYS: usize = 65_536;
@@ -22,6 +22,17 @@ const SWEEP_EVERY: Duration = Duration::from_secs(60);
 enum Key {
     Email(Email),
     Address(IpAddr),
+}
+
+/// One IPv6 client holds a whole /64, so it is counted as one, as an IPv4 address is.
+fn network(address: IpAddr) -> IpAddr {
+    match address {
+        IpAddr::V6(ip) => match ip.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => IpAddr::V6((u128::from(ip) & !u128::from(u64::MAX)).into()),
+        },
+        v4 => v4,
+    }
 }
 
 #[derive(Default)]
@@ -43,12 +54,8 @@ impl Failures {
         if let Some(wait) = self.wait(email, address, now) {
             return Err(wait);
         }
-        let keys = [Key::Email(email.clone()), Key::Address(address)];
-        let added = keys
-            .iter()
-            .filter(|key| !self.counts.contains_key(key))
-            .count();
-        if self.counts.len() + added > MAX_KEYS {
+        let keys = [Key::Email(email.clone()), Key::Address(network(address))];
+        if self.counts.len() + self.added(&keys) > MAX_KEYS {
             if self
                 .swept
                 .is_none_or(|swept| now.duration_since(swept) >= SWEEP_EVERY)
@@ -57,7 +64,7 @@ impl Failures {
                     .retain(|_, (start, _)| now.duration_since(*start) < WINDOW);
                 self.swept = Some(now);
             }
-            if self.counts.len() + added > MAX_KEYS {
+            if self.counts.len() + self.added(&keys) > MAX_KEYS {
                 return Err(WINDOW.as_secs());
             }
         }
@@ -71,10 +78,16 @@ impl Failures {
         Ok(())
     }
 
+    fn added(&self, keys: &[Key]) -> usize {
+        keys.iter()
+            .filter(|key| !self.counts.contains_key(key))
+            .count()
+    }
+
     /// Takes back the failure that `begin` counted, for an attempt whose password was right.
     pub(super) fn succeeded(&mut self, email: &Email, address: IpAddr) {
         self.counts.remove(&Key::Email(email.clone()));
-        if let Some((_, count)) = self.counts.get_mut(&Key::Address(address)) {
+        if let Some((_, count)) = self.counts.get_mut(&Key::Address(network(address))) {
             *count = count.saturating_sub(1);
         }
     }
@@ -88,7 +101,7 @@ impl Failures {
             (*count >= limit).then_some(left.as_secs().max(1))
         };
         full(Key::Email(email.clone()), EMAIL_FAILURES)
-            .max(full(Key::Address(address), ADDRESS_FAILURES))
+            .max(full(Key::Address(network(address)), ADDRESS_FAILURES))
     }
 }
 
@@ -128,6 +141,27 @@ mod tests {
         }
         assert!(failures.begin(&email, address, start).is_err());
         assert_eq!(failures.begin(&email, address, start + WINDOW), Ok(()));
+    }
+
+    #[test]
+    fn guesses_from_one_ipv6_network_do_not_refuse_every_new_sign_in() {
+        let mut failures = Failures::default();
+        let start = Instant::now();
+        // Each guess has a new email and a new address inside 2001:db8:0:1::/64.
+        for n in 0..(MAX_KEYS / 2) as u64 {
+            let mut octets = [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+            octets[8..].copy_from_slice(&n.to_be_bytes());
+            let email = Email::from(format!("guess{n}@example.com").as_str());
+            let _ = failures.begin(&email, IpAddr::from(octets), start);
+        }
+        let someone = Email::from("someone@example.com");
+        let later = start + Duration::from_secs(60);
+        let answer = failures.begin(&someone, IpAddr::from([203, 0, 113, 5]), later);
+        assert_eq!(
+            answer,
+            Ok(()),
+            "one /64 of guesses made every new person wait"
+        );
     }
 
     #[test]

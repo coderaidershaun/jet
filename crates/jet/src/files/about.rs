@@ -37,6 +37,10 @@ pub(crate) struct About {
     /// When the file last changed, in Unix milliseconds. 0 in an old row, which means `at`.
     #[serde(default)]
     pub changed: u64,
+    /// When the current contents were written, in Unix milliseconds. A rename or a note moves
+    /// `changed` but not this. 0 in an old row, which means `changed_at`.
+    #[serde(default)]
+    pub written: u64,
     /// Starts at 1 and goes up with each change of the contents.
     #[serde(default = "first_version")]
     pub version: u32,
@@ -60,6 +64,7 @@ impl About {
             at: now,
             context: String::new(),
             changed: now,
+            written: now,
             version: 1,
         }
     }
@@ -70,6 +75,15 @@ impl About {
             self.at
         } else {
             self.changed
+        }
+    }
+
+    /// When the current contents were written, in Unix milliseconds.
+    pub fn written_at(&self) -> u64 {
+        if self.written == 0 {
+            self.changed_at()
+        } else {
+            self.written
         }
     }
 

@@ -182,3 +182,41 @@ fn identical_calls_at_once_each_show_their_own_progress() {
         }
     }
 }
+
+#[test]
+fn a_disabled_app_ends_its_tool_session() {
+    let fixture = Fixture::start();
+    let host = host();
+    let app = add_fixture_app(&host, &fixture);
+    let id = app.as_str().unwrap();
+    let tools = |method: &str| {
+        let path = format!("/api/apps/{id}/tools");
+        let catalogue = match method {
+            "refresh" => host.post(&path, json!({})).1,
+            _ => host.get(&path),
+        };
+        let names: Vec<String> = catalogue["tools"]
+            .as_array()
+            .unwrap_or_else(|| panic!("no tools in {catalogue}"))
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap().to_owned())
+            .collect();
+        names
+    };
+    // The fixture shows `branch` only to the session that called `root`.
+    let (status, found) = host.post(
+        &format!("/api/apps/{id}/discovery"),
+        json!({"requestId":"root","tool":"root","arguments":{"words":"root"}}),
+    );
+    assert_eq!(status, 200, "{found}");
+    assert!(tools("refresh").contains(&"branch".to_owned()));
+
+    for action in ["disable", "enable"] {
+        let (status, changed) = host.post("/api/apps", json!({"action":action,"id":id}));
+        assert_eq!(status, 200, "{changed}");
+    }
+    assert!(
+        !tools("get").contains(&"branch".to_owned()),
+        "the app kept the tool session it had before it was disabled"
+    );
+}

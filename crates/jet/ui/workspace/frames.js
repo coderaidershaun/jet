@@ -1,4 +1,14 @@
+// The app frames of the workspace: one frame per opened app, kept while other apps are shown, with its reachability.
 import { h } from '../dom.js';
+
+// A direct app is a page of another site that Jet does not proxy, so the frame alone keeps it from navigating Jet's tab.
+const DIRECT_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-popups allow-downloads';
+// A proxied page reaches its app through a proof in its own address that lasts an hour, and only a new load of the
+// frame gets a new one, so the frame is loaded again before that hour ends. State the app keeps only in its page is lost,
+// so a frame the person is working in waits for the focus to leave it, a minute at a time, until the hour is nearly up.
+const PROOF_RENEW_MS = 50 * 60_000;
+const IN_USE_RETRY_MS = 60_000;
+const IN_USE_RETRIES = 8;
 
 export function createFrameContainer(container) {
   const entries = new Map();
@@ -28,6 +38,7 @@ export function createFrameContainer(container) {
   }
 
   function mount(entry) {
+    clearTimeout(entry.renewal);
     entry.frame?.remove();
     entry.frame = null;
     entry.check?.abort();
@@ -48,9 +59,19 @@ export function createFrameContainer(container) {
       }
     } catch (error) { showStatus(entry, 'incompatible', error.message); return; }
     showStatus(entry, 'loading', 'Loading app. Browser framing restrictions may prevent display.');
-    entry.frame = h('iframe', { class: 'app-frame-page', title: app.label, src: source });
+    const sandbox = app.embedding === 'direct' ? DIRECT_SANDBOX : undefined;
+    entry.frame = h('iframe', { class: 'app-frame-page', title: app.label, src: source, sandbox });
     entry.panel.append(entry.frame);
+    if (app.embedding === 'relative-paths') renewLater(entry, PROOF_RENEW_MS, IN_USE_RETRIES);
     check(entry);
+  }
+
+  function renewLater(entry, waitMs, retriesLeft) {
+    entry.renewal = setTimeout(() => {
+      const inUse = !entry.panel.hidden && document.activeElement === entry.frame;
+      if (inUse && retriesLeft > 0) renewLater(entry, IN_USE_RETRY_MS, retriesLeft - 1);
+      else mount(entry);
+    }, waitMs);
   }
 
   function open(app) {
@@ -62,7 +83,7 @@ export function createFrameContainer(container) {
       const retry = h('button', { type: 'button', text: 'Retry', onClick: () => reload(app.id) });
       const panel = h('section', { class: 'app-frame', 'aria-label': app.label }, h('div', { class: 'app-frame-status' }, message, retry, external));
       panel.dataset.appId = app.id;
-      entry = { app, panel, message, retry, external, frame: null, check: null };
+      entry = { app, panel, message, retry, external, frame: null, check: null, renewal: 0 };
       entries.set(app.id, entry);
       container.append(panel);
       mount(entry);
@@ -100,6 +121,7 @@ export function createFrameContainer(container) {
     if (!entry) return;
     entry.check?.abort();
     entry.check = null;
+    clearTimeout(entry.renewal);
     entry.panel.remove();
     entries.delete(id);
   }

@@ -1,3 +1,5 @@
+// A stand-in app for the proxy tests: an HTTP and WebSocket app below a base path, and a port that takes connections and never answers.
+// On SIGTERM it drops every open connection, since Jet's proxy keeps idle ones that would hold close() open.
 import http from 'node:http';
 import net from 'node:net';
 import { WebSocketServer } from 'ws';
@@ -39,4 +41,4 @@ const stalled = new Set();
 const stall = net.createServer(socket => { stalled.add(socket); socket.on('close', () => stalled.delete(socket)); });
 await new Promise(resolve => stall.listen(0, '127.0.0.1', resolve));
 console.log(JSON.stringify({stall: `https://127.0.0.1:${stall.address().port}/`, url:`http://127.0.0.1:${server.address().port}${base}`}));
-for(const signal of ['SIGTERM','SIGINT']) process.on(signal,()=>{for(const ws of sockets.clients)ws.terminate();server.close();for(const socket of stalled)socket.destroy();stall.close();});
+for(const signal of ['SIGTERM','SIGINT']) process.on(signal,()=>{for(const ws of sockets.clients)ws.terminate();server.close();server.closeAllConnections();for(const socket of stalled)socket.destroy();stall.close();});

@@ -42,7 +42,7 @@ Embedding values:
 | Value | Meaning |
 | --- | --- |
 | `relative-paths` | The UI can run below Jet's mounted prefix. UI must stay within the registered base. |
-| `direct` | Explicit manual browser-reachable embedding; browser framing policy still applies. |
+| `direct` | Explicit manual browser-reachable embedding; browser framing policy still applies. Jet frames the page with `sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"`, so it cannot navigate Jet's tab. |
 | `external` | Open outside Jet; default when no embedding support was declared. |
 
 The descriptor identifies endpoints only. Tool descriptions, schemas, annotations,
@@ -65,7 +65,10 @@ the entire app entry, which prevents new MCP dispatch but retains configuration.
 
 Jet mounts a conforming app at `/apps/{stable-id}/`. A browser that opens the app is
 sent on to `/apps/{stable-id}/~{proof}/`; the proof lets the page's requests in without
-Jet's cookies, so it is part of the mount from then on. The proxy strips that prefix
+Jet's cookies, so it is part of the mount from then on. The proof lasts one hour, and
+Jet loads an open app frame again 50 minutes after it was loaded, which gets a new proof.
+A frame that has the focus waits for the focus to leave it, a minute at a time, for at most
+eight more minutes. An app that keeps state only in its page loses it then. The proxy strips that prefix
 and appends the remainder to the registered upstream base, preserving query,
 binary/streaming bodies, status and required response headers. It rejects traversal,
 unregistered targets and recursive routes into Jet. It never rewrites HTML or JS.
@@ -108,8 +111,8 @@ whole-transfer timeout. Redirects are not followed by Jet.
 check independently of MCP status. Any HTTP response, including 405, means only
 `reachable`. Other outcomes are `offline` and `incompatible`; neither a successful
 check nor an iframe load event is proof of rendering. Retry reloads only the chosen
-frame. A changed UI address or embedding setting takes effect on explicit reload;
-renaming and reopening keep the existing frame and its unsaved state.
+frame. A changed UI address or embedding setting takes effect on explicit reload or the hourly proof reload;
+renaming and reopening keep the existing frame and its unsaved state, until the hourly proof reload.
 
 Apps may use these headers only in their explicitly trusted integration mode.
 Normal standalone protections remain intact. An HTTPS Jet may forward to a local

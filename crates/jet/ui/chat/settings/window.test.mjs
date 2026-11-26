@@ -38,7 +38,8 @@ function fakeElement(tag) {
 }
 
 test('a section added to the registry gets a menu entry, and choosing it shows that section alone', async () => {
-  const previous = { document: globalThis.document, fetch: globalThis.fetch, requestAnimationFrame: globalThis.requestAnimationFrame };
+  const previous = { document: globalThis.document, fetch: globalThis.fetch, requestAnimationFrame: globalThis.requestAnimationFrame, addEventListener: globalThis.addEventListener };
+  globalThis.addEventListener = () => {};
   globalThis.document = { createElement: fakeElement, createElementNS: (_, tag) => fakeElement(tag), createDocumentFragment: () => fakeElement('#fragment'), activeElement: null };
   globalThis.fetch = async () => ({ ok: true, json: async () => ({ saved: false }) });
   globalThis.requestAnimationFrame = () => 0;
@@ -79,6 +80,30 @@ test('a section added to the registry gets a menu entry, and choosing it shows t
     assert.equal(savedLine.hidden, false);
     assert.deepEqual([shown(), current(), dialog.dataset.view], [['settings-claude'], ['Agent programs'], 'section']);
     assert.throws(() => settingsWindow.open('nowhere'), /no section "nowhere"/);
+    // Each open reads the settings again and then refreshes the sections; that finishes before the page is taken away.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    Object.assign(globalThis, previous);
+  }
+});
+
+test('a window that opens with no save of its own waiting takes the saved settings whole', async () => {
+  const previous = { document: globalThis.document, requestAnimationFrame: globalThis.requestAnimationFrame, addEventListener: globalThis.addEventListener };
+  globalThis.document = { createElement: fakeElement, createElementNS: (_, tag) => fakeElement(tag), createDocumentFragment: () => fakeElement('#fragment'), activeElement: null };
+  globalThis.requestAnimationFrame = () => 0;
+  globalThis.addEventListener = () => {};
+  try {
+    const settings = { model: 'sonnet', persona: { name: 'Jet', jobTitle: '', notes: '' } };
+    const dialog = fakeElement('dialog');
+    dialog.showModal = () => { dialog.open = true; };
+    const standIn = { id: 'stand-in', label: 'Stand-in', build: () => ({ el: h('p', { text: 'stand-in' }) }) };
+    const load = async () => ({ model: 'haiku', persona: { name: 'Jet', jobTitle: '', notes: '' } });
+    const settingsWindow = createSettingsWindow({ dialog, context: { settings, isAdmin: false }, onChange() {}, save: async () => {}, sections: [standIn], load });
+    // The /model command of this tab saved opus; then another tab saved haiku.
+    settings.model = 'opus';
+    settingsWindow.open();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(settings.model, 'haiku', 'the window kept a model that was not its own edit over a newer save');
   } finally {
     Object.assign(globalThis, previous);
   }

@@ -109,7 +109,7 @@ impl Files {
         let held = self.store.held_by_user(user, usize::MAX)?;
         Ok(Library {
             files: held.into_iter().map(Artifact::from).collect(),
-            used_bytes: self.store.file_bytes(user)?,
+            used_bytes: self.store.seen_file_bytes(user)?,
             limit_bytes: self.user_limit,
         })
     }
@@ -133,7 +133,7 @@ impl Files {
             .ok_or_else(|| FileError::NotFound(id.to_owned()))?;
         let current = Version {
             version: held.about.version,
-            changed_at: held.about.changed_at(),
+            changed_at: held.about.written_at(),
             bytes: held.about.bytes,
         };
         let earlier = self.store.earlier_versions(user, id)?.into_iter().map(

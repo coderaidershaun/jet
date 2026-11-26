@@ -1,3 +1,4 @@
+// The slash commands: each routes before chat, saves on top of what the server holds, and keeps the composer's keys.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createCommands } from './commands.js';
@@ -13,7 +14,10 @@ test('commands_route_before_chat_and_preserve_composer_keys', async () => {
   const settings = { model: 'gpt-6.1-sol', effort: 'ultra' };
   const saved = [];
   const workspace = { activeAppId: () => selected, refresh: async () => {}, openApp: id => opened.push(id), reloadApp: async id => opened.push("reload:" + id), showTools: id => scopes.push(id) };
-  const commands = createCommands({ workspace, settings, save: async candidate => { if (failSave) throw new Error('Disk unavailable'); await saveGate; saved.push({ ...candidate }); }, report: text => reports.push(text), request: async (path, body) => {
+  // What the server holds: another tab saved a new name after this tab loaded its settings.
+  const serverSettings = { model: 'gpt-6.1-sol', effort: 'ultra', persona: { name: 'Saved elsewhere' } };
+  const commands = createCommands({ workspace, settings, save: async candidate => { if (failSave) throw new Error('Disk unavailable'); await saveGate; saved.push({ ...candidate }); Object.assign(serverSettings, candidate); }, report: text => reports.push(text), request: async (path, body) => {
+    if (path === '/api/settings') return serverSettings;
     requests.push({ path, body });
     if (!body) return apps;
     return { app: { id: 'new', label: body.overrides?.label ?? 'Saved' }, apps, discovery: { status: 'unavailable', message: 'offline' } };
@@ -60,6 +64,7 @@ test('commands_route_before_chat_and_preserve_composer_keys', async () => {
   assert.equal(settings.model, 'sonnet');
   assert.equal(settings.effort, 'high');
   assert.equal(saved.at(-1).model, 'sonnet');
+  assert.equal(saved.at(-1).persona.name, 'Saved elsewhere', '/model keeps what another tab saved');
   assert.deepEqual(commands.suggestions('/thinking u'), []);
   await commands.submit('/thinking ultra', () => sent++);
   assert.match(reports.at(-1), /valid|choose/i);

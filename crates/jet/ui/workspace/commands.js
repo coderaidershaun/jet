@@ -1,3 +1,4 @@
+// The slash commands of the composer: /model, /thinking, /clear and the /app and /tools commands.
 import { MODELS, effortsFor } from '../bridge/models.js';
 import { requestJson } from '../bridge/browser-agent.js';
 
@@ -55,7 +56,8 @@ export function createCommands({ workspace, report, settings, save, changed = ()
         const key = modelCommand ? 'model' : 'effort';
         if (!args.length) { report(`Current ${modelCommand ? 'model' : 'thinking'}: ${settings[key]}\nValid choices: ${choices.join(', ')}`); return; }
         if (args.length !== 1 || !choices.includes(args[0])) throw new Error(`Choose a valid ${modelCommand ? 'model' : 'thinking level'}: ${choices.join(', ')}`);
-        const candidate = { ...settings, [key]: args[0] };
+        // This tab's copy may be older than what another tab saved, so only the model and effort change on the saved copy.
+        const candidate = { ...settings, ...(await request('/api/settings')), [key]: args[0] };
         if (!effortsFor(candidate.model).includes(candidate.effort)) candidate.effort = 'high';
         await save(candidate);
         settings.model = candidate.model;

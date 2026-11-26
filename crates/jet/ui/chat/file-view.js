@@ -26,7 +26,8 @@ let dialog = null, parts = null;
 let asked = null;
 /** The last full record of that file, which the dialog keeps showing, greyed, once the file is deleted. */
 let lastKnown = null;
-let opener = null, openerKey = null;
+/** Where the focus goes back to on close: the opener, or when its file is gone, the next row or the library's search. */
+let opener = null, openerKey = null, nearKey = null, search = null;
 let picking = false, renaming = false, armed = false, busy = false, drawing = false, armTimer = 0;
 let previewKey = '', versionsKey = '', sideLook = '';
 /** When each version of the open file was written, by number. */
@@ -70,9 +71,9 @@ function build() {
     versionsKey = '';
     picking = renaming = armed = false;
     clearTimeout(armTimer);
-    const back = opener?.isConnected ? opener : openerKey ? document.querySelector(`[data-key="${CSS.escape(openerKey)}"]`) : null;
-    back?.focus();
-    opener = openerKey = null;
+    const byKey = (key) => (key ? document.querySelector(`[data-key="${CSS.escape(key)}"]`) : null);
+    [opener, byKey(openerKey), byKey(nearKey), search].find((el) => el?.isConnected)?.focus();
+    opener = openerKey = nearKey = search = null;
   });
   document.body.append(dialog);
 }
@@ -271,7 +272,8 @@ function askDelete(file, el) {
   }
   clearTimeout(armTimer);
   armed = false;
-  act(el, 'deleted', () => files.remove(file.id));
+  // The Delete button turns off once the file is gone, so the focus moves to Close and does not fall to the page.
+  act(el, 'deleted', () => files.remove(file.id), () => parts.close.focus());
 }
 
 function startRename() {
@@ -316,6 +318,9 @@ export function viewFile(file) {
   if (!dialog.open) {
     opener = document.activeElement;
     openerKey = opener?.dataset?.key ?? null;
+    const row = opener?.closest?.('li');
+    nearKey = (row?.nextElementSibling ?? row?.previousElementSibling)?.querySelector('[data-key]')?.dataset.key ?? null;
+    search = opener?.closest?.('.library')?.querySelector('.library-search') ?? null;
   }
   asked = { id: file.id.toLowerCase(), name: file.name, kind: file.kind };
   lastKnown = null;

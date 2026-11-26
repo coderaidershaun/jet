@@ -100,7 +100,7 @@ impl From<VoiceError> for Refusal {
         Self {
             status,
             kind,
-            message: error.to_string(),
+            message: super::logged_without_path(&error),
         }
     }
 }

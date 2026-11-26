@@ -1,6 +1,7 @@
 // Drives the files of the real page against the real server and the provider stand-in: the library with its search,
 // its choice and zip, the file dialog with rename, add to a chat, remove, restore and the two-tap delete, a second tab
-// that sees a delete while its dialog is open, and the delete that disarms after four seconds. It saves the screens of
+// that sees a delete while its dialog is open, the delete that disarms after four seconds, a keyboard delete that keeps the
+// focus, and an upload left in the tray that goes with a reload. It saves the screens of
 // the design at 1440 and 390 px. A few states that need a server in trouble (loading, a failed read, a nearly full or
 // empty store) are drawn from a changed answer of GET /api/files, since the page alone decides how they look.
 import assert from 'node:assert/strict';
@@ -393,6 +394,15 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
     await writtenCard.scrollIntoViewIfNeeded();
     await shoot('sent-card');
 
+    // An upload left in the tray goes when the page does, so it never takes room that the library cannot show.
+    const uploaded = page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/files');
+    await page.locator('#attach-input').setInputFiles({ name: `unsent-${width}.txt`, mimeType: 'text/plain', buffer: Buffer.from('Never sent.\n') });
+    const unsent = await (await uploaded).json();
+    await page.locator('#tray [data-state="ready"]').waitFor();
+    await page.reload();
+    await page.locator('#loading').waitFor({ state: 'detached' });
+    await until(async () => (await fetch(`${origin}/api/files/${unsent.id}`, { headers: { cookie } })).status === 404, 'the unsent upload is gone after a reload');
+
     // 18. The focus ring on a row (desktop).
     if (!phone) {
       await showLibrary();
@@ -401,6 +411,22 @@ child.stdin.end(input); child.on('exit', code => process.exit(code || 0));
       await page.keyboard.press('Tab');
       await page.keyboard.press('Tab');
       await shoot('focus-row');
+
+      // A file deleted from its dialog by keyboard leaves the focus on Close, and then on the next row.
+      await turn(kite, 'One more note.', [update({ action: 'create', name: `keyed-${width}.md`, content: '# Keyed', context: 'A note to delete by keyboard.' })]);
+      await until(async () => (await row(`keyed-${width}.md`).count()) === 1, 'the library lists the new note');
+      await row(`keyed-${width}.md`).locator('.file-row-open').focus();
+      await page.keyboard.press('Enter');
+      await dialog.waitFor();
+      await side.locator('.file-view-delete').focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Enter');
+      await until(async () => (await row(`keyed-${width}.md`).count()) === 0, 'the note is deleted');
+      await until(async () => page.evaluate(() => document.activeElement?.classList.contains('file-view-close')), 'the focus is on Close after the delete');
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'detached' });
+      await until(async () => page.evaluate(() => Boolean(document.activeElement?.closest('.library'))), 'the focus returns into the library');
+      console.log(`PASS ${width} keyboard_delete_keeps_the_focus`);
     }
 
     // 5-8. States of a server in trouble, drawn from a changed answer.

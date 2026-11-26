@@ -1,7 +1,7 @@
 // The settings window: a modal over the page with a menu of sections on its left and the chosen section on its
-// right. Every change saves itself a moment after editing pauses.
+// right. Every change saves itself a moment after editing pauses, and on top of what was saved elsewhere.
 
-import { displayName } from '../../bridge/settings.js';
+import { displayName, loadSettings, saveSettingsAsPageGoes, withEdits } from '../../bridge/settings.js';
 import { h, icon } from '../../dom.js';
 import { paintNames } from './names.js';
 import { SECTIONS } from './sections.js';
@@ -29,13 +29,17 @@ const isShown = (el) => el.offsetParent !== null;
  * @param {{
  *   dialog: HTMLDialogElement, context: Omit<SettingsContext, 'changed'>, onChange: (kind: string) => void,
  *   save: () => Promise<void>, sections?: readonly import('./sections.js').SettingsSection[],
+ *   load?: () => Promise<import('../../bridge/settings.js').Settings>,
  * }} options
  */
-export function createSettingsWindow({ dialog, context, onChange, save, sections = SECTIONS }) {
+export function createSettingsWindow({ dialog, context, onChange, save, sections = SECTIONS, load = () => loadSettings(context) }) {
   const ids = sections.map((section) => section.id);
   if (new Set(ids).size !== ids.length) throw new Error('settings: two sections share an id in ' + ids.join(', '));
 
   let saveTimer = 0;
+  let saving = false;
+  // The settings as this page last read or saved them; what differs from them is this page's own edit.
+  let known = structuredClone(context.settings);
   let needsProgramCheck = false;
   let opener = null;
   let current = ids[0];
@@ -43,12 +47,26 @@ export function createSettingsWindow({ dialog, context, onChange, save, sections
   // There is no Save button: every change saves itself a moment after the user stops typing, and this line says so.
   const saved = h('p', { class: 'settings-saved', role: 'status', text: 'Changes save as you type' });
 
+  // Another tab, or the /model command, may have saved settings since this page read them, so they are read again.
+  // While an edit of this window waits or is being saved, only its edits are laid on top; otherwise the saved copy
+  // is taken whole, since a change made by this tab outside the window was already saved.
+  const catchUp = async () => {
+    const fresh = await load();
+    const hasEdits = saveTimer !== 0 || saving;
+    Object.assign(ctx.settings, hasEdits ? withEdits(fresh, known, ctx.settings) : structuredClone(fresh));
+    known = fresh;
+  };
   // The Rust side reads the saved model and program paths, so changes are checked only after saving.
   const saveEdits = async () => {
+    saveTimer = 0;
     const checkProgram = needsProgramCheck;
     needsProgramCheck = false;
+    saving = true;
     try {
+      await catchUp();
+      const sent = structuredClone(ctx.settings);
       await save();
+      known = sent;
       saveError.textContent = '';
       saved.textContent = 'Saved';
       if (checkProgram) refresh(entryOf(PROGRAM_SECTION));
@@ -56,6 +74,8 @@ export function createSettingsWindow({ dialog, context, onChange, save, sections
       needsProgramCheck ||= checkProgram;
       saved.textContent = 'Not saved';
       saveError.textContent = 'Settings could not be saved: ' + (error.message ?? String(error));
+    } finally {
+      saving = false;
     }
   };
   const changed = (kind) => {
@@ -67,6 +87,15 @@ export function createSettingsWindow({ dialog, context, onChange, save, sections
     saveTimer = setTimeout(saveEdits, SAVE_AFTER_EDIT_MS);
   };
   const ctx = { ...context, changed };
+  const saveNowIfPending = () => {
+    if (saveTimer === 0) return false;
+    clearTimeout(saveTimer);
+    saveTimer = 0;
+    return true;
+  };
+  globalThis.addEventListener('pagehide', () => {
+    if (saveNowIfPending()) saveSettingsAsPageGoes(ctx.settings);
+  });
 
   const entries = sections.map(({ id, label, build, savesWithButtons = false }) => {
     const { el, refresh: refreshSection = () => {} } = build(ctx);
@@ -176,12 +205,20 @@ export function createSettingsWindow({ dialog, context, onChange, save, sections
       choose(sectionId ?? current);
       if (!dialog.open) dialog.showModal();
       requestAnimationFrame(() => dialog.classList.add('open'));
-      for (const entry of entries) refresh(entry);
+      catchUp().then(() => {
+        paintNames(pane, displayName(ctx.settings));
+        for (const kind of ['persona', 'model', 'motion']) onChange(kind);
+      }, (error) => {
+        saveError.textContent = 'Settings could not be read again: ' + (error?.message ?? String(error));
+      }).finally(() => {
+        for (const entry of entries) refresh(entry);
+      });
       if (sectionId) showSection();
       else showMenu();
     },
 
     close() {
+      if (saveNowIfPending()) saveEdits();
       if (!dialog.open) return;
       dialog.classList.remove('open');
       setTimeout(() => dialog.close(), leaveMs());

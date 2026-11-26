@@ -6,7 +6,10 @@ mod registry;
 mod tools;
 
 use agent::{
-    apps::{App, AppId, AppOwner, Reach, Registry, RegistryCommand, RegistryError, RegistryResult},
+    apps::{
+        App, AppId, AppOwner, Reach, Registry, RegistryChange, RegistryCommand, RegistryError,
+        RegistryResult, Step,
+    },
     mcp::HttpMcpClient,
 };
 use axum::{Router, extract::FromRef};
@@ -73,8 +76,8 @@ impl Apps {
     }
 
     /// Runs the user's registry command and tells the user's chats what changed. Only an admin may
-    /// save an app at a port, a loopback or a private address. It waits on the network, so it runs
-    /// away from the server's own threads.
+    /// save an app at a port, a loopback or a private address. It waits on the network with the
+    /// registry unlocked, so it runs away from the server's own threads.
     pub(crate) fn execute(
         &self,
         user: UserId,
@@ -86,17 +89,22 @@ impl Apps {
         } else {
             Reach::PublicOnly
         };
-        let result = lock(&self.registry)
-            .execute(owner(user), reach, command)
-            .map_err(|error| match error {
-                RegistryError::ServerSide(_) => BridgeError::AdminOnly(error.to_string()),
-                RegistryError::NotFound(_) => BridgeError::NotFound(error.to_string()),
-                other => BridgeError::InvalidRequest(other.to_string()),
-            })?;
-        if let (Some(event), Some(chats)) =
-            (&result.change, self.chats.get().and_then(Weak::upgrade))
-        {
-            chats.registry_changed(user, event);
+        let step = lock(&self.registry).begin(owner(user), reach, command);
+        let result = match step.map_err(refusal)? {
+            Step::Done(result) => result,
+            Step::Discover(discovery) => {
+                let found = discovery.run().map_err(refusal)?;
+                lock(&self.registry).finish(found).map_err(refusal)?
+            }
+        };
+        if let Some(event) = &result.change {
+            if event.change != RegistryChange::Added {
+                // The old session may point at an address or tools the app no longer has.
+                tokio::runtime::Handle::current().block_on(self.mcp.forget(&event.app_id));
+            }
+            if let Some(chats) = self.chats.get().and_then(Weak::upgrade) {
+                chats.registry_changed(user, event);
+            }
         }
         Ok(result)
     }
@@ -104,6 +112,14 @@ impl Apps {
     /// Closes the connections to the apps' tools.
     pub(crate) async fn shutdown(&self) {
         self.mcp.shutdown().await;
+    }
+}
+
+fn refusal(error: RegistryError) -> BridgeError {
+    match error {
+        RegistryError::ServerSide(_) => BridgeError::AdminOnly(error.to_string()),
+        RegistryError::NotFound(_) => BridgeError::NotFound(error.to_string()),
+        other => BridgeError::InvalidRequest(other.to_string()),
     }
 }
 

@@ -70,12 +70,10 @@ pub(crate) enum FileError {
     NotFound(String),
     #[error(transparent)]
     Export(#[from] ::export::ExportError),
-    #[error("could not start the file reader {}: {source}", program.display())]
-    Reader {
-        program: std::path::PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
+    /// The program, its path and the cause go to the log only, because the answer reaches users
+    /// who are not admins.
+    #[error("could not start the file reader")]
+    Reader,
     #[error("could not write the exported file in a temporary folder: {0}")]
     Scratch(#[source] std::io::Error),
     #[error(transparent)]
@@ -89,7 +87,7 @@ pub(crate) enum FileError {
     #[error("Jet's file store is full. Forget the conversation to free it.")]
     StoreFull,
     #[error(
-        "Your files in Jet take more than {0} MB. Remove a file or forget a chat to free room."
+        "Your files in Jet take more than {0} MB. Remove a file or forget a chat to free room. Files attached but never sent hold room for a day."
     )]
     UserFull(u64),
     #[error(
@@ -222,7 +220,7 @@ impl Files {
     /// The id in its usual written form when it names a file of the user that Jet can see: one it
     /// wrote, or an upload that was sent. `None` for any other id.
     pub fn visible_id(&self, user: UserId, id: &str) -> Option<Uuid> {
-        let about = self.store.file_about(user, id).ok()??;
+        let about = self.store.file_about(user, &usual_id(id)).ok()??;
         about.attached.then_some(about.id)
     }
 
@@ -250,7 +248,7 @@ impl Files {
         id: &str,
         range: &Range,
     ) -> Result<(About, Reading), FileError> {
-        let (store, wanted) = (self.store.clone(), id.to_owned());
+        let (store, wanted) = (self.store.clone(), usual_id(id));
         let found = tokio::task::spawn_blocking(move || store.file(Some(user), &wanted))
             .await
             .map_err(|error| FileError::Worker(error.into()))??;
@@ -269,6 +267,12 @@ impl Files {
     pub fn clear(&self, chat: ChatId) -> Result<(), FileError> {
         Ok(self.store.remove_files(chat)?)
     }
+}
+
+/// The id in its usual written form, whatever form of the same UUID a model wrote, such as
+/// capitals. An id that is no UUID comes back as it is, and names no file.
+pub(crate) fn usual_id(id: &str) -> String {
+    Uuid::try_parse(id).map_or_else(|_| id.to_owned(), |uuid| uuid.to_string())
 }
 
 /// A place in the queue, or [`FileError::Busy`] when none comes free within `deadline`.
@@ -349,6 +353,22 @@ mod tests {
         assert!(matches!(refused, Err(FileError::Busy)), "{refused:?}");
         drop(building);
         assert!(files.zip(ada, None).await.is_ok());
+    }
+
+    #[test]
+    fn an_id_in_capitals_names_the_same_file() {
+        let (_dir, files, ada) = quick(50, 50);
+        let main = files.store.main_chat(ada).unwrap().id;
+        let written = About::new(
+            "notes.md".into(),
+            FileKind::Text,
+            b"one",
+            Origin::Export,
+            1_000,
+        );
+        files.keep(ada, Some(main), &written, b"one").unwrap();
+        let capitals = written.id.to_string().to_uppercase();
+        assert_eq!(files.visible_id(ada, &capitals), Some(written.id));
     }
 
     #[tokio::test]

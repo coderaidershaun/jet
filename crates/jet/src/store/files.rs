@@ -200,9 +200,19 @@ impl Store {
         })
     }
 
-    /// The bytes of the user's files and of the earlier versions kept of them.
-    pub(crate) fn file_bytes(&self, user: UserId) -> Result<u64, StoreError> {
-        self.with(|db| user_bytes(db, user))
+    /// The bytes of the user's files that Jet can see and of the earlier versions kept of them. An
+    /// upload not sent yet is left out, since no list shows it.
+    pub(crate) fn seen_file_bytes(&self, user: UserId) -> Result<u64, StoreError> {
+        self.with(|db| {
+            db.query_row(
+                "SELECT (SELECT coalesce(sum(length(contents)), 0) FROM files
+                         WHERE user_id = ?1 AND attached = 1)
+                      + (SELECT coalesce(sum(length(v.contents)), 0) FROM file_versions v
+                         JOIN files f ON f.id = v.file_id WHERE f.user_id = ?1)",
+                [user.0],
+                |row| row.get::<_, i64>(0).map(i64::unsigned_abs),
+            )
+        })
     }
 
     /// The earlier versions kept of the user's file, newest first: each one's number, when it was
@@ -340,8 +350,7 @@ impl Store {
                 return Ok(Changed::Full);
             }
             let mut about = about(&text, true)?;
-            // A kept version is stamped with the time it was written, not the time it was replaced.
-            let written = i64::try_from(about.changed_at()).unwrap_or(i64::MAX);
+            let written = i64::try_from(about.written_at()).unwrap_or(i64::MAX);
             transaction.execute(
                 "INSERT INTO file_versions (file_id, version, at, contents)
                  SELECT id, ?2, ?3, contents FROM files WHERE id = ?1",
@@ -356,6 +365,7 @@ impl Store {
             about.bytes = contents.len() as u64;
             about.details = details;
             about.changed = at;
+            about.written = at;
             about.version += 1;
             transaction.execute(
                 "UPDATE files SET about = ?2, contents = ?3 WHERE id = ?1",
@@ -579,6 +589,43 @@ mod tests {
                 .is_some()
         };
         assert!(!has(bob, &old_unsent) && has(ada, &old_sent) && has(ada, &fresh));
+    }
+
+    #[test]
+    fn a_kept_version_keeps_the_time_it_was_written() {
+        let (_dir, store, ada, _) = test_store();
+        let main = store.main_chat(ada).unwrap().id;
+        let written = About::new(
+            "notes.md".into(),
+            FileKind::Text,
+            b"one",
+            Origin::Export,
+            1_000,
+        );
+        let id = written.id.to_string();
+        let limits = (u64::MAX, u64::MAX);
+        store
+            .add_file(ada, Some(main), &written, b"one", limits)
+            .unwrap();
+        // A rename, or Jet's note, at 5000, as `Files::rename` and `Files::describe` do it.
+        store
+            .update_about(ada, &id, |about| {
+                about.name = "plan.md".into();
+                about.changed = 5_000;
+            })
+            .unwrap()
+            .unwrap();
+        let changed = store
+            .change_file(
+                ada,
+                &id,
+                (b"two", String::new()),
+                (9_000, u64::MAX, u64::MAX),
+            )
+            .unwrap();
+        assert!(matches!(changed, Changed::Done));
+        let versions = store.earlier_versions(ada, &id).unwrap();
+        assert_eq!(versions, [(1, 1_000, 3)], "version 1 was written at 1000");
     }
 
     #[test]

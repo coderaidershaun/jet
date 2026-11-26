@@ -1,3 +1,4 @@
+// The sign-in renewal: before the token runs out, after a refusal, with a wrong clock, and one tab at a time.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSession } from './session.js';
@@ -78,4 +79,32 @@ test('a browser clock twenty minutes fast still renews a minute before the end, 
   assert.equal(renewals(), 1, 'the server gave 900 seconds, whatever the browser clock says');
   await tick(1_000);
   assert.equal(renewals(), 2);
+});
+
+test('two tabs that renew together with no Web Locks keep the sign-in', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  assert.equal(globalThis.navigator?.locks, undefined, 'this run has no Web Locks, as an http page off localhost has none');
+  // One browser: each tab sends the refresh cookie that the jar holds when its request leaves, and the tabs share storage.
+  const jar = { refresh: 'R0' };
+  const replaced = new Set();
+  let revoked = false;
+  const fetch = async (path) => {
+    if (path !== '/api/auth/refresh') return answer(200);
+    const sent = jar.refresh;
+    await flush();
+    if (revoked || replaced.has(sent)) {
+      revoked = true;
+      return answer(401, { kind: 'signedOut' });
+    }
+    replaced.add(sent);
+    jar.refresh = sent + '+';
+    return answer(200, { accessExpiresAt: Date.now() / 1000 + 900 });
+  };
+  const items = new Map();
+  const storage = { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: (key) => items.delete(key) };
+  const signedOut = [];
+  const tab = (name) => createSession({ fetch, storage, signedOut: () => signedOut.push(name) });
+  await Promise.allSettled([tab('a').renew(), tab('b').renew()]);
+  assert.deepEqual(signedOut, [], 'a tab was sent to the sign-in page, and the sign-in was revoked for both');
+  assert.equal(jar.refresh, 'R0++', 'each tab renewed once, one after the other');
 });

@@ -2,6 +2,7 @@
 // choice belongs to the device, so it is kept in the browser and not on the server.
 
 import { icon } from '../../dom.js';
+import { BLOCKED_MESSAGE } from './spoken.js';
 
 const KEY = 'jet.voice';
 const NOT_AVAILABLE = 'Jet cannot speak right now';
@@ -76,7 +77,9 @@ export function createVoiceToggle({ button, storage, status, check, replying, an
       else announce(reason ?? NOT_AVAILABLE);
       return;
     }
-    if (!wanted) {
+    // A click while the browser blocks sound allows it and keeps the voice on; any other problem switches off as usual.
+    if (!wanted || problem?.endsWith(BLOCKED_MESSAGE)) {
+      problem = null;
       turnOn();
       return;
     }

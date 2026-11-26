@@ -1,3 +1,4 @@
+// The app frames: kept per app across selection, sandboxed when direct, and loaded again before a proxied proof ends.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createFrameContainer } from './frames.js';
@@ -8,7 +9,8 @@ class Element {
   append(...children) {for(const child of children){this.children.push(child);if(typeof child==='object')child.parent=this;}}
   remove() {this.parent.children=this.parent.children.filter(child=>child!==this);}
 }
-test('visited_frames_survive_selection_and_metadata_changes',async()=>{
+test('visited_frames_survive_selection_and_metadata_changes',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
   const previous={document:globalThis.document,fetch:globalThis.fetch,location:globalThis.location};
   globalThis.document={createElement:tag=>new Element(tag)};
   globalThis.location={protocol:'https:'};
@@ -44,5 +46,34 @@ test('visited_frames_survive_selection_and_metadata_changes',async()=>{
     assert.equal(direct.dataset.state,'incompatible');assert.ok(!direct.children.some(child=>child.tag==='iframe'));
     status={status:'offline',message:'Stopped'};frames.open(second);await new Promise(setImmediate);assert.equal(other.dataset.state,'offline');
     assert.equal(other.children.find(child=>child.tag==='div').children.find(child=>child.tag==='button').hidden,false);
+  } finally {Object.assign(globalThis,previous);}
+});
+test('a direct frame is sandboxed so it cannot navigate Jet, and a proxied frame is mounted again before its proof runs out',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const previous={document:globalThis.document,fetch:globalThis.fetch,location:globalThis.location};
+  globalThis.document={createElement:tag=>new Element(tag)};
+  globalThis.location={protocol:'http:'};
+  globalThis.fetch=async()=>({ok:true,json:async()=>({status:'reachable'})});
+  try {
+    const root=new Element('main');const frames=createFrameContainer(root);
+    const frameOf=(id)=>root.children.find(child=>child.dataset?.appId===id).children.find(child=>child.tag==='iframe');
+    frames.open({id:'direct',label:'Direct',embedding:'direct',baseUrl:'http://example.test/',uiUrl:'http://example.test/ui'});
+    assert.equal(frameOf('direct').attributes.sandbox,'allow-scripts allow-same-origin allow-forms allow-popups allow-downloads');
+    frames.open({id:'proxied',label:'Proxied',embedding:'relative-paths',baseUrl:'http://localhost:8000/',uiUrl:'http://localhost:8000/page'});
+    const first=frameOf('proxied');
+    assert.equal(first.attributes.sandbox,undefined,'a proxied page gets its sandbox from the proxy');
+    t.mock.timers.tick(50*60_000);
+    assert.notEqual(frameOf('proxied'),first,'the frame is mounted again, which asks for a fresh proof');
+    assert.equal(frameOf('proxied').attributes.src,'/apps/proxied/page');
+    assert.equal(frameOf('direct').attributes.src,'http://example.test/ui');
+    // A frame the person is typing in waits for the focus to leave it before it loads again.
+    const working=frameOf('proxied');globalThis.document.activeElement=working;
+    t.mock.timers.tick(50*60_000);
+    assert.equal(frameOf('proxied'),working,'the frame in use is not loaded again under the person');
+    globalThis.document.activeElement=null;t.mock.timers.tick(60_000);
+    assert.notEqual(frameOf('proxied'),working,'it loads again once the focus has left it');
+    const focused=frameOf('proxied');globalThis.document.activeElement=focused;
+    for(let minute=0;minute<58;minute++)t.mock.timers.tick(60_000);
+    assert.notEqual(frameOf('proxied'),focused,'before its proof runs out it loads again even in use');
   } finally {Object.assign(globalThis,previous);}
 });

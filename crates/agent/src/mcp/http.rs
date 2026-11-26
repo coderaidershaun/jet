@@ -1,9 +1,9 @@
-//! Keep one negotiated HTTP connection per registered endpoint.
+//! Keep one negotiated HTTP connection per registered endpoint, to an address its owner may reach.
 use super::{
     Endpoint, Endpoints, McpError, Progress, ToolCatalogue, ToolRequest, ToolResult,
     dispatch::Purpose,
 };
-use crate::apps::AppId;
+use crate::apps::{AppId, Reach, is_server_side, is_server_side_ip};
 use rmcp::{
     ClientHandler, RoleClient, ServiceExt,
     model::{ProgressNotificationParam, ProgressToken},
@@ -145,12 +145,18 @@ impl HttpMcpClient {
         };
         // A redirect could take Jet to a service on the server itself that the app's owner may not
         // reach, so none is followed.
-        let client = reqwest::Client::builder()
+        let mut client = reqwest::Client::builder()
             .connect_timeout(DEADLINE)
             .redirect(reqwest::redirect::Policy::none())
-            .default_headers(headers(&endpoint)?)
-            .build()
-            .map_err(failure)?;
+            .default_headers(headers(&endpoint)?);
+        if endpoint.reach == Reach::PublicOnly {
+            let url = url::Url::parse(&endpoint.url).map_err(failure)?;
+            if is_server_side(&url) {
+                return Err(failure(server_side()));
+            }
+            client = client.dns_resolver(Arc::new(PublicOnly));
+        }
+        let client = client.build().map_err(failure)?;
         // A write with an uncertain outcome must never be sent a second time.
         let mut config = StreamableHttpClientTransportConfig::with_uri(endpoint.url.clone());
         config.reinit_on_expired_session = false;
@@ -184,6 +190,31 @@ impl HttpMcpClient {
         }
         self.apps.lock().await.clear();
     }
+}
+/// Looks up the names a server of an owner who may only reach public addresses is at, and refuses
+/// one that now points at the server itself or its private network.
+struct PublicOnly;
+impl reqwest::dns::Resolve for PublicOnly {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let addresses: Vec<std::net::SocketAddr> =
+                tokio::net::lookup_host((name.as_str(), 0)).await?.collect();
+            if addresses
+                .iter()
+                .any(|address| is_server_side_ip(address.ip()))
+            {
+                return Err(server_side().into());
+            }
+            let addresses: reqwest::dns::Addrs = Box::new(addresses.into_iter());
+            Ok(addresses)
+        })
+    }
+}
+fn server_side() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "the tool server's address is on the server or its private network, which only an admin's server may reach",
+    )
 }
 /// The endpoint's headers, each value marked sensitive so the HTTP library never prints it.
 fn headers(endpoint: &Endpoint) -> Result<reqwest::header::HeaderMap, McpError> {
@@ -242,5 +273,18 @@ pub(super) fn protocol(error: rmcp::ServiceError) -> McpError {
         },
         rmcp::ServiceError::TransportSend(error) => classify(&*error.error),
         error => failure(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::dns::Resolve;
+
+    #[tokio::test]
+    async fn a_name_that_points_at_the_server_is_refused_when_it_is_looked_up() {
+        let name = "localhost".parse().unwrap();
+        let refused = PublicOnly.resolve(name).await.err().unwrap();
+        assert!(refused.to_string().contains("private network"), "{refused}");
     }
 }

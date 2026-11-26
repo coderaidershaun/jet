@@ -328,3 +328,79 @@ fn file_routes_hide_other_users_files() {
     assert_eq!((status, entries(bytes).len()), (200, 0));
     assert_eq!(listed(&owner), before, "nothing changed");
 }
+
+#[test]
+fn an_unsent_upload_is_neither_listed_nor_counted() {
+    let host = host();
+    let owner = host.owner();
+    let (status, uploaded) = owner.upload("notes.txt", b"the room is small");
+    assert_eq!(status, 200, "{uploaded}");
+    let library = listed(&owner);
+    assert_eq!(
+        library["files"],
+        json!([]),
+        "the unsent upload is not listed"
+    );
+    assert_eq!(
+        library["usedBytes"], 0,
+        "the usage line counts only files the library lists"
+    );
+}
+
+/// A copy of the host's program that is made unable to run once it has started, so the file
+/// reader cannot start. The copy's path is the host path that must not reach the user.
+#[cfg(unix)]
+#[test]
+fn a_failed_upload_names_no_host_path() {
+    use super::support::{LOG_FILE, PASSWORD, cookie_header, listening_url, sign_in};
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::{Command, Stdio};
+
+    let dir = tempfile::tempdir().unwrap();
+    let program = dir.path().join("jet-copy");
+    std::fs::copy(env!("CARGO_BIN_EXE_jet"), &program).unwrap();
+    let log = std::fs::File::create(dir.path().join(LOG_FILE)).unwrap();
+    let mut child = Command::new(&program)
+        .args([
+            "--listen",
+            "127.0.0.1:0",
+            "--disable-feelings",
+            "--disable-voice",
+        ])
+        .arg("--data-dir")
+        .arg(dir.path())
+        .stdout(Stdio::piped())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let url = listening_url(&mut child);
+    let signed_in = sign_in(&url, &url, SECOND, PASSWORD);
+    let cookie = cookie_header(&signed_in);
+    let host = Host {
+        child,
+        origin: url.clone(),
+        url,
+        dir,
+        cookie: cookie.clone(),
+    };
+    let user = User {
+        url: host.url.clone(),
+        origin: host.origin.clone(),
+        cookie,
+    };
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    let (status, answer) = user.upload("notes.txt", b"words");
+    assert_eq!(status, 500, "{answer}");
+    let shown = answer.to_string();
+    let hidden = host.dir.path().to_str().unwrap();
+    assert!(
+        !shown.contains(hidden),
+        "the answer names a host path: {shown}"
+    );
+    let logged = std::fs::read_to_string(host.dir.path().join(LOG_FILE)).unwrap();
+    assert!(
+        logged.contains(program.to_str().unwrap()),
+        "the log names the program: {logged}"
+    );
+}

@@ -41,6 +41,12 @@ mod tests {
     use super::*;
     use serde::Deserialize;
 
+    #[test]
+    fn an_email_autolink_is_a_mailto_link() {
+        let html = render_markdown("Write to <ada@example.com> today.");
+        assert!(html.contains(r#"href="mailto:ada@example.com""#), "{html}");
+    }
+
     /// Each case is a Markdown source and the HTML it must render to.
     const VECTORS: &str = include_str!("math-vectors.json");
 

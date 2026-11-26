@@ -167,6 +167,8 @@ if (/^facade:/m.test(input)) {
     if (!phone) await inner.locator('#out').click();
     await stayed(`${name} file view`);
     if (!phone) { await page.screenshot({ path: path.join(scratch, 'after-leave.png') }); console.log('after the attempts: ' + path.join(scratch, 'after-leave.png')); }
+    // A click in the file's frame gives that frame the keys, so the focus comes back to the dialog before Escape.
+    await dialog.locator('.file-view-close').focus();
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Open kite-summary.html', 'the focus is back on Open');
@@ -180,9 +182,11 @@ if (/^facade:/m.test(input)) {
     assert.match(await page.locator('#side-pane .pane-heading', { hasText: 'Files' }).innerText(), /Files\s*2/, 'the heading counts them');
     const pageRow = rows.filter({ hasText: 'kite-summary.html' });
     const textRow = rows.filter({ hasText: 'kite-budget.txt' });
-    assert.match(await pageRow.innerText(), /HTML page · \d+ KB · .*(ago|just now) · Kite budget and 1 more/, 'the page row has kind, size, when and its chats');
-    assert.match(await textRow.innerText(), /Text · \d+ B · .* · Kite budget$/, 'the text row has kind, size, when and its one chat');
-    assert.doesNotMatch(await textRow.innerText(), new RegExp(NOTE), 'the note is in the dialog, not the row');
+    // A row skips drawing its contents until the browser has placed it on screen (content-visibility: auto), and its
+    // innerText is empty until then, so the rows are read by their text in the page, which is there at once.
+    assert.match(await pageRow.textContent(), /HTML page · \d+ KB · .*(ago|just now) · Kite budget and 1 more/, 'the page row has kind, size, when and its chats');
+    assert.match(await textRow.textContent(), /Text · \d+ B · .* · Kite budget$/, 'the text row has kind, size, when and its one chat');
+    assert.doesNotMatch(await textRow.textContent(), new RegExp(NOTE), 'the note is in the dialog, not the row');
     if (phone) for (const row of await rows.all()) assert.ok((await row.locator('.file-row-open').boundingBox()).height >= 44, 'a file row is under 44 px');
     await fits(`${name} pane`);
     await shoot('3-pane-files');
@@ -198,7 +202,7 @@ if (/^facade:/m.test(input)) {
       await dialog.waitFor({ state: 'detached' });
       await toChat('Main chat');
       await until(async () => (await rows.count()) === 1, 'the main chat lists only the shared page');
-      assert.match(await rows.first().innerText(), /kite-summary\.html/);
+      assert.match(await rows.first().textContent(), /kite-summary\.html/);
 
       // 4. The page opened as a tab of its own is sandboxed too.
       const tab = await context.newPage();

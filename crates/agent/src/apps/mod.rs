@@ -11,5 +11,5 @@ pub use model::{
     AddApp, App, AppId, AppOverrides, Embedding, McpOverride, RegistryChange, RegistryCommand,
     RegistryEvent, RegistryResult,
 };
-pub use registry::Registry;
+pub use registry::{Discovered, Discovery, Registry, Step};
 pub use storage::{AppOwner, AppStorage, AppsInMemory, RegistryError};

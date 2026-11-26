@@ -21,7 +21,7 @@ import { buildVoice } from './voice.js';
 
 /** @type {readonly SettingsSection[]} */
 export const SECTIONS = Object.freeze([
-  { id: 'persona', label: 'Persona', build: (ctx) => ({ el: buildPersona(ctx) }) },
+  { id: 'persona', label: 'Persona', build: buildPersona },
   { id: 'model', label: 'Model and thinking', build: buildModel },
   { id: 'voice', label: 'Voice', build: buildVoice },
   { id: 'motion', label: 'Motion', build: buildMotion },

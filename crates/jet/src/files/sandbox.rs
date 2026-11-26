@@ -3,7 +3,7 @@
 //! exhaust memory or to hang kills only the child, never the server. The child gets the job and
 //! the file's bytes on its standard input and opens no file itself.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{ExitCode, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
@@ -110,7 +110,11 @@ impl Sandbox {
             FileError::Unreadable(name.to_owned())
         };
         let _permit = super::wait_for(&self.readers, self.queue).await?;
-        let mut child = start_reader()?;
+        let folder = tempfile::tempdir().map_err(|error| {
+            eprintln!("jet: could not make an empty folder for the file reader: {error}");
+            FileError::Reader
+        })?;
+        let mut child = start_reader(folder.path())?;
         let mut stdin = child.stdin.take().expect("stdin was piped");
         let mut stdout = child.stdout.take().expect("stdout was piped");
         let work = async {
@@ -149,17 +153,32 @@ impl Sandbox {
     }
 }
 
-/// A new reader with its input and output piped to this process. Dropping it kills it.
-fn start_reader() -> Result<Child, FileError> {
+/// A new reader with its input and output piped to this process, working in `folder`. Dropping it
+/// kills it.
+fn start_reader(folder: &Path) -> Result<Child, FileError> {
     let program = reader_program();
-    Command::new(&program)
+    reader_command(&program, folder).spawn().map_err(|source| {
+        eprintln!(
+            "jet: could not start the file reader {}: {source}",
+            program.display()
+        );
+        FileError::Reader
+    })
+}
+
+/// The reader parses bytes that anyone may have sent, so it gets none of the server's variables,
+/// such as its keys, and an empty folder to work in.
+fn reader_command(program: &Path, folder: &Path) -> Command {
+    let mut command = Command::new(program);
+    command
         .arg(READ_FILE_ARGUMENT)
+        .env_clear()
+        .current_dir(folder)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|source| FileError::Reader { program, source })
+        .kill_on_drop(true);
+    command
 }
 
 /// The running program itself. On Linux the path is `/proc/self/exe`, which keeps working after
@@ -261,4 +280,36 @@ fn limit_resources() -> Result<(), ServeError> {
 #[cfg(not(unix))]
 fn limit_resources() -> Result<(), ServeError> {
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[tokio::test]
+    async fn the_reader_sees_no_variable_and_an_empty_folder() {
+        let scratch = tempfile::tempdir().unwrap();
+        let program = scratch.path().join("print-env");
+        std::fs::write(&program, "#!/bin/sh\n/bin/pwd -P\n/usr/bin/env\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let output = reader_command(&program, folder.path())
+            .output()
+            .await
+            .unwrap();
+        let printed = String::from_utf8(output.stdout).unwrap();
+        let mut lines = printed.lines();
+        let place = folder.path().canonicalize().unwrap();
+        assert_eq!(lines.next(), place.to_str(), "{printed}");
+        // The shell sets these few itself.
+        let own = ["PWD", "OLDPWD", "SHLVL", "_"];
+        for (name, _) in std::env::vars().filter(|(name, _)| !own.contains(&name.as_str())) {
+            let line = format!("{name}=");
+            assert!(
+                !lines.clone().any(|seen| seen.starts_with(&line)),
+                "{name} reached the reader"
+            );
+        }
+    }
 }

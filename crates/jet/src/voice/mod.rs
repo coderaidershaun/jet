@@ -10,6 +10,7 @@ use budget::{HearBudget, Moment};
 use health::VoiceHealth;
 use refusal::Refusal;
 
+use crate::account::SignedIn;
 use crate::on_worker;
 use crate::settings::{HearingEngine, SpeakingEngine};
 use agent::voice::{self, Phonon, Phonon2, PhononMode, VoiceError};
@@ -137,10 +138,18 @@ struct Availability {
 }
 
 impl Availability {
-    fn of(status: Result<(), VoiceError>, warning: Option<String>) -> Self {
+    /// Only an admin reads where on the server a model is missing; anyone else reads the reason
+    /// without the path, and the full words go to the log.
+    fn of(status: Result<(), VoiceError>, warning: Option<String>, is_admin: bool) -> Self {
         Self {
             available: status.is_ok(),
-            reason: status.err().map(|error| error.to_string()),
+            reason: status.err().map(|error| {
+                if is_admin {
+                    error.to_string()
+                } else {
+                    logged_without_path(&error)
+                }
+            }),
             warning,
         }
     }
@@ -177,7 +186,21 @@ struct VoiceStatus {
     cues: &'static [Cue],
 }
 
-async fn availability(State(state): State<Voice>) -> Result<Json<VoiceStatus>, Refusal> {
+/// The words of the error without the server's paths. When that drops a path, the full words
+/// go to the log.
+fn logged_without_path(error: &VoiceError) -> String {
+    let shown = error.without_path();
+    if shown != error.to_string() {
+        eprintln!("jet: voice: {error}");
+    }
+    shown
+}
+
+async fn availability(
+    State(state): State<Voice>,
+    signed_in: SignedIn,
+) -> Result<Json<VoiceStatus>, Refusal> {
+    let is_admin = signed_in.user.is_admin;
     let (speak, hear) = if state.disabled {
         let speak = Speaking {
             gemini: Availability::off(),
@@ -201,12 +224,12 @@ async fn availability(State(state): State<Voice>) -> Result<Json<VoiceStatus>, R
         .await?;
         let now = Instant::now();
         let speak = Speaking {
-            gemini: Availability::of(speaking, state.speech_health.warning(now)),
-            phonon: Availability::of(phonon, None),
+            gemini: Availability::of(speaking, state.speech_health.warning(now), is_admin),
+            phonon: Availability::of(phonon, None, is_admin),
         };
         let hear = Hearing {
-            gemini: Availability::of(gemini, state.hear_health.warning(now)),
-            phonon2: Availability::of(phonon2, None),
+            gemini: Availability::of(gemini, state.hear_health.warning(now), is_admin),
+            phonon2: Availability::of(phonon2, None, is_admin),
         };
         (speak, hear)
     };
@@ -364,6 +387,14 @@ mod tests {
         assert_eq!(asked.elapsed(), TURN_WAIT);
         assert_eq!(refusal.kind, refusal::RefusalKind::RateLimited);
         assert_eq!(refusal.message, BUSY);
+    }
+
+    #[test]
+    fn a_user_who_is_not_an_admin_reads_no_model_path() {
+        let path = std::path::PathBuf::from("/srv/jet-host/models/phonon-31m-en");
+        let missing = Err(VoiceError::PhononMissing { path: path.clone() });
+        let reason = Availability::of(missing, None, false).reason.unwrap();
+        assert!(!reason.contains("/srv/jet-host"), "{reason}");
     }
 
     #[tokio::test]

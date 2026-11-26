@@ -493,8 +493,7 @@ fn a_check_is_told_the_files_and_may_read_them_but_changes_none() {
 fn a_user_over_the_limit_is_refused_with_the_reason_and_another_user_is_not() {
     let host = host_env(&[("JET_TEST_USER_FILE_BYTES", "3000")]);
     let (owner, other) = (host.owner(), host.sign_in_as(SECOND));
-    let reason =
-        "Your files in Jet take more than 1 MB. Remove a file or forget a chat to free room.";
+    let reason = "Your files in Jet take more than 1 MB. Remove a file or forget a chat to free room. Files attached but never sent hold room for a day.";
 
     assert_eq!(owner.upload("a.txt", &[b'a'; 1200]).0, 200);
     let (status, refused) = owner.upload("b.txt", &[b'b'; 2500]);

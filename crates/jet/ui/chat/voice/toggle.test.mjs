@@ -1,5 +1,7 @@
+// Proves the speaker button: the remembered choice, blocked storage, and the click that allows blocked sound.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createSpokenReveal } from './spoken.js';
 import { createVoiceToggle } from './toggle.js';
 
 /** Just enough of an element for the icons and the button. */
@@ -85,6 +87,74 @@ test('the speaker is off by default, remembers the choice on this device, and st
     assert.deepEqual([unset.toggle.on, unset.button.getAttribute('aria-pressed'), unset.button.getAttribute('aria-disabled'), unset.button.title], [false, 'false', 'true', reason]);
     await unset.button.click();
     assert.deepEqual([unset.toggle.on, unset.said, unset.changes], [false, [reason], []]);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test('after a reload with the voice on, the click the blocked-sound notice asks for allows sound and keeps the voice on', async () => {
+  // A reply spoken before any click let the page make sound.
+  let now = 0;
+  let timers = [];
+  const clock = {
+    now: () => now,
+    after(fn, ms) { const timer = { fn, at: now + ms }; timers.push(timer); return () => { timers = timers.filter((t) => t !== timer); }; },
+  };
+  const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
+  const tick = async (steps) => {
+    for (let i = 0; i < steps; i++) {
+      now += 10;
+      for (const timer of timers.filter((t) => t.at <= now)) { timers = timers.filter((t) => t !== timer); timer.fn(); }
+      await flush();
+    }
+  };
+  const requests = [];
+  const states = [];
+  const reveal = createSpokenReveal({
+    render: async (text) => '<p>' + text + '</p>',
+    paint: () => {},
+    speak: (text) => new Promise((resolve) => requests.push({ text, resolve })),
+    player: { ready: () => false, now: () => now / 1000, outputLatency: () => 0, play: () => { throw new Error('not reached'); }, silence() {} },
+    clock,
+    onState: (state) => states.push(state),
+  });
+  reveal.text('Hello there. And more words here.');
+  reveal.finish(() => {});
+  await tick(5);
+  requests[0].resolve(new ArrayBuffer(48000));
+  await tick(20);
+  const problem = states.map((state) => state.problem).find((text) => text);
+  assert.equal(problem, 'The browser blocked sound; click the speaker to allow it.');
+
+  const previous = globalThis.document;
+  globalThis.document = { createElementNS: () => fakeElement() };
+  try {
+    const storage = memoryStorage();
+    storage.setItem('jet.voice', 'on');
+    const button = fakeElement();
+    const changes = [];
+    const toggle = createVoiceToggle({ button, storage, status: READY, check: async () => READY, replying: () => false, announce: () => {}, onChange: (on) => changes.push(on) });
+    toggle.setProblem("Jet can't speak right now: " + problem);
+    button.click();
+    await flush();
+    assert.deepEqual([toggle.on, changes, storage.getItem('jet.voice')], [true, [true], 'on'], 'the click allows sound with the voice still on');
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test('a click while another voice problem shows switches the voice off', () => {
+  const previous = globalThis.document;
+  globalThis.document = { createElementNS: () => fakeElement() };
+  try {
+    const storage = memoryStorage();
+    storage.setItem('jet.voice', 'on');
+    const button = fakeElement();
+    const changes = [];
+    const toggle = createVoiceToggle({ button, storage, status: READY, check: async () => READY, replying: () => false, announce: () => {}, onChange: (on) => changes.push(on) });
+    toggle.setProblem("Jet can't speak right now: Google's voice quota is used up");
+    button.click();
+    assert.deepEqual([toggle.on, changes], [false, [false]]);
   } finally {
     globalThis.document = previous;
   }
